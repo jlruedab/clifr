@@ -168,7 +168,7 @@ func PrintStats(w io.Writer, s *Stats) {
 	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS(s.FromMS), FormatMS(s.ToMS), span.Round(time.Second))
 	fmt.Fprintf(w, "Samples:          %d (%d with full fd walk), skipped: %d\n", s.Samples, s.FDWalks, s.Skipped)
 	fmt.Fprintf(w, "Seen per sample:  %.0f processes, %.0f sockets, %.0f fds per walk\n", s.AvgProcs, s.AvgSockets, s.AvgFDs)
-	fmt.Fprintf(w, "DB size:          %s (est. %s/day from growth during recording)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))
+	fmt.Fprintf(w, "DB size:          %s on disk incl. WAL (est. %s/day from logical growth while recording)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))
 	fmt.Fprintf(w, "Recorder CPU:     %.3f%% of one core (average)\n", s.CPUPctOneCore)
 	fmt.Fprintf(w, "Recorder RSS:     avg %s, max %s\n", humanBytes(s.RSSAvgKB*1024), humanBytes(s.RSSMaxKB*1024))
 	fmt.Fprintln(w, "Rows per table:")

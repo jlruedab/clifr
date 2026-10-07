@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS samples (
 	nproc INTEGER, nsock INTEGER, nfd INTEGER, nevents INTEGER,
 	rows INTEGER,                  -- rows inserted/updated in this sample's tx (previous tx for dur_db)
 	cpu_us INTEGER,                -- recorder's cumulative user+sys CPU
-	rss_kb INTEGER, db_bytes INTEGER, fd_interval_s INTEGER
+	rss_kb INTEGER, db_bytes INTEGER, -- logical size: page_count * page_size
+	fd_interval_s INTEGER
 );
 CREATE INDEX IF NOT EXISTS samples_ts ON samples(ts);
 
@@ -141,6 +142,16 @@ func (d *DB) SizeBytes() int64 {
 		}
 	}
 	return n
+}
+
+// LogicalBytes is page_count * page_size: the data the database retains,
+// including pages still in the WAL. Unlike the file sizes it does not jump
+// when the WAL grows to its checkpoint size.
+func (d *DB) LogicalBytes() int64 {
+	var pages, size int64
+	d.QueryRow(`PRAGMA page_count`).Scan(&pages)
+	d.QueryRow(`PRAGMA page_size`).Scan(&size)
+	return pages * size
 }
 
 func (d *DB) SetMeta(key, value string) error {

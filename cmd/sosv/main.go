@@ -27,6 +27,8 @@ const usage = `usage: sosv <command> [flags]
 commands:
   record   record processes, sockets and open files (root)
   ps       sosv ps aux --at T | --start_from A --end_at B
+  ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
+           filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
   stats    recorder cost and database summary
 
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
@@ -43,6 +45,8 @@ func main() {
 		err = cmdRecord(args)
 	case "ps":
 		err = cmdPS(args)
+	case "ss":
+		err = cmdSS(args)
 	case "stats":
 		err = cmdStats(args)
 	case "-h", "--help", "help":
@@ -201,5 +205,68 @@ func cmdStats(args []string) error {
 		return query.PrintStatsJSON(os.Stdout, s)
 	}
 	query.PrintStats(os.Stdout, s)
+	return nil
+}
+
+func cmdSS(args []string) error {
+	// Pull out ss-style short options (-tanp, -uanp); t/u choose the protocol,
+	// the others are always on.
+	proto := "tcp"
+	var rest []string
+	for _, a := range args {
+		if len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Trim(a[1:], "tuanpl46") == "" {
+			if strings.Contains(a, "u") {
+				proto = "udp"
+			}
+			continue
+		}
+		rest = append(rest, a)
+	}
+	fs := flag.NewFlagSet("ss", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	pos, err := parse(fs, rest)
+	if err != nil {
+		return err
+	}
+	filter, err := query.ParseSockFilter(pos)
+	if err != nil {
+		return err
+	}
+	w, err := q.window(true)
+	if err != nil {
+		return err
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if w.IsRange() {
+		groups, err := query.SocketsInRange(db, w.From, w.To, proto, filter)
+		if err != nil {
+			return err
+		}
+		query.Header("%s sockets by process, %s .. %s", proto, query.FormatMS(w.From), query.FormatMS(w.To))
+		if q.json {
+			return query.PrintJSON(os.Stdout, groups)
+		}
+		query.PrintSSGroups(os.Stdout, groups)
+		return nil
+	}
+	s, err := query.SnapshotAt(db, w.At, false)
+	if err != nil {
+		return err
+	}
+	rows, err := query.SocketsAt(db, s, proto, filter)
+	if err != nil {
+		return err
+	}
+	query.Header("ss at %s, reconstructed from sample at %s (%d sockets)",
+		query.FormatMS(w.At), query.FormatMS(s), len(rows))
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	query.PrintSS(os.Stdout, rows)
 	return nil
 }

@@ -151,3 +151,101 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// setTCP writes <root>/net/tcp with one line per socket: "LADDR:PORT RADDR:PORT ST INODE" in /proc hex form.
+func (f *fakeProc) setTCP(lines ...string) {
+	os.MkdirAll(filepath.Join(f.root, "net"), 0o755)
+	s := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+	for i, l := range lines {
+		var la, ra, st, ino string
+		fmt.Sscan(l, &la, &ra, &st, &ino)
+		s += fmt.Sprintf("%4d: %s %s %s 00000000:00000000 00:00000000 00000000     0        0 %s 1\n", i, la, ra, st, ino)
+	}
+	os.WriteFile(filepath.Join(f.root, "net", "tcp"), []byte(s), 0o644)
+}
+
+func (f *fakeProc) setFD(pid, fd int, target string) {
+	dir := filepath.Join(f.root, fmt.Sprint(pid), "fd")
+	os.MkdirAll(dir, 0o755)
+	p := filepath.Join(dir, fmt.Sprint(fd))
+	os.Remove(p)
+	if target != "" {
+		os.Symlink(target, p)
+	}
+}
+
+func TestSocketOwnership(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "server", 100, 0)
+	fp.set(20, "client", 200, 0)
+	fp.setTCP("0100007F:1E61 00000000:0000 0A 500") // 127.0.0.1:7777 LISTEN
+	fp.setFD(10, 3, "socket:[500]")
+	fp.setFD(10, 4, "/var/log/x")
+	r, dbPath := newTestRecorder(t, fp.root)
+
+	t1 := time.UnixMilli(1790001000000)
+	t2, t3, t4 := t1.Add(30*time.Second), t1.Add(60*time.Second), t1.Add(90*time.Second)
+	must(t, r.sample(t1, true)) // full walk: server owns 500
+
+	// Client connects; the server accepts. Server is a known owner so the
+	// partial walk finds the accepted socket; the client was never seen
+	// owning sockets, so its socket stays unattributed until a full walk.
+	fp.setTCP("0100007F:1E61 00000000:0000 0A 500",
+		"0100007F:1E61 0100007F:C350 01 501", // server side 7777 -> 50000
+		"0100007F:C350 0100007F:1E61 01 502") // client side 50000 -> 7777
+	fp.setFD(10, 5, "socket:[501]")
+	fp.setFD(20, 3, "socket:[502]")
+	must(t, r.sample(t2, false))
+	if len(r.owners) != 2 {
+		t.Fatalf("after partial walk: %d owners, want 2 (listener + accepted)", len(r.owners))
+	}
+	must(t, r.sample(t3, true)) // full walk finds the client; owner backfilled to t2
+	// Server closes the accepted socket's fd while the socket lingers.
+	fp.setFD(10, 5, "")
+	must(t, r.sample(t4, false))
+	must(t, r.shutdown())
+	r.db.Close()
+
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	ms := func(t time.Time) int64 { return t.UnixMilli() }
+	type own struct{ first, last int64 }
+	got := map[string]own{}
+	rows, _ := db.Query(`SELECT p.comm, s.inode, o.first_seen, o.last_seen FROM sock_owners o
+		JOIN processes p ON p.id = o.proc_id JOIN sockets s ON s.id = o.sock_id`)
+	for rows.Next() {
+		var comm string
+		var ino int64
+		var o own
+		rows.Scan(&comm, &ino, &o.first, &o.last)
+		got[fmt.Sprint(comm, ino)] = o
+	}
+	rows.Close()
+	want := map[string]own{
+		"server500": {ms(t1), ms(t4)},
+		"server501": {ms(t2), ms(t3)}, // fd closed before t4
+		"client502": {ms(t2), ms(t4)}, // backfilled to the socket's first_seen
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s: got %+v want %+v", k, got[k], w)
+		}
+	}
+
+	ss, err := query.SocketsAt(db, ms(t2), "tcp", query.SockFilter{})
+	must(t, err)
+	if len(ss) != 3 || ss[0].State != "LISTEN" || len(ss[0].Owners) != 1 || ss[0].Owners[0].Comm != "server" {
+		t.Fatalf("ss at t2: %+v", ss)
+	}
+	f, _ := query.ParseSockFilter([]string{"dport", "=", ":7777"})
+	ss, _ = query.SocketsAt(db, ms(t3), "tcp", f)
+	if len(ss) != 1 || ss[0].Owners[0].Comm != "client" {
+		t.Errorf("filtered ss at t3: %+v", ss)
+	}
+	groups, err := query.SocketsInRange(db, ms(t1), ms(t4), "tcp", query.SockFilter{})
+	must(t, err)
+	if len(groups) != 2 || groups[0].Process != "server,pid=10" || groups[0].Conns != 2 || groups[0].Peak != 2 {
+		t.Errorf("groups: %+v", groups)
+	}
+}

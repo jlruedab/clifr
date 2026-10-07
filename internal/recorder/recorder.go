@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"sosv/internal/procfs"
+	"sosv/internal/sockdiag"
 	"sosv/internal/store"
 )
 
@@ -36,7 +37,11 @@ type procEntry struct {
 	id      int64
 	key     procKey
 	gen     uint64 // generation of the last sample that saw it
+	first   int64  // first_seen
 	last    int64  // ts of the last sample that saw it
+	owns    bool   // held sockets at its last fd walk
+	walked  uint64 // generation of its last fd walk
+	closed  bool   // closed in the current sample
 	sample  store.ProcSample
 	hasSamp bool
 	upd     store.ProcUpdate // current slow attributes
@@ -51,6 +56,12 @@ type Recorder struct {
 	gen   uint64
 	procs map[procKey]*procEntry
 	ids   map[string]int64 // next id per table
+
+	listSockets func() ([]sockdiag.Socket, error)
+	sockSource  string // "sock_diag" or "proc_net"
+	socks       map[sockKey]*sockEntry
+	byInode     map[uint64]*sockEntry
+	owners      map[ownKey]*ownEntry
 	// pending holds rows produced outside a sample (skips, guard events);
 	// they are written with the next sample's transaction.
 	pending   store.Batch
@@ -69,7 +80,9 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		return nil, err
 	}
 	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: btime * 1000,
-		procs: map[procKey]*procEntry{}, ids: map[string]int64{}}
+		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
+		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{}}
+	r.initSockets()
 	if n, err := db.Recover(); err != nil {
 		return nil, fmt.Errorf("recover open rows: %w", err)
 	} else if n > 0 {
@@ -154,10 +167,17 @@ func (r *Recorder) shutdown() error {
 	for _, e := range r.procs {
 		b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last})
 	}
+	for _, e := range r.socks {
+		b.SockCloses = append(b.SockCloses, store.Close{ID: e.id, LastSeen: e.last})
+	}
+	for _, o := range r.owners {
+		b.OwnCloses = append(b.OwnCloses, store.Close{ID: o.id, LastSeen: o.last})
+	}
 	if err := r.db.Write(b); err != nil {
 		return err
 	}
-	r.log.Printf("shutdown: closed %d open processes", len(b.ProcCloses))
+	r.log.Printf("shutdown: closed %d processes, %d sockets, %d socket owners",
+		len(b.ProcCloses), len(b.SockCloses), len(b.OwnCloses))
 	return nil
 }
 
@@ -172,6 +192,22 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	nproc := r.sampleProcs(ts, fdWalk, &b)
 	durProc := time.Since(t0)
 
+	t0 = time.Now()
+	nsock := r.sampleSockets(ts, &b)
+	if !fdWalk {
+		r.walkOwners(ts, false, &b) // socket-owning and new processes only
+	}
+	durSock := time.Since(t0)
+
+	t0 = time.Now()
+	var nfd int
+	if fdWalk {
+		nfd = r.walkOwners(ts, true, &b)
+	}
+	durFD := time.Since(t0)
+	r.sweepOwners(ts, &b)
+	r.dropClosedProcs()
+
 	var ru syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
 	cpuUS := ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
@@ -179,10 +215,12 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	b.Sample = store.Sample{
 		TS: ts, FDWalk: fdWalk,
 		DurProcUS: durProc.Microseconds(),
+		DurSockUS: durSock.Microseconds(),
+		DurFDUS:   durFD.Microseconds(),
 		DurDBUS:   r.lastDBDur.Microseconds(),
-		NProc:     nproc,
-		Rows:      b.Rows(),
-		CPUUS:     cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.SizeBytes(),
+		NProc:     nproc, NSock: nsock, NFD: nfd,
+		Rows:  b.Rows(),
+		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.LogicalBytes(),
 		FDIntervalS: int64(r.cfg.FDInterval.Seconds()),
 	}
 	t1 := time.Now()
@@ -233,14 +271,22 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			e.sample, e.hasSamp = s, true
 		}
 	}
-	for k, e := range r.procs {
+	for _, e := range r.procs {
 		if e.gen != r.gen {
 			ended := ts // found gone at this sample
 			b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last, Ended: &ended})
-			delete(r.procs, k)
+			e.closed = true // removed by dropClosedProcs after owners are swept
 		}
 	}
 	return n
+}
+
+func (r *Recorder) dropClosedProcs() {
+	for k, e := range r.procs {
+		if e.closed {
+			delete(r.procs, k)
+		}
+	}
 }
 
 func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch) *procEntry {
@@ -252,7 +298,7 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 	if err != nil {
 		return nil
 	}
-	e := &procEntry{id: r.nextID("processes"), key: key,
+	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
 		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Source: "sample"}}
 	e.upd.ID = e.id
 	r.procs[key] = e
