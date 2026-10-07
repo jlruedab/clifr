@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"sosv/internal/procfs"
 	"sosv/internal/sockdiag"
 	"sosv/internal/store"
@@ -42,7 +44,9 @@ type procEntry struct {
 	owns    bool   // held sockets at its last fd walk
 	walked  uint64 // generation of its last fd walk
 	files   map[fileKey]*fileEntry
-	closed  bool // closed in the current sample
+	exit    int64  // exit time from a proc connector event, 0 if unknown
+	born    uint64 // generation of the sample that first saw it
+	closed  bool   // closed in the current sample
 	sample  store.ProcSample
 	hasSamp bool
 	upd     store.ProcUpdate // current slow attributes
@@ -63,6 +67,12 @@ type Recorder struct {
 	socks       map[sockKey]*sockEntry
 	byInode     map[uint64]*sockEntry
 	owners      map[ownKey]*ownEntry
+
+	events       *eventQueue // nil if the proc connector is unavailable
+	lostReported int
+	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
+	evByPID      map[int]procKey
+	byPID        map[int]*procEntry
 	// pending holds rows produced outside a sample (skips, guard events);
 	// they are written with the next sample's transaction.
 	pending   store.Batch
@@ -80,9 +90,10 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: btime * 1000,
+	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: preciseBootMS(fs, btime),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
-		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{}}
+		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
+		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
 	r.initSockets()
 	if n, err := db.Recover(); err != nil {
 		return nil, fmt.Errorf("recover open rows: %w", err)
@@ -100,7 +111,7 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	host, _ := os.Hostname()
 	for k, v := range map[string]string{
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
-		"boot_time": strconv.FormatInt(btime, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks),
+		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
@@ -108,6 +119,21 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		}
 	}
 	return r, nil
+}
+
+// preciseBootMS returns the boot time in unix ms. /proc/stat's btime is
+// truncated to whole seconds, which would skew process start times (and
+// so durations against exit events) by up to a second; CLOCK_BOOTTIME is the
+// clock /proc/<pid>/stat start times are measured on.
+func preciseBootMS(fs procfs.FS, btime int64) int64 {
+	if fs.Root != "/proc" {
+		return btime * 1000 // fixtures describe their own boot time
+	}
+	var bt unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &bt); err != nil {
+		return btime * 1000
+	}
+	return time.Now().UnixMilli() - bt.Nano()/1e6
 }
 
 func (r *Recorder) nextID(table string) int64 {
@@ -118,6 +144,8 @@ func (r *Recorder) nextID(table string) int64 {
 // Run samples every Interval until ctx is cancelled or Duration elapses.
 func (r *Recorder) Run(ctx context.Context) error {
 	defer r.db.Close()
+	stopEvents := r.startEvents(ctx)
+	defer stopEvents()
 	start := time.Now()
 	next := start
 	var lastFD time.Time
@@ -159,12 +187,16 @@ func (r *Recorder) Run(ctx context.Context) error {
 	return r.shutdown()
 }
 
+const openRowsFlushAll = int64(1) << 62
+
 // shutdown closes every open row at the last sample time.
 func (r *Recorder) shutdown() error {
 	if r.lastTS == 0 {
 		return nil
 	}
 	b := &store.Batch{}
+	r.applyEvents(r.lastTS, b)
+	r.flushEventProcs(openRowsFlushAll, b)
 	for _, e := range r.procs {
 		b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last})
 		closeFiles(e, b)
@@ -191,7 +223,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	r.pending = store.Batch{}
 
 	t0 := time.Now()
+	nev := r.applyEvents(ts, &b)
 	nproc := r.sampleProcs(ts, fdWalk, &b)
+	r.flushEventProcs(ts, &b)
 	durProc := time.Since(t0)
 
 	t0 = time.Now()
@@ -220,7 +254,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		DurSockUS: durSock.Microseconds(),
 		DurFDUS:   durFD.Microseconds(),
 		DurDBUS:   r.lastDBDur.Microseconds(),
-		NProc:     nproc, NSock: nsock, NFD: nfd,
+		NProc:     nproc, NSock: nsock, NFD: nfd, NEvents: nev,
 		Rows:  b.Rows(),
 		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.LogicalBytes(),
 		FDIntervalS: int64(r.cfg.FDInterval.Seconds()),
@@ -275,8 +309,13 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 	}
 	for _, e := range r.procs {
 		if e.gen != r.gen {
-			ended := ts // found gone at this sample
-			b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last, Ended: &ended})
+			// ended is only set when an exit event gave the exact time;
+			// otherwise the process ended between last_seen and this sample.
+			var ended *int64
+			if e.exit != 0 {
+				ended = &e.exit
+			}
+			b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last, Ended: ended})
 			e.closed = true // removed by dropClosedProcs after owners are swept
 			closeFiles(e, b)
 		}
@@ -288,6 +327,9 @@ func (r *Recorder) dropClosedProcs() {
 	for k, e := range r.procs {
 		if e.closed {
 			delete(r.procs, k)
+			if r.byPID[k.pid] == e {
+				delete(r.byPID, k.pid)
+			}
 		}
 	}
 }
@@ -304,10 +346,18 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
 		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Source: "sample"}}
 	e.upd.ID = e.id
+	// Adopt a process first seen through a fork/exec event: it existed
+	// since its start time, not just since this sample.
+	if ep := r.evProcs[key]; ep != nil {
+		e.first, e.exit = key.start, ep.exit
+		delete(r.evProcs, key)
+	}
+	e.born = r.gen
 	r.procs[key] = e
+	r.byPID[key.pid] = e
 	b.ProcInserts = append(b.ProcInserts, store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
 		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, TTY: st.TTY, SID: st.Session,
-		PGRP: st.PGRP, Locked: status.VmLckK > 0, FirstSeen: ts, Source: "sample"})
+		PGRP: st.PGRP, Locked: status.VmLckK > 0, FirstSeen: e.first, Source: "sample"})
 	return e
 }
 

@@ -46,7 +46,7 @@ workload). The benchmark results under `bench/` are the main deliverable, not CL
 1. [x] Process sampling, `ps aux --at`, `stats`
 2. [x] Sockets (sock_diag), ownership, `ss`
 3. [x] Open files, `lsof`
-4. [ ] Proc connector events, `life`, ps range mode
+4. [x] Proc connector events, `life`, ps range mode
 5. [ ] Guard rails, systemd unit
 6. [ ] `--verify-every`, `verify`
 7. [ ] Load generator + pgbench

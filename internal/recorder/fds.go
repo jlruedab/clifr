@@ -37,7 +37,7 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 	}
 	nfd := 0
 	for _, p := range r.procs {
-		if p.closed || !(all || p.owns || p.first == ts) {
+		if p.closed || !(all || p.owns || p.born == r.gen) {
 			continue
 		}
 		fds, err := r.fs.ReadFDs(p.key.pid, !all)

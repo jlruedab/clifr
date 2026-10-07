@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ commands:
   lsof     sosv lsof [-p PID] [-i] --at T | --start_from A --end_at B
   ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
+  life     sosv life [--name REGEX] [--start_from A --end_at B]
   stats    recorder cost and database summary
 
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
@@ -50,6 +52,8 @@ func main() {
 		err = cmdSS(args)
 	case "lsof":
 		err = cmdLsof(args)
+	case "life":
+		err = cmdLife(args)
 	case "stats":
 		err = cmdStats(args)
 	case "-h", "--help", "help":
@@ -173,7 +177,17 @@ func cmdPS(args []string) error {
 	}
 	defer db.Close()
 	if w.IsRange() {
-		return errors.New("range mode arrives in milestone 4")
+		rows, err := query.PSRange(db, w.From, w.To)
+		if err != nil {
+			return err
+		}
+		query.Header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
+			query.FormatMS(w.From), query.FormatMS(w.To))
+		if q.json {
+			return query.PrintJSON(os.Stdout, rows)
+		}
+		query.PrintPSRange(os.Stdout, rows)
+		return nil
 	}
 	rows, s, err := query.PSAt(db, w.At)
 	if err != nil {
@@ -317,5 +331,43 @@ func cmdLsof(args []string) error {
 		return query.PrintJSON(os.Stdout, rows)
 	}
 	query.PrintLsof(os.Stdout, rows, false)
+	return nil
+}
+
+func cmdLife(args []string) error {
+	fs := flag.NewFlagSet("life", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	name := fs.String("name", "", "regular expression matched against the command line")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	if q.at != "" {
+		q.from, q.to, q.at = q.at, q.at, ""
+	}
+	w, err := q.window(false)
+	if err != nil {
+		return err
+	}
+	var re *regexp.Regexp
+	if *name != "" {
+		if re, err = regexp.Compile(*name); err != nil {
+			return err
+		}
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	rows, err := query.Life(db, w.From, w.To, re)
+	if err != nil {
+		return err
+	}
+	query.Header("%d processes; END \">t\" means it exited after t and before the next sample", len(rows))
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	query.PrintLife(os.Stdout, rows)
 	return nil
 }

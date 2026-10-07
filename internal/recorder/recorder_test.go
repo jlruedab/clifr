@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"sosv/internal/cnproc"
 	"sosv/internal/procfs"
 	"sosv/internal/query"
 	"sosv/internal/store"
@@ -95,8 +97,8 @@ func TestIntervalLifecycle(t *testing.T) {
 	ms := func(t time.Time) int64 { return t.UnixMilli() }
 	want := map[string]row{
 		"alpha": {"alpha", ms(t1), ms(t3), -1},
-		"beta":  {"beta", ms(t1), ms(t1), ms(t2)},
-		"gamma": {"gamma", ms(t2), ms(t2), ms(t3)},
+		"beta":  {"beta", ms(t1), ms(t1), -1}, // no exit event: ended unknown
+		"gamma": {"gamma", ms(t2), ms(t2), -1},
 		"delta": {"delta", ms(t3), ms(t3), -1},
 	}
 	for k, w := range want {
@@ -341,5 +343,79 @@ func TestOpenFiles(t *testing.T) {
 	}
 	if len(names) != 2 {
 		t.Errorf("lsof at t2: %v", names)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "daemon", 100, 0)
+	r, dbPath := newTestRecorder(t, fp.root)
+	r.events = &eventQueue{}
+	t1 := time.UnixMilli(1790001000000)
+	t2 := t1.Add(30 * time.Second)
+	must(t, r.sample(t1, true))
+
+	boot := int64(1790000000000)
+	short := procKey{pid: 50, start: boot + 1005*1000} // started at t1+5s, gone before t2
+	adopted := procKey{pid: 60, start: boot + 1010*1000}
+	daemonKey := procKey{pid: 10, start: boot + 1000}
+	ev := func(k cnproc.Kind, key procKey, ts int64, cmd string) procEvent {
+		return procEvent{kind: k, pid: key.pid, ts: ts, haveStat: true, key: key,
+			attrs: store.ProcUpdate{PPID: 10, Comm: "x", Cmdline: cmd, Source: "event"}}
+	}
+	r.events.list = []procEvent{
+		ev(cnproc.Fork, short, short.start, "/bin/daemon"),
+		ev(cnproc.Exec, short, short.start+2, "/bin/hook --run"),
+		ev(cnproc.Exit, short, short.start+340, ""),
+		ev(cnproc.Fork, adopted, adopted.start, "/bin/worker"),
+		ev(cnproc.Exit, daemonKey, t1.UnixMilli()+20_000, ""),
+	}
+	fp.set(60, "worker", 1010*100, 0) // still alive at t2
+	fp.remove(10)                     // daemon exited (event above)
+	must(t, r.sample(t2, false))
+	must(t, r.shutdown())
+	r.db.Close()
+
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	type row struct {
+		cmd, src         string
+		first, last, end int64
+	}
+	got := map[int]row{}
+	rows, _ := db.Query(`SELECT pid, cmdline, source, first_seen, last_seen, COALESCE(ended, -1) FROM processes`)
+	for rows.Next() {
+		var pid int
+		var x row
+		rows.Scan(&pid, &x.cmd, &x.src, &x.first, &x.last, &x.end)
+		got[pid] = x
+	}
+	rows.Close()
+	want := map[int]row{
+		50: {"/bin/hook --run", "event", short.start, short.start + 340, short.start + 340},
+		60: {"/bin/worker -x", "sample", adopted.start, t2.UnixMilli(), -1},
+		10: {"/bin/daemon -x", "sample", t1.UnixMilli(), t1.UnixMilli(), t1.UnixMilli() + 20_000},
+	}
+	for pid, w := range want {
+		if got[pid] != w {
+			t.Errorf("pid %d: got %+v want %+v", pid, got[pid], w)
+		}
+	}
+	// ps at t1+5.2s: the daemon (exits at t1+20s) and the short process (t1+5s..t1+5.34s).
+	ps, _, err := query.PSAt(db, t1.UnixMilli()+5200)
+	must(t, err)
+	if len(ps) != 2 || ps[1].PID != 50 || ps[1].Stat != "-" {
+		t.Errorf("ps at t1+5.2s: %+v", ps)
+	}
+	// ps at t1+25s: daemon exited at t1+20s per its exit event; worker started at t1+10s.
+	ps, _, _ = query.PSAt(db, t1.UnixMilli()+25000)
+	if len(ps) != 1 || ps[0].PID != 60 {
+		t.Errorf("ps at t1+25s: %+v", ps)
+	}
+	life, err := query.Life(db, 0, t2.UnixMilli(), regexp.MustCompile("hook"))
+	must(t, err)
+	if len(life) != 1 || life[0].Duration != 340 || life[0].EndKind != "exact" {
+		t.Errorf("life: %+v", life)
 	}
 }

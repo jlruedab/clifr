@@ -41,8 +41,9 @@ type procAt struct {
 	cpuTicks, rssKB, vszKB sql.NullInt64
 }
 
-// processesAt returns processes alive at sample s with their values at s,
-// plus event-only processes (never sampled) alive at t.
+// processesAt returns processes alive at t: those alive at sample s (with
+// their values at s), plus processes that events show started between s and
+// t. Processes with an exit event at or before t are left out.
 func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 	rows, err := db.Query(`
 		SELECT p.id, p.pid, p.ppid, p.uid, p.start_time, p.tty, p.sid, p.pgrp, p.locked, p.comm,
@@ -50,8 +51,9 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
 		     AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
-		WHERE (p.source = 'sample' AND p.first_seen <= ?1 AND COALESCE(p.last_seen, ?3) >= ?1)
-		   OR (p.source = 'event' AND p.first_seen <= ?2 AND COALESCE(p.ended, p.last_seen, ?3) > ?2)
+		WHERE ((p.first_seen <= ?1 AND COALESCE(p.last_seen, ?3) >= ?1)
+		       OR (p.first_seen > ?1 AND p.first_seen <= ?2))
+		  AND (p.ended IS NULL OR p.ended > ?2)
 		ORDER BY p.pid`, s, t, openEnd)
 	if err != nil {
 		return nil, err
@@ -83,9 +85,17 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 		return nil, 0, err
 	}
 	memKB := metaInt(db, "mem_total_kb")
+	// ps derives START from /proc/stat btime, which is truncated to whole
+	// seconds; sosv stores precise start times. Shift back for display.
+	skew := int64(0)
+	if bms := metaInt(db, "boot_ms"); bms > 0 {
+		skew = bms - metaInt(db, "boot_time")*1000
+	}
 	out := make([]PSRow, 0, len(procs))
 	for _, p := range procs {
-		out = append(out, psRow(p, s, memKB))
+		r := psRow(p, s, memKB)
+		r.Start = psStart(p.startMS-skew, s)
+		out = append(out, r)
 	}
 	return out, s, nil
 }
