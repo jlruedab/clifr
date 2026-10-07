@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -417,5 +418,72 @@ func TestEvents(t *testing.T) {
 	must(t, err)
 	if len(life) != 1 || life[0].Duration != 340 || life[0].EndKind != "exact" {
 		t.Errorf("life: %+v", life)
+	}
+}
+
+func TestSkipOnOverrun(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "a", 100, 0)
+	dbPath := filepath.Join(t.TempDir(), "t.db")
+	r, err := New(Config{DB: dbPath, Interval: 200 * time.Millisecond, FDInterval: time.Second,
+		Duration: 1500 * time.Millisecond, ProcRoot: fp.root}, log.New(io.Discard, "", 0))
+	must(t, err)
+	n := 0
+	r.afterSample = func() {
+		n++
+		if n == 2 {
+			time.Sleep(650 * time.Millisecond) // overruns ~3 slots
+		}
+	}
+	must(t, r.Run(context.Background()))
+	db, _ := store.Open(dbPath, true)
+	defer db.Close()
+	var skipped, guard, samples int
+	db.QueryRow(`SELECT COUNT(*) FROM samples WHERE skipped = 1`).Scan(&skipped)
+	db.QueryRow(`SELECT COUNT(*) FROM samples WHERE skipped = 0`).Scan(&samples)
+	db.QueryRow(`SELECT COUNT(*) FROM guard_events WHERE kind = 'skip'`).Scan(&guard)
+	if skipped < 2 || skipped > 4 || guard != skipped {
+		t.Errorf("skipped=%d guard events=%d, want 2..4 and equal", skipped, guard)
+	}
+	// 1.5s at 200ms is ~8 slots: the skipped ones must not run back to back.
+	if samples+skipped > 9 {
+		t.Errorf("samples=%d skipped=%d: more slots than time allows", samples, skipped)
+	}
+}
+
+func TestCPUBudget(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	defer r.db.Close()
+	r.cfg.CPUBudget = 0.02
+	r.cfg.BudgetWindow = 5 * time.Minute
+	r.fdInterval = 2 * time.Minute
+	t0 := time.UnixMilli(1790001000000)
+	b := &store.Batch{}
+	// 1% of a core for 5 minutes: within budget.
+	for i := 0; i <= 10; i++ {
+		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), int64(i)*300_000, b)
+	}
+	if r.fdInterval != 2*time.Minute || len(b.Guard) != 0 {
+		t.Fatalf("within budget: fd-interval %s, guard %v", r.fdInterval, b.Guard)
+	}
+	// Then 4% of a core: as soon as the rolling 5-minute average crosses 2%
+	// the guard doubles the interval once and starts a new window.
+	cpu := int64(10 * 300_000)
+	for i := 11; i <= 20; i++ {
+		cpu += 1_200_000
+		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), cpu, b)
+	}
+	if r.fdInterval != 4*time.Minute || len(b.Guard) != 1 || b.Guard[0].Kind != "fd_interval_up" {
+		t.Fatalf("over budget: fd-interval %s, guard %+v", r.fdInterval, b.Guard)
+	}
+	// Still over budget: keeps doubling up to the cap, then reports once.
+	for i := 26; i <= 400; i++ {
+		cpu += 1_200_000
+		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), cpu, b)
+	}
+	last := b.Guard[len(b.Guard)-1]
+	if r.fdInterval != maxFDInterval || last.Kind != "budget_exceeded" {
+		t.Errorf("at cap: fd-interval %s, last guard %+v", r.fdInterval, last)
 	}
 }

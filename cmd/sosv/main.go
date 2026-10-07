@@ -134,6 +134,7 @@ func cmdRecord(args []string) error {
 	fs.DurationVar(&c.Duration, "duration", 0, "stop after this long (0 = until SIGINT/SIGTERM)")
 	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
 	budget := fs.String("cpu-budget", "2%", "recorder CPU budget, percent of one core")
+	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
 	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof output this often")
 	if _, err := parse(fs, args); err != nil {
 		return err

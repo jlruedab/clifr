@@ -30,6 +30,7 @@ type Stats struct {
 	RSSMaxKB        int64                  `json:"recorder_rss_max_kb"`
 	PhaseMS         map[string]Percentiles `json:"sample_phase_ms"`
 	GuardEvents     map[string]int         `json:"guard_events"`
+	Adjustments     []string               `json:"guard_adjustments"`
 	DiskPerDayBytes int64                  `json:"est_disk_per_day_bytes"`
 	AvgProcs        float64                `json:"avg_processes"`
 	AvgSockets      float64                `json:"avg_sockets"`
@@ -138,6 +139,17 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 	if dbWall > 0 {
 		st.DiskPerDayBytes = int64(dbGrowth / dbWall * 86400e3)
 	}
+	adj, err := db.Query(`SELECT ts, kind, detail FROM guard_events WHERE kind != 'skip' ORDER BY ts LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	for adj.Next() {
+		var ts int64
+		var k, d string
+		adj.Scan(&ts, &k, &d)
+		st.Adjustments = append(st.Adjustments, fmt.Sprintf("%s %s: %s", FormatMS(ts), k, d))
+	}
+	adj.Close()
 	g, err := db.Query(`SELECT kind, COUNT(*) FROM guard_events GROUP BY kind`)
 	if err != nil {
 		return nil, err
@@ -190,6 +202,9 @@ func PrintStats(w io.Writer, s *Stats) {
 	}
 	for k, n := range s.GuardEvents {
 		fmt.Fprintf(w, "  %-18s %d\n", k, n)
+	}
+	for _, a := range s.Adjustments {
+		fmt.Fprintf(w, "  %s\n", a)
 	}
 }
 

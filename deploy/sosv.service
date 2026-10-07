@@ -1,0 +1,66 @@
+# sosv flight recorder.
+#
+# Install:
+#   install -m 0755 sosv /usr/local/sbin/sosv
+#   install -m 0644 deploy/sosv.service /etc/systemd/system/sosv.service
+#   systemctl daemon-reload && systemctl enable --now sosv
+# Stop:    systemctl stop sosv   (SIGTERM: open rows are closed cleanly)
+# Query:   sosv ps aux --db /var/lib/sosv/sosv.db --at "YYYY-MM-DD HH:MM:SS"
+# Disk:    the database grows without bound in this PoC; watch
+#          /var/lib/sosv and `sosv stats` (estimated disk per day).
+
+[Unit]
+Description=sosv flight recorder (processes, sockets, open files)
+Documentation=file:///usr/local/share/doc/sosv/README.md
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/sosv record --db /var/lib/sosv/sosv.db --interval 30s --fd-interval 120s --cpu-budget 2%
+Restart=on-failure
+RestartSec=30s
+StateDirectory=sosv
+StateDirectoryMode=0700
+
+# Resource limits: the recorder must never compete with the real workload.
+CPUAccounting=yes
+MemoryAccounting=yes
+IOAccounting=yes
+CPUQuota=5%
+MemoryMax=256M
+Nice=10
+IOSchedulingClass=idle
+
+# Only the capabilities it needs (it runs as root):
+#   CAP_SYS_PTRACE       read /proc/<pid>/fd, fdinfo, exe, cwd, root of any process
+#   CAP_DAC_READ_SEARCH  list /proc/<pid>/fd directories owned by other users
+#   CAP_NET_ADMIN        subscribe to the proc connector (and SO_RCVBUFFORCE)
+# sock_diag needs no capability. Keep the host network namespace: the
+# recorder must see the host's sockets.
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN
+AmbientCapabilities=
+NoNewPrivileges=yes
+
+# Filesystem: read-only everywhere except the state directory. Paths read
+# through /proc/<pid>/fd are "magic links" and still resolve.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=no
+# PrivateDevices stays off: --verify-every runs the real lsof, which needs the real /dev.
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

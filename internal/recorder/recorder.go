@@ -21,13 +21,15 @@ import (
 )
 
 type Config struct {
-	DB          string
-	Interval    time.Duration
-	FDInterval  time.Duration
-	Duration    time.Duration // 0 = until signalled
-	ProcRoot    string
-	CPUBudget   float64 // fraction of one core, e.g. 0.02
-	VerifyEvery time.Duration
+	DB         string
+	Interval   time.Duration
+	FDInterval time.Duration
+	Duration   time.Duration // 0 = until signalled
+	ProcRoot   string
+	CPUBudget  float64 // fraction of one core, e.g. 0.02; 0 disables the guard
+	// BudgetWindow is how much recent CPU history the budget guard looks at.
+	BudgetWindow time.Duration
+	VerifyEvery  time.Duration
 }
 
 type procKey struct {
@@ -78,6 +80,11 @@ type Recorder struct {
 	pending   store.Batch
 	lastDBDur time.Duration
 	lastTS    int64
+
+	fdInterval      time.Duration // current; the CPU guard may lengthen it
+	cpuHist         []cpuPoint
+	budgetExhausted bool
+	afterSample     func() // test hook
 }
 
 func New(cfg Config, logger *log.Logger) (*Recorder, error) {
@@ -95,6 +102,10 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
 	r.initSockets()
+	r.fdInterval = cfg.FDInterval
+	if r.cfg.BudgetWindow == 0 {
+		r.cfg.BudgetWindow = 5 * time.Minute
+	}
 	if n, err := db.Recover(); err != nil {
 		return nil, fmt.Errorf("recover open rows: %w", err)
 	} else if n > 0 {
@@ -166,12 +177,15 @@ func (r *Recorder) Run(ctx context.Context) error {
 		now := time.Now()
 		// A full fd walk is due when FDInterval has passed (with half an
 		// interval of slack so 120s/30s lands on every 4th sample).
-		fdWalk := lastFD.IsZero() || now.Sub(lastFD) >= r.cfg.FDInterval-r.cfg.Interval/2
+		fdWalk := lastFD.IsZero() || now.Sub(lastFD) >= r.fdInterval-r.cfg.Interval/2
 		if fdWalk {
 			lastFD = now
 		}
 		if err := r.sample(now, fdWalk); err != nil {
 			return fmt.Errorf("sample: %w", err)
+		}
+		if r.afterSample != nil {
+			r.afterSample()
 		}
 		next = next.Add(r.cfg.Interval)
 		// Guard rail: if the sample overran, skip the missed slots instead of
@@ -247,6 +261,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	var ru syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
 	cpuUS := ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
+	r.checkBudget(now, cpuUS, &b)
 
 	b.Sample = store.Sample{
 		TS: ts, FDWalk: fdWalk,
@@ -257,7 +272,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		NProc:     nproc, NSock: nsock, NFD: nfd, NEvents: nev,
 		Rows:  b.Rows(),
 		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.LogicalBytes(),
-		FDIntervalS: int64(r.cfg.FDInterval.Seconds()),
+		FDIntervalS: int64(r.fdInterval.Seconds()),
 	}
 	t1 := time.Now()
 	if err := r.db.Write(&b); err != nil {
