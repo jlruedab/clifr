@@ -1,0 +1,6 @@
+/sosv
+/bin/
+*.db
+*.db-wal
+*.db-shm
+bench/results/
