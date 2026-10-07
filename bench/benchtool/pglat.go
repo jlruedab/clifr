@@ -14,11 +14,13 @@ var (
 	tpsRe    = regexp.MustCompile(`tps = ([0-9.]+) \(without initial connection time\)`)
 	txRe     = regexp.MustCompile(`number of transactions actually processed: (\d+)`)
 	failedRe = regexp.MustCompile(`number of failed transactions: (\d+)`)
+	avgRe    = regexp.MustCompile(`latency average = ([0-9.]+) ms`)
 )
 
-// pglat prints one CSV line (with header) summarising a pgbench run: TPS
-// from pgbench's own summary, latency percentiles from the sampled
-// per-transaction logs (column 3 is the latency in microseconds).
+// pglat prints one CSV line (with header) summarising a pgbench run: TPS and
+// average latency from pgbench's own summary (exact, over all transactions),
+// latency percentiles from the sampled per-transaction logs (column 3 is the
+// latency in microseconds).
 func pglat(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: pglat PGBENCH_OUT LOG...")
@@ -62,15 +64,7 @@ func pglat(args []string) error {
 		}
 		return lat[int(p*float64(len(lat)-1)+0.5)]
 	}
-	var sum float64
-	for _, v := range lat {
-		sum += v
-	}
-	avg := 0.0
-	if len(lat) > 0 {
-		avg = sum / float64(len(lat))
-	}
 	fmt.Println("tps,lat_avg_ms,lat_p50_ms,lat_p95_ms,lat_p99_ms,transactions,failed,latency_samples")
-	fmt.Printf("%s,%.3f,%.3f,%.3f,%.3f,%s,%s,%d\n", tps, avg, q(0.5), q(0.95), q(0.99), find(txRe), find(failedRe), len(lat))
+	fmt.Printf("%s,%s,%.3f,%.3f,%.3f,%s,%s,%d\n", tps, find(avgRe), q(0.5), q(0.95), q(0.99), find(txRe), find(failedRe), len(lat))
 	return nil
 }

@@ -42,6 +42,9 @@ echo "PostgreSQL unit: $PGUNIT"
 
 if ! sudo -u postgres psql -lqt | cut -d'|' -f1 | grep -qw sosvbench; then
     sudo -u postgres createdb sosvbench
+fi
+# Initialise when the tables are missing or empty (e.g. an earlier setup was interrupted).
+if [[ "$(sudo -u postgres psql -Atc 'select count(*) from pgbench_branches' sosvbench 2>/dev/null)" != "$SCALE" ]]; then
     sudo -u postgres pgbench -i -q -s "$SCALE" sosvbench
 fi
 sudo -u postgres psql -q -c "ALTER DATABASE sosvbench SET synchronous_commit = off" sosvbench

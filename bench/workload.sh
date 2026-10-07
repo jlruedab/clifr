@@ -18,7 +18,8 @@ mkdir -p "$OUT"
 chmod 777 "$OUT"
 cd "$OUT"
 sudo -u postgres pgbench -n -c "$CLIENTS" -j "$THREADS" -T "$SECS" -P 5 \
-    -l --sampling-rate="$RATE" --log-prefix="$OUT/pgbench_log" sosvbench >"$OUT/pgbench.out" 2>&1
+    -l --sampling-rate="$RATE" --log-prefix="$OUT/pgbench_log" sosvbench >"$OUT/pgbench.out" 2>&1 ||
+    { echo "pgbench failed:" >&2; tail -5 "$OUT/pgbench.out" >&2; exit 1; }
 "$BIN/benchtool" pglat "$OUT/pgbench.out" "$OUT"/pgbench_log.* >"$OUT/workload.csv"
 gzip -f "$OUT"/pgbench_log.*  # raw latency sample, kept compressed
 cat "$OUT/workload.csv"
