@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
+	"sosv/internal/procfs"
 	"sosv/internal/query"
 	"sosv/internal/store"
 )
@@ -247,5 +250,96 @@ func TestSocketOwnership(t *testing.T) {
 	must(t, err)
 	if len(groups) != 2 || groups[0].Process != "server,pid=10" || groups[0].Conns != 2 || groups[0].Peak != 2 {
 		t.Errorf("groups: %+v", groups)
+	}
+}
+
+func TestClassifyFD(t *testing.T) {
+	names := sockNames{unix: map[uint64]string{7: "/run/x type=STREAM (LISTEN)"}, netlink: map[uint64]string{8: "ROUTE"}}
+	reg := &procfs.FDStat{Mode: unix.S_IFREG}
+	fifo := &procfs.FDStat{Mode: unix.S_IFIFO}
+	cases := []struct {
+		fd              procfs.FD
+		flags           uint64
+		st              *procfs.FDStat
+		typ, mode, name string
+	}{
+		{procfs.FD{Num: 3, Target: "socket:[7]"}, 2, nil, "unix", "u", "/run/x type=STREAM (LISTEN)"},
+		{procfs.FD{Num: 4, Target: "socket:[8]"}, 2, nil, "netlink", "u", "ROUTE"},
+		{procfs.FD{Num: 5, Target: "pipe:[99]"}, 0, fifo, "FIFO", "r", "pipe"},
+		{procfs.FD{Num: 6, Target: "anon_inode:[eventpoll]"}, 2, nil, "a_inode", "u", "[eventpoll]"},
+		{procfs.FD{Num: 7, Target: "anon_inode:inotify"}, 0, nil, "a_inode", "r", "inotify"},
+		{procfs.FD{Num: 8, Target: "/run/initctl"}, 2, fifo, "FIFO", "u", ""},
+		{procfs.FD{Num: 9, Target: "/var/log/x.log (deleted)"}, 1, reg, "REG", "w", ""},
+		{procfs.FD{Num: 10, Target: "/usr/lib/x"}, 0o10000000, reg, "REG", "u", ""}, // O_PATH
+		{procfs.FD{Num: 11, Target: "/etc"}, 0o200000, nil, "DIR", "r", ""},         // no statx: O_DIRECTORY
+		{procfs.FD{Num: procfs.FDCwd, Target: "/"}, 0, nil, "DIR", "", ""},
+	}
+	for _, c := range cases {
+		typ, mode, name := classifyFD(c.fd, c.flags, true, c.st, names)
+		if typ != c.typ || mode != c.mode || name != c.name {
+			t.Errorf("%v: got %s %s %q, want %s %s %q", c.fd, typ, mode, name, c.typ, c.mode, c.name)
+		}
+	}
+}
+
+func TestOpenFiles(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "app", 100, 0)
+	fp.setTCP()
+	fp.setFD(10, 3, "/var/log/app.log")
+	fp.setFD(10, 4, "/tmp/scratch")
+	r, dbPath := newTestRecorder(t, fp.root)
+	t1 := time.UnixMilli(1790001000000)
+	t2, t3, t4 := t1.Add(30*time.Second), t1.Add(60*time.Second), t1.Add(90*time.Second)
+	must(t, r.sample(t1, true))
+	fp.setFD(10, 4, "/tmp/scratch (deleted)") // unlinked while open: new row, marked deleted
+	fp.setFD(10, 3, "")                       // closed, but only noticed at the next full walk
+	must(t, r.sample(t2, false))
+	must(t, r.sample(t3, true))
+	fp.remove(10)
+	must(t, r.sample(t4, false))
+	r.db.Close()
+
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	type f struct {
+		first, last int64
+		deleted     int
+	}
+	got := map[string]f{}
+	rows, _ := db.Query(`SELECT target, first_seen, last_seen, deleted FROM open_files WHERE fd >= 0`)
+	for rows.Next() {
+		var tg string
+		var x f
+		rows.Scan(&tg, &x.first, &x.last, &x.deleted)
+		got[tg] = x
+	}
+	rows.Close()
+	ms := func(t time.Time) int64 { return t.UnixMilli() }
+	want := map[string]f{
+		"/var/log/app.log":       {ms(t1), ms(t1), 0},
+		"/tmp/scratch":           {ms(t1), ms(t1), 0},
+		"/tmp/scratch (deleted)": {ms(t3), ms(t3), 1}, // closed when the process ended
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s: got %+v want %+v", k, got[k], w)
+		}
+	}
+	// lsof between fd walks uses the last full walk.
+	ls, _, sfd, err := query.LsofAt(db, ms(t2)+1000, query.LsofOptions{})
+	must(t, err)
+	if sfd != ms(t1) {
+		t.Errorf("fd snapshot = %d, want t1", sfd)
+	}
+	var names []string
+	for _, x := range ls {
+		if x.FD == "3" || x.FD == "4" {
+			names = append(names, x.Name)
+		}
+	}
+	if len(names) != 2 {
+		t.Errorf("lsof at t2: %v", names)
 	}
 }

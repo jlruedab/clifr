@@ -41,7 +41,8 @@ type procEntry struct {
 	last    int64  // ts of the last sample that saw it
 	owns    bool   // held sockets at its last fd walk
 	walked  uint64 // generation of its last fd walk
-	closed  bool   // closed in the current sample
+	files   map[fileKey]*fileEntry
+	closed  bool // closed in the current sample
 	sample  store.ProcSample
 	hasSamp bool
 	upd     store.ProcUpdate // current slow attributes
@@ -166,6 +167,7 @@ func (r *Recorder) shutdown() error {
 	b := &store.Batch{}
 	for _, e := range r.procs {
 		b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last})
+		closeFiles(e, b)
 	}
 	for _, e := range r.socks {
 		b.SockCloses = append(b.SockCloses, store.Close{ID: e.id, LastSeen: e.last})
@@ -176,8 +178,8 @@ func (r *Recorder) shutdown() error {
 	if err := r.db.Write(b); err != nil {
 		return err
 	}
-	r.log.Printf("shutdown: closed %d processes, %d sockets, %d socket owners",
-		len(b.ProcCloses), len(b.SockCloses), len(b.OwnCloses))
+	r.log.Printf("shutdown: closed %d processes, %d sockets, %d socket owners, %d open files",
+		len(b.ProcCloses), len(b.SockCloses), len(b.OwnCloses), len(b.FileCloses))
 	return nil
 }
 
@@ -195,14 +197,14 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	t0 = time.Now()
 	nsock := r.sampleSockets(ts, &b)
 	if !fdWalk {
-		r.walkOwners(ts, false, &b) // socket-owning and new processes only
+		r.walkFDs(ts, false, &b) // socket-owning and new processes only
 	}
 	durSock := time.Since(t0)
 
 	t0 = time.Now()
 	var nfd int
 	if fdWalk {
-		nfd = r.walkOwners(ts, true, &b)
+		nfd = r.walkFDs(ts, true, &b)
 	}
 	durFD := time.Since(t0)
 	r.sweepOwners(ts, &b)
@@ -276,6 +278,7 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			ended := ts // found gone at this sample
 			b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last, Ended: &ended})
 			e.closed = true // removed by dropClosedProcs after owners are swept
+			closeFiles(e, b)
 		}
 	}
 	return n

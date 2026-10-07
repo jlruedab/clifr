@@ -27,6 +27,7 @@ const usage = `usage: sosv <command> [flags]
 commands:
   record   record processes, sockets and open files (root)
   ps       sosv ps aux --at T | --start_from A --end_at B
+  lsof     sosv lsof [-p PID] [-i] --at T | --start_from A --end_at B
   ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
   stats    recorder cost and database summary
@@ -47,6 +48,8 @@ func main() {
 		err = cmdPS(args)
 	case "ss":
 		err = cmdSS(args)
+	case "lsof":
+		err = cmdLsof(args)
 	case "stats":
 		err = cmdStats(args)
 	case "-h", "--help", "help":
@@ -268,5 +271,51 @@ func cmdSS(args []string) error {
 		return query.PrintJSON(os.Stdout, rows)
 	}
 	query.PrintSS(os.Stdout, rows)
+	return nil
+}
+
+func cmdLsof(args []string) error {
+	fs := flag.NewFlagSet("lsof", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	var o query.LsofOptions
+	fs.IntVar(&o.PID, "p", 0, "only this PID")
+	fs.BoolVar(&o.InetOnly, "i", false, "only internet sockets")
+	fs.Bool("n", true, "accepted for compatibility (addresses are never resolved)")
+	fs.Bool("P", true, "accepted for compatibility (ports are never resolved)")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	w, err := q.window(true)
+	if err != nil {
+		return err
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if w.IsRange() {
+		rows, err := query.LsofRange(db, w.From, w.To, o)
+		if err != nil {
+			return err
+		}
+		query.Header("files held between %s and %s (%d)", query.FormatMS(w.From), query.FormatMS(w.To), len(rows))
+		if q.json {
+			return query.PrintJSON(os.Stdout, rows)
+		}
+		query.PrintLsof(os.Stdout, rows, true)
+		return nil
+	}
+	rows, s, sfd, err := query.LsofAt(db, w.At, o)
+	if err != nil {
+		return err
+	}
+	query.Header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
+		query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	query.PrintLsof(os.Stdout, rows, false)
 	return nil
 }

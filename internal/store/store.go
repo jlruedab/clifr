@@ -84,8 +84,14 @@ CREATE INDEX IF NOT EXISTS sock_owners_open ON sock_owners(last_seen);
 
 CREATE TABLE IF NOT EXISTS open_files (
 	id INTEGER PRIMARY KEY,
-	proc_id INTEGER NOT NULL, fd INTEGER NOT NULL, target TEXT NOT NULL,
-	deleted INTEGER NOT NULL,
+	proc_id INTEGER NOT NULL,
+	fd INTEGER NOT NULL,           -- -1 cwd, -2 rtd (root), -3 txt (exe)
+	target TEXT NOT NULL,          -- readlink of /proc/<pid>/fd/<fd>
+	deleted INTEGER NOT NULL,      -- target ends in " (deleted)"
+	ftype TEXT,                    -- lsof TYPE: REG DIR CHR FIFO unix netlink a_inode sock
+	mode TEXT,                     -- lsof FD mode: r w u
+	name TEXT,                     -- lsof NAME when it differs from target
+	node INTEGER,                  -- inode of the file (statx, cached attributes)
 	first_seen INTEGER NOT NULL, last_seen INTEGER
 );
 CREATE INDEX IF NOT EXISTS open_files_proc ON open_files(proc_id);

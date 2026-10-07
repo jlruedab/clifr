@@ -71,11 +71,13 @@ type OwnerRow struct {
 }
 
 type FileRow struct {
-	ID, ProcID int64
-	FD         int
-	Target     string
-	Deleted    bool
-	FirstSeen  int64
+	ID, ProcID        int64
+	FD                int
+	Target            string
+	Deleted           bool
+	FType, Mode, Name string
+	Node              int64
+	FirstSeen         int64
 }
 
 type GuardEvent struct {
@@ -248,10 +250,15 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error { return closes("sock_owners", b.OwnCloses) },
 		func() error {
-			return each(`INSERT INTO open_files(id, proc_id, fd, target, deleted, first_seen) VALUES(?,?,?,?,?,?)`,
+			return each(`INSERT INTO open_files(id, proc_id, fd, target, deleted, ftype, mode, name, node, first_seen)
+				VALUES(?,?,?,?,?,?,?,?,?,?)`,
 				len(b.FileInserts), func(st *sql.Stmt, i int) error {
 					f := b.FileInserts[i]
-					_, err := st.Exec(f.ID, f.ProcID, f.FD, f.Target, b2i(f.Deleted), f.FirstSeen)
+					var name any
+					if f.Name != "" {
+						name = f.Name
+					}
+					_, err := st.Exec(f.ID, f.ProcID, f.FD, f.Target, b2i(f.Deleted), f.FType, f.Mode, name, f.Node, f.FirstSeen)
 					return err
 				})
 		},

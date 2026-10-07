@@ -101,26 +101,6 @@ func (r *Recorder) sampleSockets(ts int64, b *store.Batch) int {
 	return len(list)
 }
 
-// walkOwners reads /proc/<pid>/fd to map socket inodes to processes. With
-// all=false it only walks processes that held sockets at their last walk and
-// processes first seen in this sample; with all=true it walks every process.
-// It returns the number of fds read.
-func (r *Recorder) walkOwners(ts int64, all bool, b *store.Batch) int {
-	nfd := 0
-	for _, p := range r.procs {
-		if p.closed || !(all || p.owns || p.first == ts) {
-			continue
-		}
-		fds, err := r.fs.ReadFDs(p.key.pid, !all)
-		if err != nil {
-			continue // vanished or not permitted; owners are kept until the process closes
-		}
-		nfd += len(fds)
-		r.observeOwners(p, fds, ts, b)
-	}
-	return nfd
-}
-
 // observeOwners records the socket fds of one walked process.
 func (r *Recorder) observeOwners(p *procEntry, fds []procfs.FD, ts int64, b *store.Batch) {
 	p.owns = false

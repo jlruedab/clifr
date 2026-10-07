@@ -120,3 +120,24 @@ func TestTTYName(t *testing.T) {
 		}
 	}
 }
+
+func TestFDFlagsAndUnix(t *testing.T) {
+	fl, err := fixture.ReadFDFlags(4242, 4)
+	if err != nil || fl != 0o100002 {
+		t.Errorf("flags = %o %v", fl, err)
+	}
+	u, err := fixture.ReadNetUnix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[uint64]string{
+		6956:  "/run/snapd.socket type=STREAM (LISTEN)",
+		29796: "/run/systemd/journal/stdout type=STREAM (CONNECTED)",
+		6228:  "type=DGRAM (CONNECTED)",
+	}
+	for k, v := range want {
+		if u[k] != v {
+			t.Errorf("unix %d = %q, want %q", k, u[k], v)
+		}
+	}
+}

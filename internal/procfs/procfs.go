@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // ClockTicks is USER_HZ. It is 100 on every Linux architecture sosv targets.
@@ -334,4 +336,116 @@ func atoi(s string) int {
 func atou(s string) uint64 {
 	n, _ := strconv.ParseUint(s, 10, 64)
 	return n
+}
+
+// ReadFDFlags returns the open flags (octal "flags:" line) of
+// /proc/<pid>/fdinfo/<fd>. Only read for newly seen fds.
+func (f FS) ReadFDFlags(pid, fd int) (uint64, error) {
+	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "fdinfo", strconv.Itoa(fd)))
+	if err != nil {
+		return 0, err
+	}
+	return ParseFDFlags(b)
+}
+
+func ParseFDFlags(b []byte) (uint64, error) {
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		if v, ok := strings.CutPrefix(sc.Text(), "flags:"); ok {
+			return strconv.ParseUint(strings.TrimSpace(v), 8, 64)
+		}
+	}
+	return 0, errShort
+}
+
+// ReadNetUnix maps unix socket inodes to lsof's NAME, e.g.
+// "/run/systemd/notify type=DGRAM (CONNECTED)".
+func (f FS) ReadNetUnix() (map[uint64]string, error) {
+	b, err := os.ReadFile(f.path("net", "unix"))
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetUnix(b), nil
+}
+
+func ParseNetUnix(b []byte) map[uint64]string {
+	out := map[uint64]string{}
+	types := map[string]string{"0001": "STREAM", "0002": "DGRAM", "0005": "SEQPACKET"}
+	lines := strings.Split(string(b), "\n")
+	for _, l := range lines[1:] {
+		// Num RefCount Protocol Flags Type St Inode [Path]
+		fs := strings.Fields(l)
+		if len(fs) < 7 {
+			continue
+		}
+		ino, err := strconv.ParseUint(fs[6], 10, 64)
+		if err != nil {
+			continue
+		}
+		state := "UNCONNECTED"
+		if flags, _ := strconv.ParseUint(fs[3], 16, 32); flags&0x10000 != 0 {
+			state = "LISTEN"
+		} else if fs[5] == "03" {
+			state = "CONNECTED"
+		}
+		name := fmt.Sprintf("type=%s (%s)", types[fs[4]], state)
+		if len(fs) >= 8 {
+			name = fs[7] + " " + name
+		}
+		out[ino] = name
+	}
+	return out
+}
+
+var netlinkNames = map[int]string{0: "ROUTE", 2: "USERSOCK", 3: "FIREWALL", 4: "SOCK_DIAG", 5: "NFLOG",
+	6: "XFRM", 7: "SELINUX", 8: "ISCSI", 9: "AUDIT", 10: "FIB_LOOKUP", 11: "CONNECTOR", 12: "NETFILTER",
+	13: "IP6_FW", 14: "DNRTMSG", 15: "KOBJECT_UEVENT", 16: "GENERIC", 18: "SCSITRANSPORT", 19: "ECRYPTFS",
+	20: "RDMA", 21: "CRYPTO", 22: "SMC"}
+
+// ReadNetNetlink maps netlink socket inodes to their protocol name.
+func (f FS) ReadNetNetlink() (map[uint64]string, error) {
+	b, err := os.ReadFile(f.path("net", "netlink"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[uint64]string{}
+	lines := strings.Split(string(b), "\n")
+	for _, l := range lines[1:] {
+		// sk Eth Pid Groups Rmem Wmem Dump Locks Drops Inode
+		fs := strings.Fields(l)
+		if len(fs) < 10 {
+			continue
+		}
+		ino, err := strconv.ParseUint(fs[9], 10, 64)
+		if err != nil {
+			continue
+		}
+		proto := atoi(fs[1])
+		name, ok := netlinkNames[proto]
+		if !ok {
+			name = strconv.Itoa(proto)
+		}
+		out[ino] = name
+	}
+	return out, nil
+}
+
+// FDStat is what statx reports about the file behind an fd.
+type FDStat struct {
+	Mode  uint16 // S_IFMT bits
+	Inode uint64
+	Major uint32
+	Minor uint32
+}
+
+// StatFD stats the file an fd points to with AT_STATX_DONT_SYNC, so a dead
+// NFS server returns cached attributes instead of blocking the recorder.
+func (f FS) StatFD(pid, fd int) (FDStat, error) {
+	var sx unix.Statx_t
+	p := f.path(strconv.Itoa(pid), "fd", strconv.Itoa(fd))
+	err := unix.Statx(unix.AT_FDCWD, p, unix.AT_STATX_DONT_SYNC, unix.STATX_TYPE|unix.STATX_INO, &sx)
+	if err != nil {
+		return FDStat{}, err
+	}
+	return FDStat{Mode: sx.Mode & unix.S_IFMT, Inode: sx.Ino, Major: sx.Dev_major, Minor: sx.Dev_minor}, nil
 }
