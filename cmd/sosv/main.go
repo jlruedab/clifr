@@ -19,6 +19,7 @@ import (
 	"sosv/internal/query"
 	"sosv/internal/recorder"
 	"sosv/internal/store"
+	"sosv/internal/verify"
 )
 
 const defaultDB = "/var/lib/sosv/sosv.db"
@@ -32,6 +33,7 @@ commands:
   ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
   life     sosv life [--name REGEX] [--start_from A --end_at B]
+  verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
 
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
@@ -54,6 +56,8 @@ func main() {
 		err = cmdLsof(args)
 	case "life":
 		err = cmdLife(args)
+	case "verify":
+		err = cmdVerify(args)
 	case "stats":
 		err = cmdStats(args)
 	case "-h", "--help", "help":
@@ -370,5 +374,29 @@ func cmdLife(args []string) error {
 		return query.PrintJSON(os.Stdout, rows)
 	}
 	query.PrintLife(os.Stdout, rows)
+	return nil
+}
+
+func cmdVerify(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	verbose := fs.Bool("v", false, "show examples for every checkpoint")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	rep, err := verify.Run(db)
+	if err != nil {
+		return err
+	}
+	if q.json {
+		return query.PrintJSON(os.Stdout, rep)
+	}
+	verify.Print(os.Stdout, rep, *verbose)
 	return nil
 }

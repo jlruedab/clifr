@@ -86,8 +86,9 @@ type GuardEvent struct {
 }
 
 type VerifySnap struct {
-	TS, SampleTS int64
-	Cmd, Output  string
+	TS, EndTS, SampleTS int64
+	Cmd, IgnorePIDs     string
+	Output              string
 }
 
 // Batch is everything one sample writes. It is applied in one transaction.
@@ -272,10 +273,11 @@ func (d *DB) Write(b *Batch) error {
 				})
 		},
 		func() error {
-			return each(`INSERT INTO verify_snapshots(ts, cmd, sample_ts, output) VALUES(?,?,?,?)`,
+			return each(`INSERT INTO verify_snapshots(ts, end_ts, cmd, sample_ts, ignore_pids, output)
+				VALUES(?,?,?,?,?,?)`,
 				len(b.Verify), func(st *sql.Stmt, i int) error {
 					v := b.Verify[i]
-					_, err := st.Exec(v.TS, v.Cmd, v.SampleTS, v.Output)
+					_, err := st.Exec(v.TS, v.EndTS, v.Cmd, v.SampleTS, v.IgnorePIDs, v.Output)
 					return err
 				})
 		},

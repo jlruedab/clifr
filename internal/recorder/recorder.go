@@ -159,7 +159,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 	defer stopEvents()
 	start := time.Now()
 	next := start
-	var lastFD time.Time
+	var lastFD, lastVerify time.Time
 	for {
 		if r.cfg.Duration > 0 && time.Since(start) >= r.cfg.Duration {
 			break
@@ -178,11 +178,28 @@ func (r *Recorder) Run(ctx context.Context) error {
 		// A full fd walk is due when FDInterval has passed (with half an
 		// interval of slack so 120s/30s lands on every 4th sample).
 		fdWalk := lastFD.IsZero() || now.Sub(lastFD) >= r.fdInterval-r.cfg.Interval/2
+		// Verify checkpoints force a full walk so ps, ss and lsof are all
+		// compared with the same sample.
+		verify := r.cfg.VerifyEvery > 0 && !lastFD.IsZero() &&
+			(lastVerify.IsZero() || now.Sub(lastVerify) >= r.cfg.VerifyEvery-r.cfg.Interval/2)
+		if verify {
+			fdWalk, lastVerify = true, now
+		}
 		if fdWalk {
 			lastFD = now
 		}
 		if err := r.sample(now, fdWalk); err != nil {
 			return fmt.Errorf("sample: %w", err)
+		}
+		if verify {
+			r.captureVerify(now.UnixMilli())
+			// A full sample right after the real commands finish: anything
+			// that appeared or vanished while they ran is then classified as
+			// churn by `sosv verify` instead of missing/extra.
+			if err := r.sample(time.Now(), true); err != nil {
+				return fmt.Errorf("post-checkpoint sample: %w", err)
+			}
+			lastFD = time.Now()
 		}
 		if r.afterSample != nil {
 			r.afterSample()
@@ -208,7 +225,7 @@ func (r *Recorder) shutdown() error {
 	if r.lastTS == 0 {
 		return nil
 	}
-	b := &store.Batch{}
+	b := &r.pending // skips, guard events and verify output not yet written
 	r.applyEvents(r.lastTS, b)
 	r.flushEventProcs(openRowsFlushAll, b)
 	for _, e := range r.procs {
