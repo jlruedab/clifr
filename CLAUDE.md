@@ -51,5 +51,5 @@ workload). The benchmark results under `bench/` are the main deliverable, not CL
 6. [x] `--verify-every`, `verify`
 7. [x] Load generator + pgbench
 8. [x] Benchmark runner
-9. [ ] Scaling tests, passive mode
+9. [x] Scaling tests, passive mode
 10. [ ] Report generator, README

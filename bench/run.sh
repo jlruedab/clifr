@@ -53,7 +53,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
-BIN=$ROOT/bench/bin
 
 PROFILES=busy CONFIGS="A B C D R1" REPEATS=3 WARMUP=120 MEASURE=900
 PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
@@ -81,17 +80,10 @@ while (($#)); do
 done
 OUT=${OUT:-$ROOT/bench/results/$(date +%Y%m%d-%H%M%S)}
 export PGB_MODE PGB_RATE
-
-die() { echo "run.sh: $*" >&2; exit 1; }
-log() { echo "[$(date +%H:%M:%S)] $*"; }
-now_ms() { date +%s%3N; }
-free_bytes() { df --output=avail -B1 "$1" | tail -1; }
-min_free_bytes() { awk -v g="$MIN_FREE_GB" 'BEGIN { printf "%d", g * 1024 * 1024 * 1024 }'; }
+. "$ROOT/bench/lib.sh"
 
 # --- prerequisites ---------------------------------------------------------
-[[ $EUID -eq 0 ]] || die "run as root"
-[[ -f /sys/fs/cgroup/cgroup.controllers ]] || die "cgroup v2 is required (/sys/fs/cgroup is not a cgroup2 mount)"
-for b in sosv load benchtool; do [[ -x $BIN/$b ]] || die "missing $BIN/$b; run bench/setup.sh"; done
+check_common sosv load benchtool
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
@@ -106,33 +98,17 @@ systemctl is-active -q "$PGUNIT" || die "$PGUNIT is not running"
 sudo -u postgres psql -Atc 'select 1 from pgbench_branches limit 1' sosvbench >/dev/null 2>&1 ||
     die "database sosvbench is not ready; run bench/setup.sh"
 mkdir -p "$OUT/runs"
-(($(free_bytes "$OUT") >= $(min_free_bytes))) || die "less than ${MIN_FREE_GB} GB free on $(df --output=target "$OUT" | tail -1)"
+check_free "$OUT"
 
 # PostgreSQL is the workload; account its service too.
 systemctl set-property --runtime "$PGUNIT" CPUAccounting=yes MemoryAccounting=yes IOAccounting=yes
 systemctl daemon-reload
 PGCG=$(systemctl show -p ControlGroup --value "$PGUNIT")
-# Block devices under the results filesystem (e.g. dm-0, sda3, sda).
-DISKS=$(lsblk -nso KNAME "$(findmnt -no SOURCE --target "$OUT")" | paste -sd,)
-DISK=$(lsblk -nso KNAME,TYPE "$(findmnt -no SOURCE --target "$OUT")" | awk '$2 == "disk" {print $1; exit}')
+disk_devices "$OUT"
 
 # --- machine info ------------------------------------------------------------
 {
-    echo "date=$(date -Is)"
-    echo "hostname=$(hostname)"
-    echo "cpu_model=$(lscpu | sed -n 's/^Model name: *//p' | head -1)"
-    echo "cpus=$(nproc)"
-    echo "mem_total_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
-    echo "kernel=$(uname -r)"
-    echo "distro=$(. /etc/os-release && echo "$PRETTY_NAME")"
-    echo "virt=$(systemd-detect-virt || true)"
-    echo "fs=$(findmnt -no FSTYPE --target "$OUT")"
-    echo "disks=$DISKS"
-    echo "disk=$DISK"
-    echo "disk_model=$(xargs </sys/block/"$DISK"/device/model 2>/dev/null)"
-    echo "disk_rotational=$(cat /sys/block/"$DISK"/queue/rotational 2>/dev/null)"
-    echo "sosv_commit=$(git -c safe.directory="$ROOT" rev-parse --short HEAD 2>/dev/null)$(git -c safe.directory="$ROOT" diff --quiet HEAD 2>/dev/null || echo -dirty)"
-    echo "go=$(go version 2>/dev/null | awk '{print $3}')"
+    machine_info "$OUT"
     echo "postgresql=$(sudo -u postgres psql -Atc 'show server_version')"
     echo "pg_settings=$(sudo -u postgres psql -Atc "select string_agg(name||'='||setting, ' ') from pg_settings where name in ('shared_buffers','max_wal_size','max_connections','synchronous_commit')" sosvbench)"
     echo "atop=$(atop -V 2>/dev/null | awk 'NR==1 {print $2}')"
@@ -253,11 +229,7 @@ run_one() {
         wait $rec_pid || true
     fi
     if [[ -f $RUN/sosv.db ]]; then
-        du -cb "$RUN"/sosv.db* | tail -1 | cut -f1 >"$RUN/db_bytes"
-        "$BIN/sosv" stats --db "$RUN/sosv.db" >"$RUN/sosv-stats.txt" 2>&1 || true
-        "$BIN/sosv" stats --db "$RUN/sosv.db" --json >"$RUN/sosv-stats.json" 2>/dev/null || true
-        "$BIN/benchtool" dbexport "$RUN/sosv.db" samples >"$RUN/samples.csv"
-        "$BIN/benchtool" dbexport "$RUN/sosv.db" guard_events >"$RUN/guard_events.csv"
+        collect_db "$RUN"
         ((KEEP_DB)) || rm -f "$RUN"/sosv.db*
     fi
     if [[ -f $RUN/atop.raw ]]; then

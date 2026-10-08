@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -21,18 +22,25 @@ import (
 // All counters are written raw (cumulative where the kernel keeps them
 // cumulative); the report computes rates over the measured window.
 //
-//	benchtool cgsample --out DIR [--interval 5s] [--disk sda,dm-0] [--free-path P] NAME=CGROUP_PATH...
+//	benchtool cgsample --out DIR [--interval 5s] [--disk sda,dm-0] [--free-path P]
+//	                   [--min-free BYTES --stop-unit UNIT] NAME=CGROUP_PATH...
 //
 // CGROUP_PATH is relative to /sys/fs/cgroup (as `systemctl show -p
 // ControlGroup` prints it). A cgroup that does not exist (yet, or any more)
 // is skipped for that tick. Output: DIR/cgroup.csv, DIR/system.csv,
 // DIR/disk.csv.
+//
+// With --min-free, when free space on --free-path drops below BYTES the
+// sampler writes DIR/LOWDISK and runs `systemctl stop --no-block UNIT`
+// (once), then keeps sampling. Used by passive.sh to protect a real server.
 func cgsample(args []string) error {
 	fs := flag.NewFlagSet("cgsample", flag.ExitOnError)
 	out := fs.String("out", "", "output directory")
 	interval := fs.Duration("interval", 5*time.Second, "sampling interval")
 	disks := fs.String("disk", "", "comma-separated block devices to record from /proc/diskstats")
 	freePath := fs.String("free-path", ".", "filesystem whose free space is recorded")
+	minFree := fs.Uint64("min-free", 0, "stop --stop-unit when free bytes on --free-path drop below this")
+	stopUnit := fs.String("stop-unit", "", "systemd unit to stop on low disk")
 	fs.Parse(args)
 	if *out == "" || fs.NArg() == 0 {
 		return fmt.Errorf("usage: cgsample --out DIR [--interval 5s] [--disk sda] NAME=CGROUP_PATH...")
@@ -76,6 +84,7 @@ func cgsample(args []string) error {
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	tick := time.NewTicker(*interval)
 	defer tick.Stop()
+	stopped := false
 	for {
 		ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
 		for _, g := range groups {
@@ -83,7 +92,15 @@ func cgsample(args []string) error {
 				cgw.Write(append([]string{ts, g.name}, row...))
 			}
 		}
-		syw.Write(append([]string{ts}, readSystem(*freePath)...))
+		sys := readSystem(*freePath)
+		syw.Write(append([]string{ts}, sys...))
+		if free, err := strconv.ParseUint(sys[len(sys)-1], 10, 64); err == nil && *minFree > 0 && free < *minFree && !stopped {
+			stopped = true
+			os.WriteFile(filepath.Join(*out, "LOWDISK"), []byte(ts+"\n"), 0o644)
+			if *stopUnit != "" {
+				exec.Command("systemctl", "stop", "--no-block", *stopUnit).Run()
+			}
+		}
 		for _, row := range readDiskstats(devs) {
 			dkw.Write(append([]string{ts}, row...))
 		}
