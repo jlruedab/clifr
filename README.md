@@ -160,6 +160,38 @@ information under `bench/results/<name>/`. Each script checks for at least
    The sampler stops the recorder if free disk runs low. Stop at any time
    with `sudo bench/passive.sh stop`. See the script's header for details.
 
+### Machines with fewer CPUs (e.g. 4 vCPU)
+
+The default pgbench target of 30,000 transactions per second was chosen
+for an 8 vCPU machine: about a third of what it reached with the `busy`
+load running (about 91,000). On a smaller machine that target can be
+close to saturation, and a saturated workload hides the recorder's
+effect. Calibrate the rate once, after `bench/setup.sh`:
+
+1. Measure read-only throughput with the busy load running (about a minute):
+
+       sudo bench/bin/load --profile busy --duration 90s >/tmp/load.out 2>&1 &
+       until grep -q READY /tmp/load.out; do sleep 1; done
+       sudo -u postgres psql -Atc "SELECT sum(pg_prewarm(c.oid::regclass,'read')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','i')" sosvbench
+       sudo -u postgres pgbench -n -S -c 16 -j 4 -T 30 sosvbench | grep '^tps'
+       wait
+
+2. Use about a third of the reported TPS, rounded, as `--rate` for every
+   matrix run, and give pgbench fewer threads on 4 CPUs:
+
+       sudo bench/run.sh --profiles busy --rate 12000 --threads 2
+
+   The rate is saved in `machine.env` and shown in the report.
+
+Nothing else needs changing: the load profiles fit (the busy load itself
+used about a third of one core), the recorder's 2% budget is per core, and
+the report computes "% of the whole machine" from the CPU count in
+`machine.env`. Expect results that are not comparable with an 8 vCPU run,
+and a larger relative impact, since the recorder takes a bigger share of
+the machine. The `extreme` profile and the largest scaling points
+(10,000 processes, 100,000 connections, 500 new connections/s) are heavy on
+4 CPUs: run `extreme` last and read it as where things stop fitting.
+
 ### How it measures
 
 - **Load generator** (`bench/load`): long-lived processes holding open files,
@@ -169,7 +201,8 @@ information under `bench/results/<name>/`. Each script checks for at least
   connections/s, 5 spawns/s), `busy` (2,000 / 50,000 / 20,000 / 500 / 50) and
   `extreme` (5× busy); every knob can be overridden.
 - **Workload**: pgbench. By default read-only (`-S`) at a fixed 30,000
-  transactions per second with the database cached in memory; the
+  transactions per second (`--rate`; see above for smaller machines) with
+  the database cached in memory; the
   recorder's impact then shows as added latency, mostly in the tail, and as
   a shortfall from the target rate. `--mode tpcb --rate 0` runs the
   read/write TPC-B-like script as fast as possible instead (see
