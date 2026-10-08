@@ -20,7 +20,7 @@ var (
 // pglat prints one CSV line (with header) summarising a pgbench run: TPS and
 // average latency from pgbench's own summary (exact, over all transactions),
 // latency percentiles from the sampled per-transaction logs (column 3 is the
-// latency in microseconds).
+// latency in microseconds; with pgbench -R it includes schedule lag).
 func pglat(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: pglat PGBENCH_OUT LOG...")
@@ -64,7 +64,7 @@ func pglat(args []string) error {
 		}
 		return lat[int(p*float64(len(lat)-1)+0.5)]
 	}
-	fmt.Println("tps,lat_avg_ms,lat_p50_ms,lat_p95_ms,lat_p99_ms,transactions,failed,latency_samples")
-	fmt.Printf("%s,%s,%.3f,%.3f,%.3f,%s,%s,%d\n", tps, find(avgRe), q(0.5), q(0.95), q(0.99), find(txRe), find(failedRe), len(lat))
+	fmt.Println("tps,lat_avg_ms,lat_p50_ms,lat_p95_ms,lat_p99_ms,lat_p999_ms,transactions,failed,latency_samples")
+	fmt.Printf("%s,%s,%.3f,%.3f,%.3f,%.3f,%s,%s,%d\n", tps, find(avgRe), q(0.5), q(0.95), q(0.99), q(0.999), find(txRe), find(failedRe), len(lat))
 	return nil
 }

@@ -13,6 +13,8 @@
 #     sets synchronous_commit=off on it, so throughput is bounded by CPU and
 #     memory rather than by fsync latency of the test disk (which makes runs
 #     very noisy on virtual disks). This is a benchmark choice; see README.
+#   - caps max_wal_size at 512 MB to bound disk use
+#   - creates the pg_prewarm extension (run.sh caches the tables before each run)
 #   - builds sosv and the bench tools
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -48,7 +50,11 @@ if [[ "$(sudo -u postgres psql -Atc 'select count(*) from pgbench_branches' sosv
     sudo -u postgres pgbench -i -q -s "$SCALE" sosvbench
 fi
 sudo -u postgres psql -q -c "ALTER DATABASE sosvbench SET synchronous_commit = off" sosvbench
+# pg_prewarm (postgresql-contrib) loads the tables into the page cache before each run.
+sudo -u postgres psql -q -c "CREATE EXTENSION IF NOT EXISTS pg_prewarm" sosvbench
 sudo -u postgres psql -q -c "ALTER SYSTEM SET max_connections = 200"
+# Cap WAL at 512 MB (default 1 GB): the test disk has little free space.
+sudo -u postgres psql -q -c "ALTER SYSTEM SET max_wal_size = '512MB'"
 systemctl restart "$PGUNIT"
 
 export CGO_ENABLED=0
