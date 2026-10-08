@@ -9,6 +9,8 @@ The PoC exists to prove two things with evidence: **accuracy** (reconstruction v
 real tools) and **cost** (CPU / memory / disk of recording and its impact on a busy
 workload). The benchmark results under `bench/` are the main deliverable, not CLI polish.
 
+**Current state: read `HANDOFF.md` first** (benchmark moving to a new 4 vCPU VM; what is left of milestone 10).
+
 ## Hard constraints
 - Go, one static binary (`CGO_ENABLED=0`), Linux only, kernel 4.18+ (RHEL 8/9, Ubuntu 22.04/24.04).
 - Dependencies: standard library, `modernc.org/sqlite` (pinned v1.34.5 — newer versions need Go ≥1.26; this box has Go 1.22), `golang.org/x/sys`. Nothing else.
