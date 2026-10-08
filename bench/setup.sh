@@ -57,9 +57,14 @@ sudo -u postgres psql -q -c "ALTER SYSTEM SET max_connections = 200"
 sudo -u postgres psql -q -c "ALTER SYSTEM SET max_wal_size = '512MB'"
 systemctl restart "$PGUNIT"
 
+# Results directory owned by the invoking user, so reports can be written without sudo.
+mkdir -p bench/results
+chown "${SUDO_UID:-0}:${SUDO_GID:-0}" bench/results
+
 export CGO_ENABLED=0
 mkdir -p bench/bin
 go build -o bench/bin/sosv ./cmd/sosv
 go build -o bench/bin/load ./bench/load
 go build -o bench/bin/benchtool ./bench/benchtool
+go build -o bench/bin/report ./bench/report
 echo "setup done: database sosvbench (scale $SCALE), binaries in bench/bin/"

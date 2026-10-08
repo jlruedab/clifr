@@ -20,6 +20,7 @@ func TestSockFilter(t *testing.T) {
 		{[]string{"sport", "=", ":22"}, row("1.1.1.1", "2.2.2.2", 22, 5), true},
 		{[]string{"dst", "127.0.0.1:5432"}, row("::ffff:127.0.0.1", "::ffff:127.0.0.1", 1, 5432), true},
 		{[]string{"dst", "[::1]:80"}, row("::1", "::1", 1, 80), true},
+		{[]string{"dport = :443"}, row("1.1.1.1", "10.0.0.9", 1, 443), true}, // quoted as one argument
 	}
 	for _, c := range cases {
 		f, err := ParseSockFilter(c.args)

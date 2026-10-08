@@ -27,6 +27,8 @@ type sockCond struct {
 // ParseSockFilter parses e.g. `dst 10.0.0.1 and dport = :443`.
 func ParseSockFilter(args []string) (SockFilter, error) {
 	var f SockFilter
+	// Like ss, accept the filter as separate words or quoted as one argument.
+	args = strings.Fields(strings.Join(args, " "))
 	for i := 0; i < len(args); {
 		tok := args[i]
 		if tok == "and" || tok == "&&" {
