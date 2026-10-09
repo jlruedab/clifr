@@ -145,19 +145,20 @@ type Owner struct {
 
 // SSRow is one socket as `ss -tanp` shows it.
 type SSRow struct {
-	State  string  `json:"state"`
-	RecvQ  int64   `json:"recv_q"`
-	SendQ  int64   `json:"send_q"`
-	Local  string  `json:"local"`
-	LPort  int     `json:"lport"`
-	Peer   string  `json:"peer"`
-	RPort  int     `json:"rport"`
-	Proto  string  `json:"proto"`
-	Inode  uint64  `json:"inode"`
-	Owners []Owner `json:"owners"`
-	id     int64
-	laddr  netip.Addr
-	raddr  netip.Addr
+	State     string  `json:"state"`
+	RecvQ     int64   `json:"recv_q"`
+	SendQ     int64   `json:"send_q"`
+	Local     string  `json:"local"`
+	LPort     int     `json:"lport"`
+	Peer      string  `json:"peer"`
+	RPort     int     `json:"rport"`
+	Proto     string  `json:"proto"`
+	Inode     uint64  `json:"inode"`
+	Owners    []Owner `json:"owners"`
+	id        int64
+	appClosed bool // events: the application had closed the socket
+	laddr     netip.Addr
+	raddr     netip.Addr
 }
 
 // SocketsAt returns sockets of proto alive at sample s with their owners.

@@ -50,6 +50,8 @@ func run(args []string) error {
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")
 	fs.StringVar(&c.Events, "events", "auto", "process events: auto (eBPF, else the proc connector), ebpf, proc_connector or none")
+	fs.StringVar(&c.FDMode, "fd-mode", "held", "open files: held (fds held across two walks, and deleted files) or all (v1: every fd)")
+	fs.IntVar(&c.FDFullEvery, "fd-full-every", 5, "held mode: read every process's fds on every n-th walk (others only when their fd count changed)")
 	fs.StringVar(&c.TCP, "tcp", "auto", "TCP: auto (eBPF events and keyframes, else v1 sampling), ebpf, or sample (v1: a socket dump every interval)")
 	fs.DurationVar(&c.KeyframeInterval, "keyframe-interval", 5*time.Minute, "with TCP events: full socket dump (queues, UDP, reconciliation) this often")
 	forcePerf := fs.Bool("ebpf-force-perf", false, "use perf event arrays even if the kernel has a BPF ring buffer (to test the fallback)")

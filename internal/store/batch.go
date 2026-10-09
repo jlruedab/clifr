@@ -58,6 +58,35 @@ type OOMEvent struct {
 	Snapshot  bool // a proc_samples row was written for the victim at TS
 }
 
+// HeldFD is an fd held across at least two consecutive walks of its process,
+// or a deleted file still open (stored at once). Identified by the process
+// key (pid, start time).
+type HeldFD struct {
+	ID        int64
+	PID       int
+	StartTime int64
+	FD        int // -1 cwd, -2 rtd, -3 txt
+	Target    string
+	Deleted   bool
+	FType     string
+	Mode      string
+	Name      string
+	Node      int64
+	FirstSeen int64
+}
+
+// MountEvent is a change of the mount table (or, with Action "present", a
+// mount that existed when recording started).
+type MountEvent struct {
+	TS      int64
+	Action  string // mount, unmount, present
+	MountID int
+	Point   string
+	Source  string
+	FSType  string
+	Options string
+}
+
 // TCPConn is one TCP connection (or listening socket) from eBPF events, or
 // first seen in a keyframe. Rows are written whole: a later row with the same
 // ID replaces the earlier one (the connection's newest state).
@@ -210,6 +239,9 @@ type Batch struct {
 	OwnCloses   []Close
 	FileInserts []FileRow
 	FileCloses  []Close
+	HeldInserts []HeldFD
+	HeldCloses  []Close
+	Mounts      []MountEvent
 	TCPConns    []TCPConn
 	TCPTrans    []TCPTransition
 	Keyframes   []KeyframeRow
@@ -228,6 +260,7 @@ func (b *Batch) Rows() int {
 		len(b.SockInserts) + len(b.SockCloses) + len(b.SockSamples) +
 		len(b.OwnInserts) + len(b.OwnCloses) + len(b.FileInserts) + len(b.FileCloses) +
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
+		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile)
 }
 
@@ -453,6 +486,24 @@ func (d *DB) Write(b *Batch) error {
 				})
 		},
 		func() error { return closes("open_files", b.FileCloses) },
+		func() error {
+			return each(`INSERT INTO fds_held(id, pid, start_time, fd, target, deleted, ftype, mode, name, node, first_seen)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+				len(b.HeldInserts), func(st *sql.Stmt, i int) error {
+					f := b.HeldInserts[i]
+					_, err := st.Exec(f.ID, f.PID, f.StartTime, f.FD, f.Target, b2i(f.Deleted), f.FType, f.Mode, f.Name, f.Node, f.FirstSeen)
+					return err
+				})
+		},
+		func() error { return closes("fds_held", b.HeldCloses) },
+		func() error {
+			return each(`INSERT INTO mounts(ts, action, mount_id, mount_point, source, fstype, options) VALUES(?,?,?,?,?,?,?)`,
+				len(b.Mounts), func(st *sql.Stmt, i int) error {
+					m := b.Mounts[i]
+					_, err := st.Exec(m.TS, m.Action, m.MountID, m.Point, m.Source, m.FSType, m.Options)
+					return err
+				})
+		},
 		func() error {
 			return each(`INSERT INTO guard_events(ts, kind, detail) VALUES(?,?,?)`,
 				len(b.Guard), func(st *sql.Stmt, i int) error {

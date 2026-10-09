@@ -139,6 +139,31 @@ type statRow struct {
 	Dropped int64  `parquet:"dropped"`
 }
 
+type heldRow struct {
+	ID        int64  `parquet:"id"`
+	PID       int32  `parquet:"pid"`
+	StartTime int64  `parquet:"start_time"`
+	FD        int32  `parquet:"fd"`
+	Target    string `parquet:"target"`
+	Deleted   int32  `parquet:"deleted"`
+	FType     string `parquet:"ftype,dict"`
+	Mode      string `parquet:"mode,dict"`
+	Name      string `parquet:"name"`
+	Node      int64  `parquet:"node"`
+	FirstSeen int64  `parquet:"first_seen"`
+	LastSeen  *int64 `parquet:"last_seen,optional"`
+}
+
+type mountRow struct {
+	TS      int64  `parquet:"ts"`
+	Action  string `parquet:"action,dict"`
+	MountID int32  `parquet:"mount_id"`
+	Point   string `parquet:"mount_point"`
+	Source  string `parquet:"source,dict"`
+	FSType  string `parquet:"fstype,dict"`
+	Options string `parquet:"options"`
+}
+
 type tcpConnRow struct {
 	ID             int64  `parquet:"id"`
 	PID            int32  `parquet:"pid"`

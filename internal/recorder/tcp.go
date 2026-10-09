@@ -31,8 +31,9 @@ type tconn struct {
 	sk          uint64 // 0: known only from a keyframe so far
 	state       int
 	lastEvent   int64
-	lingerState int // set by a time-wait event just before TCP_CLOSE
-	seq         int // transitions so far
+	lingerState int  // set by a time-wait event just before TCP_CLOSE
+	seq         int  // transitions so far
+	lingerDone  bool // its time-wait ended (written, then forgotten, by flushTCP)
 	dirty       bool
 }
 
@@ -64,6 +65,9 @@ type tcpTracker struct {
 	byInode      map[uint64]*tconn
 	udpInodes    map[uint64]bool // from the last keyframe
 	holders      map[uint64]holder
+	// fdActive: processes that opened, accepted or closed a connection since
+	// the last fd walk; their fds changed even if their fd count did not.
+	fdActive map[int]bool
 
 	lastKeyframe time.Time
 	keyframes    int
@@ -79,7 +83,7 @@ func newTCPTracker(src *bpftcp.Source) *tcpTracker {
 	t := &tcpTracker{src: src, received: map[string]int64{}, reported: map[string][2]int64{},
 		conns: map[uint64]*tconn{}, unattached: map[tuple]*tconn{}, lingering: map[tuple]*tconn{},
 		recentClosed: map[uint64]*tconn{}, byInode: map[uint64]*tconn{}, udpInodes: map[uint64]bool{},
-		holders: map[uint64]holder{}, finTimeout: 60_000}
+		holders: map[uint64]holder{}, fdActive: map[int]bool{}, finTimeout: 60_000}
 	if b, err := os.ReadFile("/proc/sys/net/ipv4/tcp_fin_timeout"); err == nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n > 0 {
 			t.finTimeout = int64(n) * 1000
@@ -121,6 +125,20 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 		}
 	}()
 	return func() { wg.Wait(); src.Close() }, nil
+}
+
+// markQueued notes the processes with connection activity in events not yet
+// applied (the fd walk runs before them).
+func (t *tcpTracker) markQueued() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, e := range t.queue {
+		if e.Owner.PID != 0 {
+			t.fdActive[e.Owner.PID] = true
+		} else if c := t.conns[e.SK]; c != nil && c.row.PID != 0 {
+			t.fdActive[c.row.PID] = true
+		}
+	}
 }
 
 func (t *tcpTracker) take() []bpftcp.Event {
@@ -214,6 +232,12 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 	for _, e := range t.take() {
 		ts := wallMS(e.MonoNS)
 		c := t.conns[e.SK]
+		if e.Owner.PID != 0 {
+			t.fdActive[e.Owner.PID] = true
+		}
+		if e.Kind == bpftcp.AppClose && c != nil && c.row.PID != 0 {
+			t.fdActive[c.row.PID] = true
+		}
 		switch e.Kind {
 		case bpftcp.State:
 			if c == nil {
@@ -222,9 +246,8 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 			if c.setTuple(e) {
 				// Addresses still lingering in time-wait were reused (the
 				// kernel's tw_reuse): that ended the time-wait socket.
-				if old := t.lingering[c.tuple()]; old != nil && old != c {
-					old.row.LingerUntil, old.dirty = &ts, true
-					delete(t.lingering, c.tuple())
+				if old := t.lingering[c.tuple()]; old != nil && old != c && !old.lingerDone {
+					old.row.LingerUntil, old.dirty, old.lingerDone = &ts, true, true
 				}
 			}
 			c.setOwner(r, e.Owner)
@@ -276,9 +299,8 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 			}
 		case bpftcp.TimeWaitEnd:
 			tp := tuple{family(e.Family), e.SAddr, e.DAddr, e.SPort, e.DPort}
-			if c := t.lingering[tp]; c != nil {
-				c.row.LingerUntil, c.dirty = &ts, true // exact
-				delete(t.lingering, tp)
+			if c := t.lingering[tp]; c != nil && !c.lingerDone {
+				c.row.LingerUntil, c.dirty, c.lingerDone = &ts, true, true // exact
 			}
 		case bpftcp.ActiveReset:
 			if c == nil {
@@ -317,9 +339,8 @@ func (t *tcpTracker) adopt(r *Recorder, e bpftcp.Event, ts int64) *tconn {
 	}
 	t.conns[e.SK] = c
 	// The same addresses lingering in time-wait were reused: that ended it.
-	if old := t.lingering[tp]; old != nil {
-		old.row.LingerUntil, old.dirty = &ts, true
-		delete(t.lingering, tp)
+	if old := t.lingering[tp]; old != nil && !old.lingerDone {
+		old.row.LingerUntil, old.dirty, old.lingerDone = &ts, true, true
 	}
 	return c
 }
@@ -433,7 +454,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			}
 			c.dirty = true
 		}
-		if c.row.CloseTS != nil && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
+		if c.row.CloseTS != nil && !c.lingerDone && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
 			// Still a time-wait socket: the kernel says how long it has left
 			// (a FIN_WAIT2 one restarts as TIME_WAIT when the peer's FIN comes).
 			until := start + int64(s.Expires)
@@ -499,7 +520,7 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 	}
 	for tp, c := range t.lingering {
 		emit(c)
-		if c.row.LingerUntil != nil && *c.row.LingerUntil+grace < ts {
+		if c.lingerDone || c.row.LingerUntil != nil && *c.row.LingerUntil+grace < ts {
 			delete(t.lingering, tp)
 		}
 	}

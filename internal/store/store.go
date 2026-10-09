@@ -105,6 +105,22 @@ CREATE INDEX IF NOT EXISTS open_files_proc ON open_files(proc_id);
 CREATE INDEX IF NOT EXISTS open_files_first ON open_files(first_seen);
 CREATE INDEX IF NOT EXISTS open_files_open ON open_files(last_seen);
 
+-- v2: fds held across at least two consecutive walks of their process, and
+-- deleted files still open (stored at first sight).
+CREATE TABLE IF NOT EXISTS fds_held (
+	id INTEGER PRIMARY KEY,
+	pid INTEGER NOT NULL, start_time INTEGER NOT NULL, -- process key
+	fd INTEGER NOT NULL, target TEXT NOT NULL, deleted INTEGER NOT NULL,
+	ftype TEXT, mode TEXT, name TEXT, node INTEGER,
+	first_seen INTEGER NOT NULL, last_seen INTEGER
+);
+CREATE INDEX IF NOT EXISTS fds_held_proc ON fds_held(pid, start_time);
+
+CREATE TABLE IF NOT EXISTS mounts (
+	ts INTEGER NOT NULL, action TEXT NOT NULL, -- mount, unmount, present
+	mount_id INTEGER, mount_point TEXT, source TEXT, fstype TEXT, options TEXT
+);
+
 CREATE TABLE IF NOT EXISTS oom_events (
 	ts INTEGER NOT NULL, pid INTEGER NOT NULL,
 	start_time INTEGER,            -- with pid, identifies the victim in processes

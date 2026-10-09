@@ -30,6 +30,7 @@ commands (record with sosv-record):
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
   life     sosv life [--name REGEX] [--start_from A --end_at B]
   oom      sosv oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
+  mounts   sosv mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
   verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
 
@@ -56,6 +57,8 @@ func main() {
 		err = cmdLife(args)
 	case "oom":
 		err = cmdOOM(args)
+	case "mounts":
+		err = cmdMounts(args)
 	case "verify":
 		err = cmdVerify(args)
 	case "stats":
@@ -457,5 +460,39 @@ func ssEvents(db *store.DB, q queryFlags, w query.Window, proto string, filter q
 		return query.PrintJSON(os.Stdout, rows)
 	}
 	query.PrintSS(os.Stdout, rows)
+	return nil
+}
+
+func cmdMounts(args []string) error {
+	fs := flag.NewFlagSet("mounts", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	w, err := q.window(false)
+	if err != nil {
+		return err
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var rows []query.MountRow
+	if w.IsRange() {
+		rows, err = query.MountChanges(db, w.From, w.To)
+		query.Header("mount table changes %s .. %s (the recorder's mount namespace; exact, from events)", query.FormatMS(w.From), query.FormatMS(w.To))
+	} else {
+		rows, err = query.MountsAt(db, w.At)
+		query.Header("mounts at %s (%d)", query.FormatMS(w.At), len(rows))
+	}
+	if err != nil {
+		return err
+	}
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	query.PrintMounts(os.Stdout, rows, w.IsRange())
 	return nil
 }

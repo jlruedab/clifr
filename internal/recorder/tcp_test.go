@@ -1,10 +1,12 @@
 package recorder
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 
 	"sosv/internal/bpftcp"
+	"sosv/internal/procfs"
 	"sosv/internal/sockdiag"
 	"sosv/internal/store"
 )
@@ -82,5 +84,49 @@ func TestSockPointerReuse(t *testing.T) {
 	}
 	if len(b.TCPConns) != 2 || closed != 2 {
 		t.Errorf("want 2 closed connections, got %+v", b.TCPConns)
+	}
+}
+
+func TestMountDiff(t *testing.T) {
+	w := &mountWatch{known: map[int]procfs.MountInfo{}}
+	root := procfs.MountInfo{ID: 1, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw"}
+	nfs := procfs.MountInfo{ID: 9, Point: "/srv", Source: "srv:/x", FSType: "nfs4", Options: "rw"}
+	w.diff([]procfs.MountInfo{root}, 1000, "present")
+	w.diff([]procfs.MountInfo{root, nfs}, 2000, "mount")
+	nfs.Options = "ro"
+	w.diff([]procfs.MountInfo{root, nfs}, 3000, "mount")
+	w.diff([]procfs.MountInfo{root}, 4000, "mount")
+	var got []string
+	for _, e := range w.take() {
+		got = append(got, fmt.Sprintf("%d %s %s", e.TS, e.Action, e.Point))
+	}
+	want := "[1000 present / 2000 mount /srv 3000 remount /srv 4000 unmount /srv]"
+	if fmt.Sprint(got) != want {
+		t.Errorf("got %v", got)
+	}
+}
+
+// The exact end of a time-wait socket replaces the 60 s estimate.
+func TestTimeWaitEnd(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	end := tcpEvent(0x99, 0, 0, "127.0.0.1", 40000, "127.0.0.2", 80)
+	end.Kind = bpftcp.TimeWaitEnd
+	r.tcp.queue = []bpftcp.Event{
+		tcpEvent(7, 7, 2, "127.0.0.1", 0, "127.0.0.2", 80),
+		tcpEvent(7, 2, 1, "127.0.0.1", 40000, "127.0.0.2", 80),
+		{Kind: bpftcp.TimeWaitStart, SK: 7, New: bpftcp.TimeWait},
+		tcpEvent(7, 5, 7, "127.0.0.1", 40000, "127.0.0.2", 80),
+	}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	r.tcp.queue = []bpftcp.Event{end}
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.flushTCP(2000, &b)
+	if len(b.TCPConns) != 1 || b.TCPConns[0].LingerUntil == nil || *b.TCPConns[0].LingerUntil-*b.TCPConns[0].CloseTS >= 60_000 {
+		t.Fatalf("exact end not applied: %+v", b.TCPConns)
 	}
 }

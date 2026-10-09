@@ -98,6 +98,7 @@ func Run(db *store.DB) (*Report, error) {
 	rows.Close()
 	rep := &Report{Totals: map[string]Result{}, IgnoredFields: ignoredFields}
 	events := query.TCPFromEvents(db)
+	var prevLsof map[string]lsofLine // the previous checkpoint's real lsof (held mode)
 	for _, s := range snaps {
 		var res Result
 		var err error
@@ -111,7 +112,9 @@ func Run(db *store.DB) (*Report, error) {
 				res, err = compareSS(db, s)
 			}
 		case "lsof -n -P":
-			res, err = compareLsof(db, s)
+			var cur map[string]lsofLine
+			res, cur, err = compareLsof(db, s, prevLsof)
+			prevLsof = cur
 		default:
 			continue
 		}
@@ -599,11 +602,13 @@ func fdChurn(db *store.DB, pid int, fd string, s, next, nextAny int64, window [2
 		WHERE p.pid = ?1 AND x.fd = ?2 AND `+changed, pid, num, s, nextAny, noNext)
 }
 
-func compareLsof(db *store.DB, snap snapshot) (Result, error) {
+// compareLsof also returns the parsed real output, which the next
+// checkpoint uses in held mode.
+func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result, map[string]lsofLine, error) {
 	res := newResult(snap.cmd)
 	recon, s, sfd, err := query.LsofAt(db, snap.ts, query.LsofOptions{})
 	if err != nil {
-		return res, err
+		return res, nil, err
 	}
 	next, nextAny := nextSample(db, sfd, true), nextSample(db, s, false)
 	var window [2]int64
@@ -611,6 +616,28 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 		window = [2]int64{snap.ts, snap.endTS}
 	}
 	real := parseLsof(snap.output, &res, snap.ignore)
+	all := real
+	if query.FDsHeld(db) {
+		// Held storage records an fd at the second walk that sees it. An fd
+		// the previous checkpoint's real lsof (one walk earlier) did not
+		// have is not expected yet.
+		real = map[string]lsofLine{}
+		for k, r := range all {
+			if p, ok := prev[k]; ok && p.name == r.name && p.typ == r.typ {
+				real[k] = r
+				continue
+			}
+			if _, inRecon := reconHas(recon, k, snap.ignore); inRecon {
+				real[k] = r
+				continue
+			}
+			if prev == nil {
+				res.Ignored["not judged: first checkpoint (held fds need two walks)"]++
+			} else {
+				res.Ignored["fds new since the previous walk (held storage starts at the second)"]++
+			}
+		}
+	}
 	rec := map[string]lsofLine{}
 	for _, r := range recon {
 		if snap.ignore[r.PID] {
@@ -663,7 +690,7 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 			res.example("lsof extra pid/fd %s: %s %s %s", key, x.command, x.typ, x.name)
 		}
 	}
-	return res, nil
+	return res, all, nil
 }
 
 // ---- output ----
@@ -809,4 +836,18 @@ func compareSSEvents(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// reconHas reports whether the reconstruction has the row key ("pid fd").
+func reconHas(recon []query.LsofRow, key string, ignore map[int]bool) (query.LsofRow, bool) {
+	for _, r := range recon {
+		if ignore[r.PID] {
+			continue
+		}
+		fd, _ := splitFD(r.FD)
+		if strconv.Itoa(r.PID)+" "+fd == key {
+			return r, true
+		}
+	}
+	return query.LsofRow{}, false
 }

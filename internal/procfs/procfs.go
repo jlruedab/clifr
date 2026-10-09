@@ -452,3 +452,76 @@ func (f FS) StatFD(pid, fd int) (FDStat, error) {
 	}
 	return FDStat{Mode: sx.Mode & unix.S_IFMT, Inode: sx.Ino, Major: sx.Dev_major, Minor: sx.Dev_minor}, nil
 }
+
+// FDCount returns the number of open fds of pid: the size the kernel reports
+// for /proc/<pid>/fd (Linux 6.2+). ok is false when it is unknown (older
+// kernels report 0), so callers walk the directory instead.
+func (f FS) FDCount(pid int) (n int, ok bool) {
+	if f.Root != "/proc" {
+		return 0, false // a fixture directory's size is not an fd count
+	}
+	st, err := os.Stat(f.path(strconv.Itoa(pid), "fd"))
+	if err != nil || st.Size() <= 0 {
+		return 0, false
+	}
+	return int(st.Size()), true
+}
+
+// MountInfo is one line of /proc/<pid>/mountinfo.
+type MountInfo struct {
+	ID      int
+	Point   string
+	Source  string
+	FSType  string
+	Options string
+}
+
+// ReadMountInfo reads /proc/self/mountinfo (the recorder's mount namespace).
+func (f FS) ReadMountInfo() ([]MountInfo, error) {
+	b, err := os.ReadFile(f.path("self", "mountinfo"))
+	if err != nil {
+		return nil, err
+	}
+	return ParseMountInfo(b), nil
+}
+
+// ParseMountInfo parses mountinfo lines:
+// 36 35 98:0 /mnt1 /mnt/parent rw,noatime master:1 - ext3 /dev/root rw,errors=continue
+func ParseMountInfo(b []byte) []MountInfo {
+	var out []MountInfo
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		sep := -1
+		for i, x := range f {
+			if x == "-" {
+				sep = i
+				break
+			}
+		}
+		if len(f) < 6 || sep < 0 || sep+2 >= len(f) {
+			continue
+		}
+		m := MountInfo{ID: atoi(f[0]), Point: unescapeOctal(f[4]), Options: f[5], FSType: f[sep+1], Source: unescapeOctal(f[sep+2])}
+		out = append(out, m)
+	}
+	return out
+}
+
+// unescapeOctal undoes the kernel's \040-style escaping of spaces etc.
+func unescapeOctal(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) {
+			if n, err := strconv.ParseUint(s[i+1:i+4], 8, 8); err == nil {
+				b.WriteByte(byte(n))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}

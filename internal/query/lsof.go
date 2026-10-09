@@ -91,6 +91,9 @@ func lsofCommand(comm string) string {
 // latest sample s, which is refreshed every interval. Only processes alive at
 // s are listed.
 func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64, err error) {
+	if FDsHeld(db) {
+		return lsofHeld(db, t, o)
+	}
 	if s, err = SnapshotAt(db, t, false); err != nil {
 		return
 	}

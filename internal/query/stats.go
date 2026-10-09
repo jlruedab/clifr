@@ -56,7 +56,7 @@ type EventStat struct {
 }
 
 var statTables = []string{"processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
-	"open_files", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
+	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
 	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "samples"}
 
 func percentiles(v []float64) Percentiles {

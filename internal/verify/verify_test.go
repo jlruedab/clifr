@@ -132,7 +132,7 @@ func TestChangedInDB(t *testing.T) {
 
 	hdr := "COMMAND PID TID TASKCMD USER   FD TYPE DEVICE SIZE/OFF     NODE NAME\n"
 	out := hdr + "load     50              root    8u sock    0,8      0t0    222 protocol: TCP\n"
-	res, err := compareLsof(db, snapshot{ts: 1500, endTS: 2000, sampleTS: 1000, cmd: "lsof -n -P", output: out, ignore: map[int]bool{}})
+	res, _, err := compareLsof(db, snapshot{ts: 1500, endTS: 2000, sampleTS: 1000, cmd: "lsof -n -P", output: out, ignore: map[int]bool{}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

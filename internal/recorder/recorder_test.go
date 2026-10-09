@@ -292,6 +292,7 @@ func TestOpenFiles(t *testing.T) {
 	fp.setFD(10, 3, "/var/log/app.log")
 	fp.setFD(10, 4, "/tmp/scratch")
 	r, dbPath := newTestRecorder(t, fp.root)
+	r.cfg.FDMode = "all" // v1: every fd in open_files
 	t1 := time.UnixMilli(1790001000000)
 	t2, t3, t4 := t1.Add(30*time.Second), t1.Add(60*time.Second), t1.Add(90*time.Second)
 	must(t, r.sample(t1, true))
@@ -587,5 +588,55 @@ func TestZombieKeepsExecCmdline(t *testing.T) {
 	db.QueryRow(`SELECT cmdline FROM processes WHERE pid = 70`).Scan(&cmd)
 	if cmd != "/tmp/burst --run" {
 		t.Errorf("cmdline %q", cmd)
+	}
+}
+
+// Held mode: an fd is stored once two consecutive walks saw it (with the
+// first walk as first_seen); a deleted file at once; one seen once never.
+func TestHeldFDs(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "app", 100, 0)
+	fp.setTCP()
+	fp.setFD(10, 3, "/var/log/app.log")
+	fp.setFD(10, 4, "/tmp/brief")
+	r, dbPath := newTestRecorder(t, fp.root)
+	t1 := time.UnixMilli(1790001000000)
+	t2, t3 := t1.Add(2*time.Minute), t1.Add(4*time.Minute)
+	must(t, r.sample(t1, true))
+	fp.setFD(10, 4, "")                    // brief: closed before the second walk
+	fp.setFD(10, 5, "/tmp/gone (deleted)") // deleted: stored at first sight
+	must(t, r.sample(t2, true))
+	fp.setFD(10, 3, "")
+	must(t, r.sample(t3, true))
+	must(t, r.shutdown())
+	r.db.Close()
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	got := map[string][2]int64{}
+	rows, _ := db.Query(`SELECT target, first_seen, COALESCE(last_seen, 0) FROM fds_held`)
+	for rows.Next() {
+		var tg string
+		var f, l int64
+		rows.Scan(&tg, &f, &l)
+		got[tg] = [2]int64{f, l}
+	}
+	rows.Close()
+	want := map[string][2]int64{
+		"/var/log/app.log":    {t1.UnixMilli(), t2.UnixMilli()},
+		"/tmp/gone (deleted)": {t2.UnixMilli(), t3.UnixMilli()},
+	}
+	if len(got) != len(want) {
+		t.Errorf("fds_held: %v", got)
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s: got %v want %v", k, got[k], w)
+		}
+	}
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM open_files`).Scan(&n)
+	if n != 0 {
+		t.Errorf("held mode wrote %d open_files rows", n)
 	}
 }

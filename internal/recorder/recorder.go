@@ -34,6 +34,10 @@ type Config struct {
 	EBPF   bpfproc.Options
 	// TCP: "auto" (eBPF events and keyframes, else v1 sampling), "ebpf" or
 	// "sample" (v1: a socket dump every interval).
+	// FDMode: "held" (v2: fds_held, fds held across two walks and deleted
+	// files) or "all" (v1: every fd in open_files).
+	FDMode           string
+	FDFullEvery      int // held mode: read every process's fds on every n-th walk (default 5)
 	TCP              string
 	TCPBPF           bpftcp.Options
 	KeyframeInterval time.Duration // full socket dump with events (default 5m)
@@ -61,6 +65,7 @@ type procEntry struct {
 	owns    bool   // held sockets at its last fd walk
 	walked  uint64 // generation of its last fd walk
 	files   map[fileKey]*fileEntry
+	fdCount int    // fds at its last walk (held mode: unchanged count = presumed unchanged)
 	exit    int64  // exit time from a proc connector event, 0 if unknown
 	born    uint64 // generation of the sample that first saw it
 	closed  bool   // closed in the current sample
@@ -87,6 +92,8 @@ type Recorder struct {
 
 	events       *eventQueue // nil if the proc connector is unavailable
 	tcp          *tcpTracker // nil: v1 socket sampling
+	fdWalks      uint64      // full fd walks so far
+	mounts       *mountWatch
 	lostReported int
 	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
 	evByPID      map[int]procKey
@@ -118,6 +125,9 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
 	r.initSockets()
+	if r.cfg.FDFullEvery == 0 {
+		r.cfg.FDFullEvery = 5
+	}
 	r.fdInterval = cfg.FDInterval
 	if r.cfg.BudgetWindow == 0 {
 		r.cfg.BudgetWindow = 5 * time.Minute
@@ -155,6 +165,7 @@ func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
 	}
 	if mode == "sample" || r.fs.Root != "/proc" {
 		r.db.SetMeta("tcp", "sample")
+		r.v1FDs("TCP is sampled")
 		return nil, nil
 	}
 	stop, err = r.startTCP(done)
@@ -164,6 +175,7 @@ func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
 		}
 		r.log.Printf("warning: eBPF TCP events unavailable, sampling sockets every interval (v1): %v", err)
 		r.db.SetMeta("tcp", "sample")
+		r.v1FDs("TCP is sampled")
 		return nil, nil
 	}
 	tw := "time-wait end estimated"
@@ -178,6 +190,17 @@ func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
 	r.db.SetMeta("keyframe_interval_s", fmt.Sprint(r.cfg.KeyframeInterval.Seconds()))
 	r.log.Printf("TCP: %s", desc)
 	return stop, nil
+}
+
+// v1FDs switches open files to v1 (every fd in open_files): held fds rely on
+// TCP events to tell which socket fds are connections.
+func (r *Recorder) v1FDs(why string) {
+	if r.cfg.FDMode != "all" && r.fs.Root == "/proc" {
+		r.log.Printf("open files: every fd (v1), since %s", why)
+	}
+	if r.fs.Root == "/proc" {
+		r.cfg.FDMode = "all"
+	}
 }
 
 // openBackend opens the SQLite database, the Parquet directory, or both.
@@ -247,12 +270,22 @@ func (r *Recorder) Run(ctx context.Context) error {
 		return err
 	}
 	defer stopEvents()
+	mountsDone := make(chan struct{})
+	if stop := r.startMounts(mountsDone); stop != nil {
+		defer stop()
+		defer close(mountsDone)
+	}
 	tcpDone := make(chan struct{})
 	if stop, err := r.startTCPMode(tcpDone); err != nil {
 		return err
 	} else if stop != nil {
 		defer stop()
 		defer close(tcpDone)
+	}
+	if r.heldMode() {
+		r.db.SetMeta("fds", "held")
+	} else {
+		r.db.SetMeta("fds", "all")
 	}
 	start := time.Now()
 	next := start
@@ -332,7 +365,7 @@ func (r *Recorder) shutdown() error {
 	}
 	for _, e := range r.procs {
 		b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last})
-		closeFiles(e, b)
+		r.closeFiles(e, b)
 	}
 	for _, e := range r.socks {
 		b.SockCloses = append(b.SockCloses, store.Close{ID: e.id, LastSeen: e.last})
@@ -357,6 +390,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 
 	t0 := time.Now()
 	nev := r.applyEvents(ts, &b)
+	if r.mounts != nil {
+		b.Mounts = append(b.Mounts, r.mounts.take()...)
+	}
 	if r.events != nil {
 		b.Stats = append(b.Stats, r.events.stats(ts)...)
 	}
@@ -474,7 +510,7 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			}
 			b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last, Ended: ended})
 			e.closed = true // removed by dropClosedProcs after owners are swept
-			closeFiles(e, b)
+			r.closeFiles(e, b)
 		}
 	}
 	return n

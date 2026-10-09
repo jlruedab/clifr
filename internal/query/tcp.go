@@ -89,7 +89,9 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 		linger := closeTS.Valid && closeTS.Int64 <= t
 		if linger { // the time-wait socket left behind; no process holds it
 			state, r.RecvQ, r.SendQ, r.Inode = lingerState, 0, 0, 0
-		} else if pid != 0 && (!ownerUntil.Valid || ownerUntil.Int64 > t) {
+		} else if ownerUntil.Valid && ownerUntil.Int64 <= t {
+			r.appClosed = true
+		} else if pid != 0 {
 			r.Owners = []Owner{{Comm: comm, PID: pid, FD: fd}}
 		}
 		if state == 0 || r.LPort == 0 && state != stateListen {
@@ -116,6 +118,7 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 	for _, c := range byTuple {
 		rows = append(rows, c.r)
 	}
+	addHolders(db, t, rows)
 	sortSS(rows)
 	return rows, kf, nil
 }

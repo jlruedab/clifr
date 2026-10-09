@@ -66,6 +66,13 @@ user's go-ahead.
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;
   `--tcp sample` keeps v1 sampling. Kernel sock pointers are reused quickly: never key
   anything that must survive a close by the pointer alone.
+- Open files (`meta fds`): "held" (v2, `fds_held`): an fd is stored at the second consecutive
+  walk of its process that sees it (first_seen = the first), deleted files at once; inet
+  socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read
+  when its fd count (size of /proc/<pid>/fd, Linux 6.2+) is unchanged and it had no TCP
+  activity, except every `--fd-full-every` walks. "all" = v1 `open_files` (with `--tcp sample`).
+- Mounts: `mounts` table (present/mount/unmount/remount) from POLLPRI on mountinfo, opened
+  with raw open(2): Go's own epoll would consume the kernel's change notification.
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
@@ -91,7 +98,7 @@ v2:
 2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
 3. [x] eBPF process events (proc connector fallback), OOM events
 4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
-5. [ ] Long-held fd snapshots, mount events
+5. [x] Long-held fd snapshots, mount events
 6. [ ] Ground-truth tests
 7. [ ] Benchmark: bpf_stats, new matrix, scaling, report
 8. [ ] README

@@ -134,6 +134,8 @@ type Store struct {
 	owners      *entity[ownerRow]
 	files       *entity[fileRow]
 	conns       *entity[tcpConnRow]
+	held        *entity[heldRow]
+	mounts      []mountRow
 	trans       []tcpTransRow
 	keyframes   []keyframeRow
 	reconcile   []reconcileRow
@@ -157,11 +159,11 @@ type Store struct {
 
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
-	"open_files", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
+	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
 	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
-var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "tcp_conns"}
+var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "fds_held", "tcp_conns"}
 
 func Open(dir string, opt Options) (*Store, error) {
 	if opt.FlushInterval <= 0 {
@@ -175,7 +177,7 @@ func Open(dir string, opt Options) (*Store, error) {
 	}
 	s := &Store{dir: dir, opt: opt, run: time.Now().Unix(), lastFlush: time.Now(),
 		procs: newEntity[processRow](), socks: newEntity[socketRow](),
-		owners: newEntity[ownerRow](), files: newEntity[fileRow](), conns: newEntity[tcpConnRow]()}
+		owners: newEntity[ownerRow](), files: newEntity[fileRow](), conns: newEntity[tcpConnRow](), held: newEntity[heldRow]()}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	if err := s.recover(); err != nil {
 		return nil, err
@@ -245,6 +247,19 @@ func (s *Store) Write(b *store.Batch) error {
 		if x.OOMKilled {
 			r.OOMKilled = 1
 		}
+	}
+	for _, f := range b.HeldInserts {
+		s.held.insert(f.ID, heldRow{ID: f.ID, PID: int32(f.PID), StartTime: f.StartTime, FD: int32(f.FD), Target: f.Target,
+			Deleted: b2i(f.Deleted), FType: f.FType, Mode: f.Mode, Name: f.Name, Node: f.Node, FirstSeen: f.FirstSeen}, false)
+	}
+	for _, c := range b.HeldCloses {
+		if !s.held.close(c.ID, func(r *heldRow) { r.LastSeen = ptr(c.LastSeen) }) {
+			s.unknown++
+		}
+	}
+	for _, m := range b.Mounts {
+		s.mounts = append(s.mounts, mountRow{TS: m.TS, Action: m.Action, MountID: int32(m.MountID), Point: m.Point,
+			Source: m.Source, FSType: m.FSType, Options: m.Options})
 	}
 	for _, c := range b.TCPConns {
 		// Whole rows: the newest version replaces the open or buffered one.
@@ -342,6 +357,8 @@ func (s *Store) Flush() error {
 	part("sock_samples", len(s.sockSamples.rows), func(p string) error { return writeFile(p, s.sockSamples.rows) })
 	part("sock_owners", len(s.owners.closed), func(p string) error { return writeFile(p, s.owners.closed) })
 	part("open_files", len(s.files.closed), func(p string) error { return writeFile(p, s.files.closed) })
+	part("fds_held", len(s.held.closed), func(p string) error { return writeFile(p, s.held.closed) })
+	part("mounts", len(s.mounts), func(p string) error { return writeFile(p, s.mounts) })
 	part("tcp_conns", len(s.conns.closed), func(p string) error { return writeFile(p, s.conns.closed) })
 	part("tcp_transitions", len(s.trans), func(p string) error { return writeFile(p, s.trans) })
 	part("tcp_keyframes", len(s.keyframes), func(p string) error { return writeFile(p, s.keyframes) })
@@ -360,10 +377,12 @@ func (s *Store) Flush() error {
 		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) *int64 { return &r.FirstSeen }, func(r *socketRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) *int64 { return &r.FirstSeen }, func(r *ownerRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) *int64 { return &r.FirstSeen }, func(r *fileRow, v int64) { r.LastSeen = &v }),
+		writeOpen(s, "fds_held", s.held, s.lastFD, func(r *heldRow) *int64 { return &r.FirstSeen }, func(r *heldRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "tcp_conns", s.conns, s.lastAny, func(r *tcpConnRow) *int64 { return &r.OpenTS }, func(r *tcpConnRow, v int64) { r.LastSeen = &v }))
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
-	s.trans, s.keyframes, s.reconcile = nil, nil, nil
+	s.trans, s.keyframes, s.reconcile, s.mounts = nil, nil, nil, nil
 	s.conns.reset()
+	s.held.reset()
 	s.procs.reset()
 	s.socks.reset()
 	s.owners.reset()
@@ -606,7 +625,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"samples": merge[sampleRow], "processes": merge[processRow], "proc_samples": merge[procSampleRow],
 	"sockets": merge[socketRow], "sock_samples": merge[sockSampleRow], "sock_owners": merge[ownerRow],
 	"open_files": merge[fileRow], "oom_events": merge[oomRow], "recorder_stats": merge[statRow],
-	"tcp_conns": merge[tcpConnRow], "tcp_transitions": merge[tcpTransRow], "tcp_keyframes": merge[keyframeRow],
+	"tcp_conns": merge[tcpConnRow], "fds_held": merge[heldRow], "mounts": merge[mountRow], "tcp_transitions": merge[tcpTransRow], "tcp_keyframes": merge[keyframeRow],
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"meta": merge[metaRow],
@@ -730,6 +749,8 @@ var emptyWriters = map[string]func(string) error{
 	"open_files":       func(p string) error { return writeFile[fileRow](p, nil) },
 	"oom_events":       func(p string) error { return writeFile[oomRow](p, nil) },
 	"tcp_conns":        func(p string) error { return writeFile[tcpConnRow](p, nil) },
+	"fds_held":         func(p string) error { return writeFile[heldRow](p, nil) },
+	"mounts":           func(p string) error { return writeFile[mountRow](p, nil) },
 	"tcp_transitions":  func(p string) error { return writeFile[tcpTransRow](p, nil) },
 	"tcp_keyframes":    func(p string) error { return writeFile[keyframeRow](p, nil) },
 	"reconcile":        func(p string) error { return writeFile[reconcileRow](p, nil) },

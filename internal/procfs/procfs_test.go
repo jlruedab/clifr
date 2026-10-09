@@ -141,3 +141,14 @@ func TestFDFlagsAndUnix(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMountInfo(t *testing.T) {
+	in := "22 1 252:0 / / rw,relatime shared:1 - ext4 /dev/mapper/vg-root rw\n" +
+		"95 22 0:45 / /mnt/my\\040data rw,nosuid master:2 - tmpfs tmp\\040fs rw,size=1024k\n" +
+		"96 22 0:46 / /srv/nfs rw - nfs4 server:/export rw,vers=4.2\n"
+	m := ParseMountInfo([]byte(in))
+	if len(m) != 3 || m[1].Point != "/mnt/my data" || m[1].Source != "tmp fs" || m[1].FSType != "tmpfs" ||
+		m[2].Source != "server:/export" || m[2].FSType != "nfs4" || m[0].ID != 22 {
+		t.Errorf("%+v", m)
+	}
+}
