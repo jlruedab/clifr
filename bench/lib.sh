@@ -6,7 +6,9 @@ BIN=$ROOT/bench/bin
 
 die() { echo "$(basename "$0"): $*" >&2; exit 1; }
 log() { echo "[$(date +%H:%M:%S)] $*"; }
-now_ms() { date +%s%3N; }
+# Bash's own clock, not `date +%s%3N`: uutils date (Ubuntu 26.04) ignores the
+# width and prints unpadded nanoseconds.
+now_ms() { local t=${EPOCHREALTIME/[.,]/}; echo $((t / 1000)); }
 free_bytes() { df --output=avail -B1 "$1" | tail -1; }
 min_free_bytes() { awk -v g="$MIN_FREE_GB" 'BEGIN { printf "%d", g * 1024 * 1024 * 1024 }'; }
 
@@ -21,6 +23,7 @@ check_common() {
     [[ $EUID -eq 0 ]] || die "run as root"
     [[ -f /sys/fs/cgroup/cgroup.controllers ]] ||
         die "cgroup v2 is required (/sys/fs/cgroup is not a cgroup2 mount)"
+    [[ $(now_ms) =~ ^[0-9]{13}$ ]] || die "now_ms gives '$(now_ms)', not milliseconds"
     local b
     for b in "$@"; do [[ -x $BIN/$b ]] || die "missing $BIN/$b; run bench/setup.sh (or go build)"; done
 }

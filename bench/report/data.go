@@ -198,8 +198,8 @@ func loadMatrix(dir string, env map[string]string) (*Matrix, error) {
 		run := &Run{
 			ID: row["run_id"], Profile: row["profile"], Config: row["config"],
 			Repeat: int(num(row["repeat"])), Dir: filepath.Join(dir, "runs", row["run_id"]),
-			WarmStart: int64(num(row["warm_start_ms"])),
-			From:      int64(num(row["meas_start_ms"])), To: int64(num(row["meas_end_ms"])),
+			WarmStart: scriptMS(row["warm_start_ms"]),
+			From:      scriptMS(row["meas_start_ms"]), To: scriptMS(row["meas_end_ms"]),
 			M: map[string]float64{},
 		}
 		if err := run.analyse(cpus); err != nil {
@@ -257,7 +257,12 @@ func (run *Run) analyse(cpus float64) error {
 	rec := window(cg, "rec", run.From, run.To)
 	run.recorderCost(rec, cpus)
 	if sys, err := readCSV(filepath.Join(run.Dir, "system.csv.gz")); err == nil {
-		systemMetrics(m, window(sys, "", run.From, run.To))
+		w := window(sys, "", run.From, run.To)
+		if len(w) < 2 && len(sys) >= 2 {
+			return fmt.Errorf("no sampler rows between %d and %d (sampler has %s..%s): wrong run times?",
+				run.From, run.To, sys[0]["ts_ms"], sys[len(sys)-1]["ts_ms"])
+		}
+		systemMetrics(m, w)
 	}
 	if exists(filepath.Join(run.Dir, "samples.csv.gz")) {
 		if err := run.loadSamples(); err != nil {
@@ -495,7 +500,7 @@ func loadPassive(dir string, env map[string]string) (*Run, error) {
 	}
 	run.From = all[1].TS // skip the initial full insert
 	run.To = all[len(all)-1].TS
-	if e := int64(num(env["end_ms"])); e > run.To {
+	if e := scriptMS(env["end_ms"]); e > run.To {
 		run.To = e
 	}
 	if err := run.analyse(num(env["cpus"])); err != nil {
@@ -597,6 +602,27 @@ func window(rows []map[string]string, group string, from, to int64) []map[string
 		}
 	}
 	return out
+}
+
+// scriptMS parses a Unix time in ms written by the bench scripts. Results from
+// Ubuntu 26.04 hold `date +%s%3N` from uutils date, which ignored the width and
+// printed the nanoseconds without zero padding: 10 digits of seconds, then the
+// nanoseconds. Those are converted; a nanosecond part below 1000 would be read
+// as ms (an error under one second).
+func scriptMS(s string) int64 {
+	s = strings.TrimSpace(s)
+	if len(s) <= 13 {
+		if v := num(s); !math.IsNaN(v) {
+			return int64(v)
+		}
+		return 0
+	}
+	sec, err1 := strconv.ParseInt(s[:10], 10, 64)
+	ns, err2 := strconv.ParseInt(s[10:], 10, 64)
+	if err1 != nil || err2 != nil {
+		return 0
+	}
+	return sec*1000 + ns/1e6
 }
 
 // num parses a number; empty or invalid gives NaN.
