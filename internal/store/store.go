@@ -9,7 +9,9 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
@@ -116,6 +118,9 @@ CREATE TABLE IF NOT EXISTS verify_snapshots (
 type DB struct {
 	*sql.DB
 	Path string
+	// DataDir is set when the tables were loaded from Parquet files
+	// (internal/duck); Path is then empty.
+	DataDir string
 }
 
 // Open opens (and creates if needed) the database. readOnly is used by the
@@ -144,8 +149,12 @@ func Open(path string, readOnly bool) (*DB, error) {
 	return &DB{DB: db, Path: path}, nil
 }
 
-// SizeBytes is the size of the database file plus its WAL.
+// SizeBytes is the size of the database file plus its WAL, or of the
+// Parquet data directory.
 func (d *DB) SizeBytes() int64 {
+	if d.DataDir != "" {
+		return dirSize(d.DataDir)
+	}
 	var n int64
 	for _, p := range []string{d.Path, d.Path + "-wal"} {
 		if st, err := os.Stat(p); err == nil {
@@ -210,4 +219,17 @@ func (d *DB) Recover() (int64, error) {
 		total += n
 	}
 	return total, nil
+}
+
+func dirSize(dir string) int64 {
+	var n int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if fi, err := d.Info(); err == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }

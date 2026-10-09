@@ -5,15 +5,17 @@
 //
 //	sudo go test -tags e2e -v -count=1 ./test/e2e
 //
-// It builds sosv and the load generator, starts the light load profile and
-// sosv record --interval 2s, then stages an incident:
+// It builds sosv-record, sosv and the load generator, starts the light load
+// profile and sosv-record --interval 2s writing Parquet, then stages an
+// incident:
 //   - a client process opens 150 connections to a local server and holds them,
 //   - a process holds a file that has been deleted,
 //   - a burst of 20 sub-second processes (a copy of this test binary named
 //     e2eburst, in its "sleep" helper mode).
 //
-// Afterwards it checks that sosv ss, sosv lsof and sosv life each find their
-// part of the incident at the right moment.
+// Afterwards it checks that sosv ss, sosv lsof and sosv life (reading the
+// Parquet files through DuckDB) each find their part of the incident at the
+// right moment.
 package e2e
 
 import (
@@ -108,21 +110,23 @@ func TestIncident(t *testing.T) {
 	dir := t.TempDir()
 	root, _ := filepath.Abs("../..")
 	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
-	for _, b := range []struct{ out, pkg string }{{"sosv", "./cmd/sosv"}, {"load", "./bench/load"}} {
+	for _, b := range []struct{ out, pkg, cgo string }{
+		{"sosv-record", "./cmd/sosv-record", "0"}, {"sosv", "./cmd/sosv", "1"}, {"load", "./bench/load", "0"},
+	} {
 		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		cmd.Env = append(os.Environ(), "CGO_ENABLED="+b.cgo)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build %s: %v\n%s", b.pkg, err, out)
 		}
 	}
 	sosv := filepath.Join(dir, "sosv")
-	db := filepath.Join(dir, "e2e.db")
+	data := filepath.Join(dir, "data")
 
 	// Background load and the recorder.
 	load := start(t, exec.Command(filepath.Join(dir, "load"), "--profile", "light"), "READY")
 	defer stop(load)
-	rec := exec.Command(sosv, "record", "--db", db, "--interval", "2s", "--fd-interval", "10s")
+	rec := exec.Command(filepath.Join(dir, "sosv-record"), "--data-dir", data, "--interval", "2s", "--fd-interval", "10s")
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {
@@ -188,14 +192,14 @@ func TestIncident(t *testing.T) {
 			PID int `json:"pid"`
 		} `json:"owners"`
 	}
-	query(t, sosv, &ss, "ss", "-tanp", "dport", "=", ":"+port, "--at", at, "--db", db, "--json")
+	query(t, sosv, &ss, "ss", "-tanp", "dport", "=", ":"+port, "--at", at, "--data-dir", data, "--json")
 	clientConns := 0
 	for _, s := range ss {
 		if s.State == "ESTAB" && len(s.Owners) > 0 && s.Owners[0].PID == cli.cmd.Process.Pid {
 			clientConns++
 		}
 	}
-	query(t, sosv, &ss, "ss", "-tanp", "sport", "=", ":"+port, "--at", at, "--db", db, "--json")
+	query(t, sosv, &ss, "ss", "-tanp", "sport", "=", ":"+port, "--at", at, "--data-dir", data, "--json")
 	serverConns := 0
 	for _, s := range ss {
 		if s.State == "ESTAB" && len(s.Owners) > 0 && s.Owners[0].PID == srv.cmd.Process.Pid {
@@ -213,7 +217,7 @@ func TestIncident(t *testing.T) {
 		Name    string `json:"name"`
 		Deleted bool   `json:"deleted"`
 	}
-	query(t, sosv, &lsof, "lsof", "-p", strconv.Itoa(del.cmd.Process.Pid), "--at", at, "--db", db, "--json")
+	query(t, sosv, &lsof, "lsof", "-p", strconv.Itoa(del.cmd.Process.Pid), "--at", at, "--data-dir", data, "--json")
 	found := false
 	for _, f := range lsof {
 		if f.Deleted && strings.HasPrefix(f.Name, delPath) {
@@ -235,7 +239,7 @@ func TestIncident(t *testing.T) {
 	}
 	query(t, sosv, &life, "life", "--name", "e2eburst",
 		"--start_from", burstStart.Add(-2*time.Second).Format("2006-01-02 15:04:05"),
-		"--end_at", burstEnd.Add(2*time.Second).Format("2006-01-02 15:04:05"), "--db", db, "--json")
+		"--end_at", burstEnd.Add(2*time.Second).Format("2006-01-02 15:04:05"), "--data-dir", data, "--json")
 	short := 0
 	for _, l := range life {
 		if l.Duration > 0 && l.Duration < 1000 {

@@ -70,7 +70,7 @@ seconds() {
 }
 
 start() {
-    check_common sosv benchtool
+    check_common sosv sosv-record benchtool
     systemctl is-active -q $REC && die "already running (results: $(cat $STATE 2>/dev/null)); use stop first"
     OUT=${OUT:-$ROOT/bench/results/passive-$(date +%Y%m%d-%H%M%S)}
     mkdir -p "$OUT"
@@ -99,7 +99,7 @@ start() {
         -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
         -p ProtectControlGroups=yes -p "RestrictAddressFamilies=AF_NETLINK AF_UNIX" \
         -p StandardOutput=append:"$OUT/recorder.log" -p StandardError=append:"$OUT/recorder.log" \
-        "$BIN/sosv" record --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+        "$BIN/sosv-record" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
         --duration "$DURATION"
     local reccg
     reccg=$(systemctl show -p ControlGroup --value $REC)
@@ -132,7 +132,7 @@ status() {
 }
 
 stop() {
-    check_common sosv benchtool
+    check_common sosv sosv-record benchtool
     current
     systemctl stop $REC 2>/dev/null || true # SIGTERM: clean shutdown
     sleep 6                                 # one more sampler tick

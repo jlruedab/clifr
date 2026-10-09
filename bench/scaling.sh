@@ -53,7 +53,7 @@ declare -A VALUES=([procs]="500 2000 10000" [fds]="10000 50000 200000"
     [conns]="1000 20000 100000" [spawn]="10 50 200" [churn]="0 100 500")
 for d in $DIMS; do [[ -n ${VALUES[$d]:-} ]] || die "unknown dimension $d"; done
 
-check_common sosv load benchtool report
+check_common sosv sosv-record load benchtool report
 mkdir -p "$OUT/points"
 check_free "$OUT"
 disk_devices "$OUT"
@@ -109,7 +109,7 @@ point() {
 
     rec_start=$(now_ms)
     log "$PID_: record ${RECORD}s"
-    scope rec nice -n 10 ionice -c 3 "$BIN/sosv" record --db "$DIR/sosv.db" \
+    scope rec nice -n 10 ionice -c 3 "$BIN/sosv-record" --data-dir= --db "$DIR/sosv.db" \
         --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" --cpu-budget 100% \
         --duration "${RECORD}s" >"$DIR/recorder.log" 2>&1 || status=recorder_failed
     rec_end=$(now_ms)

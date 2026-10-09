@@ -33,7 +33,7 @@ done
 OUT=${OUT:-$ROOT/bench/results/accuracy-$(date +%Y%m%d-%H%M%S)}
 . "$ROOT/bench/lib.sh"
 
-check_common sosv load benchtool report
+check_common sosv sosv-record load benchtool report
 for t in ps ss lsof; do command -v $t >/dev/null || die "$t is needed for the real outputs"; done
 mkdir -p "$OUT"
 check_free "$OUT"
@@ -64,7 +64,7 @@ until grep -q READY "$OUT/load.out" 2>/dev/null; do
 done
 
 log "record $DURATION, verify every $VERIFY_EVERY"
-"$BIN/sosv" record --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+"$BIN/sosv-record" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
     --verify-every "$VERIFY_EVERY" --duration "$DURATION" >"$OUT/recorder.log" 2>&1
 stop_all
 wait $load_pid 2>/dev/null || true

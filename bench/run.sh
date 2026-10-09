@@ -83,7 +83,7 @@ export PGB_MODE PGB_RATE
 . "$ROOT/bench/lib.sh"
 
 # --- prerequisites ---------------------------------------------------------
-check_common sosv load benchtool report
+check_common sosv sosv-record load benchtool report
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
@@ -147,7 +147,7 @@ recorder_cmd() {
     D) s="--interval 60s --fd-interval 300s" ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     esac
-    echo "nice -n 10 ionice -c 3 $BIN/sosv record --db $RUN/sosv.db $s"
+    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir= --db $RUN/sosv.db $s"
 }
 
 stop_all() {

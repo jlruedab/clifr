@@ -142,7 +142,7 @@ func TestRecoverAfterCrash(t *testing.T) {
 		log.New(io.Discard, "", 0))
 	defer r2.db.Close()
 	var last int64
-	r2.db.QueryRow(`SELECT last_seen FROM processes WHERE pid = 10`).Scan(&last)
+	r2.db.(*store.DB).QueryRow(`SELECT last_seen FROM processes WHERE pid = 10`).Scan(&last)
 	if last != t1.Add(time.Minute).UnixMilli() {
 		t.Errorf("recovered last_seen = %d", last)
 	}

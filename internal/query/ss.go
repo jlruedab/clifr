@@ -308,7 +308,8 @@ type SSGroup struct {
 func SocketsInRange(db *store.DB, from, to int64, proto string, f SockFilter) ([]SSGroup, error) {
 	rows, err := db.Query(`
 		SELECT k.id, k.laddr, k.lport, k.raddr, k.rport,
-		       MAX(k.first_seen, ?1), MIN(COALESCE(k.last_seen, ?3), ?2),
+		       CASE WHEN k.first_seen > ?1 THEN k.first_seen ELSE ?1 END,
+		       CASE WHEN COALESCE(k.last_seen, ?3) < ?2 THEN COALESCE(k.last_seen, ?3) ELSE ?2 END,
 		       COALESCE((SELECT state FROM sock_samples WHERE sock_id = k.id AND ts <= ?2 ORDER BY ts DESC LIMIT 1), 0),
 		       COALESCE(o.first_seen, 0), COALESCE(o.last_seen, ?3), COALESCE(p.pid, 0), COALESCE(p.comm, ''), COALESCE(p.id, 0)
 		FROM sockets k

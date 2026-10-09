@@ -1,6 +1,7 @@
 // Package recorder runs the sampling loop: each sample reads processes (and,
 // in later phases, sockets and open files), updates the in-memory interval
-// trackers and writes the resulting changes in one SQLite transaction.
+// trackers and writes the resulting changes as one batch to the storage
+// backend (SQLite: one transaction; Parquet: buffered, flushed periodically).
 package recorder
 
 import (
@@ -15,13 +16,16 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"sosv/internal/pqstore"
 	"sosv/internal/procfs"
 	"sosv/internal/sockdiag"
 	"sosv/internal/store"
 )
 
 type Config struct {
-	DB         string
+	DB         string // SQLite database (v1 schema); "" = none
+	DataDir    string // Parquet data directory; "" = none. Both set: write both.
+	Parquet    pqstore.Options
 	Interval   time.Duration
 	FDInterval time.Duration
 	Duration   time.Duration // 0 = until signalled
@@ -57,7 +61,7 @@ type procEntry struct {
 type Recorder struct {
 	cfg   Config
 	fs    procfs.FS
-	db    *store.DB
+	db    store.Backend
 	log   *log.Logger
 	boot  int64 // boot time, unix ms
 	gen   uint64
@@ -93,7 +97,7 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := store.Open(cfg.DB, false)
+	db, err := openBackend(cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +109,6 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	r.fdInterval = cfg.FDInterval
 	if r.cfg.BudgetWindow == 0 {
 		r.cfg.BudgetWindow = 5 * time.Minute
-	}
-	if n, err := db.Recover(); err != nil {
-		return nil, fmt.Errorf("recover open rows: %w", err)
-	} else if n > 0 {
-		logger.Printf("closed %d rows left open by a previous run", n)
 	}
 	for _, t := range []string{"processes", "sockets", "sock_owners", "open_files"} {
 		n, err := db.MaxID(t)
@@ -130,6 +129,45 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		}
 	}
 	return r, nil
+}
+
+// openBackend opens the SQLite database, the Parquet directory, or both.
+func openBackend(cfg Config, logger *log.Logger) (store.Backend, error) {
+	var lite store.Backend
+	if cfg.DB != "" {
+		db, err := store.Open(cfg.DB, false)
+		if err != nil {
+			return nil, err
+		}
+		if n, err := db.Recover(); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("recover open rows: %w", err)
+		} else if n > 0 {
+			logger.Printf("closed %d rows left open by a previous run", n)
+		}
+		lite = db
+	}
+	if cfg.DataDir == "" {
+		if lite == nil {
+			return nil, fmt.Errorf("no storage: set a database file or a data directory")
+		}
+		return lite, nil
+	}
+	opt := cfg.Parquet
+	if opt.Logf == nil {
+		opt.Logf = logger.Printf
+	}
+	pq, err := pqstore.Open(cfg.DataDir, opt)
+	if err != nil {
+		if lite != nil {
+			lite.Close()
+		}
+		return nil, err
+	}
+	if lite == nil {
+		return pq, nil
+	}
+	return store.Tee(pq, lite), nil
 }
 
 // preciseBootMS returns the boot time in unix ms. /proc/stat's btime is
@@ -288,7 +326,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		DurDBUS:   r.lastDBDur.Microseconds(),
 		NProc:     nproc, NSock: nsock, NFD: nfd, NEvents: nev,
 		Rows:  b.Rows(),
-		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.LogicalBytes(),
+		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.Bytes(),
 		FDIntervalS: int64(r.fdInterval.Seconds()),
 	}
 	t1 := time.Now()

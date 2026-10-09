@@ -1,13 +1,13 @@
 # sosv flight recorder.
 #
 # Install:
-#   install -m 0755 sosv /usr/local/sbin/sosv
+#   install -m 0755 sosv-record sosv /usr/local/sbin/
 #   install -m 0644 deploy/sosv.service /etc/systemd/system/sosv.service
 #   systemctl daemon-reload && systemctl enable --now sosv
 # Stop:    systemctl stop sosv   (SIGTERM: open rows are closed cleanly)
-# Query:   sosv ps aux --db /var/lib/sosv/sosv.db --at "YYYY-MM-DD HH:MM:SS"
-# Disk:    the database grows without bound in this PoC; watch
-#          /var/lib/sosv and `sosv stats` (estimated disk per day).
+# Query:   sosv ps aux --data-dir /var/lib/sosv/data --at "YYYY-MM-DD HH:MM:SS"
+# Disk:    Parquet files rotate every 5 minutes; data older than --retention
+#          (72h) is deleted, and the oldest hours go first above --max-size.
 
 [Unit]
 Description=sosv flight recorder (processes, sockets, open files)
@@ -16,7 +16,7 @@ After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/sosv record --db /var/lib/sosv/sosv.db --interval 30s --fd-interval 120s --cpu-budget 2%
+ExecStart=/usr/local/sbin/sosv-record --data-dir /var/lib/sosv/data --interval 30s --fd-interval 120s --cpu-budget 2% --retention 72h --max-size 2G
 Restart=on-failure
 RestartSec=30s
 StateDirectory=sosv

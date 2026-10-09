@@ -23,9 +23,9 @@ SCALE=${SCALE:-20}
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 
 if command -v apt-get >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -q postgresql postgresql-contrib atop
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q postgresql postgresql-contrib atop g++
 elif command -v dnf >/dev/null; then
-    dnf install -y postgresql-server postgresql-contrib atop
+    dnf install -y postgresql-server postgresql-contrib atop gcc-c++
     [[ -d /var/lib/pgsql/data/base ]] || postgresql-setup --initdb
     systemctl enable --now postgresql
 fi
@@ -61,9 +61,11 @@ systemctl restart "$PGUNIT"
 mkdir -p bench/results
 chown "${SUDO_UID:-0}:${SUDO_GID:-0}" bench/results
 
-export CGO_ENABLED=0
 mkdir -p bench/bin
-go build -o bench/bin/sosv ./cmd/sosv
+# sosv (the CLI) links DuckDB through cgo; everything else is static Go.
+CGO_ENABLED=1 go build -o bench/bin/sosv ./cmd/sosv
+export CGO_ENABLED=0
+go build -o bench/bin/sosv-record ./cmd/sosv-record
 go build -o bench/bin/load ./bench/load
 go build -o bench/bin/benchtool ./bench/benchtool
 go build -o bench/bin/report ./bench/report

@@ -1,33 +1,29 @@
-// Command sosv is a Linux flight recorder: `sosv record` stores processes,
-// sockets and open files as time ranges; the other subcommands reconstruct
-// ps/lsof/ss output and process lifetimes for a past moment or range.
+// Command sosv queries what sosv-record recorded: it reconstructs ps/lsof/ss
+// output and process lifetimes for a past moment or range. It reads a Parquet
+// data directory through DuckDB (--data-dir, the default) or a v1 SQLite
+// database (--db).
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
-	"os/signal"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
+	"sosv/internal/duck"
 	"sosv/internal/query"
-	"sosv/internal/recorder"
 	"sosv/internal/store"
 	"sosv/internal/verify"
 )
 
-const defaultDB = "/var/lib/sosv/sosv.db"
+const defaultDataDir = "/var/lib/sosv/data"
 
 const usage = `usage: sosv <command> [flags]
 
-commands:
-  record   record processes, sockets and open files (root)
+commands (record with sosv-record):
   ps       sosv ps aux --at T | --start_from A --end_at B
   lsof     sosv lsof [-p PID] [-i] --at T | --start_from A --end_at B
   ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
@@ -36,6 +32,7 @@ commands:
   verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
 
+data: --data-dir DIR (Parquet, default ` + defaultDataDir + `) or --db FILE (v1 SQLite).
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
 `
 
@@ -47,7 +44,7 @@ func main() {
 	var err error
 	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
 	case "record":
-		err = cmdRecord(args)
+		err = errors.New("recording moved to the sosv-record command")
 	case "ps":
 		err = cmdPS(args)
 	case "ss":
@@ -89,12 +86,14 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // queryFlags are shared by all query commands.
 type queryFlags struct {
-	db, at, from, to string
-	json             bool
+	db, dataDir  string
+	at, from, to string
+	json         bool
 }
 
 func (q *queryFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&q.db, "db", defaultDB, "database file")
+	fs.StringVar(&q.dataDir, "data-dir", defaultDataDir, "Parquet data directory written by sosv-record")
+	fs.StringVar(&q.db, "db", "", "read this v1 SQLite database instead of --data-dir")
 	fs.StringVar(&q.at, "at", "", `point in time "YYYY-MM-DD HH:MM:SS"`)
 	fs.StringVar(&q.from, "start_from", "", "range start")
 	fs.StringVar(&q.to, "end_at", "", "range end (default: now)")
@@ -126,39 +125,10 @@ func (q *queryFlags) window(required bool) (query.Window, error) {
 }
 
 func (q *queryFlags) open() (*store.DB, error) {
-	return store.Open(q.db, true)
-}
-
-func cmdRecord(args []string) error {
-	fs := flag.NewFlagSet("record", flag.ExitOnError)
-	var c recorder.Config
-	fs.StringVar(&c.DB, "db", defaultDB, "database file")
-	fs.DurationVar(&c.Interval, "interval", 30*time.Second, "process and socket sample interval")
-	fs.DurationVar(&c.FDInterval, "fd-interval", 120*time.Second, "full open-file walk interval")
-	fs.DurationVar(&c.Duration, "duration", 0, "stop after this long (0 = until SIGINT/SIGTERM)")
-	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
-	budget := fs.String("cpu-budget", "2%", "recorder CPU budget, percent of one core")
-	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
-	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof output this often")
-	if _, err := parse(fs, args); err != nil {
-		return err
+	if q.db != "" {
+		return store.Open(q.db, true)
 	}
-	if _, err := fmt.Sscanf(strings.TrimSuffix(*budget, "%"), "%g", &c.CPUBudget); err != nil {
-		return fmt.Errorf("bad --cpu-budget %q", *budget)
-	}
-	c.CPUBudget /= 100
-	if c.Interval < time.Second || c.FDInterval < c.Interval {
-		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
-	}
-	logger := log.New(os.Stderr, "sosv: ", log.LstdFlags)
-	r, err := recorder.New(c, logger)
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	logger.Printf("recording to %s every %s (fd walk every %s)", c.DB, c.Interval, c.FDInterval)
-	return r.Run(ctx)
+	return duck.Open(q.dataDir)
 }
 
 func cmdPS(args []string) error {
