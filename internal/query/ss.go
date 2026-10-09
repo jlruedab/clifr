@@ -300,6 +300,9 @@ type SSGroup struct {
 	States    map[string]int `json:"states"`
 	Process   string         `json:"process"`
 	PID       int            `json:"pid"`
+	// From TCP events only (v2).
+	Retransmits int `json:"retransmits"`
+	Resets      int `json:"resets"`
 }
 
 // SocketsInRange groups sockets of proto that existed in [from, to] by owning
@@ -422,10 +425,10 @@ func statesCol(m map[string]int) string {
 }
 
 func PrintSSGroups(w io.Writer, gs []SSGroup) {
-	fmt.Fprintf(w, "%-19s %-19s %6s %6s  %-30s %s\n", "FIRST_SEEN", "LAST_SEEN", "CONNS", "PEAK", "STATES", "PROCESS")
+	fmt.Fprintf(w, "%-19s %-19s %6s %6s %7s %6s  %-30s %s\n", "FIRST_SEEN", "LAST_SEEN", "CONNS", "PEAK", "RETRANS", "RESETS", "STATES", "PROCESS")
 	for _, g := range gs {
-		fmt.Fprintf(w, "%-19s %-19s %6d %6d  %-30s %s\n", FormatMS(g.FirstSeen), FormatMS(g.LastSeen),
-			g.Conns, g.Peak, statesCol(g.States), g.Process)
+		fmt.Fprintf(w, "%-19s %-19s %6d %6d %7d %6d  %-30s %s\n", FormatMS(g.FirstSeen), FormatMS(g.LastSeen),
+			g.Conns, g.Peak, g.Retransmits, g.Resets, statesCol(g.States), g.Process)
 	}
 }
 

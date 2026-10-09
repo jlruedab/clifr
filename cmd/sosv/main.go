@@ -243,6 +243,9 @@ func cmdSS(args []string) error {
 		return err
 	}
 	defer db.Close()
+	if query.TCPFromEvents(db) {
+		return ssEvents(db, q, w, proto, filter)
+	}
 	if w.IsRange() {
 		groups, err := query.SocketsInRange(db, w.From, w.To, proto, filter)
 		if err != nil {
@@ -309,8 +312,13 @@ func cmdLsof(args []string) error {
 	if err != nil {
 		return err
 	}
-	query.Header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
-		query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
+	if query.TCPFromEvents(db) {
+		query.Header("lsof at %s: files from the full fd walk at %s (sampled); TCP sockets exact (events); UDP from the keyframe (%d rows)",
+			query.FormatMS(w.At), query.FormatMS(sfd), len(rows))
+	} else {
+		query.Header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
+			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
+	}
 	if q.json {
 		return query.PrintJSON(os.Stdout, rows)
 	}
@@ -410,5 +418,44 @@ func cmdOOM(args []string) error {
 		return query.PrintJSON(os.Stdout, kills)
 	}
 	query.PrintOOM(os.Stdout, kills)
+	return nil
+}
+
+// ssEvents: ss from TCP events (v2 recordings).
+func ssEvents(db *store.DB, q queryFlags, w query.Window, proto string, filter query.SockFilter) error {
+	if w.IsRange() {
+		if proto != "tcp" {
+			return errors.New("range mode is for TCP (UDP is recorded at keyframes only)")
+		}
+		groups, err := query.ConnsInRange(db, w.From, w.To, filter)
+		if err != nil {
+			return err
+		}
+		query.Header("TCP connections by process, %s .. %s, from events (every connection, however short)",
+			query.FormatMS(w.From), query.FormatMS(w.To))
+		if q.json {
+			return query.PrintJSON(os.Stdout, groups)
+		}
+		query.PrintSSGroups(os.Stdout, groups)
+		return nil
+	}
+	rows, kf, err := query.ConnsAt(db, w.At, proto, filter)
+	if err != nil {
+		return err
+	}
+	if proto == "tcp" {
+		tw := "time-wait end exact"
+		if !query.TimeWaitExact(db) {
+			tw = "time-wait shown until 60 s after the close (the kernel ends it 0-5 s later)"
+		}
+		query.Header("ss at %s (%d sockets): connections, states and owners exact (events); Recv-Q/Send-Q sampled, from the keyframe at %s; %s",
+			query.FormatMS(w.At), len(rows), query.FormatMS(kf), tw)
+	} else {
+		query.Header("%s sockets at %s from the keyframe at %s (UDP is recorded at keyframes only)", proto, query.FormatMS(w.At), query.FormatMS(kf))
+	}
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	query.PrintSS(os.Stdout, rows)
 	return nil
 }

@@ -36,6 +36,9 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 		names.netlink, _ = r.fs.ReadNetNetlink()
 	}
 	nfd := 0
+	if all && r.tcp != nil {
+		r.tcp.holders = map[uint64]holder{} // rebuilt by observeFiles
+	}
 	for _, p := range r.procs {
 		if p.closed || !(all || p.owns || p.born == r.gen) {
 			continue
@@ -61,8 +64,17 @@ func (r *Recorder) observeFiles(p *procEntry, fds []procfs.FD, ts int64, names s
 		p.files = map[fileKey]*fileEntry{}
 	}
 	for _, fd := range fds {
-		if ino, ok := procfs.SocketInode(fd.Target); ok && r.byInode[ino] != nil {
-			continue
+		if ino, ok := procfs.SocketInode(fd.Target); ok {
+			if r.tcp != nil {
+				if _, seen := r.tcp.holders[ino]; !seen {
+					r.tcp.holders[ino] = holder{key: p.key, fd: fd.Num}
+				}
+				if r.tcp.isInetInode(ino) {
+					continue // tcp_conns and keyframes have it
+				}
+			} else if r.byInode[ino] != nil {
+				continue
+			}
 		}
 		k := fileKey{fd: fd.Num, target: fd.Target}
 		e := p.files[k]

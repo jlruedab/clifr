@@ -141,6 +141,25 @@ func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64,
 	             COALESCE((SELECT state FROM sock_samples WHERE sock_id = k.id AND ts <= ?1 ORDER BY ts DESC LIMIT 1), 0), k.inode
 	      FROM sock_owners o JOIN sockets k ON k.id = o.sock_id JOIN processes p ON p.id = o.proc_id
 	      WHERE o.first_seen <= ?1 AND COALESCE(o.last_seen, ?3) >= ?1` + pidCond
+	if TCPFromEvents(db) {
+		// TCP sockets held at t exactly (events); UDP from the keyframe.
+		s = t
+		args = []any{t, KeyframeAt(db, t), openEnd}
+		if o.PID != 0 {
+			args = append(args, o.PID)
+		}
+		q = `SELECT p.comm, c.pid, p.uid, c.fd, 'tcp', c.family, c.laddr, c.lport, c.raddr, c.rport,
+		            COALESCE((SELECT x.new_state FROM tcp_transitions x WHERE x.conn_id = c.id AND x.ts <= ?1
+		                      ORDER BY x.ts DESC, x.seq DESC LIMIT 1), c.first_state), c.inode
+		     FROM tcp_conns c JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
+		     WHERE c.pid <> 0 AND c.fd >= 0 AND c.open_ts <= ?1
+		       AND (c.close_ts > ?1 OR (c.close_ts IS NULL AND c.last_seen >= ?1))
+		       AND (c.owner_until IS NULL OR c.owner_until > ?1)` + pidCond + `
+		     UNION ALL
+		     SELECT p.comm, k.pid, p.uid, k.fd, 'udp', k.family, k.laddr, k.lport, k.raddr, k.rport, k.state, k.inode
+		     FROM tcp_keyframes k JOIN processes p ON p.pid = k.pid AND p.start_time = k.start_time
+		     WHERE k.ts = ?2 AND k.proto = 'udp' AND k.pid <> 0 AND k.fd >= 0` + strings.ReplaceAll(pidCond, "p.pid", "k.pid")
+	}
 	r, err := db.Query(q, args...)
 	if err != nil {
 		return

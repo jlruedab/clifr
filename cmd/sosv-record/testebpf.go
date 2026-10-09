@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,12 +12,13 @@ import (
 	"time"
 
 	"sosv/internal/bpfproc"
+	"sosv/internal/bpftcp"
 )
 
 // testEBPF loads the eBPF programs, triggers each event type and checks that
 // it arrives: fork, exec (argv, truncation), exit code, exit by signal and
 // an OOM kill in a cgroup limited to 48 MB. It needs root.
-func testEBPF(o bpfproc.Options) error {
+func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 	src, err := bpfproc.Open(o)
 	if err != nil {
 		return fmt.Errorf("load: %w", err)
@@ -123,6 +125,7 @@ func testEBPF(o bpfproc.Options) error {
 		check("oom kill: exit by SIGKILL", sig == int(syscall.SIGKILL), fmt.Sprintf("signal %d", sig))
 	}
 	fmt.Printf("drops: %v\n", src.Drops())
+	testTCP(to, check)
 	if failed > 0 {
 		return fmt.Errorf("%d check(s) failed", failed)
 	}
@@ -190,4 +193,98 @@ func threadExit() {
 		close(done)
 	}()
 	<-done
+}
+
+// testTCP: a listener, a connection accepted and closed normally, one closed
+// with RST (SO_LINGER 0), and a connect to a closed port.
+func testTCP(o bpftcp.Options, check func(string, bool, string)) {
+	src, err := bpftcp.Open(o)
+	if err != nil {
+		check("tcp: load", false, err.Error())
+		return
+	}
+	defer src.Close()
+	fmt.Printf("tcp loaded: buffer %s, probes %s, missing %v\n", src.Buffer, src.Probes, src.Missing)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		check("tcp: listen", false, err.Error())
+		return
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Read(make([]byte, 8))
+			c.Close()
+		}
+	}()
+	c, _ := net.Dial("tcp4", ln.Addr().String())
+	cport := c.LocalAddr().(*net.TCPAddr).Port
+	c.Write([]byte("x"))
+	time.Sleep(50 * time.Millisecond)
+	c.Close()
+	c2, _ := net.Dial("tcp4", ln.Addr().String())
+	rport := c2.LocalAddr().(*net.TCPAddr).Port
+	c2.(*net.TCPConn).SetLinger(0)
+	c2.Close()
+	dead, _ := net.Listen("tcp4", "127.0.0.1:0")
+	deadPort := dead.Addr().(*net.TCPAddr).Port
+	dead.Close()
+	net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", deadPort), time.Second)
+	time.Sleep(300 * time.Millisecond)
+	ln.Close()
+
+	var evs []bpftcp.Event
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		if e, err := src.Read(100 * time.Millisecond); err == nil {
+			evs = append(evs, e)
+		}
+	}
+	me := os.Getpid()
+	sk := map[string]uint64{}
+	for _, e := range evs {
+		if e.Kind != bpftcp.State {
+			continue
+		}
+		switch {
+		case e.New == bpftcp.Listen && e.SPort == port:
+			sk["listen"] = e.SK
+		case e.SPort == cport && e.DPort == port:
+			sk["client"] = e.SK
+		case e.SPort == port && e.DPort == cport:
+			sk["server"] = e.SK
+		case e.SPort == rport && e.DPort == port:
+			sk["rst"] = e.SK
+		case e.DPort == deadPort:
+			sk["refused"] = e.SK
+		}
+	}
+	find := func(s uint64, ok func(bpftcp.Event) bool) (bpftcp.Event, bool) {
+		for _, e := range evs {
+			if e.SK == s && ok(e) {
+				return e, true
+			}
+		}
+		return bpftcp.Event{}, false
+	}
+	try := check // counts failures
+	e, ok := find(sk["listen"], func(e bpftcp.Event) bool { return e.New == bpftcp.Listen })
+	try("tcp: listen owner and fd", ok && e.Owner.PID == me && e.Owner.FD >= 0 && e.Owner.Inode != 0, fmt.Sprintf("%+v", e.Owner))
+	e, ok = find(sk["client"], func(e bpftcp.Event) bool { return e.New == bpftcp.SynSent })
+	try("tcp: connect owner and fd", ok && e.Owner.PID == me && e.Owner.FD >= 0, fmt.Sprintf("%+v", e.Owner))
+	e, ok = find(sk["server"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.AcceptFD })
+	try("tcp: accept owner and fd", ok && e.Owner.PID == me && e.Owner.FD >= 0 && e.Owner.Inode != 0, fmt.Sprintf("%+v", e.Owner))
+	_, ok = find(sk["client"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.AppClose })
+	try("tcp: application close", ok, "")
+	_, ok1 := find(sk["client"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.TimeWaitStart })
+	_, ok2 := find(sk["server"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.TimeWaitStart })
+	try("tcp: time-wait continuation", ok1 || ok2, "")
+	_, ok = find(sk["rst"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.ActiveReset })
+	try("tcp: reset sent (SO_LINGER 0)", ok, "")
+	e, ok = find(sk["refused"], func(e bpftcp.Event) bool { return e.New == bpftcp.Close })
+	try("tcp: refused connect, reset received", ok && e.ResetsReceived > 0, fmt.Sprintf("resets received %d", e.ResetsReceived))
+	fmt.Printf("tcp drops: %v\n", src.Drops())
 }

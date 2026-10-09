@@ -33,16 +33,17 @@ const (
 	AppClose      Kind = 4 // the application closed the socket
 	TimeWaitStart Kind = 5 // continues as a time-wait socket in state New (TimeWait or FinWait2)
 	ActiveReset   Kind = 6 // sent an RST on abort (after its TCP_CLOSE)
+	TimeWaitEnd   Kind = 7 // a time-wait socket went away (addresses in the event)
 )
 
 func (k Kind) String() string {
-	if k >= State && k <= ActiveReset {
-		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset"}[k]
+	if k >= State && k <= TimeWaitEnd {
+		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset", "time_wait_end"}[k]
 	}
 	return "unknown"
 }
 
-var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset}
+var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset, TimeWaitEnd}
 
 // TCP states, as the kernel numbers them.
 const (
@@ -96,6 +97,7 @@ type Source struct {
 	Buffer  string   // "ringbuf" or "perf"
 	Probes  string   // "fentry" or "kprobe"
 	Missing []string // optional hooks that could not be attached
+	TWEnd   bool     // time-wait ends are reported (inet_twsk_kill attached)
 	lost    atomic.Uint64
 }
 
@@ -143,7 +145,7 @@ func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
 	// fentry/fexit programs and their kprobe equivalents.
 	pairs := [][2]string{{"handle_accept_fexit", "handle_accept_kret"}, {"handle_close_fentry", "handle_close_kprobe"},
 		{"handle_tw_fentry", "handle_tw_kprobe"}, {"handle_active_reset_fentry", "handle_active_reset_kprobe"}}
-	for _, p := range pairs {
+	for _, p := range append(pairs, [2]string{"handle_tw_end_fentry", "handle_tw_end_kprobe"}) {
 		if fentry {
 			delete(spec.Programs, p[1])
 		} else {
@@ -172,9 +174,9 @@ func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
 		s.links = append(s.links, l)
 		return nil
 	}
-	if err = tp("sock", "inet_sock_set_state", "handle_set_state", true); err != nil {
-		return
-	}
+	// The state tracepoint is attached last: everything that completes a
+	// state change (owners, fds, time-wait, resets) is already in place
+	// when the first one is reported.
 	for _, t := range [][2]string{{"sys_enter_connect", "handle_enter_connect"}, {"sys_exit_connect", "handle_exit_connect"},
 		{"sys_enter_listen", "handle_enter_listen"}, {"sys_exit_listen", "handle_exit_listen"},
 		{"sys_exit_accept4", "handle_exit_accept4"}, {"sys_exit_accept", "handle_exit_accept"}} {
@@ -209,6 +211,22 @@ func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
 			}
 			s.links = append(s.links, l)
 		}
+	}
+	// Optional: inet_twsk_kill is static and may be inlined or renamed.
+	var twl link.Link
+	var twErr error
+	if fentry {
+		twl, twErr = link.AttachTracing(link.TracingOptions{Program: coll.Programs["handle_tw_end_fentry"]})
+	} else {
+		twl, twErr = link.Kprobe("inet_twsk_kill", coll.Programs["handle_tw_end_kprobe"], nil)
+	}
+	if twErr == nil {
+		s.links, s.TWEnd = append(s.links, twl), true
+	} else {
+		s.Missing = append(s.Missing, "inet_twsk_kill")
+	}
+	if err = tp("sock", "inet_sock_set_state", "handle_set_state", true); err != nil {
+		return
 	}
 	if perfBuf {
 		size := o.BufferBytes
@@ -317,7 +335,7 @@ func decode(raw []byte) (Event, error) {
 		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport),
 		Owner:       Owner{PID: int(r.Owner.Pid), StartNS: r.Owner.StartNs, FD: int(r.Owner.Fd), Inode: r.Owner.Inode},
 		Retransmits: r.Counters.Retransmits, ResetsSent: r.Counters.ResetsSent, ResetsReceived: r.Counters.ResetsReceived}
-	if e.Kind == State {
+	if e.Kind == State || e.Kind == TimeWaitEnd {
 		if e.Family == 2 {
 			e.SAddr = netip.AddrFrom4([4]byte(r.Saddr[:4]))
 			e.DAddr = netip.AddrFrom4([4]byte(r.Daddr[:4]))

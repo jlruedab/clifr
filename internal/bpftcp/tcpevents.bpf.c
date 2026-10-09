@@ -57,6 +57,35 @@ struct pt_regs {
 // ---- kernel structures (CO-RE) ----
 
 struct inode { unsigned long i_ino; } __attribute__((preserve_access_index));
+
+struct in6_addr {
+	union {
+		__u8 u6_addr8[16];
+	} in6_u;
+} __attribute__((preserve_access_index));
+
+// The addresses of a time-wait socket (its struct sock_common).
+struct sock_common {
+	union {
+		struct {
+			__u32 skc_daddr;
+			__u32 skc_rcv_saddr;
+		};
+	};
+	union {
+		struct {
+			__u16 skc_dport; // network order
+			__u16 skc_num; // local port, host order
+		};
+	};
+	unsigned short skc_family;
+	struct in6_addr skc_v6_daddr;
+	struct in6_addr skc_v6_rcv_saddr;
+} __attribute__((preserve_access_index));
+
+struct inet_timewait_sock {
+	struct sock_common __tw_common;
+} __attribute__((preserve_access_index));
 struct file { struct inode *f_inode; } __attribute__((preserve_access_index));
 struct socket { struct file *file; } __attribute__((preserve_access_index));
 struct sock { struct socket *sk_socket; } __attribute__((preserve_access_index));
@@ -112,8 +141,9 @@ struct sys_exit_args {
 
 // ---- events ----
 
-enum kind { EV_STATE = 1, EV_ACCEPT = 2, EV_ACCEPT_FD = 3, EV_APP_CLOSE = 4, EV_TIME_WAIT = 5, EV_ACTIVE_RESET = 6 };
-#define NKINDS 7
+enum kind { EV_STATE = 1, EV_ACCEPT = 2, EV_ACCEPT_FD = 3, EV_APP_CLOSE = 4, EV_TIME_WAIT = 5, EV_ACTIVE_RESET = 6,
+	EV_TW_END = 7 };
+#define NKINDS 8
 
 struct owner {
 	__u32 pid; // process (tgid); 0: unknown
@@ -421,6 +451,43 @@ SEC("kprobe/tcp_time_wait")
 int BPF_KPROBE(handle_tw_kprobe, void *sk, int state)
 {
 	return time_wait(ctx, (__u64)sk, state);
+}
+
+// A time-wait socket goes away (its timer fired, or the addresses were
+// reused). inet_twsk_kill is static: optional, the end is estimated without.
+static __always_inline int tw_end(void *ctx, struct inet_timewait_sock *tw)
+{
+	struct tcp_event e = {};
+	e.kind = EV_TW_END;
+	e.mono_ns = bpf_ktime_get_ns();
+	e.sk = (__u64)tw;
+	e.owner.fd = -1;
+	e.family = BPF_CORE_READ(tw, __tw_common.skc_family);
+	e.sport = BPF_CORE_READ(tw, __tw_common.skc_num);
+	e.dport = __builtin_bswap16(BPF_CORE_READ(tw, __tw_common.skc_dport));
+	if (e.family == 2) {
+		__u32 s = BPF_CORE_READ(tw, __tw_common.skc_rcv_saddr);
+		__u32 d = BPF_CORE_READ(tw, __tw_common.skc_daddr);
+		__builtin_memcpy(e.saddr, &s, 4);
+		__builtin_memcpy(e.daddr, &d, 4);
+	} else {
+		BPF_CORE_READ_INTO(&e.saddr, tw, __tw_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+		BPF_CORE_READ_INTO(&e.daddr, tw, __tw_common.skc_v6_daddr.in6_u.u6_addr8);
+	}
+	send(ctx, &e);
+	return 0;
+}
+
+SEC("fentry/inet_twsk_kill")
+int BPF_PROG(handle_tw_end_fentry, struct inet_timewait_sock *tw)
+{
+	return tw_end(ctx, tw);
+}
+
+SEC("kprobe/inet_twsk_kill")
+int BPF_KPROBE(handle_tw_end_kprobe, struct inet_timewait_sock *tw)
+{
+	return tw_end(ctx, tw);
 }
 
 static __always_inline int active_reset(void *ctx, __u64 sk)

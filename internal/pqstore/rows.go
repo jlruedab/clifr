@@ -139,6 +139,84 @@ type statRow struct {
 	Dropped int64  `parquet:"dropped"`
 }
 
+type tcpConnRow struct {
+	ID             int64  `parquet:"id"`
+	PID            int32  `parquet:"pid"`
+	StartTime      int64  `parquet:"start_time"`
+	FD             int32  `parquet:"fd"`
+	OwnerUntil     *int64 `parquet:"owner_until,optional"`
+	IfName         string `parquet:"ifname,dict"`
+	Inode          int64  `parquet:"inode"`
+	Family         int32  `parquet:"family"`
+	LAddr          string `parquet:"laddr,dict"`
+	LPort          int32  `parquet:"lport"`
+	RAddr          string `parquet:"raddr,dict"`
+	RPort          int32  `parquet:"rport"`
+	Direction      string `parquet:"direction,dict"`
+	OpenTS         int64  `parquet:"open_ts"`
+	CloseTS        *int64 `parquet:"close_ts,optional"`
+	FirstState     int32  `parquet:"first_state"`
+	FinalState     int32  `parquet:"final_state"`
+	LingerState    int32  `parquet:"linger_state"`
+	LingerUntil    *int64 `parquet:"linger_until,optional"`
+	Retransmits    int32  `parquet:"retransmits"`
+	ResetsSent     int32  `parquet:"resets_sent"`
+	ResetsReceived int32  `parquet:"resets_received"`
+	Source         string `parquet:"source,dict"`
+	LastSeen       *int64 `parquet:"last_seen,optional"`
+}
+
+type tcpTransRow struct {
+	ConnID int64 `parquet:"conn_id"`
+	TS     int64 `parquet:"ts"`
+	Seq    int32 `parquet:"seq"`
+	Old    int32 `parquet:"old_state"`
+	New    int32 `parquet:"new_state"`
+}
+
+type keyframeRow struct {
+	TS        int64  `parquet:"ts"`
+	Proto     string `parquet:"proto,dict"`
+	Family    int32  `parquet:"family"`
+	LAddr     string `parquet:"laddr,dict"`
+	LPort     int32  `parquet:"lport"`
+	RAddr     string `parquet:"raddr,dict"`
+	RPort     int32  `parquet:"rport"`
+	Inode     int64  `parquet:"inode"`
+	State     int32  `parquet:"state"`
+	RecvQ     int64  `parquet:"recv_q"`
+	SendQ     int64  `parquet:"send_q"`
+	UID       int32  `parquet:"uid"`
+	ConnID    int64  `parquet:"conn_id"`
+	PID       int32  `parquet:"pid"`
+	StartTime int64  `parquet:"start_time"`
+	FD        int32  `parquet:"fd"`
+}
+
+type reconcileRow struct {
+	TS       int64  `parquet:"ts"`
+	Kind     string `parquet:"kind,dict"`
+	DumpRows int32  `parquet:"dump_rows"`
+	Missing  int32  `parquet:"missing_from_events"`
+	Extra    int32  `parquet:"extra_in_events"`
+	Initial  int32  `parquet:"initial"`
+}
+
+func tcpConnOf(c store.TCPConn) tcpConnRow {
+	return tcpConnRow{ID: c.ID, PID: int32(c.PID), StartTime: c.StartTime, FD: int32(c.FD), OwnerUntil: c.OwnerUntil, IfName: c.IfName,
+		Inode: int64(c.Inode), Family: int32(c.Family), LAddr: c.LAddr, LPort: int32(c.LPort), RAddr: c.RAddr,
+		RPort: int32(c.RPort), Direction: c.Direction, OpenTS: c.OpenTS, CloseTS: c.CloseTS,
+		FirstState: int32(c.FirstState), FinalState: int32(c.FinalState), LingerState: int32(c.LingerState),
+		LingerUntil: c.LingerUntil, Retransmits: int32(c.Retransmits), ResetsSent: int32(c.ResetsSent),
+		ResetsReceived: int32(c.ResetsReceived), Source: c.Source, LastSeen: ptr(c.LastSeen)}
+}
+
+func keyframeOf(k store.KeyframeRow) keyframeRow {
+	return keyframeRow{TS: k.TS, Proto: k.Proto, Family: int32(k.Family), LAddr: k.LAddr, LPort: int32(k.LPort),
+		RAddr: k.RAddr, RPort: int32(k.RPort), Inode: int64(k.Inode), State: int32(k.State), RecvQ: k.RecvQ,
+		SendQ: k.SendQ, UID: int32(k.UID), ConnID: k.ConnID, PID: int32(k.PID), StartTime: k.StartTime, FD: int32(k.FD)}
+}
+
 type metaRow struct {
 	Run   int64  `parquet:"run"`
 	TS    int64  `parquet:"ts"`

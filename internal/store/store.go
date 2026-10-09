@@ -112,6 +112,43 @@ CREATE TABLE IF NOT EXISTS oom_events (
 	snapshot INTEGER NOT NULL      -- 1: proc_samples has a row for the victim at ts
 );
 
+-- TCP connections from eBPF events (or first seen in a keyframe). One row per
+-- connection; INSERT OR REPLACE keeps its newest version.
+CREATE TABLE IF NOT EXISTS tcp_conns (
+	id INTEGER PRIMARY KEY,
+	pid INTEGER, start_time INTEGER, fd INTEGER, -- owner (0/-1: unknown)
+	owner_until INTEGER,           -- the application closed the socket
+	ifname TEXT,                   -- bound device
+	inode INTEGER, family INTEGER,
+	laddr TEXT, lport INTEGER, raddr TEXT, rport INTEGER,
+	direction TEXT,                -- active, passive, listen, unknown
+	open_ts INTEGER NOT NULL, close_ts INTEGER,
+	first_state INTEGER, final_state INTEGER,
+	linger_state INTEGER, linger_until INTEGER, -- time-wait continuation (estimated end)
+	retransmits INTEGER, resets_sent INTEGER, resets_received INTEGER,
+	source TEXT, last_seen INTEGER
+);
+CREATE INDEX IF NOT EXISTS tcp_conns_open ON tcp_conns(open_ts);
+
+CREATE TABLE IF NOT EXISTS tcp_transitions (
+	conn_id INTEGER NOT NULL, ts INTEGER NOT NULL, seq INTEGER, old_state INTEGER, new_state INTEGER
+);
+CREATE INDEX IF NOT EXISTS tcp_transitions_conn ON tcp_transitions(conn_id, ts);
+
+-- Full sock_diag dumps (TCP and UDP) every keyframe interval.
+CREATE TABLE IF NOT EXISTS tcp_keyframes (
+	ts INTEGER NOT NULL, proto TEXT, family INTEGER,
+	laddr TEXT, lport INTEGER, raddr TEXT, rport INTEGER, inode INTEGER,
+	state INTEGER, recv_q INTEGER, send_q INTEGER, uid INTEGER,
+	conn_id INTEGER, pid INTEGER, start_time INTEGER, fd INTEGER
+);
+CREATE INDEX IF NOT EXISTS tcp_keyframes_ts ON tcp_keyframes(ts);
+
+CREATE TABLE IF NOT EXISTS reconcile (
+	ts INTEGER NOT NULL, kind TEXT, dump_rows INTEGER,
+	missing_from_events INTEGER, extra_in_events INTEGER, initial INTEGER
+);
+
 -- Counters per interval, e.g. events received and dropped per source.
 CREATE TABLE IF NOT EXISTS recorder_stats (
 	ts INTEGER NOT NULL, source TEXT NOT NULL, events INTEGER, dropped INTEGER

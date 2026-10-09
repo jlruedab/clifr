@@ -256,6 +256,29 @@ func TestIncident(t *testing.T) {
 		for _, l := range life {
 			t.Logf("  pid %d %d ms %s %s: %s", l.PID, l.Duration, l.Source, l.EndKind, l.Command)
 		}
+		var all []struct {
+			Duration int64  `json:"duration_ms"`
+			PID      int    `json:"pid"`
+			Command  string `json:"command"`
+			Source   string `json:"source"`
+			EndKind  string `json:"end_kind"`
+		}
+		query(t, sosv, &all, "life", "--name", "e2eburst", "--data-dir", data, "--json")
+		for _, l := range all {
+			if !strings.Contains(l.Command, "TestIncident") || strings.HasSuffix(l.Command, "/e2eburst") {
+				t.Logf("  any: pid %d %d ms %s %s: %.80s", l.PID, l.Duration, l.Source, l.EndKind, l.Command)
+			}
+		}
+		if b, err := os.ReadFile(recLog.Name()); err == nil {
+			t.Logf("recorder log:\n%s", b)
+		}
+		if out, err := exec.Command(sosv, "stats", "--data-dir", data).CombinedOutput(); err == nil {
+			t.Logf("stats:\n%s", out)
+		}
+		if keep := os.Getenv("SOSV_E2E_KEEP"); keep != "" { // keep the data for a look
+			exec.Command("cp", "-r", data, keep).Run()
+			t.Logf("data copied to %s; burst %s .. %s", keep, burstStart.Format("15:04:05.000"), burstEnd.Format("15:04:05.000"))
+		}
 	}
 }
 

@@ -97,6 +97,7 @@ func Run(db *store.DB) (*Report, error) {
 	}
 	rows.Close()
 	rep := &Report{Totals: map[string]Result{}, IgnoredFields: ignoredFields}
+	events := query.TCPFromEvents(db)
 	for _, s := range snaps {
 		var res Result
 		var err error
@@ -104,7 +105,11 @@ func Run(db *store.DB) (*Report, error) {
 		case "ps aux":
 			res, err = comparePS(db, s)
 		case "ss -tanp":
-			res, err = compareSS(db, s)
+			if events {
+				res, err = compareSSEvents(db, s)
+			} else {
+				res, err = compareSS(db, s)
+			}
 		case "lsof -n -P":
 			res, err = compareLsof(db, s)
 		default:
@@ -568,7 +573,10 @@ func parseLsof(out string, res *Result, ignore map[int]bool) map[string]lsofLine
 	return m
 }
 
-func fdChurn(db *store.DB, pid int, fd string, s, next, nextAny int64) bool {
+// fdChurn: the process or this fd changed between the sample and the next
+// one. With TCP events (window set), a TCP socket on this fd changed while
+// the real command ran.
+func fdChurn(db *store.DB, pid int, fd string, s, next, nextAny int64, window [2]int64) bool {
 	if procChurn(db, pid, s, nextAny) {
 		return true
 	}
@@ -580,9 +588,14 @@ func fdChurn(db *store.DB, pid int, fd string, s, next, nextAny int64) bool {
 	}
 	changed := `((x.first_seen > ?3 AND x.first_seen <= ?4) OR
 		(?4 < ?5 AND x.last_seen IS NOT NULL AND x.last_seen >= ?3 AND x.last_seen < ?4))`
+	if window[1] != 0 && exists(db, `SELECT 1 FROM tcp_conns c WHERE c.pid = ?1 AND c.fd = ?2 AND
+		((c.open_ts > ?3 AND c.open_ts <= ?4) OR (c.close_ts > ?3 AND c.close_ts <= ?4) OR
+		 (c.owner_until > ?3 AND c.owner_until <= ?4))`, pid, num, window[0], window[1]) {
+		return true
+	}
 	return exists(db, `SELECT 1 FROM open_files x JOIN processes p ON p.id = x.proc_id
 		WHERE p.pid = ?1 AND x.fd = ?2 AND `+changed, pid, num, s, next, noNext) ||
-		exists(db, `SELECT 1 FROM sock_owners x JOIN processes p ON p.id = x.proc_id
+		window[1] == 0 && exists(db, `SELECT 1 FROM sock_owners x JOIN processes p ON p.id = x.proc_id
 		WHERE p.pid = ?1 AND x.fd = ?2 AND `+changed, pid, num, s, nextAny, noNext)
 }
 
@@ -593,6 +606,10 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 		return res, err
 	}
 	next, nextAny := nextSample(db, sfd, true), nextSample(db, s, false)
+	var window [2]int64
+	if query.TCPFromEvents(db) {
+		window = [2]int64{snap.ts, snap.endTS}
+	}
 	real := parseLsof(snap.output, &res, snap.ignore)
 	rec := map[string]lsofLine{}
 	for _, r := range recon {
@@ -612,7 +629,7 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 		x, ok := rec[key]
 		if !ok {
 			pid, fd := keyParts(key)
-			if fdChurn(db, pid, fd, sfd, next, nextAny) {
+			if fdChurn(db, pid, fd, sfd, next, nextAny, window) {
 				res.ChurnMissing++
 			} else {
 				res.Missing++
@@ -632,14 +649,14 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 			{"FD mode", r.mode, x.mode},
 			{"TYPE", r.typ, x.typ},
 			{"NAME", r.name, x.name},
-		}, func() bool { return fdChurn(db, pid, fd, sfd, next, nextAny) })
+		}, func() bool { return fdChurn(db, pid, fd, sfd, next, nextAny, window) })
 	}
 	for key, x := range rec {
 		if _, ok := real[key]; ok {
 			continue
 		}
 		pid, fd := keyParts(key)
-		if fdChurn(db, pid, fd, sfd, next, nextAny) {
+		if fdChurn(db, pid, fd, sfd, next, nextAny, window) {
 			res.ChurnExtra++
 		} else {
 			res.Extra++
@@ -716,4 +733,80 @@ func Print(w io.Writer, rep *Report, verbose bool) {
 		"checkpoint sample and the sample taken right after the real commands finished. gap = how long after\n"+
 		"the sample the real command finished. churn-changed = matched, but the fields differ and the database\n"+
 		"shows the entity changing in that window; exact % is of the matched rows that did not change.")
+}
+
+// ---- TCP from events (v2) ----
+
+// connChanged: a TCP connection with these addresses opened, closed, ended
+// its time-wait (up to lingerSlackMS after the estimate), lost its owner or
+// changed state in (from, to].
+func connChanged(db *store.DB, key string, from, to int64) bool {
+	f := strings.Fields(key)
+	la, lp := splitSSAddr(f[0])
+	ra, rp := splitSSAddr(f[1])
+	return exists(db, `SELECT 1 FROM tcp_conns c WHERE c.laddr = ?1 AND c.lport = ?2 AND c.raddr = ?3 AND c.rport = ?4
+		AND ((c.open_ts > ?5 AND c.open_ts <= ?6) OR (c.close_ts > ?5 AND c.close_ts <= ?6)
+		  OR (c.linger_until > ?5 - ?7 AND c.linger_until <= ?6) OR (c.owner_until > ?5 AND c.owner_until <= ?6)
+		  OR EXISTS(SELECT 1 FROM tcp_transitions x WHERE x.conn_id = c.id AND x.ts > ?5 AND x.ts <= ?6))`,
+		la, lp, ra, rp, from, to, lingerSlackMS)
+}
+
+// lingerSlackMS: the end of a time-wait socket is estimated as 60 s after
+// the close, a lower bound: the kernel's timer wheel rounds a 60 s timer up
+// to its granularity there, 4.1 s at HZ=1000 (2 s at 250, 5.1 s at 100).
+const lingerSlackMS = 5500
+
+// compareSSEvents compares the real ss with the reconstruction at the moment
+// it started. Churn is what the events show changing while it ran.
+func compareSSEvents(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	recon, _, err := query.ConnsAt(db, snap.ts, "tcp", query.SockFilter{})
+	if err != nil {
+		return res, err
+	}
+	real := parseSS(snap.output, snap.ignore)
+	rec := map[string]query.SSRow{}
+	for _, r := range recon {
+		rec[r.Local+":"+portStr(r.LPort)+" "+r.Peer+":"+portStr(r.RPort)] = r
+	}
+	res.Real, res.Recon = len(real), len(rec)
+	from, to := snap.ts, snap.endTS
+	for key, r := range real {
+		x, ok := rec[key]
+		if !ok {
+			if connChanged(db, key, from, to) {
+				res.ChurnMissing++
+			} else {
+				res.Missing++
+				res.example("ss missing %s %s %s", r.state, key, r.users)
+			}
+			continue
+		}
+		res.Matched++
+		var us []string
+		for _, o := range x.Owners {
+			if !snap.ignore[o.PID] {
+				us = append(us, fmt.Sprintf("%s/%d/%d", o.Comm, o.PID, o.FD))
+			}
+		}
+		sort.Strings(us)
+		res.compare("ss "+key, []fieldPair{
+			{"State", r.state, x.State},
+			{"Recv-Q", r.recvQ, strconv.FormatInt(x.RecvQ, 10)},
+			{"Send-Q", r.sendQ, strconv.FormatInt(x.SendQ, 10)},
+			{"Process", r.users, strings.Join(us, ",")},
+		}, func() bool { return connChanged(db, key, from, to) })
+	}
+	for key, x := range rec {
+		if _, ok := real[key]; ok {
+			continue
+		}
+		if connChanged(db, key, from, to) {
+			res.ChurnExtra++
+		} else {
+			res.Extra++
+			res.example("ss extra %s %s", x.State, key)
+		}
+	}
+	return res, nil
 }

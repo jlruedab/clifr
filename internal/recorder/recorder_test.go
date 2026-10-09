@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -556,5 +557,35 @@ func TestEBPFEvents(t *testing.T) {
 	db.QueryRow(`SELECT SUM(events) FROM recorder_stats WHERE source = 'ebpf_exec'`).Scan(&n)
 	if n != 2 {
 		t.Errorf("recorder_stats ebpf_exec = %d", n)
+	}
+}
+
+// A short process first seen by a sample as a zombie (empty cmdline) keeps
+// the command line from its exec event.
+func TestZombieKeepsExecCmdline(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "daemon", 100, 0)
+	r, dbPath := newTestRecorder(t, fp.root)
+	r.events = newEventQueue()
+	t1 := time.UnixMilli(1790001000000)
+	must(t, r.sample(t1, true))
+	boot := int64(1790000000000)
+	key := procKey{pid: 70, start: boot + 1005*1000}
+	r.events.list = []procEvent{{kind: evExec, pid: 70, ts: key.start, haveStat: true, key: key,
+		attrs: store.ProcUpdate{PPID: 10, Comm: "burst", Cmdline: "/tmp/burst --run", Source: srcEBPF, Exe: "/tmp/burst", ExecTS: key.start}}}
+	fp.set(70, "burst", 1005*100, 0)
+	stat, _ := os.ReadFile(filepath.Join(fp.root, "70", "stat"))
+	os.WriteFile(filepath.Join(fp.root, "70", "stat"), []byte(strings.Replace(string(stat), ") S ", ") Z ", 1)), 0o644)
+	os.WriteFile(filepath.Join(fp.root, "70", "cmdline"), nil, 0o644)
+	must(t, r.sample(t1.Add(30*time.Second), true))
+	must(t, r.shutdown())
+	r.db.Close()
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	var cmd string
+	db.QueryRow(`SELECT cmdline FROM processes WHERE pid = 70`).Scan(&cmd)
+	if cmd != "/tmp/burst --run" {
+		t.Errorf("cmdline %q", cmd)
 	}
 }

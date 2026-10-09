@@ -42,6 +42,8 @@ user's go-ahead.
 - `internal/bpfproc/` — eBPF process events (fork/exec/exit, OOM): `procevents.bpf.c`
   (CO-RE, no vmlinux.h) and the committed bpf2go objects; `go generate ./internal/bpfproc`
   rebuilds them (clang-18, llvm-strip-18, libbpf-dev).
+- `internal/bpftcp/` — eBPF TCP events: `tcpevents.bpf.c` (state changes with owners,
+  accept fds, app close, time-wait start/end, retransmits/resets); objects for amd64 and arm64.
 - `internal/cnproc/` — kernel proc connector (fork/exec/exit events), the fallback.
 - `internal/store/` — `Backend` interface, v1 SQLite schema and batch writer, `Tee`.
 - `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention.
@@ -59,6 +61,11 @@ user's go-ahead.
 - Parquet: append-only. A closed entity is written once; open ones are rewritten each
   flush to `<table>/open/<run>.parquet` with last_seen = last sample. Readers keep one
   row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter.
+- TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
+  newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:
+  queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;
+  `--tcp sample` keeps v1 sampling. Kernel sock pointers are reused quickly: never key
+  anything that must survive a close by the pointer alone.
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
@@ -83,7 +90,7 @@ v2:
 1. [x] Tag v1; fix the report bugs; validation step (no v1 rerun: the 0721 data were repaired)
 2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
 3. [x] eBPF process events (proc connector fallback), OOM events
-4. [ ] eBPF TCP events, keyframes, reconciliation; `ss` at/range
+4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [ ] Long-held fd snapshots, mount events
 6. [ ] Ground-truth tests
 7. [ ] Benchmark: bpf_stats, new matrix, scaling, report

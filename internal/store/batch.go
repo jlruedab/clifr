@@ -58,6 +58,76 @@ type OOMEvent struct {
 	Snapshot  bool // a proc_samples row was written for the victim at TS
 }
 
+// TCPConn is one TCP connection (or listening socket) from eBPF events, or
+// first seen in a keyframe. Rows are written whole: a later row with the same
+// ID replaces the earlier one (the connection's newest state).
+type TCPConn struct {
+	ID         int64
+	PID        int    // owner (connect, listen or accept); 0: unknown
+	StartTime  int64  // owner's start time (with PID, the process key)
+	FD         int    // owner's fd; -1: unknown
+	OwnerUntil *int64 // the application closed the socket
+	IfName     string // bound to a device (from a keyframe), as ss shows "addr%if"
+	Inode      uint64
+	Family     int
+	LAddr      string
+	LPort      int
+	RAddr      string
+	RPort      int
+	Direction  string // active, passive, listen or unknown
+	OpenTS     int64
+	CloseTS    *int64
+	FirstState int // state when first seen (keyframe-adopted connections have no transitions)
+	FinalState int // state just before TCP_CLOSE
+	// LingerState (TIME_WAIT or FIN_WAIT2) is the time-wait socket that
+	// continues after CloseTS, until about LingerUntil (estimated).
+	LingerState    int
+	LingerUntil    *int64
+	Retransmits    int
+	ResetsSent     int
+	ResetsReceived int
+	Source         string // ebpf or keyframe
+	LastSeen       int64  // time of this version of the row
+}
+
+type TCPTransition struct {
+	ConnID   int64
+	TS       int64
+	Seq      int // order within the connection (several changes can share a millisecond)
+	Old, New int
+}
+
+// KeyframeRow is one socket of a full sock_diag dump (TCP and UDP): the only
+// place with exact queues, and UDP's only record.
+type KeyframeRow struct {
+	TS           int64
+	Proto        string
+	Family       int
+	LAddr        string
+	LPort        int
+	RAddr        string
+	RPort        int
+	Inode        uint64
+	State        int
+	RecvQ, SendQ int64
+	UID          int
+	ConnID       int64 // TCP: the matching connection, 0 if none
+	PID          int   // holder from events or the last fd walk; 0: unknown
+	StartTime    int64
+	FD           int
+}
+
+// ReconcileRow compares a keyframe with the event state: connections in the
+// dump that events did not know, and open in events but not in the dump.
+type ReconcileRow struct {
+	TS                int64
+	Kind              string
+	DumpRows          int
+	MissingFromEvents int
+	ExtraInEvents     int
+	Initial           bool // the first keyframe of a run: everything was unknown
+}
+
 // StatRow is one recorder counter for the interval ending at TS, e.g.
 // events received and dropped per event source.
 type StatRow struct {
@@ -140,6 +210,10 @@ type Batch struct {
 	OwnCloses   []Close
 	FileInserts []FileRow
 	FileCloses  []Close
+	TCPConns    []TCPConn
+	TCPTrans    []TCPTransition
+	Keyframes   []KeyframeRow
+	Reconcile   []ReconcileRow
 	ProcExits   []ProcExit
 	OOMEvents   []OOMEvent
 	Stats       []StatRow
@@ -153,7 +227,8 @@ func (b *Batch) Rows() int {
 	return len(b.ProcInserts) + len(b.ProcUpdates) + len(b.ProcCloses) + len(b.ProcSamples) +
 		len(b.SockInserts) + len(b.SockCloses) + len(b.SockSamples) +
 		len(b.OwnInserts) + len(b.OwnCloses) + len(b.FileInserts) + len(b.FileCloses) +
-		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats)
+		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
+		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile)
 }
 
 func nullInt(p *int64) any {
@@ -270,6 +345,44 @@ func (d *DB) Write(b *Batch) error {
 				len(b.OOMEvents), func(st *sql.Stmt, i int) error {
 					o := b.OOMEvents[i]
 					_, err := st.Exec(o.TS, o.PID, o.StartTime, o.Comm, o.RSSKB, b2i(o.Snapshot))
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT OR REPLACE INTO tcp_conns(id, pid, start_time, fd, owner_until, ifname, inode, family, laddr, lport,
+				raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until,
+				retransmits, resets_sent, resets_received, source, last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				len(b.TCPConns), func(st *sql.Stmt, i int) error {
+					c := b.TCPConns[i]
+					_, err := st.Exec(c.ID, c.PID, c.StartTime, c.FD, nullInt(c.OwnerUntil), c.IfName, int64(c.Inode), c.Family, c.LAddr, c.LPort,
+						c.RAddr, c.RPort, c.Direction, c.OpenTS, nullInt(c.CloseTS), c.FirstState, c.FinalState, c.LingerState,
+						nullInt(c.LingerUntil), c.Retransmits, c.ResetsSent, c.ResetsReceived, c.Source, c.LastSeen)
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO tcp_transitions(conn_id, ts, seq, old_state, new_state) VALUES(?,?,?,?,?)`,
+				len(b.TCPTrans), func(st *sql.Stmt, i int) error {
+					t := b.TCPTrans[i]
+					_, err := st.Exec(t.ConnID, t.TS, t.Seq, t.Old, t.New)
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO tcp_keyframes(ts, proto, family, laddr, lport, raddr, rport, inode, state, recv_q, send_q,
+				uid, conn_id, pid, start_time, fd) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				len(b.Keyframes), func(st *sql.Stmt, i int) error {
+					k := b.Keyframes[i]
+					_, err := st.Exec(k.TS, k.Proto, k.Family, k.LAddr, k.LPort, k.RAddr, k.RPort, int64(k.Inode), k.State,
+						k.RecvQ, k.SendQ, k.UID, k.ConnID, k.PID, k.StartTime, k.FD)
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO reconcile(ts, kind, dump_rows, missing_from_events, extra_in_events, initial) VALUES(?,?,?,?,?,?)`,
+				len(b.Reconcile), func(st *sql.Stmt, i int) error {
+					r := b.Reconcile[i]
+					_, err := st.Exec(r.TS, r.Kind, r.DumpRows, r.MissingFromEvents, r.ExtraInEvents, b2i(r.Initial))
 					return err
 				})
 		},

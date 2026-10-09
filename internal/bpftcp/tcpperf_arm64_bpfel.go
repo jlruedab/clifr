@@ -56,6 +56,8 @@ const (
 	tcpPerfProgHandleRetransmit        = "handle_retransmit"
 	tcpPerfProgHandleSendReset         = "handle_send_reset"
 	tcpPerfProgHandleSetState          = "handle_set_state"
+	tcpPerfProgHandleTwEndFentry       = "handle_tw_end_fentry"
+	tcpPerfProgHandleTwEndKprobe       = "handle_tw_end_kprobe"
 	tcpPerfProgHandleTwFentry          = "handle_tw_fentry"
 	tcpPerfProgHandleTwKprobe          = "handle_tw_kprobe"
 	tcpPerfVarUnusedTcpEvent           = "unused_tcp_event"
@@ -119,6 +121,8 @@ type tcpPerfProgramSpecs struct {
 	HandleRetransmit        *ebpf.ProgramSpec `ebpf:"handle_retransmit"`
 	HandleSendReset         *ebpf.ProgramSpec `ebpf:"handle_send_reset"`
 	HandleSetState          *ebpf.ProgramSpec `ebpf:"handle_set_state"`
+	HandleTwEndFentry       *ebpf.ProgramSpec `ebpf:"handle_tw_end_fentry"`
+	HandleTwEndKprobe       *ebpf.ProgramSpec `ebpf:"handle_tw_end_kprobe"`
 	HandleTwFentry          *ebpf.ProgramSpec `ebpf:"handle_tw_fentry"`
 	HandleTwKprobe          *ebpf.ProgramSpec `ebpf:"handle_tw_kprobe"`
 }
@@ -211,6 +215,8 @@ type tcpPerfPrograms struct {
 	HandleRetransmit        *ebpf.Program `ebpf:"handle_retransmit"`
 	HandleSendReset         *ebpf.Program `ebpf:"handle_send_reset"`
 	HandleSetState          *ebpf.Program `ebpf:"handle_set_state"`
+	HandleTwEndFentry       *ebpf.Program `ebpf:"handle_tw_end_fentry"`
+	HandleTwEndKprobe       *ebpf.Program `ebpf:"handle_tw_end_kprobe"`
 	HandleTwFentry          *ebpf.Program `ebpf:"handle_tw_fentry"`
 	HandleTwKprobe          *ebpf.Program `ebpf:"handle_tw_kprobe"`
 }
@@ -233,6 +239,8 @@ func (p *tcpPerfPrograms) Close() error {
 		p.HandleRetransmit,
 		p.HandleSendReset,
 		p.HandleSetState,
+		p.HandleTwEndFentry,
+		p.HandleTwEndKprobe,
 		p.HandleTwFentry,
 		p.HandleTwKprobe,
 	)

@@ -36,7 +36,16 @@ type Stats struct {
 	AvgSockets      float64                `json:"avg_sockets"`
 	AvgFDs          float64                `json:"avg_fds_per_walk"`
 	EventMode       string                 `json:"event_mode"`
+	TCPMode         string                 `json:"tcp_mode"`
+	Reconcile       ReconcileStat          `json:"reconcile"`
 	Events          map[string]EventStat   `json:"events_by_source"`
+}
+
+// ReconcileStat sums the keyframe comparisons after each run's first one.
+type ReconcileStat struct {
+	Keyframes         int `json:"keyframes"`
+	MissingFromEvents int `json:"missing_from_events"`
+	ExtraInEvents     int `json:"extra_in_events"`
 }
 
 // EventStat is what one event source delivered over the recording.
@@ -47,7 +56,8 @@ type EventStat struct {
 }
 
 var statTables = []string{"processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
-	"open_files", "oom_events", "recorder_stats", "guard_events", "verify_snapshots", "samples"}
+	"open_files", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
+	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "samples"}
 
 func percentiles(v []float64) Percentiles {
 	if len(v) == 0 {
@@ -70,6 +80,9 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 		st.TableRows[t] = n
 	}
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'events'`).Scan(&st.EventMode)
+	db.QueryRow(`SELECT value FROM meta WHERE key = 'tcp'`).Scan(&st.TCPMode)
+	db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(missing_from_events), 0), COALESCE(SUM(extra_in_events), 0)
+		FROM reconcile WHERE initial = 0`).Scan(&st.Reconcile.Keyframes, &st.Reconcile.MissingFromEvents, &st.Reconcile.ExtraInEvents)
 	st.DBBytes = db.SizeBytes()
 
 	rows, err := db.Query(`SELECT ts, fd_walk, skipped, COALESCE(dur_proc_us,0), COALESCE(dur_sock_us,0),
@@ -215,6 +228,13 @@ func PrintStats(w io.Writer, s *Stats) {
 	for _, k := range srcs {
 		e := s.Events[k]
 		fmt.Fprintf(w, "  %-18s %8d events (%.1f/s), %d dropped\n", k, e.Events, e.PerSec, e.Dropped)
+	}
+	if s.TCPMode != "" {
+		fmt.Fprintf(w, "TCP:              %s\n", s.TCPMode)
+		if s.Reconcile.Keyframes > 0 {
+			fmt.Fprintf(w, "  reconciliation over %d keyframes (after each run's first): %d connections the events missed, %d they kept open too long\n",
+				s.Reconcile.Keyframes, s.Reconcile.MissingFromEvents, s.Reconcile.ExtraInEvents)
+		}
 	}
 	fmt.Fprintln(w, "Rows per table:")
 	for _, t := range statTables {

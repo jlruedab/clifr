@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"sosv/internal/bpfproc"
+	"sosv/internal/bpftcp"
 	"sosv/internal/pqstore"
 	"sosv/internal/procfs"
 	"sosv/internal/sockdiag"
@@ -29,13 +30,18 @@ type Config struct {
 	Parquet pqstore.Options
 	// Events: "auto" (eBPF, else the proc connector), "ebpf",
 	// "proc_connector" or "none".
-	Events     string
-	EBPF       bpfproc.Options
-	Interval   time.Duration
-	FDInterval time.Duration
-	Duration   time.Duration // 0 = until signalled
-	ProcRoot   string
-	CPUBudget  float64 // fraction of one core, e.g. 0.02; 0 disables the guard
+	Events string
+	EBPF   bpfproc.Options
+	// TCP: "auto" (eBPF events and keyframes, else v1 sampling), "ebpf" or
+	// "sample" (v1: a socket dump every interval).
+	TCP              string
+	TCPBPF           bpftcp.Options
+	KeyframeInterval time.Duration // full socket dump with events (default 5m)
+	Interval         time.Duration
+	FDInterval       time.Duration
+	Duration         time.Duration // 0 = until signalled
+	ProcRoot         string
+	CPUBudget        float64 // fraction of one core, e.g. 0.02; 0 disables the guard
 	// BudgetWindow is how much recent CPU history the budget guard looks at.
 	BudgetWindow time.Duration
 	VerifyEvery  time.Duration
@@ -80,6 +86,7 @@ type Recorder struct {
 	owners      map[ownKey]*ownEntry
 
 	events       *eventQueue // nil if the proc connector is unavailable
+	tcp          *tcpTracker // nil: v1 socket sampling
 	lostReported int
 	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
 	evByPID      map[int]procKey
@@ -115,7 +122,7 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	if r.cfg.BudgetWindow == 0 {
 		r.cfg.BudgetWindow = 5 * time.Minute
 	}
-	for _, t := range []string{"processes", "sockets", "sock_owners", "open_files"} {
+	for _, t := range []string{"processes", "sockets", "sock_owners", "open_files", "tcp_conns"} {
 		n, err := db.MaxID(t)
 		if err != nil {
 			return nil, err
@@ -134,6 +141,43 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 		}
 	}
 	return r, nil
+}
+
+// startTCPMode starts eBPF TCP events unless sampling is configured or
+// eBPF is unavailable (then: v1 socket sampling, unless "ebpf" was asked for).
+func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
+	mode := r.cfg.TCP
+	if mode == "" {
+		mode = "auto"
+	}
+	if r.cfg.KeyframeInterval <= 0 {
+		r.cfg.KeyframeInterval = 5 * time.Minute
+	}
+	if mode == "sample" || r.fs.Root != "/proc" {
+		r.db.SetMeta("tcp", "sample")
+		return nil, nil
+	}
+	stop, err = r.startTCP(done)
+	if err != nil {
+		if mode == "ebpf" {
+			return nil, fmt.Errorf("eBPF TCP events: %w", err)
+		}
+		r.log.Printf("warning: eBPF TCP events unavailable, sampling sockets every interval (v1): %v", err)
+		r.db.SetMeta("tcp", "sample")
+		return nil, nil
+	}
+	tw := "time-wait end estimated"
+	if r.tcp.src.TWEnd {
+		tw = "time-wait end exact"
+	}
+	desc := fmt.Sprintf("events (%s, %s, %s), keyframe every %s", r.tcp.src.Buffer, r.tcp.src.Probes, tw, r.cfg.KeyframeInterval)
+	if len(r.tcp.src.Missing) > 0 {
+		desc += ", missing " + strings.Join(r.tcp.src.Missing, " ")
+	}
+	r.db.SetMeta("tcp", desc)
+	r.db.SetMeta("keyframe_interval_s", fmt.Sprint(r.cfg.KeyframeInterval.Seconds()))
+	r.log.Printf("TCP: %s", desc)
+	return stop, nil
 }
 
 // openBackend opens the SQLite database, the Parquet directory, or both.
@@ -203,6 +247,13 @@ func (r *Recorder) Run(ctx context.Context) error {
 		return err
 	}
 	defer stopEvents()
+	tcpDone := make(chan struct{})
+	if stop, err := r.startTCPMode(tcpDone); err != nil {
+		return err
+	} else if stop != nil {
+		defer stop()
+		defer close(tcpDone)
+	}
 	start := time.Now()
 	next := start
 	var lastFD, lastVerify time.Time
@@ -274,6 +325,11 @@ func (r *Recorder) shutdown() error {
 	b := &r.pending // skips, guard events and verify output not yet written
 	r.applyEvents(r.lastTS, b)
 	r.flushEventProcs(openRowsFlushAll, b)
+	if r.tcp != nil {
+		r.applyTCP(b)
+		r.flushTCP(r.lastTS, b)
+		r.closeAllTCP(r.lastTS, b)
+	}
 	for _, e := range r.procs {
 		b.ProcCloses = append(b.ProcCloses, store.Close{ID: e.id, LastSeen: e.last})
 		closeFiles(e, b)
@@ -309,9 +365,19 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	durProc := time.Since(t0)
 
 	t0 = time.Now()
-	nsock := r.sampleSockets(ts, &b)
-	if !fdWalk {
-		r.walkFDs(ts, false, &b) // socket-owning and new processes only
+	var nsock int
+	keyframe := false
+	if r.tcp != nil {
+		// Events mode: a full socket dump only at keyframes, before the fd
+		// walk so that it knows which socket inodes are inet sockets.
+		if keyframe = r.prepareKeyframe(ts); keyframe {
+			nsock = len(r.tcp.pendingDump)
+		}
+	} else {
+		nsock = r.sampleSockets(ts, &b)
+		if !fdWalk {
+			r.walkFDs(ts, false, &b) // socket-owning and new processes only
+		}
 	}
 	durSock := time.Since(t0)
 
@@ -321,6 +387,16 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		nfd = r.walkFDs(ts, true, &b)
 	}
 	durFD := time.Since(t0)
+	if r.tcp != nil {
+		t1 := time.Now()
+		r.applyTCP(&b)
+		if keyframe {
+			r.keyframe(&b)
+		}
+		r.flushTCP(ts, &b)
+		b.Stats = append(b.Stats, r.tcp.stats(ts)...)
+		durSock += time.Since(t1)
+	}
 	r.sweepOwners(ts, &b)
 	r.dropClosedProcs()
 
@@ -433,6 +509,11 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample"}
 	if ep := r.evProcs[key]; ep != nil {
+		if cmd == "" && ep.ev.attrs.Cmdline != "" {
+			// Seen first as a zombie: its exec event has the command line.
+			cmd = ep.ev.attrs.Cmdline
+			e.upd.Cmdline, row.Cmdline = cmd, cmd
+		}
 		e.first, e.exit = key.start, ep.exit
 		e.upd.Exe, e.upd.ExecTS = ep.ev.attrs.Exe, ep.ev.attrs.ExecTS
 		row.Exe, row.ExitCode, row.Signal, row.OOMKilled = ep.ev.attrs.Exe, ep.exitCode, ep.signal, ep.oom
@@ -461,7 +542,9 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
 	if status, err := r.fs.ReadStatus(e.key.pid); err == nil {
 		u.UID = status.UID
 	}
-	if cmd, err := r.fs.ReadCmdline(e.key.pid); err == nil && (cmd != "" || st.State == 'Z') {
+	// A zombie's cmdline reads as empty; keep the command line it had (ps
+	// shows zombies as "[comm] <defunct>" from the state anyway).
+	if cmd, err := r.fs.ReadCmdline(e.key.pid); err == nil && cmd != "" {
 		u.Cmdline = cmd
 	}
 	if u != e.upd {

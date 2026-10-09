@@ -26,6 +26,8 @@ type Socket struct {
 	TxQ     uint32 // for LISTEN: backlog
 	UID     uint32
 	Inode   uint64 // 0 for TIME-WAIT and request sockets
+	Timer   int    // idiag_timer: 3 = time-wait timer
+	Expires uint32 // ms until the timer fires (for TIME-WAIT: until it ends)
 }
 
 const (
@@ -167,6 +169,8 @@ func parseDiagMsg(m []byte, proto uint8) (Socket, bool) {
 		return Socket{}, false
 	}
 	s.IfIndex = ne.Uint32(id[36:])
+	s.Timer = int(m[2])
+	s.Expires = ne.Uint32(m[52:])
 	s.RxQ = ne.Uint32(m[56:])
 	s.TxQ = ne.Uint32(m[60:])
 	s.UID = ne.Uint32(m[64:])
