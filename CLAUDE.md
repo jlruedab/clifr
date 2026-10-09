@@ -9,15 +9,29 @@ The PoC exists to prove two things with evidence: **accuracy** (reconstruction v
 real tools) and **cost** (CPU / memory / disk of recording and its impact on a busy
 workload). The benchmark results under `bench/` are the main deliverable, not CLI polish.
 
-**Current state: read `HANDOFF.md` first** (benchmark moving to a new 4 vCPU VM; what is left of milestone 10).
+**Current state:** v2 refactor in progress (event-based recorder, Parquet,
+DuckDB CLI). v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
+benchmarkable side by side. `HANDOFF.md` has the v1 benchmark history.
+Build one v2 milestone at a time, run it, report results, and wait for the
+user's go-ahead.
 
-## Hard constraints
-- Go, one static binary (`CGO_ENABLED=0`), Linux only, kernel 4.18+ (RHEL 8/9, Ubuntu 22.04/24.04).
-- Dependencies: standard library, `modernc.org/sqlite` (pinned v1.34.5 — newer versions need Go ≥1.26; this box has Go 1.22), `golang.org/x/sys`. Nothing else.
+## Hard constraints (v2)
+- Two binaries. `sosv-record`: pure Go, static, `CGO_ENABLED=0`, runs on the
+  recorded server. `sosv`: the CLI, DuckDB (`github.com/duckdb/duckdb-go`,
+  cgo allowed), may run on another machine.
+- eBPF via `github.com/cilium/ebpf` (CO-RE, bpf2go; clang only at build time).
+  Prefer tracepoints, then fentry/fexit if available, else kprobes; ring buffer
+  if supported, else perf event array. Count drops per source. Targets:
+  RHEL 8.2+/9, Ubuntu 22.04+ (BTF at /sys/kernel/btf/vmlinux). Needs
+  CAP_BPF + CAP_PERFMON (CAP_SYS_ADMIN on older kernels). Netlink proc
+  connector stays as the fallback for process events.
+- Storage: Parquet (`github.com/parquet-go/parquet-go`, zstd, dictionary
+  encoding) behind a small interface; the v1 SQLite schema stays available as
+  a backend for side-by-side comparison.
+- Other dependencies only with the user's approval.
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
-- SQLite in WAL mode, one transaction per sample.
-- No network, encryption, obfuscation, web UI or eBPF.
+- No network, encryption, obfuscation or web UI.
 
 ## Layout
 - `cmd/sosv/` — subcommand dispatch and flag parsing.
@@ -42,16 +56,22 @@ workload). The benchmark results under `bench/` are the main deliverable, not CL
 - Build: `CGO_ENABLED=0 go build -o sosv ./cmd/sosv`
 - Test: `go test ./...`
 - Quick manual run: `sudo ./sosv record --db /tmp/x.db --interval 2s --duration 1m`
-- Machine notes: test VM has 8 vCPU, 7 GB RAM and little free disk; bench scripts abort below 1.5 GB free.
+- Machine notes: the old dev VM (8 vCPU, little free disk, failing disk) is
+  for v2 milestones 1–2 only; eBPF work and benchmarks run on the 4 vCPU
+  Ubuntu 26.04 VM (uutils coreutils: do not rely on GNU-only `date` etc.).
+  Bench scripts abort below 1.5 GB free and validate every run
+  (`bench/report -validate`).
 
 ## Milestone status
-1. [x] Process sampling, `ps aux --at`, `stats`
-2. [x] Sockets (sock_diag), ownership, `ss`
-3. [x] Open files, `lsof`
-4. [x] Proc connector events, `life`, ps range mode
-5. [x] Guard rails, systemd unit
-6. [x] `--verify-every`, `verify`
-7. [x] Load generator + pgbench
-8. [x] Benchmark runner
-9. [x] Scaling tests, passive mode
-10. [ ] Report generator, README
+v1 (tag `v1-snapshot`): milestones 1–9 done; its report generator and
+benchmark were finished as v2 milestone 1 (results: busy 20261008-0721 batch).
+
+v2:
+1. [x] Tag v1; fix the report bugs; validation step (no v1 rerun: the 0721 data were repaired)
+2. [ ] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
+3. [ ] eBPF process events (proc connector fallback), OOM events
+4. [ ] eBPF TCP events, keyframes, reconciliation; `ss` at/range
+5. [ ] Long-held fd snapshots, mount events
+6. [ ] Ground-truth tests
+7. [ ] Benchmark: bpf_stats, new matrix, scaling, report
+8. [ ] README

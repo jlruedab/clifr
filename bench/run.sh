@@ -83,7 +83,7 @@ export PGB_MODE PGB_RATE
 . "$ROOT/bench/lib.sh"
 
 # --- prerequisites ---------------------------------------------------------
-check_common sosv load benchtool
+check_common sosv load benchtool report
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
@@ -273,6 +273,8 @@ for profile in $PROFILES; do
                 log "$RUNID: FAILED"
                 failed=$((failed + 1))
                 grep -q "^$RUNID," "$MATRIX" || echo "$RUNID,$order,$profile,$config,$rep,,,,,$(now_ms),failed" >>"$MATRIX"
+            else
+                validate "$OUT"
             fi
         done
     done

@@ -33,7 +33,7 @@ done
 OUT=${OUT:-$ROOT/bench/results/accuracy-$(date +%Y%m%d-%H%M%S)}
 . "$ROOT/bench/lib.sh"
 
-check_common sosv load benchtool
+check_common sosv load benchtool report
 for t in ps ss lsof; do command -v $t >/dev/null || die "$t is needed for the real outputs"; done
 mkdir -p "$OUT"
 check_free "$OUT"
@@ -76,4 +76,5 @@ collect_db "$OUT"
 ((KEEP_DB)) || rm -f "$OUT"/sosv.db*
 gzip -f "$OUT"/*.csv
 sed -n '1,40p' "$OUT/verify.txt"
+validate "$OUT"
 log "results in $OUT"

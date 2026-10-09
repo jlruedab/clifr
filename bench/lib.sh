@@ -28,6 +28,13 @@ check_common() {
     for b in "$@"; do [[ -x $BIN/$b ]] || die "missing $BIN/$b; run bench/setup.sh (or go build)"; done
 }
 
+# validate DIR: stop the batch if the results so far have missing or
+# implausible metrics (bench/report -validate), instead of finding out
+# hours later from a blank report.
+validate() {
+    "$BIN/report" -validate "$1" || die "validation failed for $1 (see above); stopping"
+}
+
 # disk_devices DIR: sets DISKS (all block devices under DIR's filesystem,
 # e.g. dm-0,sda3,sda) and DISK (the physical disk).
 disk_devices() {

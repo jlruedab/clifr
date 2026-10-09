@@ -53,7 +53,7 @@ declare -A VALUES=([procs]="500 2000 10000" [fds]="10000 50000 200000"
     [conns]="1000 20000 100000" [spawn]="10 50 200" [churn]="0 100 500")
 for d in $DIMS; do [[ -n ${VALUES[$d]:-} ]] || die "unknown dimension $d"; done
 
-check_common sosv load benchtool
+check_common sosv load benchtool report
 mkdir -p "$OUT/points"
 check_free "$OUT"
 disk_devices "$OUT"
@@ -147,6 +147,8 @@ for dim in $DIMS; do
             failed=$((failed + 1))
             grep -q "^$PID_," "$POINTS" || echo "$PID_,$dim,$value,,,,,,,,,$(now_ms),failed" >>"$POINTS"
             check_free "$OUT"
+        else
+            validate "$OUT"
         fi
     done
 done
