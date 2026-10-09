@@ -1,6 +1,11 @@
 package verify
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+
+	"sosv/internal/store"
+)
 
 func TestParsePS(t *testing.T) {
 	out := "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\n" +
@@ -46,11 +51,15 @@ func TestParseLsof(t *testing.T) {
 		"dockerd    1028                             root   14uW     REG               0,4         0 4026531840 net\n" +
 		"dockerd    1028  1030 dockerd               root   14u      REG               0,4         0 4026531840 net\n" +
 		"kthreadd      2                             root  txt   unknown                                         /proc/2/exe\n" +
+		"load       1945                             root 2488u     sock                0,8       0t0   48151623 protocol: TCP\n" +
 		"lsof       9999                             root    3r      DIR               0,22        0          1 /proc\n"
 	res := newResult("lsof -n -P")
 	m := parseLsof(out, &res, map[int]bool{})
-	if len(m) != 3 {
+	if len(m) != 4 {
 		t.Fatalf("rows: %+v", m)
+	}
+	if r := m["1945 2488"]; r.typ != "sock" || r.node != "48151623" {
+		t.Errorf("unresolved socket: %+v", r)
 	}
 	if r := m["1 4"]; r.typ != "a_inode" || r.name != "[eventpoll]" || r.mode != "u" {
 		t.Errorf("eventpoll: %+v", r)
@@ -73,5 +82,61 @@ func TestKworkerBase(t *testing.T) {
 		if got := kworkerBase(in); got != want {
 			t.Errorf("%q -> %q", in, got)
 		}
+	}
+}
+
+func TestCompareChurnChanged(t *testing.T) {
+	r := newResult("ss -tanp")
+	same := []fieldPair{{"State", "ESTAB", "ESTAB"}}
+	diff := []fieldPair{{"State", "TIME-WAIT", "ESTAB"}}
+	r.compare("a", same, func() bool { t.Error("changed() called for an exact row"); return true })
+	r.compare("b", diff, func() bool { return true })
+	r.compare("c", diff, func() bool { return false })
+	if r.Exact != 1 || r.ChurnChanged != 1 || r.FieldDiffs["State"] != 1 {
+		t.Errorf("exact %d churn-changed %d state diffs %d, want 1 1 1", r.Exact, r.ChurnChanged, r.FieldDiffs["State"])
+	}
+}
+
+// sockChanged and the lsof inode rule against a small database: a
+// connection whose state changed after the sample, one that did not, and a
+// socket lsof could not resolve.
+func TestChangedInDB(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "v.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	for i, ts := range []int64{1000, 31000, 61000} {
+		exec(`INSERT INTO samples(id, ts, fd_walk) VALUES (?, ?, 1)`, i+1, ts)
+	}
+	exec(`INSERT INTO processes(id, pid, start_time, ppid, uid, comm, first_seen, source) VALUES (1, 50, 1, 1, 0, 'load', 0, 'sample')`)
+	// Socket 1 changes state at 31000; socket 2 stays ESTAB.
+	exec(`INSERT INTO sockets(id, inode, proto, family, laddr, lport, raddr, rport, first_seen) VALUES
+		(1, 111, 'tcp', 4, '127.0.0.2', 40000, '127.0.0.1', 30000, 0),
+		(2, 222, 'tcp', 4, '127.0.0.3', 40001, '127.0.0.1', 30000, 0)`)
+	exec(`INSERT INTO sock_samples(sock_id, ts, state) VALUES (1, 0, 1), (1, 31000, 6), (2, 0, 1)`)
+	exec(`INSERT INTO sock_owners(id, sock_id, proc_id, fd, first_seen) VALUES (1, 1, 1, 7, 0), (2, 2, 1, 8, 0)`)
+
+	if !sockChanged(db, "127.0.0.2:40000 127.0.0.1:30000", 1000, 31000) {
+		t.Error("state change after the sample not seen")
+	}
+	if sockChanged(db, "127.0.0.3:40001 127.0.0.1:30000", 1000, 31000) {
+		t.Error("unchanged socket reported as changed")
+	}
+
+	hdr := "COMMAND PID TID TASKCMD USER   FD TYPE DEVICE SIZE/OFF     NODE NAME\n"
+	out := hdr + "load     50              root    8u sock    0,8      0t0    222 protocol: TCP\n"
+	res, err := compareLsof(db, snapshot{ts: 1500, endTS: 2000, sampleTS: 1000, cmd: "lsof -n -P", output: out, ignore: map[int]bool{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Matched != 1 || res.Exact != 1 || res.Ignored["sockets lsof could not resolve (matched by inode)"] != 1 {
+		t.Errorf("unresolved socket with the same inode: %+v", res)
 	}
 }

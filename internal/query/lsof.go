@@ -24,6 +24,7 @@ type LsofRow struct {
 	Deleted   bool   `json:"deleted,omitempty"`
 	FirstSeen int64  `json:"first_seen_ms,omitempty"`
 	LastSeen  int64  `json:"last_seen_ms,omitempty"`
+	SockInode int64  `json:"-"` // inet sockets: lsof shows it as NODE when it cannot resolve the socket
 	fdNum     int
 }
 
@@ -137,7 +138,7 @@ func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64,
 		r.Close()
 	}
 	q := `SELECT p.comm, p.pid, p.uid, o.fd, k.proto, k.family, k.laddr, k.lport, k.raddr, k.rport,
-	             COALESCE((SELECT state FROM sock_samples WHERE sock_id = k.id AND ts <= ?1 ORDER BY ts DESC LIMIT 1), 0)
+	             COALESCE((SELECT state FROM sock_samples WHERE sock_id = k.id AND ts <= ?1 ORDER BY ts DESC LIMIT 1), 0), k.inode
 	      FROM sock_owners o JOIN sockets k ON k.id = o.sock_id JOIN processes p ON p.id = o.proc_id
 	      WHERE o.first_seen <= ?1 AND COALESCE(o.last_seen, ?3) >= ?1` + pidCond
 	r, err := db.Query(q, args...)
@@ -149,7 +150,7 @@ func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64,
 		var x LsofRow
 		var comm, proto, la, ra string
 		var uid, fam, lp, rp, st int
-		if err = r.Scan(&comm, &x.PID, &uid, &x.fdNum, &proto, &fam, &la, &lp, &ra, &rp, &st); err != nil {
+		if err = r.Scan(&comm, &x.PID, &uid, &x.fdNum, &proto, &fam, &la, &lp, &ra, &rp, &st, &x.SockInode); err != nil {
 			return
 		}
 		x.Command, x.User, x.FD = lsofCommand(comm), UserName(uid, false), fdLabel(x.fdNum, "u")

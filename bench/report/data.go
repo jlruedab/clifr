@@ -138,6 +138,7 @@ type VerifyResult struct {
 	Extra        int            `json:"extra"`
 	ChurnMissing int            `json:"churn_missing"`
 	ChurnExtra   int            `json:"churn_extra"`
+	ChurnChanged int            `json:"churn_changed"`
 	FieldDiffs   map[string]int `json:"field_mismatches"`
 	GapMS        int64          `json:"gap_ms"`
 }

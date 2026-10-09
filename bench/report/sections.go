@@ -544,8 +544,10 @@ func matchPct(t VerifyResult) float64 {
 	return float64(t.Matched) / float64(d) * 100
 }
 
+// exactPct: exact rows out of the same, minus the matched rows whose fields
+// changed between the sample and the real command (churn-changed).
 func exactPct(t VerifyResult) float64 {
-	d := t.Real - t.ChurnMissing
+	d := t.Real - t.ChurnMissing - t.ChurnChanged
 	if d <= 0 {
 		return nan
 	}
@@ -557,7 +559,7 @@ func accuracySection(a *Accuracy) section {
 	s.Blocks = append(s.Blocks, block{Para: fmt.Sprintf("sosv record --verify-every %s under load profile %s for %s (interval %s, fd interval %s); "+
 		"at each of the %d checkpoints the real ps aux, ss -tanp and lsof -n -P outputs were saved and compared with sosv's reconstruction for the same moment.",
 		a.Env["verify_every"], a.Env["profile"], a.Env["duration"], a.Env["interval"], a.Env["fd_interval"], a.Checkpoints)})
-	t := &table{Head: []string{"Command", "Real rows", "Matched", "Exact", "Missing", "Extra", "Churn (missing / extra)", "Matched %", "Exact %", "Field mismatches"}}
+	t := &table{Head: []string{"Command", "Real rows", "Matched", "Exact", "Missing", "Extra", "Churn (missing / extra / changed)", "Matched %", "Exact %", "Field mismatches"}}
 	for _, cmd := range []string{"ps aux", "ss -tanp", "lsof -n -P"} {
 		r, ok := a.Totals[cmd]
 		if !ok {
@@ -569,10 +571,10 @@ func accuracySection(a *Accuracy) section {
 		}
 		sort.Strings(fd)
 		t.Rows = append(t.Rows, []string{cmd, commas(float64(r.Real)), commas(float64(r.Matched)), commas(float64(r.Exact)),
-			commas(float64(r.Missing)), commas(float64(r.Extra)), fmt.Sprintf("%s / %s", commas(float64(r.ChurnMissing)), commas(float64(r.ChurnExtra))),
+			commas(float64(r.Missing)), commas(float64(r.Extra)), fmt.Sprintf("%s / %s / %s", commas(float64(r.ChurnMissing)), commas(float64(r.ChurnExtra)), commas(float64(r.ChurnChanged))),
 			pct(matchPct(r)), pct(exactPct(r)), orNone(strings.Join(fd, ", "))})
 	}
-	t.Note = "Missing/extra exclude churn: entities that started or ended between the sample and the moment the real command ran, counted separately. Matched % and exact % are of the real rows minus churn."
+	t.Note = "Missing/extra exclude churn: entities that started or ended between the sample and the moment the real command ran, counted separately. Changed: matched rows whose fields differ because the entity changed in that window (for example a connection that closed into TIME-WAIT, or an fd number reused by a new connection). Matched % is of the real rows minus churn; exact % also leaves out the changed rows."
 	s.Blocks = append(s.Blocks, block{Table: t})
 	var ign []string
 	for _, cmd := range []string{"ps aux", "ss -tanp", "lsof -n -P"} {

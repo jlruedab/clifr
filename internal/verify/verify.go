@@ -4,7 +4,9 @@
 // A row present on only one side counts as churn rather than missing/extra
 // when the database shows the entity appearing or disappearing between the
 // checkpoint sample and the next sample that could have seen it: the real
-// command simply ran a moment after the sample.
+// command simply ran a moment after the sample. Likewise a matched row whose
+// fields differ counts as churn-changed, not as a mismatch, when the entity
+// changed in that window.
 package verify
 
 import (
@@ -22,15 +24,18 @@ import (
 
 // Result is the comparison of one command at one checkpoint.
 type Result struct {
-	Cmd          string         `json:"cmd"`
-	Real         int            `json:"real_rows"`
-	Recon        int            `json:"reconstructed_rows"`
-	Matched      int            `json:"matched"`
-	Exact        int            `json:"exact"` // matched with no compared field different
-	Missing      int            `json:"missing"`
-	Extra        int            `json:"extra"`
-	ChurnMissing int            `json:"churn_missing"`
-	ChurnExtra   int            `json:"churn_extra"`
+	Cmd          string `json:"cmd"`
+	Real         int    `json:"real_rows"`
+	Recon        int    `json:"reconstructed_rows"`
+	Matched      int    `json:"matched"`
+	Exact        int    `json:"exact"` // matched with no compared field different
+	Missing      int    `json:"missing"`
+	Extra        int    `json:"extra"`
+	ChurnMissing int    `json:"churn_missing"`
+	ChurnExtra   int    `json:"churn_extra"`
+	// ChurnChanged: matched rows whose fields differ because the entity
+	// changed between the sample and the next one (not in FieldDiffs).
+	ChurnChanged int            `json:"churn_changed"`
 	FieldDiffs   map[string]int `json:"field_mismatches"`
 	Ignored      map[string]int `json:"ignored"`
 	Examples     []string       `json:"examples,omitempty"`
@@ -53,8 +58,9 @@ type Report struct {
 var ignoredFields = map[string]string{
 	"ps aux": "%CPU and %MEM (rounding; derived from TIME and RSS, which are compared); " +
 		"the work-item suffix of kernel worker names ([kworker/1:3-events]), which changes every few ms",
-	"ss -tanp":   "none",
-	"lsof -n -P": "DEVICE and SIZE/OFF (not recorded); mem/DEL/mmap rows (mapped files are not recorded); thread (TID) rows; kernel-thread txt placeholders",
+	"ss -tanp": "none",
+	"lsof -n -P": "DEVICE and SIZE/OFF (not recorded); mem/DEL/mmap rows (mapped files are not recorded); thread (TID) rows; kernel-thread txt placeholders; " +
+		"TYPE and NAME of sockets lsof could not resolve (TYPE sock: newer than lsof's own /proc/net read), which are matched by inode instead",
 }
 
 const maxExamples = 15
@@ -133,6 +139,7 @@ func add(a, b Result) Result {
 	a.Extra += b.Extra
 	a.ChurnMissing += b.ChurnMissing
 	a.ChurnExtra += b.ChurnExtra
+	a.ChurnChanged += b.ChurnChanged
 	a.GapMS = max(a.GapMS, b.GapMS)
 	for k, v := range b.FieldDiffs {
 		a.FieldDiffs[k] += v
@@ -144,6 +151,33 @@ func add(a, b Result) Result {
 		a.Examples = append(a.Examples, b.Examples[:min(len(b.Examples), maxExamples-len(a.Examples))]...)
 	}
 	return a
+}
+
+type fieldPair struct{ name, real, sosv string }
+
+// compare counts a matched row as exact, churn-changed (fields differ and
+// changed() shows the entity changing between the sample and the next one)
+// or as field mismatches.
+func (r *Result) compare(label string, fields []fieldPair, changed func() bool) {
+	var diff []fieldPair
+	for _, f := range fields {
+		if f.real != f.sosv {
+			diff = append(diff, f)
+		}
+	}
+	switch {
+	case len(diff) == 0:
+		r.Exact++
+	case changed():
+		r.ChurnChanged++
+	default:
+		for _, f := range diff {
+			r.FieldDiffs[f.name]++
+			if r.FieldDiffs[f.name] <= 3 {
+				r.example("%s %s: real %q, sosv %q", label, f.name, f.real, f.sosv)
+			}
+		}
+	}
 }
 
 func (r *Result) example(format string, args ...any) {
@@ -361,6 +395,22 @@ func sockChurn(db *store.DB, key string, s, next int64) bool {
 		la, lp, ra, rp, s, next, noNext)
 }
 
+// sockChanged: sockChurn, or the connection's state, queues or owners
+// changed between the sample and the next one.
+func sockChanged(db *store.DB, key string, s, next int64) bool {
+	if sockChurn(db, key, s, next) {
+		return true
+	}
+	f := strings.Fields(key)
+	la, lp := splitSSAddr(f[0])
+	ra, rp := splitSSAddr(f[1])
+	return exists(db, `SELECT 1 FROM sockets k WHERE k.proto = 'tcp' AND k.laddr = ?1 AND k.lport = ?2 AND k.raddr = ?3 AND k.rport = ?4
+		AND (EXISTS(SELECT 1 FROM sock_samples x WHERE x.sock_id = k.id AND x.ts > ?5 AND x.ts <= ?6)
+		  OR EXISTS(SELECT 1 FROM sock_owners x WHERE x.sock_id = k.id AND ((x.first_seen > ?5 AND x.first_seen <= ?6)
+		     OR (?6 < ?7 AND x.last_seen IS NOT NULL AND x.last_seen >= ?5 AND x.last_seen < ?6))))`,
+		la, lp, ra, rp, s, next, noNext)
+}
+
 func compareSS(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
 	s, err := query.SnapshotAt(db, snap.ts, false)
@@ -397,23 +447,12 @@ func compareSS(db *store.DB, snap snapshot) (Result, error) {
 			}
 		}
 		sort.Strings(us)
-		diff := false
-		check := func(field, a, b string) {
-			if a != b {
-				res.FieldDiffs[field]++
-				diff = true
-				if res.FieldDiffs[field] <= 3 {
-					res.example("ss %s %s: real %q, sosv %q", key, field, a, b)
-				}
-			}
-		}
-		check("State", r.state, x.State)
-		check("Recv-Q", r.recvQ, strconv.FormatInt(x.RecvQ, 10))
-		check("Send-Q", r.sendQ, strconv.FormatInt(x.SendQ, 10))
-		check("Process", r.users, strings.Join(us, ","))
-		if !diff {
-			res.Exact++
-		}
+		res.compare("ss "+key, []fieldPair{
+			{"State", r.state, x.State},
+			{"Recv-Q", r.recvQ, strconv.FormatInt(x.RecvQ, 10)},
+			{"Send-Q", r.sendQ, strconv.FormatInt(x.SendQ, 10)},
+			{"Process", r.users, strings.Join(us, ",")},
+		}, func() bool { return sockChanged(db, key, s, next) })
 	}
 	for key, x := range rec {
 		if _, ok := real[key]; ok {
@@ -440,6 +479,8 @@ func portStr(p int) string {
 
 type lsofLine struct {
 	command, mode, typ, name string
+	node                     string // real lsof NODE column
+	inode                    int64  // sosv: inode of an inet socket
 }
 
 var fdRe = regexp.MustCompile(`^(\d+)([rwu]?)`)
@@ -510,7 +551,7 @@ func parseLsof(out string, res *Result, ignore map[int]bool) map[string]lsofLine
 			res.Ignored["kernel-thread txt placeholders"]++
 			continue
 		}
-		m[strconv.Itoa(pid)+" "+fd] = lsofLine{command: f[0], mode: mode, typ: typ, name: normName(typ, name)}
+		m[strconv.Itoa(pid)+" "+fd] = lsofLine{command: f[0], mode: mode, typ: typ, name: normName(typ, name), node: f[len(f)-1]}
 	}
 	return m
 }
@@ -547,7 +588,7 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 			continue
 		}
 		fd, mode := splitFD(r.FD)
-		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, r.Name)}
+		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, r.Name), inode: r.SockInode}
 	}
 	res.Real, res.Recon = len(real), len(rec)
 	keyParts := func(k string) (int, string) {
@@ -568,22 +609,18 @@ func compareLsof(db *store.DB, snap snapshot) (Result, error) {
 			continue
 		}
 		res.Matched++
-		diff := false
-		check := func(field, a, b string) {
-			if a != b {
-				res.FieldDiffs[field]++
-				diff = true
-				if res.FieldDiffs[field] <= 3 {
-					res.example("lsof %s %s: real %q, sosv %q", key, field, a, b)
-				}
-			}
+		if r.typ == "sock" && x.inode != 0 && r.node == strconv.FormatInt(x.inode, 10) {
+			// lsof found the fd but not the socket in its /proc/net read: the
+			// inode is the only thing it shows, and it agrees.
+			r.typ, r.name = x.typ, x.name
+			res.Ignored["sockets lsof could not resolve (matched by inode)"]++
 		}
-		check("FD mode", r.mode, x.mode)
-		check("TYPE", r.typ, x.typ)
-		check("NAME", r.name, x.name)
-		if !diff {
-			res.Exact++
-		}
+		pid, fd := keyParts(key)
+		res.compare("lsof "+key, []fieldPair{
+			{"FD mode", r.mode, x.mode},
+			{"TYPE", r.typ, x.typ},
+			{"NAME", r.name, x.name},
+		}, func() bool { return fdChurn(db, pid, fd, sfd, next, nextAny) })
 	}
 	for key, x := range rec {
 		if _, ok := real[key]; ok {
@@ -611,7 +648,10 @@ func pct(a, b int) string {
 
 func printResult(w io.Writer, r Result, examples bool) {
 	fmt.Fprintf(w, "  %-11s real %6d  sosv %6d  matched %6d (%s, exact %s)  missing %4d  extra %4d  churn: missing %4d extra %4d  gap %dms\n",
-		r.Cmd, r.Real, r.Recon, r.Matched, pct(r.Matched, r.Real), pct(r.Exact, r.Matched), r.Missing, r.Extra, r.ChurnMissing, r.ChurnExtra, r.GapMS)
+		r.Cmd, r.Real, r.Recon, r.Matched, pct(r.Matched, r.Real), pct(r.Exact, r.Matched-r.ChurnChanged), r.Missing, r.Extra, r.ChurnMissing, r.ChurnExtra, r.GapMS)
+	if r.ChurnChanged > 0 {
+		fmt.Fprintf(w, "              churn-changed (matched, fields changed during the gap): %d\n", r.ChurnChanged)
+	}
 	if len(r.FieldDiffs) > 0 {
 		keys := make([]string, 0, len(r.FieldDiffs))
 		for k := range r.FieldDiffs {
@@ -662,5 +702,6 @@ func Print(w io.Writer, rep *Report, verbose bool) {
 	}
 	fmt.Fprintln(w, "churn = present on one side only, and the database shows it starting or ending between the\n"+
 		"checkpoint sample and the sample taken right after the real commands finished. gap = how long after\n"+
-		"the sample the real command finished; field mismatches include changes during that gap.")
+		"the sample the real command finished. churn-changed = matched, but the fields differ and the database\n"+
+		"shows the entity changing in that window; exact % is of the matched rows that did not change.")
 }
