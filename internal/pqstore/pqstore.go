@@ -342,6 +342,19 @@ func (s *Store) Close() error {
 	return err
 }
 
+// writerOptions: zstd, and no long min/max bounds. parquet-go stores the
+// bounds of a value in the page statistics, the column index and the footer,
+// uncompressed: a 3 MB lsof output took 12.6 MB instead of 49 KB. Bounds are
+// truncated to 16 bytes (and left out for long text columns), which keeps
+// them useful for the numeric and short columns.
+var writerOptions = []parquet.WriterOption{
+	parquet.Compression(&parquet.Zstd),
+	parquet.DataPageStatistics(false),
+	parquet.ColumnIndexSizeLimit(func([]string) int { return 16 }),
+	parquet.SkipPageBounds("output"), parquet.SkipPageBounds("cmdline"),
+	parquet.SkipPageBounds("target"), parquet.SkipPageBounds("detail"),
+}
+
 // writeFile writes rows to path atomically (temporary file, fsync, rename).
 func writeFile[T any](path string, rows []T) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -352,7 +365,7 @@ func writeFile[T any](path string, rows []T) error {
 	if err != nil {
 		return err
 	}
-	w := parquet.NewGenericWriter[T](f, parquet.Compression(&parquet.Zstd))
+	w := parquet.NewGenericWriter[T](f, writerOptions...)
 	_, err = w.Write(rows)
 	err = errors.Join(err, w.Close(), f.Sync(), f.Close())
 	if err != nil {
@@ -534,7 +547,7 @@ func merge[T any](parts []string, out string) error {
 	if err != nil {
 		return err
 	}
-	w := parquet.NewGenericWriter[T](f, parquet.Compression(&parquet.Zstd))
+	w := parquet.NewGenericWriter[T](f, writerOptions...)
 	buf := make([]T, 4096)
 	for _, p := range parts {
 		if err = copyRows(p, w, buf); err != nil {

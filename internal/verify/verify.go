@@ -73,6 +73,7 @@ type snapshot struct {
 
 // Run compares every saved checkpoint.
 func Run(db *store.DB) (*Report, error) {
+	queryErr = nil
 	rows, err := db.Query(`SELECT ts, COALESCE(end_ts, ts), cmd, sample_ts, COALESCE(ignore_pids,''), output
 		FROM verify_snapshots ORDER BY sample_ts, id`)
 	if err != nil {
@@ -119,6 +120,9 @@ func Run(db *store.DB) (*Report, error) {
 		cp := &rep.Checkpoints[len(rep.Checkpoints)-1]
 		cp.Results = append(cp.Results, res)
 		rep.Totals[s.cmd] = add(rep.Totals[s.cmd], res)
+	}
+	if queryErr != nil {
+		return nil, fmt.Errorf("churn query: %w", queryErr)
 	}
 	return rep, nil
 }
@@ -201,10 +205,18 @@ func nextSample(db *store.DB, s int64, fdWalk bool) int64 {
 	return n.Int64
 }
 
+// queryErr keeps the first error from exists, which Run returns: a failing
+// churn query must not silently count as "no churn".
+var queryErr error
+
+// exists runs SELECT EXISTS(q). SQLite returns 0/1 and DuckDB a BOOLEAN;
+// both scan into a bool.
 func exists(db *store.DB, q string, args ...any) bool {
-	var n int
-	db.QueryRow(`SELECT EXISTS(`+q+`)`, args...).Scan(&n)
-	return n == 1
+	var ok bool
+	if err := db.QueryRow(`SELECT EXISTS(`+q+`)`, args...).Scan(&ok); err != nil && queryErr == nil {
+		queryErr = err
+	}
+	return ok
 }
 
 const noNext = int64(1) << 62

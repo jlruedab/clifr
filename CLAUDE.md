@@ -1,7 +1,8 @@
 # sosv — Linux flight recorder (proof of concept)
 
-`sosv record` continuously records which processes existed, which sockets and open
-files each one held, and short-lived process start/exit events, into one SQLite file.
+`sosv-record` continuously records which processes existed, which sockets and open
+files each one held, and short-lived process start/exit events, as Parquet files
+(or, for v1 comparisons, one SQLite file).
 Query subcommands (`ps`, `lsof`, `ss`, `life`, `stats`, `verify`) reconstruct the
 output of the real tools for a past moment or time range.
 
@@ -34,11 +35,14 @@ user's go-ahead.
 - No network, encryption, obfuscation or web UI.
 
 ## Layout
-- `cmd/sosv/` — subcommand dispatch and flag parsing.
+- `cmd/sosv-record/` — the recorder binary (static, no cgo).
+- `cmd/sosv/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
 - `internal/cnproc/` — kernel proc connector (fork/exec/exit events).
-- `internal/store/` — schema, batch writer.
+- `internal/store/` — `Backend` interface, v1 SQLite schema and batch writer, `Tee`.
+- `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention.
+- `internal/duck/` — loads a Parquet data directory into in-memory DuckDB with the v1 table names.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.
 - `internal/verify/` — compare saved real tool output with reconstructions.
@@ -49,13 +53,18 @@ user's go-ahead.
   `last_seen` is NULL in the DB and lives only in memory ("seen at every sample since
   first_seen"); it is written when the entity closes, on clean shutdown, or recovered
   from the last sample timestamp on the next start after a crash.
+- Parquet: append-only. A closed entity is written once; open ones are rewritten each
+  flush to `<table>/open/<run>.parquet` with last_seen = last sample. Readers keep one
+  row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter.
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
 ## Commands
-- Build: `CGO_ENABLED=0 go build -o sosv ./cmd/sosv`
-- Test: `go test ./...`
-- Quick manual run: `sudo ./sosv record --db /tmp/x.db --interval 2s --duration 1m`
+- Build: `CGO_ENABLED=0 go build -o sosv-record ./cmd/sosv-record` and `go build -o sosv ./cmd/sosv` (cgo, needs g++).
+  go.mod pins toolchain go1.26.8 (downloaded automatically by an older `go`).
+- Test: `go test ./...`; e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
+- Quick manual run: `sudo ./sosv-record --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
+  then `./sosv ps aux --data-dir /tmp/d --at "..."`
 - Machine notes: the old dev VM (8 vCPU, little free disk, failing disk) is
   for v2 milestones 1–2 only; eBPF work and benchmarks run on the 4 vCPU
   Ubuntu 26.04 VM (uutils coreutils: do not rely on GNU-only `date` etc.).

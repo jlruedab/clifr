@@ -1,6 +1,7 @@
 package pqstore
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -91,5 +92,23 @@ func TestRetentionAndSizeCap(t *testing.T) {
 	// The cap removes the oldest hours, never the current one.
 	if len(left) != 1 || filepath.Base(left[0]) != "12-05.parquet" {
 		t.Errorf("after size cap: %v", left)
+	}
+}
+
+// A saved lsof output of a few MB must be stored compressed, not also as
+// uncompressed min/max bounds.
+func TestLargeTextCompresses(t *testing.T) {
+	var b []byte
+	for i := 0; len(b) < 3<<20; i++ {
+		b = append(b, fmt.Sprintf("load    %7d root %4du IPv4 %9d 0t0 TCP 127.0.0.1:%d->127.0.0.2:%d (ESTABLISHED)\n",
+			1000+i%50, i%4000, 4000000+i, 30000+i%5, 40000+i%20000)...)
+	}
+	p := filepath.Join(t.TempDir(), "v.parquet")
+	if err := writeFile(p, []verifyRow{{ID: 1, Cmd: "lsof -n -P", Output: string(b)}}); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(p)
+	if fi.Size() > int64(len(b))/3 {
+		t.Errorf("%d bytes of text stored in %d bytes", len(b), fi.Size())
 	}
 }
