@@ -1,0 +1,9 @@
+package bpftcp
+
+// The compiled BPF objects are committed; regenerate after changing
+// tcpevents.bpf.c (needs clang and llvm-strip, e.g. clang-18 and llvm-18):
+//
+//	go generate ./internal/bpftcp
+
+//go:generate go tool bpf2go -cc clang-18 -strip llvm-strip-18 -target amd64,arm64 -type tcp_event tcpRB tcpevents.bpf.c -- -O2 -g -I/usr/include/x86_64-linux-gnu
+//go:generate go tool bpf2go -cc clang-18 -strip llvm-strip-18 -target amd64,arm64 tcpPerf tcpevents.bpf.c -- -O2 -g -DUSE_PERF -I/usr/include/x86_64-linux-gnu
