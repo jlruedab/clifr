@@ -77,7 +77,7 @@ benchmark were finished as v2 milestone 1 (results: busy 20261008-0721 batch).
 
 v2:
 1. [x] Tag v1; fix the report bugs; validation step (no v1 rerun: the 0721 data were repaired)
-2. [ ] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
+2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
 3. [ ] eBPF process events (proc connector fallback), OOM events
 4. [ ] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [ ] Long-held fd snapshots, mount events
