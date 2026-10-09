@@ -29,6 +29,7 @@ commands (record with sosv-record):
   ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
   life     sosv life [--name REGEX] [--start_from A --end_at B]
+  oom      sosv oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
   verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
 
@@ -53,6 +54,8 @@ func main() {
 		err = cmdLsof(args)
 	case "life":
 		err = cmdLife(args)
+	case "oom":
+		err = cmdOOM(args)
 	case "verify":
 		err = cmdVerify(args)
 	case "stats":
@@ -170,6 +173,12 @@ func cmdPS(args []string) error {
 	}
 	query.Header("ps aux at %s, reconstructed from sample at %s (%d processes)",
 		query.FormatMS(w.At), query.FormatMS(s), len(rows))
+	// OOM kills soon after T are not in the sample; point them out.
+	if kills, err := query.OOMKills(db, s, w.At+query.IntervalMS(db), 0); err == nil {
+		for _, k := range kills {
+			query.Header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see sosv oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
+		}
+	}
 	if q.json {
 		return query.PrintPSJSON(os.Stdout, rows)
 	}
@@ -368,5 +377,38 @@ func cmdVerify(args []string) error {
 		return query.PrintJSON(os.Stdout, rep)
 	}
 	verify.Print(os.Stdout, rep, *verbose)
+	return nil
+}
+
+func cmdOOM(args []string) error {
+	fs := flag.NewFlagSet("oom", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	top := fs.Int("top", 10, "processes to list by RSS for each kill")
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	w, err := q.window(false)
+	if err != nil {
+		return err
+	}
+	if !w.IsRange() {
+		w.From, w.To = w.At-60_000, w.At+60_000
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	kills, err := query.OOMKills(db, w.From, w.To, *top)
+	if err != nil {
+		return err
+	}
+	query.Header("OOM kills %s .. %s; RSS of the others: their last sample at or before the kill (sampled, not exact)",
+		query.FormatMS(w.From), query.FormatMS(w.To))
+	if q.json {
+		return query.PrintJSON(os.Stdout, kills)
+	}
+	query.PrintOOM(os.Stdout, kills)
 	return nil
 }

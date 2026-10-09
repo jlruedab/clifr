@@ -35,9 +35,13 @@ IOSchedulingClass=idle
 #   CAP_SYS_PTRACE       read /proc/<pid>/fd, fdinfo, exe, cwd, root of any process
 #   CAP_DAC_READ_SEARCH  list /proc/<pid>/fd directories owned by other users
 #   CAP_NET_ADMIN        subscribe to the proc connector (and SO_RCVBUFFORCE)
-# sock_diag needs no capability. Keep the host network namespace: the
-# recorder must see the host's sockets.
-CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN
+#   CAP_BPF CAP_PERFMON  load and attach the eBPF programs (kernel 5.8+)
+#   CAP_SYS_RESOURCE     raise RLIMIT_MEMLOCK for BPF maps (kernels before 5.11)
+# Kernels before 5.8 (e.g. RHEL 8) have no CAP_BPF/CAP_PERFMON and need
+# CAP_SYS_ADMIN for eBPF; add it there, or the recorder falls back to the
+# proc connector. sock_diag needs no capability. Keep the host network
+# namespace: the recorder must see the host's sockets.
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_SYS_RESOURCE
 AmbientCapabilities=
 NoNewPrivileges=yes
 

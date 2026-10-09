@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -42,7 +43,11 @@ CREATE TABLE IF NOT EXISTS processes (
 	first_seen INTEGER NOT NULL,
 	last_seen INTEGER,             -- NULL while open
 	ended INTEGER,                 -- exit time (event) or time it was found gone
-	source TEXT NOT NULL           -- 'sample' or 'event' (never seen by a sample)
+	source TEXT NOT NULL,          -- 'sample', or 'ebpf'/'proc_connector' (never seen by a sample)
+	exe TEXT,                      -- from exec events
+	exec_ts INTEGER, exit_ts INTEGER, -- last exec, exit (events)
+	exit_code INTEGER, signal INTEGER, -- how it ended (events)
+	oom_killed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS processes_first ON processes(first_seen);
 CREATE INDEX IF NOT EXISTS processes_open ON processes(last_seen);
@@ -100,6 +105,18 @@ CREATE INDEX IF NOT EXISTS open_files_proc ON open_files(proc_id);
 CREATE INDEX IF NOT EXISTS open_files_first ON open_files(first_seen);
 CREATE INDEX IF NOT EXISTS open_files_open ON open_files(last_seen);
 
+CREATE TABLE IF NOT EXISTS oom_events (
+	ts INTEGER NOT NULL, pid INTEGER NOT NULL,
+	start_time INTEGER,            -- with pid, identifies the victim in processes
+	comm TEXT, rss_kb INTEGER,     -- RSS at the kill
+	snapshot INTEGER NOT NULL      -- 1: proc_samples has a row for the victim at ts
+);
+
+-- Counters per interval, e.g. events received and dropped per source.
+CREATE TABLE IF NOT EXISTS recorder_stats (
+	ts INTEGER NOT NULL, source TEXT NOT NULL, events INTEGER, dropped INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS guard_events (
 	ts INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT
 );
@@ -144,6 +161,10 @@ func Open(path string, readOnly bool) (*DB, error) {
 		if _, err := db.Exec(schema); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("create schema: %w", err)
+		}
+		if err := migrate(db); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrate schema: %w", err)
 		}
 	}
 	return &DB{DB: db, Path: path}, nil
@@ -232,4 +253,32 @@ func dirSize(dir string) int64 {
 		return nil
 	})
 	return n
+}
+
+// migrate adds the columns newer versions added to tables of an existing
+// database (CREATE TABLE IF NOT EXISTS leaves old tables as they are).
+func migrate(db *sql.DB) error {
+	add := map[string][]string{"processes": {"exe TEXT", "exec_ts INTEGER", "exit_ts INTEGER",
+		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0"}}
+	for table, cols := range add {
+		have := map[string]bool{}
+		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var n string
+			rows.Scan(&n)
+			have[n] = true
+		}
+		rows.Close()
+		for _, c := range cols {
+			if name, _, _ := strings.Cut(c, " "); !have[name] {
+				if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + c); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

@@ -154,6 +154,7 @@ func ParseStatm(b []byte) (size, resident int64, err error) {
 // Status holds the fields of /proc/<pid>/status that sosv uses.
 type Status struct {
 	UID    int // effective uid, what `ps aux` shows as USER
+	Tgid   int // process id; differs from the pid for threads
 	VmLckK int64
 }
 
@@ -178,6 +179,8 @@ func ParseStatus(b []byte) (Status, error) {
 				s.UID = atoi(fs[1])
 				found = true
 			}
+		case strings.HasPrefix(line, "Tgid:"):
+			s.Tgid = atoi(strings.TrimSpace(line[5:]))
 		case strings.HasPrefix(line, "VmLck:"):
 			fs := strings.Fields(line[6:])
 			if len(fs) >= 1 {

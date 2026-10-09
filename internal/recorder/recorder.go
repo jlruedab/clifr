@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"sosv/internal/bpfproc"
 	"sosv/internal/pqstore"
 	"sosv/internal/procfs"
 	"sosv/internal/sockdiag"
@@ -23,9 +24,13 @@ import (
 )
 
 type Config struct {
-	DB         string // SQLite database (v1 schema); "" = none
-	DataDir    string // Parquet data directory; "" = none. Both set: write both.
-	Parquet    pqstore.Options
+	DB      string // SQLite database (v1 schema); "" = none
+	DataDir string // Parquet data directory; "" = none. Both set: write both.
+	Parquet pqstore.Options
+	// Events: "auto" (eBPF, else the proc connector), "ebpf",
+	// "proc_connector" or "none".
+	Events     string
+	EBPF       bpfproc.Options
 	Interval   time.Duration
 	FDInterval time.Duration
 	Duration   time.Duration // 0 = until signalled
@@ -193,7 +198,10 @@ func (r *Recorder) nextID(table string) int64 {
 // Run samples every Interval until ctx is cancelled or Duration elapses.
 func (r *Recorder) Run(ctx context.Context) error {
 	defer r.db.Close()
-	stopEvents := r.startEvents(ctx)
+	stopEvents, err := r.startEvents(ctx)
+	if err != nil {
+		return err
+	}
 	defer stopEvents()
 	start := time.Now()
 	next := start
@@ -293,6 +301,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 
 	t0 := time.Now()
 	nev := r.applyEvents(ts, &b)
+	if r.events != nil {
+		b.Stats = append(b.Stats, r.events.stats(ts)...)
+	}
 	nproc := r.sampleProcs(ts, fdWalk, &b)
 	r.flushEventProcs(ts, &b)
 	durProc := time.Since(t0)
@@ -418,16 +429,26 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
+	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
+		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, TTY: st.TTY, SID: st.Session,
+		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample"}
 	if ep := r.evProcs[key]; ep != nil {
 		e.first, e.exit = key.start, ep.exit
+		e.upd.Exe, e.upd.ExecTS = ep.ev.attrs.Exe, ep.ev.attrs.ExecTS
+		row.Exe, row.ExitCode, row.Signal, row.OOMKilled = ep.ev.attrs.Exe, ep.exitCode, ep.signal, ep.oom
+		if ep.ev.attrs.ExecTS != 0 {
+			row.ExecTS = &ep.ev.attrs.ExecTS
+		}
+		if ep.exitCode != nil || ep.signal != nil {
+			row.ExitTS = &e.exit
+		}
 		delete(r.evProcs, key)
 	}
+	row.FirstSeen = e.first
 	e.born = r.gen
 	r.procs[key] = e
 	r.byPID[key.pid] = e
-	b.ProcInserts = append(b.ProcInserts, store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
-		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, TTY: st.TTY, SID: st.Session,
-		PGRP: st.PGRP, Locked: status.VmLckK > 0, FirstSeen: e.first, Source: "sample"})
+	b.ProcInserts = append(b.ProcInserts, row)
 	return e
 }
 

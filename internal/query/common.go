@@ -98,3 +98,14 @@ func metaInt(db *store.DB, key string) int64 {
 	n, _ := strconv.ParseInt(db.Meta(key), 10, 64)
 	return n
 }
+
+// IntervalMS is the recorder's sample interval from the metadata (30 s if
+// unknown).
+func IntervalMS(db *store.DB) int64 {
+	var v string
+	db.QueryRow(`SELECT value FROM meta WHERE key = 'interval_s'`).Scan(&v)
+	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+		return int64(f * 1000)
+	}
+	return 30_000
+}

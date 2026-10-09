@@ -41,6 +41,12 @@ type processRow struct {
 	LastSeen  *int64 `parquet:"last_seen,optional"`
 	Ended     *int64 `parquet:"ended,optional"`
 	Source    string `parquet:"source,dict"`
+	Exe       string `parquet:"exe,dict"`
+	ExecTS    *int64 `parquet:"exec_ts,optional"`
+	ExitTS    *int64 `parquet:"exit_ts,optional"`
+	ExitCode  *int32 `parquet:"exit_code,optional"`
+	Signal    *int32 `parquet:"signal,optional"`
+	OOMKilled int32  `parquet:"oom_killed"`
 }
 
 type procSampleRow struct {
@@ -117,6 +123,22 @@ type verifyRow struct {
 	Output     string `parquet:"output"`
 }
 
+type oomRow struct {
+	TS        int64  `parquet:"ts"`
+	PID       int32  `parquet:"pid"`
+	StartTime int64  `parquet:"start_time"`
+	Comm      string `parquet:"comm"`
+	RSSKB     int64  `parquet:"rss_kb"`
+	Snapshot  int32  `parquet:"snapshot"`
+}
+
+type statRow struct {
+	TS      int64  `parquet:"ts"`
+	Source  string `parquet:"source,dict"`
+	Events  int64  `parquet:"events"`
+	Dropped int64  `parquet:"dropped"`
+}
+
 type metaRow struct {
 	Run   int64  `parquet:"run"`
 	TS    int64  `parquet:"ts"`
@@ -144,7 +166,16 @@ func sampleOf(s store.Sample) sampleRow {
 func processOf(p store.ProcRow) processRow {
 	return processRow{ID: p.ID, PID: int32(p.PID), StartTime: p.StartTime, PPID: int32(p.PPID), UID: int32(p.UID),
 		Comm: p.Comm, Cmdline: p.Cmdline, TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
-		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: p.LastSeen, Ended: p.Ended, Source: p.Source}
+		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: p.LastSeen, Ended: p.Ended, Source: p.Source,
+		Exe: p.Exe, ExecTS: p.ExecTS, ExitTS: p.ExitTS, ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
+		OOMKilled: b2i(p.OOMKilled)}
+}
+
+func i32p(p *int) *int32 {
+	if p == nil {
+		return nil
+	}
+	return ptr(int32(*p))
 }
 
 func procSampleOf(p store.ProcSample) procSampleRow {

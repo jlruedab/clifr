@@ -1,0 +1,283 @@
+// Package bpfproc loads the eBPF programs in procevents.bpf.c and reads
+// process fork, exec and exit events and OOM kills from them.
+//
+// It needs CAP_BPF and CAP_PERFMON (or CAP_SYS_ADMIN on kernels before 5.8)
+// and a kernel with BTF (/sys/kernel/btf/vmlinux) for CO-RE. It prefers the
+// BPF ring buffer and a BTF tracepoint for fork, and falls back to a perf
+// event array and the classic fork tracepoint.
+package bpfproc
+
+import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"sync/atomic"
+	"time"
+
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/ringbuf"
+	"github.com/cilium/ebpf/rlimit"
+
+	"sosv/internal/procfs"
+)
+
+type Kind uint32
+
+const (
+	Fork Kind = 1
+	Exec Kind = 2
+	Exit Kind = 3
+	OOM  Kind = 4
+)
+
+func (k Kind) String() string {
+	if k >= Fork && k <= OOM {
+		return [...]string{"", "fork", "exec", "exit", "oom"}[k]
+	}
+	return "unknown"
+}
+
+// Kinds lists the event kinds, for per-kind counters.
+var Kinds = []Kind{Fork, Exec, Exit, OOM}
+
+// ArgsMax is how many bytes of the command line an exec event carries.
+const ArgsMax = 1023
+
+type Event struct {
+	Kind      Kind
+	PID, PPID int // fork: PID is the child
+	UID       int
+	MonoNS    uint64 // CLOCK_MONOTONIC
+	StartNS   uint64 // process start, ns since boot (0: unknown)
+	Comm      string
+	// Exec only.
+	Filename      string
+	Cmdline       string // arguments joined by spaces, like /proc/<pid>/cmdline
+	ArgsTruncated bool   // the command line was longer than ArgsMax
+	// Exit only: the raw wait status (see ExitStatus).
+	Status int32
+	// OOM only: victim RSS from the tracepoint (0 on kernels that lack it).
+	RSSKB uint64
+}
+
+// ExitStatus decodes Status: the exit code, or the signal that killed it.
+func (e Event) ExitStatus() (code, signal int) {
+	if sig := int(e.Status & 0x7f); sig != 0 {
+		return 0, sig
+	}
+	return int(e.Status>>8) & 0xff, 0
+}
+
+// StartTicks is the start time in clock ticks since boot, as in
+// /proc/<pid>/stat (the kernel's nsec_to_clock_t).
+func (e Event) StartTicks() uint64 {
+	return e.StartNS / uint64(1e9/procfs.ClockTicks)
+}
+
+type Options struct {
+	ForcePerf        bool // use the perf event array even if a ring buffer is available
+	ForceClassicFork bool // use the classic fork tracepoint even if tp_btf works
+	BufferBytes      int  // ring buffer size, or perf buffer size per CPU (0: default)
+}
+
+type Source struct {
+	coll   *ebpf.Collection
+	links  []link.Link
+	rb     *ringbuf.Reader
+	pr     *perf.Reader
+	Buffer string // "ringbuf" or "perf"
+	Fork   string // "tp_btf" or "tracepoint"
+	OOM    bool   // the oom:mark_victim tracepoint is attached
+	lost   atomic.Uint64
+}
+
+// Open loads and attaches the programs, trying the preferred features first.
+func Open(o Options) (*Source, error) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		return nil, fmt.Errorf("memlock rlimit: %w", err)
+	}
+	var errs []error
+	for _, perfBuf := range []bool{false, true} {
+		if !perfBuf && o.ForcePerf {
+			continue
+		}
+		for _, btfFork := range []bool{true, false} {
+			if btfFork && o.ForceClassicFork {
+				continue
+			}
+			s, err := open(perfBuf, btfFork, o)
+			if err == nil {
+				return s, nil
+			}
+			errs = append(errs, fmt.Errorf("buffer %s, fork %s: %w", map[bool]string{false: "ringbuf", true: "perf"}[perfBuf],
+				map[bool]string{true: "tp_btf", false: "tracepoint"}[btfFork], err))
+		}
+	}
+	return nil, errors.Join(errs...)
+}
+
+func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
+	var spec *ebpf.CollectionSpec
+	if perfBuf {
+		spec, err = loadProcPerf()
+	} else {
+		spec, err = loadProcRB()
+		if o.BufferBytes > 0 {
+			spec.Maps["events"].MaxEntries = uint32(o.BufferBytes)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if btfFork {
+		delete(spec.Programs, "handle_fork_tp")
+	} else {
+		delete(spec.Programs, "handle_fork_btf")
+	}
+	coll, err := ebpf.NewCollection(spec)
+	if err != nil {
+		return nil, err
+	}
+	s = &Source{coll: coll, Buffer: "ringbuf", Fork: "tracepoint"}
+	defer func() {
+		if err != nil {
+			s.Close()
+		}
+	}()
+	attach := func(group, name, prog string) error {
+		l, err := link.Tracepoint(group, name, coll.Programs[prog], nil)
+		if err != nil {
+			return fmt.Errorf("attach %s:%s: %w", group, name, err)
+		}
+		s.links = append(s.links, l)
+		return nil
+	}
+	if err = attach("sched", "sched_process_exec", "handle_exec"); err != nil {
+		return
+	}
+	if err = attach("sched", "sched_process_exit", "handle_exit"); err != nil {
+		return
+	}
+	if btfFork {
+		var l link.Link
+		if l, err = link.AttachTracing(link.TracingOptions{Program: coll.Programs["handle_fork_btf"]}); err != nil {
+			return
+		}
+		s.links = append(s.links, l)
+		s.Fork = "tp_btf"
+	} else if err = attach("sched", "sched_process_fork", "handle_fork_tp"); err != nil {
+		return
+	}
+	s.OOM = attach("oom", "mark_victim", "handle_oom") == nil // optional
+	if perfBuf {
+		size := o.BufferBytes
+		if size <= 0 {
+			size = 256 << 10
+		}
+		s.pr, err = perf.NewReader(coll.Maps["events"], size)
+		s.Buffer = "perf"
+	} else {
+		s.rb, err = ringbuf.NewReader(coll.Maps["events"])
+	}
+	return s, err
+}
+
+func (s *Source) Close() error {
+	var errs []error
+	for _, l := range s.links {
+		errs = append(errs, l.Close())
+	}
+	if s.rb != nil {
+		errs = append(errs, s.rb.Close())
+	}
+	if s.pr != nil {
+		errs = append(errs, s.pr.Close())
+	}
+	s.coll.Close()
+	return errors.Join(errs...)
+}
+
+// ErrTimeout is returned by Read when no event arrived within the wait.
+var ErrTimeout = os.ErrDeadlineExceeded
+
+// Read waits up to wait for the next event.
+func (s *Source) Read(wait time.Duration) (Event, error) {
+	for {
+		var raw []byte
+		if s.rb != nil {
+			s.rb.SetDeadline(time.Now().Add(wait))
+			rec, err := s.rb.Read()
+			if err != nil {
+				return Event{}, err
+			}
+			raw = rec.RawSample
+		} else {
+			s.pr.SetDeadline(time.Now().Add(wait))
+			rec, err := s.pr.Read()
+			if err != nil {
+				return Event{}, err
+			}
+			if rec.LostSamples > 0 {
+				s.lost.Add(rec.LostSamples)
+				continue
+			}
+			raw = rec.RawSample
+		}
+		return decode(raw)
+	}
+}
+
+// Drops returns, per kind, the events the kernel side could not send, plus
+// (index 0) perf samples lost without a known kind.
+func (s *Source) Drops() map[Kind]uint64 {
+	out := map[Kind]uint64{0: s.lost.Load()}
+	m := s.coll.Maps["drops"]
+	for _, k := range Kinds {
+		var perCPU []uint64
+		if err := m.Lookup(uint32(k), &perCPU); err == nil {
+			for _, v := range perCPU {
+				out[k] += v
+			}
+		}
+	}
+	return out
+}
+
+var eventSize = binary.Size(procRBEvent{})
+
+func decode(raw []byte) (Event, error) {
+	buf := make([]byte, eventSize) // fork/exit/oom events stop before filename
+	copy(buf, raw)
+	var r procRBEvent
+	if err := binary.Read(bytes.NewReader(buf), binary.NativeEndian, &r); err != nil {
+		return Event{}, err
+	}
+	e := Event{Kind: Kind(r.Kind), PID: int(r.Pid), PPID: int(r.Ppid), UID: int(r.Uid), MonoNS: r.MonoNs,
+		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb}
+	if e.Kind == Exec {
+		e.Filename = cstr(r.Filename[:])
+		n := min(int(r.ArgsLen), ArgsMax)
+		args := make([]byte, n)
+		for i := range args {
+			args[i] = byte(r.Args[i])
+		}
+		e.Cmdline = procfs.ParseCmdline(args)
+		e.ArgsTruncated = int(r.ArgsLen) > ArgsMax
+	}
+	return e, nil
+}
+
+func cstr(b []int8) string {
+	out := make([]byte, 0, len(b))
+	for _, c := range b {
+		if c == 0 {
+			break
+		}
+		out = append(out, byte(c))
+	}
+	return string(out)
+}

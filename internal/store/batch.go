@@ -20,7 +20,12 @@ type ProcRow struct {
 	Locked          bool
 	FirstSeen       int64
 	LastSeen, Ended *int64 // set for event-only processes that are already gone
-	Source          string
+	Source          string // sample, ebpf or proc_connector
+	// From process events (eBPF); empty/nil when unknown.
+	Exe              string
+	ExecTS, ExitTS   *int64
+	ExitCode, Signal *int
+	OOMKilled        bool
 }
 
 // ProcUpdate changes slow-moving attributes (re-read at exec or fd walks).
@@ -29,6 +34,36 @@ type ProcUpdate struct {
 	UID, PPID     int
 	Comm, Cmdline string
 	Source        string
+	Exe           string
+	ExecTS        int64 // 0: no exec seen
+}
+
+// ProcExit records how a process ended (an exit event or an OOM kill); nil
+// fields leave the stored value unchanged.
+type ProcExit struct {
+	ID               int64
+	ExitTS           *int64
+	ExitCode, Signal *int
+	OOMKilled        bool
+}
+
+// OOMEvent is an OOM kill. The victim is identified by pid and start time
+// (it may never have been sampled); RSSKB is its memory at the kill.
+type OOMEvent struct {
+	TS        int64
+	PID       int
+	StartTime int64 // 0 if the victim was gone before /proc could be read
+	Comm      string
+	RSSKB     int64
+	Snapshot  bool // a proc_samples row was written for the victim at TS
+}
+
+// StatRow is one recorder counter for the interval ending at TS, e.g.
+// events received and dropped per event source.
+type StatRow struct {
+	TS              int64
+	Source          string
+	Events, Dropped int64
 }
 
 type ProcSample struct {
@@ -105,6 +140,9 @@ type Batch struct {
 	OwnCloses   []Close
 	FileInserts []FileRow
 	FileCloses  []Close
+	ProcExits   []ProcExit
+	OOMEvents   []OOMEvent
+	Stats       []StatRow
 	Guard       []GuardEvent
 	Verify      []VerifySnap
 	Skips       []int64 // timestamps of skipped sample slots
@@ -115,10 +153,17 @@ func (b *Batch) Rows() int {
 	return len(b.ProcInserts) + len(b.ProcUpdates) + len(b.ProcCloses) + len(b.ProcSamples) +
 		len(b.SockInserts) + len(b.SockCloses) + len(b.SockSamples) +
 		len(b.OwnInserts) + len(b.OwnCloses) + len(b.FileInserts) + len(b.FileCloses) +
-		len(b.Guard) + len(b.Verify) + len(b.Skips)
+		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats)
 }
 
 func nullInt(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func nullIntp(p *int) any {
 	if p == nil {
 		return nil
 	}
@@ -189,19 +234,50 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error {
 			return each(`INSERT INTO processes(id, pid, start_time, ppid, uid, comm, cmdline, tty, sid, pgrp,
-				locked, first_seen, last_seen, ended, source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				locked, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.ProcInserts), func(st *sql.Stmt, i int) error {
 					p := b.ProcInserts[i]
 					_, err := st.Exec(p.ID, p.PID, p.StartTime, p.PPID, p.UID, p.Comm, p.Cmdline, p.TTY,
-						p.SID, p.PGRP, b2i(p.Locked), p.FirstSeen, nullInt(p.LastSeen), nullInt(p.Ended), p.Source)
+						p.SID, p.PGRP, b2i(p.Locked), p.FirstSeen, nullInt(p.LastSeen), nullInt(p.Ended), p.Source,
+						p.Exe, nullInt(p.ExecTS), nullInt(p.ExitTS), nullIntp(p.ExitCode), nullIntp(p.Signal), b2i(p.OOMKilled))
 					return err
 				})
 		},
 		func() error {
-			return each(`UPDATE processes SET uid = ?, ppid = ?, comm = ?, cmdline = ?, source = ? WHERE id = ?`,
+			return each(`UPDATE processes SET uid = ?, ppid = ?, comm = ?, cmdline = ?, source = ?, exe = ?, exec_ts = ? WHERE id = ?`,
 				len(b.ProcUpdates), func(st *sql.Stmt, i int) error {
 					u := b.ProcUpdates[i]
-					_, err := st.Exec(u.UID, u.PPID, u.Comm, u.Cmdline, u.Source, u.ID)
+					var execTS any
+					if u.ExecTS != 0 {
+						execTS = u.ExecTS
+					}
+					_, err := st.Exec(u.UID, u.PPID, u.Comm, u.Cmdline, u.Source, u.Exe, execTS, u.ID)
+					return err
+				})
+		},
+		func() error {
+			return each(`UPDATE processes SET exit_ts = COALESCE(?, exit_ts), exit_code = COALESCE(?, exit_code),
+				signal = COALESCE(?, signal), oom_killed = MAX(oom_killed, ?) WHERE id = ?`,
+				len(b.ProcExits), func(st *sql.Stmt, i int) error {
+					x := b.ProcExits[i]
+					_, err := st.Exec(nullInt(x.ExitTS), nullIntp(x.ExitCode), nullIntp(x.Signal), b2i(x.OOMKilled), x.ID)
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO oom_events(ts, pid, start_time, comm, rss_kb, snapshot) VALUES(?,?,?,?,?,?)`,
+				len(b.OOMEvents), func(st *sql.Stmt, i int) error {
+					o := b.OOMEvents[i]
+					_, err := st.Exec(o.TS, o.PID, o.StartTime, o.Comm, o.RSSKB, b2i(o.Snapshot))
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO recorder_stats(ts, source, events, dropped) VALUES(?,?,?,?)`,
+				len(b.Stats), func(st *sql.Stmt, i int) error {
+					r := b.Stats[i]
+					_, err := st.Exec(r.TS, r.Source, r.Events, r.Dropped)
 					return err
 				})
 		},

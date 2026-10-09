@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/cnproc"
 	"sosv/internal/procfs"
 	"sosv/internal/query"
 	"sosv/internal/store"
@@ -351,7 +350,7 @@ func TestEvents(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "daemon", 100, 0)
 	r, dbPath := newTestRecorder(t, fp.root)
-	r.events = &eventQueue{}
+	r.events = newEventQueue()
 	t1 := time.UnixMilli(1790001000000)
 	t2 := t1.Add(30 * time.Second)
 	must(t, r.sample(t1, true))
@@ -360,16 +359,16 @@ func TestEvents(t *testing.T) {
 	short := procKey{pid: 50, start: boot + 1005*1000} // started at t1+5s, gone before t2
 	adopted := procKey{pid: 60, start: boot + 1010*1000}
 	daemonKey := procKey{pid: 10, start: boot + 1000}
-	ev := func(k cnproc.Kind, key procKey, ts int64, cmd string) procEvent {
+	ev := func(k evKind, key procKey, ts int64, cmd string) procEvent {
 		return procEvent{kind: k, pid: key.pid, ts: ts, haveStat: true, key: key,
-			attrs: store.ProcUpdate{PPID: 10, Comm: "x", Cmdline: cmd, Source: "event"}}
+			attrs: store.ProcUpdate{PPID: 10, Comm: "x", Cmdline: cmd, Source: srcCNProc}}
 	}
 	r.events.list = []procEvent{
-		ev(cnproc.Fork, short, short.start, "/bin/daemon"),
-		ev(cnproc.Exec, short, short.start+2, "/bin/hook --run"),
-		ev(cnproc.Exit, short, short.start+340, ""),
-		ev(cnproc.Fork, adopted, adopted.start, "/bin/worker"),
-		ev(cnproc.Exit, daemonKey, t1.UnixMilli()+20_000, ""),
+		ev(evFork, short, short.start, "/bin/daemon"),
+		ev(evExec, short, short.start+2, "/bin/hook --run"),
+		ev(evExit, short, short.start+340, ""),
+		ev(evFork, adopted, adopted.start, "/bin/worker"),
+		ev(evExit, daemonKey, t1.UnixMilli()+20_000, ""),
 	}
 	fp.set(60, "worker", 1010*100, 0) // still alive at t2
 	fp.remove(10)                     // daemon exited (event above)
@@ -394,7 +393,7 @@ func TestEvents(t *testing.T) {
 	}
 	rows.Close()
 	want := map[int]row{
-		50: {"/bin/hook --run", "event", short.start, short.start + 340, short.start + 340},
+		50: {"/bin/hook --run", srcCNProc, short.start, short.start + 340, short.start + 340},
 		60: {"/bin/worker -x", "sample", adopted.start, t2.UnixMilli(), -1},
 		10: {"/bin/daemon -x", "sample", t1.UnixMilli(), t1.UnixMilli(), t1.UnixMilli() + 20_000},
 	}
@@ -485,5 +484,77 @@ func TestCPUBudget(t *testing.T) {
 	last := b.Guard[len(b.Guard)-1]
 	if r.fdInterval != maxFDInterval || last.Kind != "budget_exceeded" {
 		t.Errorf("at cap: fd-interval %s, last guard %+v", r.fdInterval, last)
+	}
+}
+
+// eBPF events carry exit codes, signals, exec details and OOM kills.
+func TestEBPFEvents(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "daemon", 100, 0)
+	fp.set(20, "victim", 200, 0)
+	r, dbPath := newTestRecorder(t, fp.root)
+	r.events = newEventQueue()
+	t1 := time.UnixMilli(1790001000000)
+	t2 := t1.Add(30 * time.Second)
+	must(t, r.sample(t1, true))
+
+	boot := int64(1790000000000)
+	daemon := procKey{pid: 10, start: boot + 1000}
+	victim := procKey{pid: 20, start: boot + 2000}
+	quick := procKey{pid: 50, start: t1.UnixMilli() + 3000} // only its exit was seen
+	killed := procKey{pid: 51, start: t1.UnixMilli() + 4000}
+	attrs := func(comm, cmd string) store.ProcUpdate {
+		return store.ProcUpdate{PPID: 10, Comm: comm, Cmdline: cmd, Source: srcEBPF}
+	}
+	code2, sig9 := 2, 9
+	exec := attrs("daemon", "/usr/bin/daemon --new")
+	exec.Exe, exec.ExecTS = "/usr/bin/daemon", t1.UnixMilli()+1000
+	r.events.list = []procEvent{
+		{kind: evExec, pid: 10, ts: exec.ExecTS, haveStat: true, key: daemon, attrs: exec},
+		{kind: evExit, pid: 50, ts: quick.start + 40, haveStat: true, key: quick, attrs: attrs("quick", ""), exitCode: &code2},
+		{kind: evExec, pid: 51, ts: killed.start, haveStat: true, key: killed, attrs: attrs("sleep", "sleep 100")},
+		{kind: evExit, pid: 51, ts: killed.start + 500, haveStat: true, key: killed, attrs: attrs("sleep", ""), signal: &sig9},
+		{kind: evOOM, pid: 20, ts: t1.UnixMilli() + 20_000, haveStat: true, key: victim, attrs: attrs("victim", ""), rssKB: 512_000},
+		{kind: evExit, pid: 20, ts: t1.UnixMilli() + 20_010, haveStat: true, key: victim, attrs: attrs("victim", ""), signal: &sig9},
+	}
+	r.events.received["ebpf_exec"] = 2
+	fp.remove(20)
+	must(t, r.sample(t2, false))
+	must(t, r.shutdown())
+	r.db.Close()
+
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	life, err := query.Life(db, 0, t2.UnixMilli(), nil)
+	must(t, err)
+	exits := map[int]string{}
+	for _, l := range life {
+		exits[l.PID] = l.Exit() + " " + l.Source + " " + l.Command
+	}
+	for pid, want := range map[int]string{
+		10: "- sample /usr/bin/daemon --new", 20: "OOM sample /bin/victim -x",
+		50: "2 ebpf [quick]", 51: "SIGKILL ebpf sleep 100",
+	} {
+		if exits[pid] != want {
+			t.Errorf("life pid %d: %q, want %q", pid, exits[pid], want)
+		}
+	}
+	var exe string
+	var execTS int64
+	db.QueryRow(`SELECT exe, exec_ts FROM processes WHERE pid = 10`).Scan(&exe, &execTS)
+	if exe != "/usr/bin/daemon" || execTS != exec.ExecTS {
+		t.Errorf("exec of a sampled process: exe %q exec_ts %d", exe, execTS)
+	}
+	kills, err := query.OOMKills(db, 0, t2.UnixMilli(), 5)
+	must(t, err)
+	if len(kills) != 1 || kills[0].PID != 20 || kills[0].RSSKB != 512_000 || !kills[0].Snapshot ||
+		len(kills[0].Top) == 0 || kills[0].Top[0].PID != 20 || kills[0].Top[0].RSSKB != 512_000 {
+		t.Errorf("oom: %+v", kills)
+	}
+	var n int64
+	db.QueryRow(`SELECT SUM(events) FROM recorder_stats WHERE source = 'ebpf_exec'`).Scan(&n)
+	if n != 2 {
+		t.Errorf("recorder_stats ebpf_exec = %d", n)
 	}
 }

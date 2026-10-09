@@ -39,7 +39,10 @@ user's go-ahead.
 - `cmd/sosv/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
-- `internal/cnproc/` — kernel proc connector (fork/exec/exit events).
+- `internal/bpfproc/` — eBPF process events (fork/exec/exit, OOM): `procevents.bpf.c`
+  (CO-RE, no vmlinux.h) and the committed bpf2go objects; `go generate ./internal/bpfproc`
+  rebuilds them (clang-18, llvm-strip-18, libbpf-dev).
+- `internal/cnproc/` — kernel proc connector (fork/exec/exit events), the fallback.
 - `internal/store/` — `Backend` interface, v1 SQLite schema and batch writer, `Tee`.
 - `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention.
 - `internal/duck/` — loads a Parquet data directory into in-memory DuckDB with the v1 table names.
@@ -62,7 +65,8 @@ user's go-ahead.
 ## Commands
 - Build: `CGO_ENABLED=0 go build -o sosv-record ./cmd/sosv-record` and `go build -o sosv ./cmd/sosv` (cgo, needs g++).
   go.mod pins toolchain go1.26.8 (downloaded automatically by an older `go`).
-- Test: `go test ./...`; e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
+- eBPF self-test (root): `sudo ./sosv-record --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`
+- Test: `go test ./...` (eBPF tests skip without root; `go test -c` + sudo to run them); e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
 - Quick manual run: `sudo ./sosv-record --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
   then `./sosv ps aux --data-dir /tmp/d --at "..."`
 - Machine notes: the old dev VM (8 vCPU, little free disk, failing disk) is
@@ -78,7 +82,7 @@ benchmark were finished as v2 milestone 1 (results: busy 20261008-0721 batch).
 v2:
 1. [x] Tag v1; fix the report bugs; validation step (no v1 rerun: the 0721 data were repaired)
 2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
-3. [ ] eBPF process events (proc connector fallback), OOM events
+3. [x] eBPF process events (proc connector fallback), OOM events
 4. [ ] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [ ] Long-held fd snapshots, mount events
 6. [ ] Ground-truth tests

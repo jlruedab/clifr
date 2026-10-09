@@ -2,40 +2,82 @@ package recorder
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"sosv/internal/bpfproc"
 	"sosv/internal/cnproc"
 	"sosv/internal/procfs"
 	"sosv/internal/store"
 )
 
-// procEvent is a proc connector event enriched with what /proc showed at
-// the moment it arrived (short-lived processes are gone by the next sample).
+type evKind int
+
+const (
+	evFork evKind = iota + 1
+	evExec
+	evExit
+	evOOM
+)
+
+// Event sources (the processes table's source column; "sample" otherwise).
+const (
+	srcEBPF   = "ebpf"
+	srcCNProc = "proc_connector"
+)
+
+// procEvent is a process event from eBPF or the proc connector, with what
+// was known about the process when it arrived (short-lived processes are
+// gone by the next sample).
 type procEvent struct {
-	kind     cnproc.Kind
+	kind     evKind
 	ts       int64 // wall clock, unix ms
 	pid      int
-	haveStat bool
-	key      procKey
-	attrs    store.ProcUpdate // comm, cmdline, uid, ppid
+	haveStat bool             // key and attrs are known
+	key      procKey          // pid and start time
+	attrs    store.ProcUpdate // comm, cmdline, uid, ppid, source; exec: exe, exec time
 	tty      int
 	sid      int
 	pgrp     int
+	// Exit (eBPF): exactly one of exitCode and signal is set.
+	exitCode, signal *int
+	// OOM: the victim's RSS at the kill, 0 if unknown.
+	rssKB int64
 }
 
 // evProc is a process known only from events so far.
 type evProc struct {
-	ev   procEvent // latest fork/exec info
-	exit int64     // exit time, 0 if not seen
+	ev       procEvent // latest fork/exec info
+	exit     int64     // exit time, 0 if not seen
+	exitCode *int
+	signal   *int
+	oom      bool
 }
 
+// eventQueue is filled by the event reader goroutine and drained by each
+// sample. Counters are cumulative, per recorder_stats source.
 type eventQueue struct {
-	mu   sync.Mutex
-	list []procEvent
-	lost int // cumulative ENOBUFS count
+	mu       sync.Mutex
+	list     []procEvent
+	lost     int // proc connector receive-buffer overruns
+	received map[string]int64
+	reported map[string][2]int64     // received and dropped at the last report
+	drops    func() map[string]int64 // eBPF: events the kernel side could not send
+}
+
+func newEventQueue() *eventQueue {
+	return &eventQueue{received: map[string]int64{}, reported: map[string][2]int64{}}
+}
+
+func (q *eventQueue) push(evs []procEvent, stat string, n int) {
+	q.mu.Lock()
+	q.list = append(q.list, evs...)
+	q.received[stat] += int64(n)
+	q.mu.Unlock()
 }
 
 func (q *eventQueue) take() ([]procEvent, int) {
@@ -46,20 +88,78 @@ func (q *eventQueue) take() ([]procEvent, int) {
 	return l, q.lost
 }
 
-// startEvents subscribes to the proc connector. If that fails the recorder
-// warns and continues with sampling only.
-func (r *Recorder) startEvents(ctx context.Context) (stop func()) {
-	if r.fs.Root != "/proc" {
-		return func() {} // fixtures: events would describe the real system
+// stats returns per source the events received and dropped since the last call.
+func (q *eventQueue) stats(ts int64) []store.StatRow {
+	var drops map[string]int64
+	if q.drops != nil {
+		drops = q.drops()
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.lost > 0 {
+		drops = map[string]int64{srcCNProc: int64(q.lost)}
+	}
+	seen := map[string]bool{}
+	var out []store.StatRow
+	for _, m := range []map[string]int64{q.received, drops} {
+		for src := range m {
+			if seen[src] {
+				continue
+			}
+			seen[src] = true
+			now := [2]int64{q.received[src], drops[src]}
+			prev := q.reported[src]
+			out = append(out, store.StatRow{TS: ts, Source: src, Events: now[0] - prev[0], Dropped: now[1] - prev[1]})
+			q.reported[src] = now
+		}
+	}
+	return out
+}
+
+// startEvents starts the configured event source: eBPF, else (with
+// "auto") the proc connector. Without either the recorder samples only.
+func (r *Recorder) startEvents(ctx context.Context) (stop func(), err error) {
+	mode := r.cfg.Events
+	if mode == "" {
+		mode = "auto"
+	}
+	if r.fs.Root != "/proc" || mode == "none" {
+		r.db.SetMeta("events", "none")
+		return func() {}, nil // fixtures: events would describe the real system
+	}
+	if mode == "auto" || mode == srcEBPF {
+		src, err := bpfproc.Open(r.cfg.EBPF)
+		if err == nil {
+			oom := "oom"
+			if !src.OOM {
+				oom = "no oom tracepoint"
+			}
+			desc := fmt.Sprintf("ebpf (%s, fork %s, %s)", src.Buffer, src.Fork, oom)
+			r.db.SetMeta("events", desc)
+			r.log.Printf("process events: %s", desc)
+			return r.runEBPF(ctx, src), nil
+		}
+		if mode == srcEBPF {
+			return nil, fmt.Errorf("eBPF events: %w", err)
+		}
+		r.log.Printf("warning: eBPF unavailable, falling back to the proc connector: %v", err)
 	}
 	l, err := cnproc.Listen()
 	if err != nil {
+		if mode == srcCNProc {
+			return nil, err
+		}
 		r.log.Printf("warning: proc connector unavailable (%v); short-lived processes between samples will be missed", err)
 		r.db.SetMeta("events", "unavailable: "+err.Error())
-		return func() {}
+		return func() {}, nil
 	}
-	r.db.SetMeta("events", "cn_proc")
-	r.events = &eventQueue{}
+	r.db.SetMeta("events", srcCNProc)
+	r.log.Printf("process events: proc connector")
+	return r.runCNProc(ctx, l), nil
+}
+
+func (r *Recorder) runCNProc(ctx context.Context, l *cnproc.Listener) (stop func()) {
+	r.events = newEventQueue()
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -83,8 +183,8 @@ func (r *Recorder) startEvents(ctx context.Context) (stop func()) {
 			for _, e := range evs {
 				enriched = append(enriched, r.enrich(e))
 			}
+			r.events.push(enriched, srcCNProc, len(evs))
 			r.events.mu.Lock()
-			r.events.list = append(r.events.list, enriched...)
 			r.events.lost = l.Lost
 			r.events.mu.Unlock()
 		}
@@ -96,28 +196,154 @@ func (r *Recorder) startEvents(ctx context.Context) (stop func()) {
 	}
 }
 
-// enrich reads the process's stat (and status/cmdline for fork and exec)
-// right away. Failures are fine: the process may already be gone.
-func (r *Recorder) enrich(e cnproc.Event) procEvent {
+func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func()) {
+	r.events = newEventQueue()
+	r.events.drops = func() map[string]int64 {
+		out := map[string]int64{}
+		for k, n := range src.Drops() {
+			if n > 0 || k != 0 {
+				out[ebpfStat(k)] = int64(n)
+			}
+		}
+		return out
+	}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			default:
+			}
+			e, err := src.Read(time.Second)
+			if errors.Is(err, bpfproc.ErrTimeout) {
+				continue
+			}
+			if err != nil {
+				r.log.Printf("eBPF event read: %v; continuing with sampling only", err)
+				return
+			}
+			if pe, ok := r.fromBPF(e); ok {
+				r.events.push([]procEvent{pe}, ebpfStat(e.Kind), 1)
+			} else {
+				r.events.push(nil, ebpfStat(e.Kind), 1)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		wg.Wait()
+		src.Close()
+	}
+}
+
+func ebpfStat(k bpfproc.Kind) string { return "ebpf_" + k.String() }
+
+// wallMS converts a CLOCK_MONOTONIC event time to wall-clock unix ms.
+func wallMS(monoNS uint64) int64 {
 	var mono unix.Timespec
 	unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono)
-	ageNS := mono.Nano() - int64(e.TimestampNS)
-	pe := procEvent{kind: e.Kind, pid: e.PID, ts: time.Now().UnixMilli() - max(ageNS, 0)/1e6}
+	age := mono.Nano() - int64(monoNS)
+	return time.Now().UnixMilli() - max(age, 0)/1e6
+}
+
+// fromBPF turns an eBPF event into a procEvent. Exec, exit and (tp_btf)
+// fork events carry the process's start time, so the key is exact without
+// reading /proc; /proc is read only for what the event lacks.
+func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
+	pe := procEvent{pid: e.PID, ts: wallMS(e.MonoNS)}
+	if e.StartNS != 0 {
+		pe.haveStat = true
+		pe.key = procKey{pid: e.PID, start: r.boot + int64(e.StartTicks())*1000/procfs.ClockTicks}
+		pe.attrs = store.ProcUpdate{PPID: e.PPID, UID: e.UID, Comm: e.Comm, Source: srcEBPF}
+	}
+	switch e.Kind {
+	case bpfproc.Fork:
+		if !pe.haveStat { // classic tracepoint: look the child up like the proc connector does
+			if st, err := r.fs.ReadStatus(e.PID); err == nil && st.Tgid != e.PID {
+				return pe, false // a thread
+			}
+			pe = r.enrich(cnproc.Event{Kind: cnproc.Fork, PID: e.PID, TimestampNS: e.MonoNS})
+			pe.attrs.Source = srcEBPF
+			return pe, true
+		}
+		pe.kind = evFork
+		pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID) // the parent's, until it execs
+		r.readTTY(&pe)
+	case bpfproc.Exec:
+		pe.kind = evExec
+		pe.attrs.Cmdline, pe.attrs.Exe, pe.attrs.ExecTS = e.Cmdline, e.Filename, pe.ts
+		if e.ArgsTruncated {
+			if full, err := r.fs.ReadCmdline(e.PID); err == nil && full != "" {
+				pe.attrs.Cmdline = full
+			}
+		}
+		r.readTTY(&pe)
+	case bpfproc.Exit:
+		pe.kind = evExit
+		code, sig := e.ExitStatus()
+		if sig != 0 {
+			pe.signal = &sig
+		} else {
+			pe.exitCode = &code
+		}
+	case bpfproc.OOM:
+		pe.kind = evOOM
+		// The victim is being killed: read what /proc still shows right now.
+		if st, err := r.fs.ReadStat(e.PID); err == nil {
+			pe.haveStat = true
+			pe.key = procKey{pid: e.PID, start: r.boot + int64(st.StartTime)*1000/procfs.ClockTicks}
+			pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: srcEBPF}
+			pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
+			pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID)
+			if _, res, err := r.fs.ReadStatm(e.PID); err == nil {
+				pe.rssKB = res * int64(pageKB)
+			}
+		}
+		if e.RSSKB > 0 {
+			pe.rssKB = int64(e.RSSKB)
+		}
+	default:
+		return pe, false
+	}
+	return pe, true
+}
+
+func (r *Recorder) readTTY(pe *procEvent) {
+	if st, err := r.fs.ReadStat(pe.pid); err == nil {
+		pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
+	}
+}
+
+// enrich turns a proc connector event into a procEvent, reading the
+// process's stat (and status/cmdline for fork and exec) right away.
+// Failures are fine: the process may already be gone.
+func (r *Recorder) enrich(e cnproc.Event) procEvent {
+	kind := map[cnproc.Kind]evKind{cnproc.Fork: evFork, cnproc.Exec: evExec, cnproc.Exit: evExit}[e.Kind]
+	pe := procEvent{kind: kind, pid: e.PID, ts: wallMS(e.TimestampNS)}
 	st, err := r.fs.ReadStat(e.PID)
 	if err != nil {
 		return pe
 	}
 	pe.haveStat = true
 	pe.key = procKey{pid: e.PID, start: r.boot + int64(st.StartTime)*1000/procfs.ClockTicks}
-	pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: "event"}
+	pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: srcCNProc}
 	pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
-	if e.Kind == cnproc.Exit {
+	if kind == evExit {
 		return pe
 	}
 	if status, err := r.fs.ReadStatus(e.PID); err == nil {
 		pe.attrs.UID = status.UID
 	}
 	pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID)
+	if kind == evExec {
+		pe.attrs.ExecTS = pe.ts
+	}
 	return pe
 }
 
@@ -135,14 +361,14 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 	}
 	for _, ev := range evs {
 		switch ev.kind {
-		case cnproc.Fork, cnproc.Exec:
+		case evFork, evExec:
 			if !ev.haveStat {
 				continue // gone before we could read it: nothing reliable to store
 			}
 			if e := r.procs[ev.key]; e != nil {
-				if ev.kind == cnproc.Exec { // a sampled process exec'd: new command line
+				if ev.kind == evExec { // a sampled process exec'd: new command line
 					u := e.upd
-					u.Comm, u.Cmdline, u.UID = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.UID
+					u.Comm, u.Cmdline, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
 					if u != e.upd {
 						e.upd = u
 						b.ProcUpdates = append(b.ProcUpdates, u)
@@ -150,36 +376,92 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 				}
 				continue
 			}
-			ep := r.evProcs[ev.key]
-			if ep == nil {
-				ep = &evProc{}
-				r.evProcs[ev.key] = ep
-			}
-			if ep.ev.kind == 0 || ev.kind == cnproc.Exec || ep.ev.attrs.Cmdline == "" {
+			ep := r.evProc(ev)
+			if ep.ev.kind == 0 || ev.kind == evExec || ep.ev.attrs.Cmdline == "" {
 				ep.ev = ev
 			}
-			r.evByPID[ev.pid] = ev.key
-		case cnproc.Exit:
-			key, ok := ev.key, ev.haveStat
-			if !ok {
-				key, ok = r.evByPID[ev.pid]
-			}
-			if !ok {
-				if e := r.byPID[ev.pid]; e != nil {
-					key, ok = e.key, true
-				}
-			}
+		case evExit:
+			key, ok := r.keyOf(ev)
 			if !ok {
 				continue
 			}
 			if e := r.procs[key]; e != nil {
 				e.exit = ev.ts
-			} else if ep := r.evProcs[key]; ep != nil {
-				ep.exit = ev.ts
+				if ev.exitCode != nil || ev.signal != nil {
+					b.ProcExits = append(b.ProcExits, store.ProcExit{ID: e.id, ExitTS: &ev.ts, ExitCode: ev.exitCode, Signal: ev.signal})
+				}
+				continue
 			}
+			ep := r.evProcs[key]
+			if ep == nil {
+				if !ev.haveStat {
+					continue
+				}
+				ep = r.evProc(ev) // eBPF: seen only at its exit, which says who it was
+			}
+			ep.exit, ep.exitCode, ep.signal = ev.ts, ev.exitCode, ev.signal
+		case evOOM:
+			r.applyOOM(ev, b)
 		}
 	}
 	return len(evs)
+}
+
+// evProc returns (creating it if needed) the event-only process for ev.
+func (r *Recorder) evProc(ev procEvent) *evProc {
+	ep := r.evProcs[ev.key]
+	if ep == nil {
+		ep = &evProc{ev: ev}
+		r.evProcs[ev.key] = ep
+	}
+	r.evByPID[ev.pid] = ev.key
+	return ep
+}
+
+// keyOf finds the process an event refers to.
+func (r *Recorder) keyOf(ev procEvent) (procKey, bool) {
+	if ev.haveStat {
+		return ev.key, true
+	}
+	if key, ok := r.evByPID[ev.pid]; ok {
+		return key, true
+	}
+	if e := r.byPID[ev.pid]; e != nil {
+		return e.key, true
+	}
+	return procKey{}, false
+}
+
+// applyOOM records an OOM kill and, for a sampled victim, a process sample
+// at the kill with its RSS then, so ps shows its memory at the kill.
+func (r *Recorder) applyOOM(ev procEvent, b *store.Batch) {
+	o := store.OOMEvent{TS: ev.ts, PID: ev.pid, Comm: ev.attrs.Comm, RSSKB: ev.rssKB}
+	key, ok := r.keyOf(ev)
+	if ok {
+		o.StartTime = key.start
+	}
+	if e := r.procs[key]; ok && e != nil {
+		if o.Comm == "" {
+			o.Comm = e.upd.Comm
+		}
+		if ev.rssKB > 0 && e.hasSamp {
+			s := e.sample
+			s.TS, s.RSSKB = ev.ts, ev.rssKB
+			b.ProcSamples = append(b.ProcSamples, s)
+			e.sample = s
+			o.Snapshot = true
+		}
+		b.ProcExits = append(b.ProcExits, store.ProcExit{ID: e.id, OOMKilled: true})
+	} else if ok {
+		ep := r.evProcs[key]
+		if ep == nil && ev.haveStat {
+			ep = r.evProc(ev)
+		}
+		if ep != nil {
+			ep.oom = true
+		}
+	}
+	b.OOMEvents = append(b.OOMEvents, o)
 }
 
 // flushEventProcs writes processes that only events saw (they started and
@@ -195,11 +477,18 @@ func (r *Recorder) flushEventProcs(ts int64, b *store.Batch) {
 		}
 		row := store.ProcRow{ID: r.nextID("processes"), PID: key.pid, StartTime: key.start,
 			PPID: ev.attrs.PPID, UID: ev.attrs.UID, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline,
-			TTY: ev.tty, SID: ev.sid, PGRP: ev.pgrp, FirstSeen: key.start, Source: "event"}
+			TTY: ev.tty, SID: ev.sid, PGRP: ev.pgrp, FirstSeen: key.start, Source: ev.attrs.Source,
+			Exe: ev.attrs.Exe, ExitCode: ep.exitCode, Signal: ep.signal, OOMKilled: ep.oom}
+		if ev.attrs.ExecTS != 0 {
+			row.ExecTS = &ev.attrs.ExecTS
+		}
 		last := key.start
 		if ep.exit != 0 {
 			last = ep.exit
 			row.Ended = &last
+			if ep.exitCode != nil || ep.signal != nil {
+				row.ExitTS = &last
+			}
 		}
 		row.LastSeen = &last
 		b.ProcInserts = append(b.ProcInserts, row)

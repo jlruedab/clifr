@@ -134,6 +134,8 @@ type Store struct {
 	owners      *entity[ownerRow]
 	files       *entity[fileRow]
 	guard       []guardRow
+	oom         []oomRow
+	stats       []statRow
 	verify      []verifyRow
 	meta        []metaRow
 	verifyID    int64
@@ -151,7 +153,7 @@ type Store struct {
 
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
-	"open_files", "guard_events", "verify_snapshots", "meta"}
+	"open_files", "oom_events", "recorder_stats", "guard_events", "verify_snapshots", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
 var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files"}
@@ -206,7 +208,11 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, u := range b.ProcUpdates {
 		if r := s.procs.get(u.ID); r != nil {
-			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source
+			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source, r.Exe = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source, u.Exe
+			r.ExecTS = nil
+			if u.ExecTS != 0 {
+				r.ExecTS = ptr(u.ExecTS)
+			}
 		} else {
 			s.unknown++
 		}
@@ -215,6 +221,31 @@ func (s *Store) Write(b *store.Batch) error {
 		if !s.procs.close(c.ID, func(r *processRow) { r.LastSeen, r.Ended = ptr(c.LastSeen), c.Ended }) {
 			s.unknown++
 		}
+	}
+	for _, x := range b.ProcExits {
+		r := s.procs.get(x.ID)
+		if r == nil {
+			s.unknown++
+			continue
+		}
+		if x.ExitTS != nil {
+			r.ExitTS = x.ExitTS
+		}
+		if x.ExitCode != nil {
+			r.ExitCode = i32p(x.ExitCode)
+		}
+		if x.Signal != nil {
+			r.Signal = i32p(x.Signal)
+		}
+		if x.OOMKilled {
+			r.OOMKilled = 1
+		}
+	}
+	for _, o := range b.OOMEvents {
+		s.oom = append(s.oom, oomRow{TS: o.TS, PID: int32(o.PID), StartTime: o.StartTime, Comm: o.Comm, RSSKB: o.RSSKB, Snapshot: b2i(o.Snapshot)})
+	}
+	for _, r := range b.Stats {
+		s.stats = append(s.stats, statRow{TS: r.TS, Source: r.Source, Events: r.Events, Dropped: r.Dropped})
 	}
 	for _, p := range b.ProcSamples {
 		s.procSamples.put([2]int64{p.ProcID, p.TS}, procSampleOf(p))
@@ -282,6 +313,8 @@ func (s *Store) Flush() error {
 	part("sock_samples", len(s.sockSamples.rows), func(p string) error { return writeFile(p, s.sockSamples.rows) })
 	part("sock_owners", len(s.owners.closed), func(p string) error { return writeFile(p, s.owners.closed) })
 	part("open_files", len(s.files.closed), func(p string) error { return writeFile(p, s.files.closed) })
+	part("oom_events", len(s.oom), func(p string) error { return writeFile(p, s.oom) })
+	part("recorder_stats", len(s.stats), func(p string) error { return writeFile(p, s.stats) })
 	part("guard_events", len(s.guard), func(p string) error { return writeFile(p, s.guard) })
 	part("verify_snapshots", len(s.verify), func(p string) error { return writeFile(p, s.verify) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
@@ -294,7 +327,7 @@ func (s *Store) Flush() error {
 		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) *int64 { return &r.FirstSeen }, func(r *socketRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) *int64 { return &r.FirstSeen }, func(r *ownerRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) *int64 { return &r.FirstSeen }, func(r *fileRow, v int64) { r.LastSeen = &v }))
-	s.samples, s.guard, s.verify, s.meta = nil, nil, nil, nil
+	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.procs.reset()
 	s.socks.reset()
 	s.owners.reset()
@@ -536,7 +569,8 @@ func (s *Store) compact(current time.Time) error {
 var compactors = map[string]func(parts []string, out string) error{
 	"samples": merge[sampleRow], "processes": merge[processRow], "proc_samples": merge[procSampleRow],
 	"sockets": merge[socketRow], "sock_samples": merge[sockSampleRow], "sock_owners": merge[ownerRow],
-	"open_files": merge[fileRow], "guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
+	"open_files": merge[fileRow], "oom_events": merge[oomRow], "recorder_stats": merge[statRow],
+	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"meta": merge[metaRow],
 }
 
@@ -656,6 +690,8 @@ var emptyWriters = map[string]func(string) error{
 	"sock_samples":     func(p string) error { return writeFile[sockSampleRow](p, nil) },
 	"sock_owners":      func(p string) error { return writeFile[ownerRow](p, nil) },
 	"open_files":       func(p string) error { return writeFile[fileRow](p, nil) },
+	"oom_events":       func(p string) error { return writeFile[oomRow](p, nil) },
+	"recorder_stats":   func(p string) error { return writeFile[statRow](p, nil) },
 	"guard_events":     func(p string) error { return writeFile[guardRow](p, nil) },
 	"verify_snapshots": func(p string) error { return writeFile[verifyRow](p, nil) },
 	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },

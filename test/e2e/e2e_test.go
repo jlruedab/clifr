@@ -237,7 +237,8 @@ func TestIncident(t *testing.T) {
 		Source   string `json:"source"`
 		EndKind  string `json:"end_kind"`
 	}
-	query(t, sosv, &life, "life", "--name", "e2eburst",
+	// Anchored: other command lines may mention the name (e.g. a shell running this test).
+	query(t, sosv, &life, "life", "--name", `^\S*/e2eburst$`,
 		"--start_from", burstStart.Add(-2*time.Second).Format("2006-01-02 15:04:05"),
 		"--end_at", burstEnd.Add(2*time.Second).Format("2006-01-02 15:04:05"), "--data-dir", data, "--json")
 	short := 0
@@ -252,6 +253,9 @@ func TestIncident(t *testing.T) {
 	}
 	if len(life) != nBurst || short != nBurst {
 		t.Errorf("want %d sub-second e2eburst processes, got %d (%d sub-second)", nBurst, len(life), short)
+		for _, l := range life {
+			t.Logf("  pid %d %d ms %s %s: %s", l.PID, l.Duration, l.Source, l.EndKind, l.Command)
+		}
 	}
 }
 

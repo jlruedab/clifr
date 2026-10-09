@@ -7,7 +7,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"sosv/internal/procfs"
 	"sosv/internal/store"
@@ -19,12 +22,15 @@ type lifeProc struct {
 	last, ended      sql.NullInt64
 	pid, ppid        int
 	command, source  string
+	exitCode, signal sql.NullInt64
+	oom              bool
 }
 
 // processesInRange returns processes that existed at some point in [from, to].
 func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 	rows, err := db.Query(`
-		SELECT id, pid, ppid, start_time, first_seen, last_seen, ended, comm, cmdline, source
+		SELECT id, pid, ppid, start_time, first_seen, last_seen, ended, comm, cmdline, source,
+		       exit_code, signal, COALESCE(oom_killed, 0)
 		FROM processes
 		WHERE first_seen <= ?2 AND COALESCE(ended, last_seen, ?3) >= ?1
 		ORDER BY start_time, pid`, from, to, openEnd)
@@ -36,9 +42,12 @@ func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 	for rows.Next() {
 		var p lifeProc
 		var comm, cmdline string
-		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.start, &p.first, &p.last, &p.ended, &comm, &cmdline, &p.source); err != nil {
+		var oom int
+		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.start, &p.first, &p.last, &p.ended, &comm, &cmdline, &p.source,
+			&p.exitCode, &p.signal, &oom); err != nil {
 			return nil, err
 		}
+		p.oom = oom != 0
 		p.command = commandOf(cmdline, comm, "")
 		out = append(out, p)
 	}
@@ -55,6 +64,26 @@ type LifeRow struct {
 	PPID     int    `json:"ppid"`
 	Command  string `json:"command"`
 	Source   string `json:"source"`
+	// How it ended, from exit events (eBPF); nil when unknown.
+	ExitCode  *int64 `json:"exit_code,omitempty"`
+	Signal    *int64 `json:"signal,omitempty"`
+	OOMKilled bool   `json:"oom_killed,omitempty"`
+}
+
+// Exit is the EXIT column: the exit code, the signal name, "OOM" or "-".
+func (r LifeRow) Exit() string {
+	switch {
+	case r.OOMKilled:
+		return "OOM"
+	case r.Signal != nil:
+		if n := unix.SignalName(syscall.Signal(*r.Signal)); n != "" {
+			return n
+		}
+		return fmt.Sprintf("signal %d", *r.Signal)
+	case r.ExitCode != nil:
+		return fmt.Sprint(*r.ExitCode)
+	}
+	return "-"
 }
 
 // Life lists process lifetimes in [from, to], optionally filtered by a
@@ -70,7 +99,13 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 		if re != nil && !re.MatchString(p.command) {
 			continue
 		}
-		r := LifeRow{Start: p.start, PID: p.pid, PPID: p.ppid, Command: p.command, Source: p.source}
+		r := LifeRow{Start: p.start, PID: p.pid, PPID: p.ppid, Command: p.command, Source: p.source, OOMKilled: p.oom}
+		if p.exitCode.Valid {
+			r.ExitCode = &p.exitCode.Int64
+		}
+		if p.signal.Valid {
+			r.Signal = &p.signal.Int64
+		}
 		switch {
 		case p.ended.Valid:
 			r.End, r.EndKind = p.ended.Int64, "exact"
@@ -87,6 +122,14 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 
 const msLayout = "2006-01-02 15:04:05.000"
 
+// shortSource abbreviates the source column for the table output.
+func shortSource(s string) string {
+	if s == "proc_connector" {
+		return "cnproc"
+	}
+	return s
+}
+
 func fmtDur(ms int64) string {
 	d := time.Duration(ms) * time.Millisecond
 	switch {
@@ -99,7 +142,7 @@ func fmtDur(ms int64) string {
 }
 
 func PrintLife(w io.Writer, rows []LifeRow) {
-	fmt.Fprintf(w, "%-23s %-24s %10s %7s %7s %-6s %s\n", "START", "END", "DURATION", "PID", "PPID", "SOURCE", "COMMAND")
+	fmt.Fprintf(w, "%-23s %-24s %10s %7s %7s %-7s %-6s %s\n", "START", "END", "DURATION", "PID", "PPID", "EXIT", "SOURCE", "COMMAND")
 	for _, r := range rows {
 		end := time.UnixMilli(r.End).Format(msLayout)
 		dur := fmtDur(r.Duration)
@@ -109,8 +152,8 @@ func PrintLife(w io.Writer, rows []LifeRow) {
 		case "running":
 			end, dur = "running", ">"+dur
 		}
-		fmt.Fprintf(w, "%-23s %-24s %10s %7d %7d %-6s %s\n", time.UnixMilli(r.Start).Format(msLayout),
-			end, dur, r.PID, r.PPID, r.Source, r.Command)
+		fmt.Fprintf(w, "%-23s %-24s %10s %7d %7d %-7s %-6s %s\n", time.UnixMilli(r.Start).Format(msLayout),
+			end, dur, r.PID, r.PPID, r.Exit(), shortSource(r.Source), r.Command)
 	}
 }
 
@@ -153,7 +196,7 @@ func PSRange(db *store.DB, from, to int64) ([]PSRangeRow, error) {
 		g.FirstSeen = min(g.FirstSeen, max(p.start, 0))
 		g.LastSeen = max(g.LastSeen, end)
 		g.Runs++
-		if p.source == "event" {
+		if p.source != "sample" {
 			g.EventRuns++
 		}
 		g.PeakCPU = max(g.PeakCPU, peakCPU[p.id])

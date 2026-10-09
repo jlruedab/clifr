@@ -35,10 +35,19 @@ type Stats struct {
 	AvgProcs        float64                `json:"avg_processes"`
 	AvgSockets      float64                `json:"avg_sockets"`
 	AvgFDs          float64                `json:"avg_fds_per_walk"`
+	EventMode       string                 `json:"event_mode"`
+	Events          map[string]EventStat   `json:"events_by_source"`
+}
+
+// EventStat is what one event source delivered over the recording.
+type EventStat struct {
+	Events  int64   `json:"events"`
+	Dropped int64   `json:"dropped"`
+	PerSec  float64 `json:"events_per_s"`
 }
 
 var statTables = []string{"processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
-	"open_files", "guard_events", "verify_snapshots", "samples"}
+	"open_files", "oom_events", "recorder_stats", "guard_events", "verify_snapshots", "samples"}
 
 func percentiles(v []float64) Percentiles {
 	if len(v) == 0 {
@@ -51,14 +60,16 @@ func percentiles(v []float64) Percentiles {
 
 // ComputeStats summarises the recorder's own cost from the samples table.
 func ComputeStats(db *store.DB) (*Stats, error) {
-	st := &Stats{TableRows: map[string]int64{}, PhaseMS: map[string]Percentiles{}, GuardEvents: map[string]int{}}
+	st := &Stats{TableRows: map[string]int64{}, PhaseMS: map[string]Percentiles{}, GuardEvents: map[string]int{},
+		Events: map[string]EventStat{}}
 	for _, t := range statTables {
 		var n int64
 		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + t).Scan(&n); err != nil {
-			return nil, err
+			continue // a table older databases do not have
 		}
 		st.TableRows[t] = n
 	}
+	db.QueryRow(`SELECT value FROM meta WHERE key = 'events'`).Scan(&st.EventMode)
 	st.DBBytes = db.SizeBytes()
 
 	rows, err := db.Query(`SELECT ts, fd_walk, skipped, COALESCE(dur_proc_us,0), COALESCE(dur_sock_us,0),
@@ -161,6 +172,18 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 		g.Scan(&k, &n)
 		st.GuardEvents[k] = n
 	}
+	if ev, err := db.Query(`SELECT source, SUM(events), SUM(dropped) FROM recorder_stats GROUP BY source`); err == nil {
+		for ev.Next() {
+			var src string
+			var e EventStat
+			ev.Scan(&src, &e.Events, &e.Dropped)
+			if span := float64(st.ToMS-st.FromMS) / 1000; span > 0 {
+				e.PerSec = float64(e.Events) / span
+			}
+			st.Events[src] = e
+		}
+		ev.Close()
+	}
 	return st, nil
 }
 
@@ -183,9 +206,21 @@ func PrintStats(w io.Writer, s *Stats) {
 	fmt.Fprintf(w, "DB size:          %s on disk incl. WAL (est. %s/day from logical growth while recording)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))
 	fmt.Fprintf(w, "Recorder CPU:     %.3f%% of one core (average)\n", s.CPUPctOneCore)
 	fmt.Fprintf(w, "Recorder RSS:     avg %s, max %s\n", humanBytes(s.RSSAvgKB*1024), humanBytes(s.RSSMaxKB*1024))
+	fmt.Fprintf(w, "Process events:   %s\n", orDash(s.EventMode))
+	srcs := make([]string, 0, len(s.Events))
+	for k := range s.Events {
+		srcs = append(srcs, k)
+	}
+	sort.Strings(srcs)
+	for _, k := range srcs {
+		e := s.Events[k]
+		fmt.Fprintf(w, "  %-18s %8d events (%.1f/s), %d dropped\n", k, e.Events, e.PerSec, e.Dropped)
+	}
 	fmt.Fprintln(w, "Rows per table:")
 	for _, t := range statTables {
-		fmt.Fprintf(w, "  %-18s %d\n", t, s.TableRows[t])
+		if n, ok := s.TableRows[t]; ok {
+			fmt.Fprintf(w, "  %-18s %d\n", t, n)
+		}
 	}
 	fmt.Fprintln(w, "Sample duration by phase (ms):     p50      p95      p99      max")
 	for _, k := range []string{"processes", "sockets", "fds", "db_write", "total"} {
@@ -206,6 +241,13 @@ func PrintStats(w io.Writer, s *Stats) {
 	for _, a := range s.Adjustments {
 		fmt.Fprintf(w, "  %s\n", a)
 	}
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func PrintStatsJSON(w io.Writer, s *Stats) error { return writeJSON(w, s) }

@@ -13,6 +13,7 @@ import (
 )
 
 func p64(v int64) *int64 { return &v }
+func pint(v int) *int    { return &v }
 
 // batches is a small recording: a process with a socket and a file, an
 // event-only process, an update, then everything closes.
@@ -30,10 +31,14 @@ func batches() []*store.Batch {
 			Verify:      []store.VerifySnap{{TS: 1001, EndTS: 1002, Cmd: "ps aux", SampleTS: 1000, Output: "USER PID"}},
 		},
 		{
-			Sample:      store.Sample{TS: 2000, NProc: 2, Rows: 3, CPUUS: 20},
-			Skips:       []int64{1500},
-			ProcInserts: []store.ProcRow{{ID: 102, PID: 11, StartTime: 1600, PPID: 10, Comm: "sh", Cmdline: "sh -c true", FirstSeen: 1600, LastSeen: p64(1700), Ended: p64(1700), Source: "event"}},
-			ProcUpdates: []store.ProcUpdate{{ID: 101, UID: 5, PPID: 1, Comm: "srv", Cmdline: "srv -y", Source: "sample"}},
+			Sample: store.Sample{TS: 2000, NProc: 2, Rows: 3, CPUUS: 20},
+			Skips:  []int64{1500},
+			ProcInserts: []store.ProcRow{{ID: 102, PID: 11, StartTime: 1600, PPID: 10, Comm: "sh", Cmdline: "sh -c true", FirstSeen: 1600,
+				LastSeen: p64(1700), Ended: p64(1700), Source: "ebpf", Exe: "/bin/sh", ExecTS: p64(1600), ExitTS: p64(1700), ExitCode: pint(3)}},
+			ProcUpdates: []store.ProcUpdate{{ID: 101, UID: 5, PPID: 1, Comm: "srv", Cmdline: "srv -y", Source: "sample", Exe: "/usr/bin/srv", ExecTS: 1900}},
+			ProcExits:   []store.ProcExit{{ID: 101, OOMKilled: true}},
+			OOMEvents:   []store.OOMEvent{{TS: 1950, PID: 10, StartTime: 900, Comm: "srv", RSSKB: 4000, Snapshot: true}},
+			Stats:       []store.StatRow{{TS: 2000, Source: "ebpf_exec", Events: 7, Dropped: 1}},
 			ProcSamples: []store.ProcSample{{ProcID: 101, TS: 2000, State: "R", CPUTicks: 9, RSSKB: 120, VSZKB: 200, Threads: 2}},
 			SockSamples: []store.SockSample{{SockID: 201, TS: 2000, State: 8, RxQ: 1}},
 		},
@@ -43,6 +48,7 @@ func batches() []*store.Batch {
 func shutdown() *store.Batch {
 	return &store.Batch{
 		ProcCloses: []store.Close{{ID: 101, LastSeen: 2000, Ended: p64(2500)}},
+		ProcExits:  []store.ProcExit{{ID: 101, ExitTS: p64(2500), Signal: pint(9)}},
 		SockCloses: []store.Close{{ID: 201, LastSeen: 2000}},
 		OwnCloses:  []store.Close{{ID: 301, LastSeen: 2000}},
 		FileCloses: []store.Close{{ID: 401, LastSeen: 1000}},
@@ -75,7 +81,9 @@ func dump(t *testing.T, db *sql.DB, table, cols string) string {
 
 var compare = map[string]string{
 	"samples":          "ts, fd_walk, skipped, nproc, rows, cpu_us",
-	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source",
+	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed",
+	"oom_events":       "ts, pid, start_time, comm, rss_kb, snapshot",
+	"recorder_stats":   "ts, source, events, dropped",
 	"proc_samples":     "proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads",
 	"sockets":          "id, inode, proto, family, laddr, lport, raddr, rport, first_seen, last_seen",
 	"sock_samples":     "sock_id, ts, state, rxq, txq",

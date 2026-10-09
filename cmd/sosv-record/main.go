@@ -30,6 +30,12 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) == 1 && args[0] == "--oom-hog" { // helpers of --test-ebpf
+		oomHog()
+	}
+	if len(args) == 1 && args[0] == "--thread-exit" {
+		threadExit()
+	}
 	fs := flag.NewFlagSet("sosv-record", flag.ExitOnError)
 	var c recorder.Config
 	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, `Parquet data directory ("" for none)`)
@@ -43,12 +49,19 @@ func run(args []string) error {
 	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof output this often")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")
+	fs.StringVar(&c.Events, "events", "auto", "process events: auto (eBPF, else the proc connector), ebpf, proc_connector or none")
+	fs.BoolVar(&c.EBPF.ForcePerf, "ebpf-force-perf", false, "use the perf event array even if the kernel has a BPF ring buffer (to test the fallback)")
+	fs.BoolVar(&c.EBPF.ForceClassicFork, "ebpf-classic-fork", false, "use the classic fork tracepoint even if tp_btf works (to test the fallback)")
+	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	maxSize := fs.String("max-size", "0", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if *testMode {
+		return testEBPF(c.EBPF)
 	}
 	if _, err := fmt.Sscanf(strings.TrimSuffix(*budget, "%"), "%g", &c.CPUBudget); err != nil {
 		return fmt.Errorf("bad --cpu-budget %q", *budget)
