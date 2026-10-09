@@ -9,7 +9,8 @@
 // sosv record --interval 2s, then stages an incident:
 //   - a client process opens 150 connections to a local server and holds them,
 //   - a process holds a file that has been deleted,
-//   - a burst of 20 sub-second processes (a copy of sleep named e2eburst).
+//   - a burst of 20 sub-second processes (a copy of this test binary named
+//     e2eburst, in its "sleep" helper mode).
 //
 // Afterwards it checks that sosv ss, sosv lsof and sosv life each find their
 // part of the incident at the right moment.
@@ -46,6 +47,10 @@ func TestMain(m *testing.M) {
 		client()
 	case "deleted":
 		deleted()
+	case "sleep":
+		// Not a copy of /bin/sleep: on uutils systems (Ubuntu 26.04) that is a
+		// multicall binary that dispatches on its name.
+		time.Sleep(300 * time.Millisecond)
 	default:
 		os.Exit(m.Run())
 	}
@@ -141,11 +146,13 @@ func TestIncident(t *testing.T) {
 
 	time.Sleep(30 * time.Second) // several samples and at least two full fd walks
 	burst := filepath.Join(dir, "e2eburst")
-	copyFile(t, "/bin/sleep", burst)
+	exe, _ := os.Executable()
+	copyFile(t, exe, burst)
 	burstStart := time.Now()
 	var procs []*exec.Cmd
 	for i := 0; i < nBurst; i++ {
-		c := exec.Command(burst, "0.3")
+		c := exec.Command(burst)
+		c.Env = append(os.Environ(), "SOSV_E2E_HELPER=sleep")
 		if err := c.Start(); err != nil {
 			t.Fatal(err)
 		}
