@@ -134,7 +134,7 @@ func (r *Recorder) startEvents(ctx context.Context) (stop func(), err error) {
 			if !src.OOM {
 				oom = "no oom tracepoint"
 			}
-			desc := fmt.Sprintf("ebpf (%s, fork %s, %s)", src.Buffer, src.Fork, oom)
+			desc := fmt.Sprintf("ebpf (%s, fork/exec/exit %s, %s)", src.Buffer, src.Fork, oom)
 			r.db.SetMeta("events", desc)
 			r.log.Printf("process events: %s", desc)
 			return r.runEBPF(ctx, src), nil

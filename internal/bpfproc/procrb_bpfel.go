@@ -33,14 +33,19 @@ type procRBEvent struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	procRBMapDrops          = "drops"
-	procRBMapEvents         = "events"
-	procRBMapScratch        = "scratch"
-	procRBProgHandleExec    = "handle_exec"
-	procRBProgHandleExit    = "handle_exit"
-	procRBProgHandleForkBtf = "handle_fork_btf"
-	procRBProgHandleForkTp  = "handle_fork_tp"
-	procRBProgHandleOom     = "handle_oom"
+	procRBMapBusy            = "busy"
+	procRBMapDrops           = "drops"
+	procRBMapEvents          = "events"
+	procRBMapScratch         = "scratch"
+	procRBProgHandleExec     = "handle_exec"
+	procRBProgHandleExecBtf  = "handle_exec_btf"
+	procRBProgHandleExecBtf2 = "handle_exec_btf2"
+	procRBProgHandleExit     = "handle_exit"
+	procRBProgHandleExitBtf  = "handle_exit_btf"
+	procRBProgHandleExitBtf2 = "handle_exit_btf2"
+	procRBProgHandleForkBtf  = "handle_fork_btf"
+	procRBProgHandleForkTp   = "handle_fork_tp"
+	procRBProgHandleOom      = "handle_oom"
 )
 
 // loadProcRB returns the embedded CollectionSpec for procRB.
@@ -85,17 +90,22 @@ type procRBSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type procRBProgramSpecs struct {
-	HandleExec    *ebpf.ProgramSpec `ebpf:"handle_exec"`
-	HandleExit    *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleForkBtf *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
-	HandleForkTp  *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
-	HandleOom     *ebpf.ProgramSpec `ebpf:"handle_oom"`
+	HandleExec     *ebpf.ProgramSpec `ebpf:"handle_exec"`
+	HandleExecBtf  *ebpf.ProgramSpec `ebpf:"handle_exec_btf"`
+	HandleExecBtf2 *ebpf.ProgramSpec `ebpf:"handle_exec_btf2"`
+	HandleExit     *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleExitBtf  *ebpf.ProgramSpec `ebpf:"handle_exit_btf"`
+	HandleExitBtf2 *ebpf.ProgramSpec `ebpf:"handle_exit_btf2"`
+	HandleForkBtf  *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
+	HandleForkTp   *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
+	HandleOom      *ebpf.ProgramSpec `ebpf:"handle_oom"`
 }
 
 // procRBMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type procRBMapSpecs struct {
+	Busy    *ebpf.MapSpec `ebpf:"busy"`
 	Drops   *ebpf.MapSpec `ebpf:"drops"`
 	Events  *ebpf.MapSpec `ebpf:"events"`
 	Scratch *ebpf.MapSpec `ebpf:"scratch"`
@@ -127,6 +137,7 @@ func (o *procRBObjects) Close() error {
 //
 // It can be passed to loadProcRBObjects or ebpf.CollectionSpec.LoadAndAssign.
 type procRBMaps struct {
+	Busy    *ebpf.Map `ebpf:"busy"`
 	Drops   *ebpf.Map `ebpf:"drops"`
 	Events  *ebpf.Map `ebpf:"events"`
 	Scratch *ebpf.Map `ebpf:"scratch"`
@@ -134,6 +145,7 @@ type procRBMaps struct {
 
 func (m *procRBMaps) Close() error {
 	return _ProcRBClose(
+		m.Busy,
 		m.Drops,
 		m.Events,
 		m.Scratch,
@@ -150,17 +162,25 @@ type procRBVariables struct {
 //
 // It can be passed to loadProcRBObjects or ebpf.CollectionSpec.LoadAndAssign.
 type procRBPrograms struct {
-	HandleExec    *ebpf.Program `ebpf:"handle_exec"`
-	HandleExit    *ebpf.Program `ebpf:"handle_exit"`
-	HandleForkBtf *ebpf.Program `ebpf:"handle_fork_btf"`
-	HandleForkTp  *ebpf.Program `ebpf:"handle_fork_tp"`
-	HandleOom     *ebpf.Program `ebpf:"handle_oom"`
+	HandleExec     *ebpf.Program `ebpf:"handle_exec"`
+	HandleExecBtf  *ebpf.Program `ebpf:"handle_exec_btf"`
+	HandleExecBtf2 *ebpf.Program `ebpf:"handle_exec_btf2"`
+	HandleExit     *ebpf.Program `ebpf:"handle_exit"`
+	HandleExitBtf  *ebpf.Program `ebpf:"handle_exit_btf"`
+	HandleExitBtf2 *ebpf.Program `ebpf:"handle_exit_btf2"`
+	HandleForkBtf  *ebpf.Program `ebpf:"handle_fork_btf"`
+	HandleForkTp   *ebpf.Program `ebpf:"handle_fork_tp"`
+	HandleOom      *ebpf.Program `ebpf:"handle_oom"`
 }
 
 func (p *procRBPrograms) Close() error {
 	return _ProcRBClose(
 		p.HandleExec,
+		p.HandleExecBtf,
+		p.HandleExecBtf2,
 		p.HandleExit,
+		p.HandleExitBtf,
+		p.HandleExitBtf2,
 		p.HandleForkBtf,
 		p.HandleForkTp,
 		p.HandleOom,

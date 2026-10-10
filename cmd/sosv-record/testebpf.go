@@ -24,7 +24,7 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 		return fmt.Errorf("load: %w", err)
 	}
 	defer src.Close()
-	fmt.Printf("loaded: buffer %s, fork %s, oom tracepoint %v\n", src.Buffer, src.Fork, src.OOM)
+	fmt.Printf("loaded: buffer %s, fork/exec/exit %s, oom tracepoint %v\n", src.Buffer, src.Fork, src.OOM)
 
 	evs := make(chan bpfproc.Event, 4096)
 	stop := make(chan struct{})

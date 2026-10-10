@@ -33,14 +33,19 @@ type procPerfEvent struct {
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	procPerfMapDrops          = "drops"
-	procPerfMapEvents         = "events"
-	procPerfMapScratch        = "scratch"
-	procPerfProgHandleExec    = "handle_exec"
-	procPerfProgHandleExit    = "handle_exit"
-	procPerfProgHandleForkBtf = "handle_fork_btf"
-	procPerfProgHandleForkTp  = "handle_fork_tp"
-	procPerfProgHandleOom     = "handle_oom"
+	procPerfMapBusy            = "busy"
+	procPerfMapDrops           = "drops"
+	procPerfMapEvents          = "events"
+	procPerfMapScratch         = "scratch"
+	procPerfProgHandleExec     = "handle_exec"
+	procPerfProgHandleExecBtf  = "handle_exec_btf"
+	procPerfProgHandleExecBtf2 = "handle_exec_btf2"
+	procPerfProgHandleExit     = "handle_exit"
+	procPerfProgHandleExitBtf  = "handle_exit_btf"
+	procPerfProgHandleExitBtf2 = "handle_exit_btf2"
+	procPerfProgHandleForkBtf  = "handle_fork_btf"
+	procPerfProgHandleForkTp   = "handle_fork_tp"
+	procPerfProgHandleOom      = "handle_oom"
 )
 
 // loadProcPerf returns the embedded CollectionSpec for procPerf.
@@ -85,17 +90,22 @@ type procPerfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type procPerfProgramSpecs struct {
-	HandleExec    *ebpf.ProgramSpec `ebpf:"handle_exec"`
-	HandleExit    *ebpf.ProgramSpec `ebpf:"handle_exit"`
-	HandleForkBtf *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
-	HandleForkTp  *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
-	HandleOom     *ebpf.ProgramSpec `ebpf:"handle_oom"`
+	HandleExec     *ebpf.ProgramSpec `ebpf:"handle_exec"`
+	HandleExecBtf  *ebpf.ProgramSpec `ebpf:"handle_exec_btf"`
+	HandleExecBtf2 *ebpf.ProgramSpec `ebpf:"handle_exec_btf2"`
+	HandleExit     *ebpf.ProgramSpec `ebpf:"handle_exit"`
+	HandleExitBtf  *ebpf.ProgramSpec `ebpf:"handle_exit_btf"`
+	HandleExitBtf2 *ebpf.ProgramSpec `ebpf:"handle_exit_btf2"`
+	HandleForkBtf  *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
+	HandleForkTp   *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
+	HandleOom      *ebpf.ProgramSpec `ebpf:"handle_oom"`
 }
 
 // procPerfMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type procPerfMapSpecs struct {
+	Busy    *ebpf.MapSpec `ebpf:"busy"`
 	Drops   *ebpf.MapSpec `ebpf:"drops"`
 	Events  *ebpf.MapSpec `ebpf:"events"`
 	Scratch *ebpf.MapSpec `ebpf:"scratch"`
@@ -127,6 +137,7 @@ func (o *procPerfObjects) Close() error {
 //
 // It can be passed to loadProcPerfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type procPerfMaps struct {
+	Busy    *ebpf.Map `ebpf:"busy"`
 	Drops   *ebpf.Map `ebpf:"drops"`
 	Events  *ebpf.Map `ebpf:"events"`
 	Scratch *ebpf.Map `ebpf:"scratch"`
@@ -134,6 +145,7 @@ type procPerfMaps struct {
 
 func (m *procPerfMaps) Close() error {
 	return _ProcPerfClose(
+		m.Busy,
 		m.Drops,
 		m.Events,
 		m.Scratch,
@@ -150,17 +162,25 @@ type procPerfVariables struct {
 //
 // It can be passed to loadProcPerfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type procPerfPrograms struct {
-	HandleExec    *ebpf.Program `ebpf:"handle_exec"`
-	HandleExit    *ebpf.Program `ebpf:"handle_exit"`
-	HandleForkBtf *ebpf.Program `ebpf:"handle_fork_btf"`
-	HandleForkTp  *ebpf.Program `ebpf:"handle_fork_tp"`
-	HandleOom     *ebpf.Program `ebpf:"handle_oom"`
+	HandleExec     *ebpf.Program `ebpf:"handle_exec"`
+	HandleExecBtf  *ebpf.Program `ebpf:"handle_exec_btf"`
+	HandleExecBtf2 *ebpf.Program `ebpf:"handle_exec_btf2"`
+	HandleExit     *ebpf.Program `ebpf:"handle_exit"`
+	HandleExitBtf  *ebpf.Program `ebpf:"handle_exit_btf"`
+	HandleExitBtf2 *ebpf.Program `ebpf:"handle_exit_btf2"`
+	HandleForkBtf  *ebpf.Program `ebpf:"handle_fork_btf"`
+	HandleForkTp   *ebpf.Program `ebpf:"handle_fork_tp"`
+	HandleOom      *ebpf.Program `ebpf:"handle_oom"`
 }
 
 func (p *procPerfPrograms) Close() error {
 	return _ProcPerfClose(
 		p.HandleExec,
+		p.HandleExecBtf,
+		p.HandleExecBtf2,
 		p.HandleExit,
+		p.HandleExitBtf,
+		p.HandleExitBtf2,
 		p.HandleForkBtf,
 		p.HandleForkTp,
 		p.HandleOom,

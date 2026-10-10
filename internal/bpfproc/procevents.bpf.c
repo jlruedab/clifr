@@ -48,6 +48,8 @@ struct task_struct {
 struct task_struct___new { __u64 start_boottime; } __attribute__((preserve_access_index));
 struct task_struct___old { __u64 real_start_time; } __attribute__((preserve_access_index));
 
+struct linux_binprm { const char *filename; } __attribute__((preserve_access_index));
+
 struct trace_event_raw_sched_process_exec {
 	__u32 __data_loc_filename;
 } __attribute__((preserve_access_index));
@@ -109,18 +111,20 @@ struct {
 	__type(value, __u64);
 } drops SEC(".maps");
 
-// Scratch space: struct event is larger than the 512-byte BPF stack.
+// Scratch space: struct event is larger than the 512-byte BPF stack. One
+// slot per program: a program that was interrupted or preempted may find
+// another one running on its CPU, but never itself.
+enum slot { SLOT_FORK, SLOT_EXEC, SLOT_EXEC2, SLOT_EXIT, SLOT_EXIT2, SLOT_OOM, NSLOTS };
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(max_entries, 1);
+	__uint(max_entries, NSLOTS);
 	__type(key, __u32);
 	__type(value, struct event);
 } scratch SEC(".maps");
 
-static __always_inline struct event *new_event(__u32 kind)
+static __always_inline struct event *new_event(__u32 kind, __u32 slot)
 {
-	__u32 zero = 0;
-	struct event *e = bpf_map_lookup_elem(&scratch, &zero);
+	struct event *e = bpf_map_lookup_elem(&scratch, &slot);
 	if (!e)
 		return 0;
 	e->kind = kind;
@@ -168,17 +172,14 @@ static __always_inline void fill_current(struct event *e, struct task_struct *t)
 	BPF_CORE_READ_STR_INTO(&e->comm, leader, comm);
 }
 
-SEC("tracepoint/sched/sched_process_exec")
-int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
+static __always_inline int exec_event(void *ctx, __u32 slot, const char *filename)
 {
-	struct event *e = new_event(EV_EXEC);
+	struct event *e = new_event(EV_EXEC, slot);
 	if (!e)
 		return 0;
 	struct task_struct *t = (void *)bpf_get_current_task();
 	fill_current(e, t);
-
-	__u32 loc = BPF_CORE_READ(ctx, __data_loc_filename);
-	bpf_probe_read_kernel_str(e->filename, sizeof(e->filename), (void *)ctx + (loc & 0xffff));
+	bpf_probe_read_kernel_str(e->filename, sizeof(e->filename), filename);
 
 	unsigned long start = BPF_CORE_READ(t, mm, arg_start);
 	unsigned long end = BPF_CORE_READ(t, mm, arg_end);
@@ -192,21 +193,107 @@ int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
 	return 0;
 }
 
-SEC("tracepoint/sched/sched_process_exit")
-int handle_exit(void *ctx)
+static __always_inline int exit_event(void *ctx, __u32 slot)
 {
 	struct task_struct *t = (void *)bpf_get_current_task();
 	// One event per process: the last thread to exit (signal->live is
 	// decremented before this tracepoint).
 	if (BPF_CORE_READ(t, signal, live.counter) != 0)
 		return 0;
-	struct event *e = new_event(EV_EXIT);
+	struct event *e = new_event(EV_EXIT, slot);
 	if (!e)
 		return 0;
 	fill_current(e, t);
 	e->exit_code = BPF_CORE_READ(t, exit_code);
 	send(ctx, e, SHORT_EVENT);
 	return 0;
+}
+
+// Exec and exit, preferred: BTF tracepoints, two programs each.
+//
+// The kernel does not run a tracing program on a CPU where that program is
+// already running: one that was interrupted, or preempted, when another
+// process execs or exits there. (A classic tracepoint program is skipped
+// while any tracepoint or kprobe program runs.) So the first program marks
+// the CPU while it runs, and the second, a program of its own, reports the
+// events that find the mark: the ones the first could not see.
+enum { BUSY_EXEC, BUSY_EXIT, RESCUED_EXEC, RESCUED_EXIT, NBUSY };
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, NBUSY);
+	__type(key, __u32);
+	__type(value, __u64);
+} busy SEC(".maps");
+
+static __always_inline __u64 *busy_slot(__u32 k)
+{
+	return bpf_map_lookup_elem(&busy, &k);
+}
+
+// rescue reports whether the first program is stopped on this CPU.
+static __always_inline int rescue(__u32 busy_key, __u32 count_key)
+{
+	__u64 *b = busy_slot(busy_key);
+	if (!b || !*b)
+		return 0;
+	__u64 *n = busy_slot(count_key);
+	if (n)
+		*n += 1;
+	return 1;
+}
+
+SEC("tp_btf/sched_process_exec")
+int BPF_PROG(handle_exec_btf, struct task_struct *p, int old_pid, struct linux_binprm *bprm)
+{
+	__u64 *b = busy_slot(BUSY_EXEC);
+	if (b)
+		*b = 1;
+	exec_event(ctx, SLOT_EXEC, BPF_CORE_READ(bprm, filename));
+	if (b)
+		*b = 0;
+	return 0;
+}
+
+SEC("tp_btf/sched_process_exec")
+int BPF_PROG(handle_exec_btf2, struct task_struct *p, int old_pid, struct linux_binprm *bprm)
+{
+	if (!rescue(BUSY_EXEC, RESCUED_EXEC))
+		return 0;
+	return exec_event(ctx, SLOT_EXEC2, BPF_CORE_READ(bprm, filename));
+}
+
+SEC("tp_btf/sched_process_exit")
+int BPF_PROG(handle_exit_btf, struct task_struct *p)
+{
+	__u64 *b = busy_slot(BUSY_EXIT);
+	if (b)
+		*b = 1;
+	exit_event(ctx, SLOT_EXIT);
+	if (b)
+		*b = 0;
+	return 0;
+}
+
+SEC("tp_btf/sched_process_exit")
+int BPF_PROG(handle_exit_btf2, struct task_struct *p)
+{
+	if (!rescue(BUSY_EXIT, RESCUED_EXIT))
+		return 0;
+	return exit_event(ctx, SLOT_EXIT2);
+}
+
+// Exec and exit, fallback: the classic tracepoints.
+SEC("tracepoint/sched/sched_process_exec")
+int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
+{
+	__u32 loc = BPF_CORE_READ(ctx, __data_loc_filename);
+	return exec_event(ctx, SLOT_EXEC, (void *)ctx + (loc & 0xffff));
+}
+
+SEC("tracepoint/sched/sched_process_exit")
+int handle_exit(void *ctx)
+{
+	return exit_event(ctx, SLOT_EXIT);
 }
 
 // Fork, preferred: a BTF tracepoint gives the child task, so threads can be
@@ -217,7 +304,7 @@ int BPF_PROG(handle_fork_btf, struct task_struct *parent, struct task_struct *ch
 	int pid = BPF_CORE_READ(child, pid);
 	if (pid != BPF_CORE_READ(child, tgid))
 		return 0; // a new thread, not a process
-	struct event *e = new_event(EV_FORK);
+	struct event *e = new_event(EV_FORK, SLOT_FORK);
 	if (!e)
 		return 0;
 	e->pid = pid;
@@ -234,7 +321,7 @@ int BPF_PROG(handle_fork_btf, struct task_struct *parent, struct task_struct *ch
 SEC("tracepoint/sched/sched_process_fork")
 int handle_fork_tp(struct trace_event_raw_sched_process_fork *ctx)
 {
-	struct event *e = new_event(EV_FORK);
+	struct event *e = new_event(EV_FORK, SLOT_FORK);
 	if (!e)
 		return 0;
 	e->pid = BPF_CORE_READ(ctx, child_pid);
@@ -248,7 +335,7 @@ int handle_fork_tp(struct trace_event_raw_sched_process_fork *ctx)
 SEC("tracepoint/oom/mark_victim")
 int handle_oom(struct trace_event_raw_mark_victim *ctx)
 {
-	struct event *e = new_event(EV_OOM);
+	struct event *e = new_event(EV_OOM, SLOT_OOM);
 	if (!e)
 		return 0;
 	e->pid = BPF_CORE_READ(ctx, pid);

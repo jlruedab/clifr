@@ -80,7 +80,7 @@ func (e Event) StartTicks() uint64 {
 
 type Options struct {
 	ForcePerf        bool // use the perf event array even if a ring buffer is available
-	ForceClassicFork bool // use the classic fork tracepoint even if tp_btf works
+	ForceClassicFork bool // use the classic fork, exec and exit tracepoints even if tp_btf works
 	BufferBytes      int  // ring buffer size, or perf buffer size per CPU (0: default)
 }
 
@@ -90,7 +90,7 @@ type Source struct {
 	rb     *ringbuf.Reader
 	pr     *perf.Reader
 	Buffer string // "ringbuf" or "perf"
-	Fork   string // "tp_btf" or "tracepoint"
+	Fork   string // fork, exec and exit from "tp_btf" or classic "tracepoint"
 	OOM    bool   // the oom:mark_victim tracepoint is attached
 	lost   atomic.Uint64
 }
@@ -133,10 +133,15 @@ func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
 	if err != nil {
 		return nil, err
 	}
+	btfProgs := []string{"handle_exec_btf2", "handle_exec_btf", "handle_exit_btf2", "handle_exit_btf", "handle_fork_btf"}
 	if btfFork {
-		delete(spec.Programs, "handle_fork_tp")
+		for _, p := range []string{"handle_fork_tp", "handle_exec", "handle_exit"} {
+			delete(spec.Programs, p)
+		}
 	} else {
-		delete(spec.Programs, "handle_fork_btf")
+		for _, p := range btfProgs {
+			delete(spec.Programs, p)
+		}
 	}
 	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
@@ -156,21 +161,24 @@ func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
 		s.links = append(s.links, l)
 		return nil
 	}
-	if err = attach("sched", "sched_process_exec", "handle_exec"); err != nil {
-		return
-	}
-	if err = attach("sched", "sched_process_exit", "handle_exit"); err != nil {
-		return
-	}
 	if btfFork {
-		var l link.Link
-		if l, err = link.AttachTracing(link.TracingOptions{Program: coll.Programs["handle_fork_btf"]}); err != nil {
-			return
+		// The second exec and exit programs first: they report what the
+		// first ones miss.
+		for _, p := range btfProgs {
+			var l link.Link
+			if l, err = link.AttachTracing(link.TracingOptions{Program: coll.Programs[p]}); err != nil {
+				return
+			}
+			s.links = append(s.links, l)
 		}
-		s.links = append(s.links, l)
 		s.Fork = "tp_btf"
-	} else if err = attach("sched", "sched_process_fork", "handle_fork_tp"); err != nil {
-		return
+	} else {
+		for _, t := range [][2]string{{"sched_process_exec", "handle_exec"}, {"sched_process_exit", "handle_exit"},
+			{"sched_process_fork", "handle_fork_tp"}} {
+			if err = attach("sched", t[0], t[1]); err != nil {
+				return
+			}
+		}
 	}
 	s.OOM = attach("oom", "mark_victim", "handle_oom") == nil // optional
 	if perfBuf {
@@ -249,14 +257,26 @@ func (s *Source) Drops() map[Kind]uint64 {
 
 // MissedRuns counts the times the kernel did not run one of the programs
 // because another BPF program was running on the CPU: events lost without a
-// trace in Drops (0 before Linux 5.12).
+// trace in Drops (0 before Linux 5.12). Execs and exits the first program
+// missed and the second reported are not lost.
 func (s *Source) MissedRuns() (n uint64) {
 	for _, p := range s.coll.Programs {
 		if st, err := p.Stats(); err == nil {
 			n += st.RecursionMisses
 		}
 	}
-	return n
+	var rescued uint64
+	if m := s.coll.Maps["busy"]; m != nil {
+		for _, k := range []uint32{2, 3} { // RESCUED_EXEC, RESCUED_EXIT
+			var perCPU []uint64
+			if m.Lookup(k, &perCPU) == nil {
+				for _, v := range perCPU {
+					rescued += v
+				}
+			}
+		}
+	}
+	return n - min(n, rescued)
 }
 
 var eventSize = binary.Size(procRBEvent{})

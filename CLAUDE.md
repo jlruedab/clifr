@@ -69,11 +69,12 @@ user's go-ahead.
   anything that must survive a close by the pointer alone.
 - eBPF losses that leave no trace in the drop counters: the kernel does not run a tracing
   program on a CPU where it is already running (interrupted or preempted), and no classic
-  tracepoint/kprobe program while another one runs. TCP state changes therefore use two
-  `tp_btf` programs (the second reports what the first misses); the recorder closes a
-  connection whose close was missed when its sock pointer is reused (`tcp_close_missed`
-  guard event); `recorder_stats` has `tcp_missed_runs` / `ebpf_missed_runs` (dropped).
-  exec/exit/OOM and the reset/retransmit counters are still classic tracepoints.
+  tracepoint/kprobe program while another one runs. TCP state changes, exec and exit
+  therefore use two `tp_btf` programs each (the second reports what the first misses;
+  per-program scratch slots); the recorder closes a connection whose close was missed
+  when its sock pointer is reused (`tcp_close_missed` guard event); `recorder_stats` has
+  `tcp_missed_runs` / `ebpf_missed_runs` (dropped). OOM, the syscall fd hooks and the
+  reset/retransmit counters are still classic tracepoints.
 - `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
   there, `EV_ACTIVE_RESET` reports them.
 - Open files (`meta fds`): "held" (v2, `fds_held`): an fd is stored at the second consecutive
@@ -119,6 +120,6 @@ v2:
 3. [x] eBPF process events (proc connector fallback), OOM events
 4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [x] Long-held fd snapshots, mount events
-6. [x] Ground-truth tests (`test/truth`; full scale 41/41 checks, results: truth-full-20261010-1531)
+6. [x] Ground-truth tests (`test/truth`; full scale 41/41 checks, results: truth-full-20261010-1602)
 7. [ ] Benchmark: bpf_stats, new matrix, scaling, report
 8. [ ] README
