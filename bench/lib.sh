@@ -65,13 +65,24 @@ machine_info() {
     echo "go=$(go version 2>/dev/null | awk '{print $3}')"
 }
 
-# collect_db DIR: after the recorder has stopped, save the DB size, `sosv
-# stats` and the samples/guard_events tables into DIR.
+# collect_db DIR: after the recorder has stopped, save the size of what it
+# wrote, `sosv stats` and the samples/guard_events tables into DIR. The
+# recording is DIR/data (v2, Parquet) or DIR/sosv.db (v1 recorder, SQLite).
 collect_db() {
-    local dir=$1
-    du -cb "$dir"/sosv.db* | tail -1 | cut -f1 >"$dir/db_bytes"
-    "$BIN/sosv" stats --db "$dir/sosv.db" >"$dir/sosv-stats.txt" 2>&1 || true
-    "$BIN/sosv" stats --db "$dir/sosv.db" --json >"$dir/sosv-stats.json" 2>/dev/null || true
-    "$BIN/benchtool" dbexport "$dir/sosv.db" samples >"$dir/samples.csv"
-    "$BIN/benchtool" dbexport "$dir/sosv.db" guard_events >"$dir/guard_events.csv"
+    local dir=$1 t
+    if [[ -d $dir/data ]]; then
+        du -sb "$dir/data" | cut -f1 >"$dir/db_bytes"
+        du -b "$dir"/data/* | sort -rn >"$dir/table_bytes.txt"
+        "$BIN/sosv" stats --data-dir "$dir/data" >"$dir/sosv-stats.txt" 2>&1 || true
+        "$BIN/sosv" stats --data-dir "$dir/data" --json >"$dir/sosv-stats.json" 2>/dev/null || true
+        for t in samples guard_events recorder_stats reconcile; do
+            "$BIN/sosv" export "$t" --data-dir "$dir/data" >"$dir/$t.csv"
+        done
+    else
+        du -cb "$dir"/sosv.db* | tail -1 | cut -f1 >"$dir/db_bytes"
+        "$BIN/sosv-v1" stats --db "$dir/sosv.db" >"$dir/sosv-stats.txt" 2>&1 || true
+        "$BIN/sosv-v1" stats --db "$dir/sosv.db" --json >"$dir/sosv-stats.json" 2>/dev/null || true
+        "$BIN/benchtool" dbexport "$dir/sosv.db" samples >"$dir/samples.csv"
+        "$BIN/benchtool" dbexport "$dir/sosv.db" guard_events >"$dir/guard_events.csv"
+    fi
 }

@@ -67,7 +67,15 @@ type eventQueue struct {
 	received map[string]int64
 	reported map[string][2]int64     // received and dropped at the last report
 	drops    func() map[string]int64 // eBPF: events the kernel side could not send
+	progs    func() map[string][2]uint64
 }
+
+// recorder_stats sources for the eBPF programs' own cost (with --bpf-stats):
+// runs and nanoseconds per program, in the events column.
+const (
+	statBPFRuns = "bpf_runs:"
+	statBPFNS   = "bpf_ns:"
+)
 
 func newEventQueue() *eventQueue {
 	return &eventQueue{received: map[string]int64{}, reported: map[string][2]int64{}}
@@ -94,8 +102,15 @@ func (q *eventQueue) stats(ts int64) []store.StatRow {
 	if q.drops != nil {
 		drops = q.drops()
 	}
+	var progs map[string][2]uint64
+	if q.progs != nil {
+		progs = q.progs()
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	for name, v := range progs {
+		q.received[statBPFRuns+name], q.received[statBPFNS+name] = int64(v[0]), int64(v[1])
+	}
 	if q.lost > 0 {
 		drops = map[string]int64{srcCNProc: int64(q.lost)}
 	}
@@ -210,6 +225,7 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 		}
 		return out
 	}
+	r.events.progs = src.ProgStats
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)

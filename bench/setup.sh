@@ -69,4 +69,9 @@ go build -o bench/bin/sosv-record ./cmd/sosv-record
 go build -o bench/bin/load ./bench/load
 go build -o bench/bin/benchtool ./bench/benchtool
 go build -o bench/bin/report ./bench/report
+# The v1 recorder (tag v1-snapshot), for the side-by-side configuration V1.
+V1SRC=$(mktemp -d)
+git -c safe.directory="$PWD" worktree add -f --detach "$V1SRC" v1-snapshot >/dev/null
+(cd "$V1SRC" && go build -o "$OLDPWD/bench/bin/sosv-v1" ./cmd/sosv)
+git -c safe.directory="$PWD" worktree remove --force "$V1SRC"
 echo "setup done: database sosvbench (scale $SCALE), binaries in bench/bin/"

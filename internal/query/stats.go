@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"sosv/internal/store"
@@ -39,6 +40,15 @@ type Stats struct {
 	TCPMode         string                 `json:"tcp_mode"`
 	Reconcile       ReconcileStat          `json:"reconcile"`
 	Events          map[string]EventStat   `json:"events_by_source"`
+	// The eBPF programs' own run time (recorded with --bpf-stats).
+	BPF           map[string]BPFProgStat `json:"bpf_programs,omitempty"`
+	BPFPctOneCore float64                `json:"bpf_cpu_pct_one_core"`
+}
+
+// BPFProgStat is how often one eBPF program ran and for how long.
+type BPFProgStat struct {
+	Runs int64 `json:"runs"`
+	NS   int64 `json:"run_time_ns"`
 }
 
 // ReconcileStat sums the keyframe comparisons after each run's first one.
@@ -71,7 +81,7 @@ func percentiles(v []float64) Percentiles {
 // ComputeStats summarises the recorder's own cost from the samples table.
 func ComputeStats(db *store.DB) (*Stats, error) {
 	st := &Stats{TableRows: map[string]int64{}, PhaseMS: map[string]Percentiles{}, GuardEvents: map[string]int{},
-		Events: map[string]EventStat{}}
+		Events: map[string]EventStat{}, BPF: map[string]BPFProgStat{}}
 	for _, t := range statTables {
 		var n int64
 		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + t).Scan(&n); err != nil {
@@ -193,9 +203,29 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 			if span := float64(st.ToMS-st.FromMS) / 1000; span > 0 {
 				e.PerSec = float64(e.Events) / span
 			}
+			// The eBPF programs' own cost (sosv-record --bpf-stats).
+			if name, ok := strings.CutPrefix(src, "bpf_runs:"); ok {
+				p := st.BPF[name]
+				p.Runs = e.Events
+				st.BPF[name] = p
+				continue
+			}
+			if name, ok := strings.CutPrefix(src, "bpf_ns:"); ok {
+				p := st.BPF[name]
+				p.NS = e.Events
+				st.BPF[name] = p
+				continue
+			}
 			st.Events[src] = e
 		}
 		ev.Close()
+	}
+	var ns int64
+	for _, p := range st.BPF {
+		ns += p.NS
+	}
+	if span := st.ToMS - st.FromMS; span > 0 {
+		st.BPFPctOneCore = float64(ns) / 1e6 / float64(span) * 100
 	}
 	return st, nil
 }
@@ -228,6 +258,18 @@ func PrintStats(w io.Writer, s *Stats) {
 	for _, k := range srcs {
 		e := s.Events[k]
 		fmt.Fprintf(w, "  %-18s %8d events (%.1f/s), %d dropped\n", k, e.Events, e.PerSec, e.Dropped)
+	}
+	if len(s.BPF) > 0 {
+		fmt.Fprintf(w, "eBPF programs:    %.3f%% of one core, in the context of whatever triggers them (not in Recorder CPU)\n", s.BPFPctOneCore)
+		names := make([]string, 0, len(s.BPF))
+		for k := range s.BPF {
+			names = append(names, k)
+		}
+		sort.Slice(names, func(i, j int) bool { return s.BPF[names[i]].NS > s.BPF[names[j]].NS })
+		for _, k := range names {
+			p := s.BPF[k]
+			fmt.Fprintf(w, "  %-28s %10d runs, %6d ns each, %8.1f ms\n", k, p.Runs, p.NS/max(p.Runs, 1), float64(p.NS)/1e6)
+		}
 	}
 	if s.TCPMode != "" {
 		fmt.Fprintf(w, "TCP:              %s\n", s.TCPMode)

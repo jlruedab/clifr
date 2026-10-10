@@ -160,8 +160,12 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	if n := t.src.MissedRuns(); n > 0 {
 		drops["tcp_missed_runs"] = int64(n)
 	}
+	progs := t.src.ProgStats()
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	for name, v := range progs { // cumulative, like the event counts
+		t.received[statBPFRuns+name], t.received[statBPFNS+name] = int64(v[0]), int64(v[1])
+	}
 	var out []store.StatRow
 	seen := map[string]bool{}
 	for _, m := range []map[string]int64{t.received, drops} {

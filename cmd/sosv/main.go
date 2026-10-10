@@ -5,6 +5,8 @@
 package main
 
 import (
+	"database/sql"
+	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
@@ -33,6 +35,7 @@ commands (record with sosv-record):
   mounts   sosv mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
   verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
+  export   sosv export TABLE: one recorded table as CSV (e.g. samples, guard_events)
 
 data: --data-dir DIR (Parquet, default ` + defaultDataDir + `) or --db FILE (v1 SQLite).
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
@@ -63,6 +66,8 @@ func main() {
 		err = cmdVerify(args)
 	case "stats":
 		err = cmdStats(args)
+	case "export":
+		err = cmdExport(args)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -422,6 +427,58 @@ func cmdOOM(args []string) error {
 	}
 	query.PrintOOM(os.Stdout, kills)
 	return nil
+}
+
+var tableRe = regexp.MustCompile(`^[a-z_]+$`)
+
+// cmdExport writes one table as CSV (NULL as an empty field).
+func cmdExport(args []string) error {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 || !tableRe.MatchString(pos[0]) {
+		return errors.New("usage: sosv export TABLE [--data-dir DIR | --db FILE]")
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	rows, err := db.DB.Query("SELECT * FROM " + pos[0])
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	w := csv.NewWriter(os.Stdout)
+	w.Write(cols)
+	vals := make([]sql.NullString, len(cols))
+	ptrs := make([]any, len(cols))
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	rec := make([]string, len(cols))
+	for rows.Next() {
+		if err := rows.Scan(ptrs...); err != nil {
+			return err
+		}
+		for i, v := range vals {
+			rec[i] = v.String
+		}
+		w.Write(rec)
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	return rows.Err()
 }
 
 // ssEvents: ss from TCP events (v2 recordings).

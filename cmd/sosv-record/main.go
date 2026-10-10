@@ -17,6 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
+
 	"sosv/internal/recorder"
 )
 
@@ -57,6 +60,7 @@ func run(args []string) error {
 	forcePerf := fs.Bool("ebpf-force-perf", false, "use perf event arrays even if the kernel has a BPF ring buffer (to test the fallback)")
 	fs.BoolVar(&c.EBPF.ForceClassicFork, "ebpf-classic-fork", false, "use the classic fork, exec and exit tracepoints even if tp_btf works (to test the fallback)")
 	fs.BoolVar(&c.TCPBPF.ForceKprobes, "ebpf-kprobes", false, "use kprobes and the classic state tracepoint even if fentry/fexit and tp_btf work (to test the fallback)")
+	bpfStats := fs.Bool("bpf-stats", false, "measure the eBPF programs' own run time (adds a little to every run); shown by sosv stats")
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	maxSize := fs.String("max-size", "0", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
@@ -81,6 +85,14 @@ func run(args []string) error {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}
 	logger := log.New(os.Stderr, "sosv-record: ", log.LstdFlags)
+	if *bpfStats {
+		// Kernel-wide while this descriptor is open (Linux 5.8+).
+		st, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME))
+		if err != nil {
+			return fmt.Errorf("--bpf-stats: %w", err)
+		}
+		defer st.Close()
+	}
 	r, err := recorder.New(c, logger)
 	if err != nil {
 		return err

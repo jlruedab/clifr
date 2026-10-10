@@ -33,13 +33,14 @@ type table struct {
 
 var configDesc = map[string]string{
 	"A":  "workload only (baseline)",
-	"B":  "sosv --interval 30s --fd-interval 120s (default)",
-	"C":  "sosv --interval 10s --fd-interval 60s (aggressive)",
-	"D":  "sosv --interval 60s --fd-interval 300s (conservative)",
+	"B":  "sosv-record --interval 30s --fd-interval 120s (v2 default)",
+	"C":  "sosv-record --interval 10s --fd-interval 60s (v2 aggressive)",
+	"D":  "sosv-record --interval 60s --fd-interval 300s (v2 conservative)",
+	"V1": "v1 recorder (snapshots, SQLite) --interval 30s --fd-interval 120s",
 	"R1": "atop -w FILE 30 (reference)",
 }
 
-var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "R1": "--s4", "passive": "--s1"}
+var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "V1": "--s5", "R1": "--s4", "passive": "--s1"}
 
 func color(cfg string) string {
 	if c, ok := configColor[cfg]; ok {

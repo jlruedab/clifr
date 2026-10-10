@@ -31,6 +31,7 @@ while (($#)); do
     shift
 done
 OUT=${OUT:-$ROOT/bench/results/accuracy-$(date +%Y%m%d-%H%M%S)}
+OUT=$(realpath -m "$OUT") # workload.sh changes directory
 . "$ROOT/bench/lib.sh"
 
 check_common sosv sosv-record load benchtool report
@@ -64,16 +65,16 @@ until grep -q READY "$OUT/load.out" 2>/dev/null; do
 done
 
 log "record $DURATION, verify every $VERIFY_EVERY"
-"$BIN/sosv-record" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+"$BIN/sosv-record" --data-dir "$OUT/data" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
     --verify-every "$VERIFY_EVERY" --duration "$DURATION" >"$OUT/recorder.log" 2>&1
 stop_all
 wait $load_pid 2>/dev/null || true
 
 log "verify"
-"$BIN/sosv" verify --db "$OUT/sosv.db" --json >"$OUT/verify.json"
-"$BIN/sosv" verify --db "$OUT/sosv.db" >"$OUT/verify.txt"
+"$BIN/sosv" verify --data-dir "$OUT/data" --json >"$OUT/verify.json"
+"$BIN/sosv" verify --data-dir "$OUT/data" >"$OUT/verify.txt"
 collect_db "$OUT"
-((KEEP_DB)) || rm -f "$OUT"/sosv.db*
+((KEEP_DB)) || rm -rf "$OUT/data"
 gzip -f "$OUT"/*.csv
 sed -n '1,40p' "$OUT/verify.txt"
 validate "$OUT"

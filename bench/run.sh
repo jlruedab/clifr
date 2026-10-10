@@ -5,17 +5,23 @@
 #   sudo bench/run.sh [options]
 #
 #   --profiles LIST   load profiles, comma-separated (default: busy)
-#   --configs LIST    configurations (default: A,B,C,D,R1)
+#   --configs LIST    configurations (default: A,B,C,D,V1,R1)
 #                       A   workload only (baseline)
-#                       B   sosv --interval 30s --fd-interval 120s (default)
-#                       C   sosv --interval 10s --fd-interval 60s  (aggressive)
-#                       D   sosv --interval 60s --fd-interval 300s (conservative)
+#                       B   sosv-record --interval 30s --fd-interval 120s (default)
+#                       C   sosv-record --interval 10s --fd-interval 60s  (aggressive)
+#                       D   sosv-record --interval 60s --fd-interval 300s (conservative)
+#                       V1  the v1 recorder (tag v1-snapshot, SQLite) at 30s/120s
 #                       R1  atop -w FILE 30                        (reference)
+#   --bpf-stats       B, C, D: also measure the eBPF programs' run time
+#                     (adds a little to every program run: not for latency figures)
+#   --cpus LIST       pin PostgreSQL and pgbench to these CPUs (e.g. 0-11: the
+#                     performance cores of a hybrid CPU), for steadier latency
 #   --repeats N       repeats of each configuration (default: 3)
 #   --warmup SECS     warm-up, discarded (default: 120)
 #   --measure SECS    measured period (default: 900)
 #   --mode M          pgbench workload: select (read-only, default) or tpcb
-#   --rate N          pgbench target transactions/s, 0 = unthrottled (default: 30000)
+#   --rate N          pgbench target transactions/s, 0 = unthrottled (default: 30000;
+#                     calibrate per machine, see README)
 #   --clients N --threads N   pgbench clients/threads (default: 16/4)
 #   --load-args "..." extra flags for bench/bin/load (e.g. "--conns 5000")
 #   --drop-caches     drop the page cache before each run
@@ -54,7 +60,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 
-PROFILES=busy CONFIGS="A B C D R1" REPEATS=3 WARMUP=120 MEASURE=900
+PROFILES=busy CONFIGS="A B C D V1 R1" REPEATS=3 BPF_STATS="" CPUS="" WARMUP=120 MEASURE=900
 PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
 while (($#)); do
     case $1 in
@@ -69,6 +75,8 @@ while (($#)); do
     --threads) THREADS=$2; shift ;;
     --load-args) LOAD_ARGS=$2; shift ;;
     --drop-caches) DROP_CACHES=1 ;;
+    --bpf-stats) BPF_STATS=--bpf-stats ;;
+    --cpus) CPUS=$2; shift ;;
     --keep-db) KEEP_DB=1 ;;
     --out) OUT=$2; shift ;;
     --min-free-gb) MIN_FREE_GB=$2; shift ;;
@@ -80,6 +88,7 @@ while (($#)); do
 done
 OUT=${OUT:-$ROOT/bench/results/$(date +%Y%m%d-%H%M%S)}
 export PGB_MODE PGB_RATE
+OUT=$(realpath -m "$OUT") # workload.sh changes directory
 . "$ROOT/bench/lib.sh"
 
 # --- prerequisites ---------------------------------------------------------
@@ -87,6 +96,7 @@ check_common sosv sosv-record load benchtool report
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
+    V1) [[ -x $BIN/sosv-v1 ]] || die "V1 needs $BIN/sosv-v1; run bench/setup.sh" ;;
     R1) command -v atop >/dev/null || die "R1 needs atop" ;;
     R2) die "R2 (PCP pmlogger) is not implemented: PCP is not installed on the test machine" ;;
     *) die "unknown configuration $c" ;;
@@ -102,6 +112,7 @@ check_free "$OUT"
 
 # PostgreSQL is the workload; account its service too.
 systemctl set-property --runtime "$PGUNIT" CPUAccounting=yes MemoryAccounting=yes IOAccounting=yes
+[[ -z $CPUS ]] || systemctl set-property --runtime "$PGUNIT" AllowedCPUs="$CPUS"
 systemctl daemon-reload
 PGCG=$(systemctl show -p ControlGroup --value "$PGUNIT")
 disk_devices "$OUT"
@@ -123,6 +134,8 @@ disk_devices "$OUT"
     echo "pgbench_threads=$THREADS"
     echo "load_args=$LOAD_ARGS"
     echo "drop_caches=$DROP_CACHES"
+    echo "bpf_stats=${BPF_STATS:+on}"
+    echo "workload_cpus=$CPUS"
 } >"$OUT/machine.env"
 MATRIX=$OUT/matrix.csv
 [[ -f $MATRIX ]] || echo "run_id,order,profile,config,repeat,start_ms,warm_start_ms,meas_start_ms,meas_end_ms,end_ms,status" >"$MATRIX"
@@ -134,7 +147,16 @@ scope() {
     shift
     systemd-run --quiet --scope --collect --slice=sosvbench.slice \
         --unit="sosvbench-$name-$RUNID" \
-        -p CPUAccounting=yes -p MemoryAccounting=yes -p IOAccounting=yes -- "$@"
+        -p CPUAccounting=yes -p MemoryAccounting=yes -p IOAccounting=yes "${SCOPE_PROPS[@]}" -- "$@"
+}
+SCOPE_PROPS=()
+# pinned NAME CMD...: scope, on the --cpus CPUs.
+pinned() {
+    [[ -n $CPUS ]] && SCOPE_PROPS=(-p AllowedCPUs="$CPUS")
+    scope "$@"
+    local rc=$?
+    SCOPE_PROPS=()
+    return $rc
 }
 cgpath() { echo "/sosvbench.slice/sosvbench-$1-$RUNID.scope"; }
 
@@ -145,9 +167,10 @@ recorder_cmd() {
     B) s="--interval 30s --fd-interval 120s" ;;
     C) s="--interval 10s --fd-interval 60s" ;;
     D) s="--interval 60s --fd-interval 300s" ;;
+    V1) echo "nice -n 10 ionice -c 3 $BIN/sosv-v1 record --db $RUN/sosv.db --interval 30s --fd-interval 120s"; return ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     esac
-    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir= --db $RUN/sosv.db $s"
+    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir $RUN/data $BPF_STATS $s"
 }
 
 stop_all() {
@@ -216,10 +239,10 @@ run_one() {
 
     warm=$(now_ms)
     log "$RUNID: warm-up ${WARMUP}s"
-    scope pgbw "$ROOT/bench/workload.sh" "$RUN/warmup" "$WARMUP" "$CLIENTS" "$THREADS" >/dev/null
+    pinned pgbw "$ROOT/bench/workload.sh" "$RUN/warmup" "$WARMUP" "$CLIENTS" "$THREADS" >/dev/null
     meas=$(now_ms)
     log "$RUNID: measure ${MEASURE}s"
-    scope pgbm "$ROOT/bench/workload.sh" "$RUN/workload" "$MEASURE" "$CLIENTS" "$THREADS" >/dev/null
+    pinned pgbm "$ROOT/bench/workload.sh" "$RUN/workload" "$MEASURE" "$CLIENTS" "$THREADS" >/dev/null
     mend=$(now_ms)
     sed -n 2p "$RUN/workload/workload.csv" | awk -F, '{printf "    tps %.0f  lat avg %s ms  p95 %s ms  p99 %s ms  p99.9 %s ms\n", $1, $2, $4, $5, $6}'
 
@@ -228,9 +251,9 @@ run_one() {
         systemctl stop "sosvbench-rec-$RUNID.scope" 2>/dev/null || true # SIGTERM, clean shutdown
         wait $rec_pid || true
     fi
-    if [[ -f $RUN/sosv.db ]]; then
+    if [[ -f $RUN/sosv.db || -d $RUN/data ]]; then
         collect_db "$RUN"
-        ((KEEP_DB)) || rm -f "$RUN"/sosv.db*
+        ((KEEP_DB)) || rm -rf "$RUN"/sosv.db* "$RUN/data"
     fi
     if [[ -f $RUN/atop.raw ]]; then
         stat -c %s "$RUN/atop.raw" >"$RUN/atop_bytes"

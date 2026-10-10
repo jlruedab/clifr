@@ -375,6 +375,9 @@ func (run *Run) loadSamples() error {
 	m["skipped"] = float64(skipped)
 	m["samples"] = float64(len(ok))
 	m["store_per_h"] = slopePerHour(ok, func(s Sample) float64 { return s.DBBytes })
+	if v, isParquet := parquetPerHour(run.Dir, all); isParquet {
+		m["store_per_h"] = v
+	}
 	m["rss_growth_per_h"] = nan
 	if len(ok) > 0 && ok[len(ok)-1].TS-ok[0].TS >= 10*60*1000 { // shorter windows show GC noise, not a trend
 		m["rss_growth_per_h"] = slopePerHour(ok, func(s Sample) float64 { return s.RSSKB * 1024 })
@@ -400,6 +403,25 @@ func (run *Run) loadSamples() error {
 	}
 	m["fd_interval_end"] = run.FDIntervalEnd
 	return nil
+}
+
+// parquetPerHour: a v2 recording (table_bytes.txt present) grows in steps,
+// one per flush, which a slope over a short window misses or exaggerates.
+// Its rate is the final size of the data directory over the recording time
+// (the connections already open at the start are in it: an upper bound).
+func parquetPerHour(dir string, all []Sample) (float64, bool) {
+	if !exists(filepath.Join(dir, "table_bytes.txt")) {
+		return 0, false
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "db_bytes"))
+	if err != nil || len(all) < 2 {
+		return nan, true
+	}
+	dt := float64(all[len(all)-1].TS - all[0].TS)
+	if dt <= 0 {
+		return nan, true
+	}
+	return num(strings.TrimSpace(string(b))) / dt * 3.6e6, true
 }
 
 func parseSamples(rows []map[string]string) []Sample {
@@ -471,6 +493,9 @@ func loadScaling(dir string, env map[string]string) (*Scaling, error) {
 		p.NSock = mean(nsock)
 		p.Samples = len(totals)
 		p.DBPerHour = slopePerHour(ss, func(s Sample) float64 { return s.DBBytes })
+		if v, isParquet := parquetPerHour(pdir, all); isParquet {
+			p.DBPerHour = v
+		}
 		if cg, err := readCSV(filepath.Join(pdir, "cgroup.csv.gz")); err == nil {
 			rec := window(cg, "rec", first.TS, last.TS)
 			if len(rec) >= 2 {

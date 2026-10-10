@@ -46,6 +46,7 @@ while (($#)); do
     shift
 done
 OUT=${OUT:-$ROOT/bench/results/scaling-$(date +%Y%m%d-%H%M%S)}
+OUT=$(realpath -m "$OUT") # workload.sh changes directory
 . "$ROOT/bench/lib.sh"
 
 declare -A BASE=([procs]=2000 [fds]=50000 [conns]=20000 [spawn]=50 [churn]=0)
@@ -109,12 +110,12 @@ point() {
 
     rec_start=$(now_ms)
     log "$PID_: record ${RECORD}s"
-    scope rec nice -n 10 ionice -c 3 "$BIN/sosv-record" --data-dir= --db "$DIR/sosv.db" \
+    scope rec nice -n 10 ionice -c 3 "$BIN/sosv-record" --data-dir "$DIR/data" --bpf-stats \
         --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" --cpu-budget 100% \
         --duration "${RECORD}s" >"$DIR/recorder.log" 2>&1 || status=recorder_failed
     rec_end=$(now_ms)
     collect_db "$DIR"
-    rm -f "$DIR"/sosv.db*
+    rm -rf "$DIR/data"
     sed -n '/^Sample duration/,/^  total/p' "$DIR/sosv-stats.txt" | sed 's/^/    /'
 
     stop_all
