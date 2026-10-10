@@ -130,3 +130,39 @@ func TestTimeWaitEnd(t *testing.T) {
 		t.Fatalf("exact end not applied: %+v", b.TCPConns)
 	}
 }
+
+// A connection whose TCP_CLOSE was not reported, then a new socket at the
+// same address (an accepted connection): two connections, the first closed,
+// each with its own addresses.
+func TestMissedClose(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	r.tcp.queue = []bpftcp.Event{
+		tcpEvent(7, 7, 2, "127.0.0.1", 0, "127.0.0.2", 80),
+		tcpEvent(7, 2, 1, "127.0.0.1", 40000, "127.0.0.2", 80),
+		tcpEvent(7, 1, 4, "127.0.0.1", 40000, "127.0.0.2", 80),
+		tcpEvent(7, 10, 3, "127.0.0.2", 80, "127.0.0.1", 40001),
+		tcpEvent(7, 3, 1, "127.0.0.2", 80, "127.0.0.1", 40001),
+	}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	if len(b.TCPConns) != 2 || len(b.Guard) != 1 || b.Guard[0].Kind != "tcp_close_missed" {
+		t.Fatalf("want 2 connections and a tcp_close_missed event, got %+v, %+v", b.TCPConns, b.Guard)
+	}
+	for _, c := range b.TCPConns {
+		switch c.LPort {
+		case 40000:
+			if c.CloseTS == nil || c.Direction != "active" || c.FinalState != 4 {
+				t.Errorf("first connection not closed: %+v", c)
+			}
+		case 80:
+			if c.CloseTS != nil || c.Direction != "passive" || c.RPort != 40001 {
+				t.Errorf("second connection: %+v", c)
+			}
+		default:
+			t.Errorf("unexpected connection %+v", c)
+		}
+	}
+}

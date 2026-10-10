@@ -88,7 +88,15 @@ struct inet_timewait_sock {
 } __attribute__((preserve_access_index));
 struct file { struct inode *f_inode; } __attribute__((preserve_access_index));
 struct socket { struct file *file; } __attribute__((preserve_access_index));
-struct sock { struct socket *sk_socket; } __attribute__((preserve_access_index));
+struct sock {
+	struct sock_common __sk_common;
+	struct socket *sk_socket;
+	__u16 sk_protocol; // a bit-field before Linux 5.6: the BTF tracepoint program then fails to load
+} __attribute__((preserve_access_index));
+struct inet_sock {
+	__u32 inet_saddr;
+	__u16 inet_sport; // network order
+} __attribute__((preserve_access_index));
 
 struct task_struct {
 	int tgid;
@@ -272,6 +280,107 @@ static __always_inline __u64 sock_inode(const void *sk)
 	return BPF_CORE_READ((struct sock *)sk, sk_socket, file, f_inode, i_ino);
 }
 
+// The common end of a state change: its owner, the counters at TCP_CLOSE.
+static __always_inline int state_event(void *ctx, struct tcp_event *e)
+{
+	if (e->newstate == TCP_SYN_SENT || e->newstate == TCP_LISTEN) {
+		// connect() or listen(): we are in the owning process.
+		struct owner o;
+		current_owner(&o);
+		__u32 tid = (__u32)bpf_get_current_pid_tgid();
+		__s32 *fd = bpf_map_lookup_elem(&syscall_fd, &tid);
+		if (fd)
+			o.fd = *fd;
+		o.inode = sock_inode((void *)e->sk);
+		bpf_map_update_elem(&owners, &e->sk, &o, BPF_ANY);
+	}
+	struct owner *o = bpf_map_lookup_elem(&owners, &e->sk);
+	if (o)
+		e->owner = *o;
+	else
+		e->owner.fd = -1;
+	if (e->newstate == TCP_CLOSE) {
+		struct counters *c = bpf_map_lookup_elem(&counters, &e->sk);
+		if (c) {
+			e->counters = *c;
+			bpf_map_delete_elem(&counters, &e->sk);
+		}
+		bpf_map_delete_elem(&owners, &e->sk);
+	}
+	send(ctx, e);
+	return 0;
+}
+
+// State changes, preferred: the BTF tracepoint, with two programs.
+//
+// The kernel does not run a tracing program on a CPU where that program is
+// already running: one that was interrupted, or preempted, when another
+// socket changes state there. (A classic tracepoint program is skipped
+// while any tracepoint or kprobe program runs.) A missed TCP_CLOSE would
+// merge two connections. So the first program marks the CPU while it runs,
+// and the second, a program of its own, reports the changes that find the
+// mark: the ones the first could not see.
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 2); // 0: the first program is running; 1: changes the second reported
+	__type(key, __u32);
+	__type(value, __u64);
+} state_busy SEC(".maps");
+
+static __always_inline int state_btf(void *ctx, struct sock *sk, int oldstate, int newstate)
+{
+	if (BPF_CORE_READ(sk, sk_protocol) != IPPROTO_TCP_)
+		return 0;
+	struct inet_sock *inet = (void *)sk;
+	struct tcp_event e = {};
+	e.kind = EV_STATE;
+	e.mono_ns = bpf_ktime_get_ns();
+	e.sk = (__u64)sk;
+	e.oldstate = oldstate;
+	e.newstate = newstate;
+	// The same values the classic tracepoint reports.
+	e.family = BPF_CORE_READ(sk, __sk_common.skc_family);
+	e.sport = __builtin_bswap16(BPF_CORE_READ(inet, inet_sport));
+	e.dport = __builtin_bswap16(BPF_CORE_READ(sk, __sk_common.skc_dport));
+	if (e.family == 2 /* AF_INET */) {
+		__u32 s = BPF_CORE_READ(inet, inet_saddr);
+		__u32 d = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+		__builtin_memcpy(e.saddr, &s, 4);
+		__builtin_memcpy(e.daddr, &d, 4);
+	} else {
+		BPF_CORE_READ_INTO(&e.saddr, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+		BPF_CORE_READ_INTO(&e.daddr, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr8);
+	}
+	return state_event(ctx, &e);
+}
+
+SEC("tp_btf/inet_sock_set_state")
+int BPF_PROG(handle_set_state_btf, struct sock *sk, int oldstate, int newstate)
+{
+	__u32 zero = 0;
+	__u64 *busy = bpf_map_lookup_elem(&state_busy, &zero);
+	if (busy)
+		*busy = 1;
+	state_btf(ctx, sk, oldstate, newstate);
+	if (busy)
+		*busy = 0;
+	return 0;
+}
+
+SEC("tp_btf/inet_sock_set_state")
+int BPF_PROG(handle_set_state_btf2, struct sock *sk, int oldstate, int newstate)
+{
+	__u32 zero = 0, one = 1;
+	__u64 *busy = bpf_map_lookup_elem(&state_busy, &zero);
+	if (!busy || !*busy)
+		return 0; // the first program reports this change
+	__u64 *n = bpf_map_lookup_elem(&state_busy, &one);
+	if (n)
+		*n += 1;
+	return state_btf(ctx, sk, oldstate, newstate);
+}
+
+// State changes, fallback: the classic tracepoint.
 SEC("tracepoint/sock/inet_sock_set_state")
 int handle_set_state(struct set_state_args *ctx)
 {
@@ -293,32 +402,7 @@ int handle_set_state(struct set_state_args *ctx)
 		__builtin_memcpy(e.saddr, ctx->saddr_v6, 16);
 		__builtin_memcpy(e.daddr, ctx->daddr_v6, 16);
 	}
-	if (e.newstate == TCP_SYN_SENT || e.newstate == TCP_LISTEN) {
-		// connect() or listen(): we are in the owning process.
-		struct owner o;
-		current_owner(&o);
-		__u32 tid = (__u32)bpf_get_current_pid_tgid();
-		__s32 *fd = bpf_map_lookup_elem(&syscall_fd, &tid);
-		if (fd)
-			o.fd = *fd;
-		o.inode = sock_inode(ctx->skaddr);
-		bpf_map_update_elem(&owners, &e.sk, &o, BPF_ANY);
-	}
-	struct owner *o = bpf_map_lookup_elem(&owners, &e.sk);
-	if (o)
-		e.owner = *o;
-	else
-		e.owner.fd = -1;
-	if (e.newstate == TCP_CLOSE) {
-		struct counters *c = bpf_map_lookup_elem(&counters, &e.sk);
-		if (c) {
-			e.counters = *c;
-			bpf_map_delete_elem(&counters, &e.sk);
-		}
-		bpf_map_delete_elem(&owners, &e.sk);
-	}
-	send(ctx, &e);
-	return 0;
+	return state_event(ctx, &e);
 }
 
 static __always_inline int save_fd(struct sys_enter_fd_args *ctx)
@@ -542,7 +626,16 @@ static __always_inline void count(const void *skaddr, int field)
 SEC("tracepoint/tcp/tcp_retransmit_skb")
 int handle_retransmit(struct sk_skb_args *ctx) { count(ctx->skaddr, 0); return 0; }
 SEC("tracepoint/tcp/tcp_send_reset")
-int handle_send_reset(struct sk_skb_args *ctx) { count(ctx->skaddr, 1); return 0; }
+int handle_send_reset(struct sk_skb_args *ctx)
+{
+	// Since Linux 6.10 tcp_send_active_reset fires this tracepoint too, with
+	// no skb. EV_ACTIVE_RESET reports those; counting them here as well
+	// would leave a count behind for the next socket at this address.
+	if (ctx->skaddr && !ctx->skbaddr)
+		return 0;
+	count(ctx->skaddr, 1);
+	return 0;
+}
 SEC("tracepoint/tcp/tcp_receive_reset")
 int handle_receive_reset(struct sk_args *ctx) { count(ctx->skaddr, 2); return 0; }
 

@@ -204,9 +204,13 @@ func LsofRange(db *store.DB, from, to int64, o LsofOptions) ([]LsofRow, error) {
 	}
 	var rows []LsofRow
 	if !o.InetOnly {
+		join := `open_files f JOIN processes p ON p.id = f.proc_id`
+		if FDsHeld(db) {
+			join = `fds_held f JOIN processes p ON p.pid = f.pid AND p.start_time = f.start_time`
+		}
 		r, err := db.Query(`SELECT p.comm, p.pid, p.uid, f.fd, f.target, COALESCE(f.ftype,''), COALESCE(f.mode,''),
 		       COALESCE(f.name,''), f.deleted, COALESCE(f.node, 0), f.first_seen, COALESCE(f.last_seen, ?3)
-		  FROM open_files f JOIN processes p ON p.id = f.proc_id
+		  FROM `+join+`
 		  WHERE f.first_seen <= ?2 AND COALESCE(f.last_seen, ?3) >= ?1`+pidCond, args...)
 		if err != nil {
 			return nil, err
@@ -231,11 +235,24 @@ func LsofRange(db *store.DB, from, to int64, o LsofOptions) ([]LsofRow, error) {
 		}
 		r.Close()
 	}
-	r, err := db.Query(`SELECT p.comm, p.pid, p.uid, o.fd, k.proto, k.family, k.laddr, k.lport, k.raddr, k.rport,
+	q := `SELECT p.comm, p.pid, p.uid, o.fd, k.proto, k.family, k.laddr, k.lport, k.raddr, k.rport,
 	       COALESCE((SELECT state FROM sock_samples WHERE sock_id = k.id AND ts <= ?2 ORDER BY ts DESC LIMIT 1), 0),
 	       o.first_seen, COALESCE(o.last_seen, ?3)
 	  FROM sock_owners o JOIN sockets k ON k.id = o.sock_id JOIN processes p ON p.id = o.proc_id
-	  WHERE o.first_seen <= ?2 AND COALESCE(o.last_seen, ?3) >= ?1`+pidCond, args...)
+	  WHERE o.first_seen <= ?2 AND COALESCE(o.last_seen, ?3) >= ?1` + pidCond
+	if TCPFromEvents(db) {
+		// TCP sockets from events: held by their owner from the open until
+		// the application's close (exact times). UDP is only in keyframes.
+		q = `SELECT p.comm, p.pid, p.uid, c.fd, 'tcp', c.family, c.laddr, c.lport, c.raddr, c.rport,
+		       COALESCE((SELECT x.new_state FROM tcp_transitions x WHERE x.conn_id = c.id
+		                   AND x.ts <= ?2 AND x.ts < COALESCE(c.owner_until, c.close_ts, ?3)
+		                 ORDER BY x.ts DESC, x.seq DESC LIMIT 1), c.first_state),
+		       c.open_ts, COALESCE(c.owner_until, c.close_ts, c.last_seen, ?3)
+		  FROM tcp_conns c JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
+		  WHERE c.pid <> 0 AND c.fd >= 0 AND c.open_ts <= ?2
+		    AND COALESCE(c.owner_until, c.close_ts, c.last_seen, ?3) >= ?1` + pidCond
+	}
+	r, err := db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -52,6 +52,7 @@ user's go-ahead.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.
 - `internal/verify/` — compare saved real tool output with reconstructions.
 - `deploy/` — systemd unit. `bench/` — load generator, benchmark runner, report. `test/e2e/` — end-to-end test.
+- `test/truth/` — ground-truth test (found/expected per check; `truthproc/` is its helper binary).
 
 ## Data model notes
 - Entities are time ranges: `first_seen`, `last_seen`. While an entity is still open,
@@ -66,6 +67,15 @@ user's go-ahead.
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;
   `--tcp sample` keeps v1 sampling. Kernel sock pointers are reused quickly: never key
   anything that must survive a close by the pointer alone.
+- eBPF losses that leave no trace in the drop counters: the kernel does not run a tracing
+  program on a CPU where it is already running (interrupted or preempted), and no classic
+  tracepoint/kprobe program while another one runs. TCP state changes therefore use two
+  `tp_btf` programs (the second reports what the first misses); the recorder closes a
+  connection whose close was missed when its sock pointer is reused (`tcp_close_missed`
+  guard event); `recorder_stats` has `tcp_missed_runs` / `ebpf_missed_runs` (dropped).
+  exec/exit/OOM and the reset/retransmit counters are still classic tracepoints.
+- `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
+  there, `EV_ACTIVE_RESET` reports them.
 - Open files (`meta fds`): "held" (v2, `fds_held`): an fd is stored at the second consecutive
   walk of its process that sees it (first_seen = the first), deleted files at once; inet
   socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read
@@ -81,13 +91,23 @@ user's go-ahead.
   go.mod pins toolchain go1.26.8 (downloaded automatically by an older `go`).
 - eBPF self-test (root): `sudo ./sosv-record --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`
 - Test: `go test ./...` (eBPF tests skip without root; `go test -c` + sudo to run them); e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
+- Ground truth (root; small ≈ 4 min, full ≈ 14 min with the recorder's defaults; results in `bench/results/truth-<scale>-<time>/`):
+  `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`
 - Quick manual run: `sudo ./sosv-record --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
   then `./sosv ps aux --data-dir /tmp/d --at "..."`
-- Machine notes: the old dev VM (8 vCPU, little free disk, failing disk) is
-  for v2 milestones 1–2 only; eBPF work and benchmarks run on the 4 vCPU
-  Ubuntu 26.04 VM (uutils coreutils: do not rely on GNU-only `date` etc.).
+- Machine notes: v2 milestones 6–8 run on the current VM: 22 vCPU, 61 GB RAM,
+  Ubuntu 26.04, kernel 7.0, Go 1.27, PostgreSQL 18 (uutils coreutils: do not
+  rely on GNU-only `date` etc.). Set up with `sudo bench/setup.sh` on 2026-10-10;
+  unit tests, both `--test-ebpf` modes and the e2e test pass there. Earlier
+  numbers are not comparable with it: v1 and v2 milestones 1–5 ran on the old
+  8 vCPU VM (kernel 6.8, failing disk), the busy 20261008-0721 batch on a
+  4 vCPU Ubuntu 26.04 VM. The pgbench rate must be calibrated again here.
   Bench scripts abort below 1.5 GB free and validate every run
   (`bench/report -validate`).
+- The committed eBPF objects are in sync with the `.bpf.c` sources and load on
+  any supported kernel unchanged (CO-RE): no regeneration per machine or kernel,
+  only after editing a `.bpf.c` file (`go generate`; needs the apt packages
+  clang-18, llvm-18 and libbpf-dev, installed on the current VM since M6).
 
 ## Milestone status
 v1 (tag `v1-snapshot`): milestones 1–9 done; its report generator and
@@ -99,6 +119,6 @@ v2:
 3. [x] eBPF process events (proc connector fallback), OOM events
 4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [x] Long-held fd snapshots, mount events
-6. [ ] Ground-truth tests
+6. [x] Ground-truth tests (`test/truth`; full scale 41/41 checks, results: truth-full-20261010-1531)
 7. [ ] Benchmark: bpf_stats, new matrix, scaling, report
 8. [ ] README

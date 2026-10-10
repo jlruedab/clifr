@@ -31,7 +31,8 @@ type tconn struct {
 	sk          uint64 // 0: known only from a keyframe so far
 	state       int
 	lastEvent   int64
-	lingerState int  // set by a time-wait event just before TCP_CLOSE
+	lingerState int // set by a time-wait event just before TCP_CLOSE
+	lingerTS    int64
 	seq         int  // transitions so far
 	lingerDone  bool // its time-wait ended (written, then forgotten, by flushTCP)
 	dirty       bool
@@ -156,6 +157,9 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 			drops["tcp_"+k.String()] = int64(n)
 		}
 	}
+	if n := t.src.MissedRuns(); n > 0 {
+		drops["tcp_missed_runs"] = int64(n)
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var out []store.StatRow
@@ -240,6 +244,20 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 		}
 		switch e.Kind {
 		case bpftcp.State:
+			if c != nil && (e.Old == bpftcp.Close || e.Old == bpftcp.Listen && e.New != bpftcp.Close) {
+				// A new socket at the address of one still tracked: that
+				// one's TCP_CLOSE was not reported (see bpftcp MissedRuns).
+				// It ended when its time-wait began if that was seen, else
+				// at some moment before now.
+				end := ts
+				if c.lingerState != 0 {
+					end = c.lingerTS
+				}
+				t.finish(c, e.SK, end, c.state)
+				b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "tcp_close_missed",
+					Detail: "close not reported, found when its socket address was reused: " + c.row.LAddr + ":" + strconv.Itoa(c.row.LPort) + " -> " + c.row.RAddr + ":" + strconv.Itoa(c.row.RPort)})
+				c = nil
+			}
 			if c == nil {
 				c = t.adopt(r, e, ts)
 			}
@@ -258,24 +276,10 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 			b.TCPTrans = append(b.TCPTrans, store.TCPTransition{ConnID: c.row.ID, TS: ts, Seq: c.seq, Old: e.Old, New: e.New})
 			c.state, c.lastEvent, c.dirty = e.New, ts, true
 			if e.New == bpftcp.Close {
-				c.row.CloseTS, c.row.FinalState = &ts, e.Old
 				c.row.Retransmits += int(e.Retransmits)
 				c.row.ResetsSent += int(e.ResetsSent)
 				c.row.ResetsReceived += int(e.ResetsReceived)
-				if c.lingerState != 0 {
-					until := ts + timeWaitMS
-					if c.lingerState == bpftcp.FinWait2 {
-						until = ts + t.finTimeout
-					}
-					c.row.LingerState, c.row.LingerUntil = c.lingerState, &until
-					t.lingering[c.tuple()] = c
-				}
-				delete(t.conns, e.SK)
-				if t.byInode[c.row.Inode] == c {
-					delete(t.byInode, c.row.Inode)
-				}
-				t.recentClosed[e.SK] = c
-				t.closedNow = append(t.closedNow, c)
+				t.finish(c, e.SK, ts, e.Old)
 			}
 		case bpftcp.Accept, bpftcp.AcceptFD:
 			if c == nil {
@@ -295,7 +299,7 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 			}
 		case bpftcp.TimeWaitStart:
 			if c != nil {
-				c.lingerState = e.New
+				c.lingerState, c.lingerTS = e.New, ts
 			}
 		case bpftcp.TimeWaitEnd:
 			tp := tuple{family(e.Family), e.SAddr, e.DAddr, e.SPort, e.DPort}
@@ -312,6 +316,25 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 			}
 		}
 	}
+}
+
+// finish closes a connection at ts; final is its last state before TCP_CLOSE.
+func (t *tcpTracker) finish(c *tconn, sk uint64, ts int64, final int) {
+	c.row.CloseTS, c.row.FinalState, c.dirty = &ts, final, true
+	if c.lingerState != 0 {
+		until := ts + timeWaitMS
+		if c.lingerState == bpftcp.FinWait2 {
+			until = ts + t.finTimeout
+		}
+		c.row.LingerState, c.row.LingerUntil = c.lingerState, &until
+		t.lingering[c.tuple()] = c
+	}
+	delete(t.conns, sk)
+	if t.byInode[c.row.Inode] == c {
+		delete(t.byInode, c.row.Inode)
+	}
+	t.recentClosed[sk] = c
+	t.closedNow = append(t.closedNow, c)
 }
 
 // adopt starts tracking a connection at its first event: a new connection,

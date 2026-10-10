@@ -57,6 +57,7 @@ const (
 	tcpRBMapEvents                   = "events"
 	tcpRBMapNosockResets             = "nosock_resets"
 	tcpRBMapOwners                   = "owners"
+	tcpRBMapStateBusy                = "state_busy"
 	tcpRBMapSyscallFd                = "syscall_fd"
 	tcpRBProgHandleAcceptFexit       = "handle_accept_fexit"
 	tcpRBProgHandleAcceptKret        = "handle_accept_kret"
@@ -74,6 +75,8 @@ const (
 	tcpRBProgHandleRetransmit        = "handle_retransmit"
 	tcpRBProgHandleSendReset         = "handle_send_reset"
 	tcpRBProgHandleSetState          = "handle_set_state"
+	tcpRBProgHandleSetStateBtf       = "handle_set_state_btf"
+	tcpRBProgHandleSetStateBtf2      = "handle_set_state_btf2"
 	tcpRBProgHandleTwEndFentry       = "handle_tw_end_fentry"
 	tcpRBProgHandleTwEndKprobe       = "handle_tw_end_kprobe"
 	tcpRBProgHandleTwFentry          = "handle_tw_fentry"
@@ -139,6 +142,8 @@ type tcpRBProgramSpecs struct {
 	HandleRetransmit        *ebpf.ProgramSpec `ebpf:"handle_retransmit"`
 	HandleSendReset         *ebpf.ProgramSpec `ebpf:"handle_send_reset"`
 	HandleSetState          *ebpf.ProgramSpec `ebpf:"handle_set_state"`
+	HandleSetStateBtf       *ebpf.ProgramSpec `ebpf:"handle_set_state_btf"`
+	HandleSetStateBtf2      *ebpf.ProgramSpec `ebpf:"handle_set_state_btf2"`
 	HandleTwEndFentry       *ebpf.ProgramSpec `ebpf:"handle_tw_end_fentry"`
 	HandleTwEndKprobe       *ebpf.ProgramSpec `ebpf:"handle_tw_end_kprobe"`
 	HandleTwFentry          *ebpf.ProgramSpec `ebpf:"handle_tw_fentry"`
@@ -155,6 +160,7 @@ type tcpRBMapSpecs struct {
 	Events       *ebpf.MapSpec `ebpf:"events"`
 	NosockResets *ebpf.MapSpec `ebpf:"nosock_resets"`
 	Owners       *ebpf.MapSpec `ebpf:"owners"`
+	StateBusy    *ebpf.MapSpec `ebpf:"state_busy"`
 	SyscallFd    *ebpf.MapSpec `ebpf:"syscall_fd"`
 }
 
@@ -191,6 +197,7 @@ type tcpRBMaps struct {
 	Events       *ebpf.Map `ebpf:"events"`
 	NosockResets *ebpf.Map `ebpf:"nosock_resets"`
 	Owners       *ebpf.Map `ebpf:"owners"`
+	StateBusy    *ebpf.Map `ebpf:"state_busy"`
 	SyscallFd    *ebpf.Map `ebpf:"syscall_fd"`
 }
 
@@ -202,6 +209,7 @@ func (m *tcpRBMaps) Close() error {
 		m.Events,
 		m.NosockResets,
 		m.Owners,
+		m.StateBusy,
 		m.SyscallFd,
 	)
 }
@@ -233,6 +241,8 @@ type tcpRBPrograms struct {
 	HandleRetransmit        *ebpf.Program `ebpf:"handle_retransmit"`
 	HandleSendReset         *ebpf.Program `ebpf:"handle_send_reset"`
 	HandleSetState          *ebpf.Program `ebpf:"handle_set_state"`
+	HandleSetStateBtf       *ebpf.Program `ebpf:"handle_set_state_btf"`
+	HandleSetStateBtf2      *ebpf.Program `ebpf:"handle_set_state_btf2"`
 	HandleTwEndFentry       *ebpf.Program `ebpf:"handle_tw_end_fentry"`
 	HandleTwEndKprobe       *ebpf.Program `ebpf:"handle_tw_end_kprobe"`
 	HandleTwFentry          *ebpf.Program `ebpf:"handle_tw_fentry"`
@@ -257,6 +267,8 @@ func (p *tcpRBPrograms) Close() error {
 		p.HandleRetransmit,
 		p.HandleSendReset,
 		p.HandleSetState,
+		p.HandleSetStateBtf,
+		p.HandleSetStateBtf2,
 		p.HandleTwEndFentry,
 		p.HandleTwEndKprobe,
 		p.HandleTwFentry,

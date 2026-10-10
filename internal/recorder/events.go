@@ -205,6 +205,9 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 				out[ebpfStat(k)] = int64(n)
 			}
 		}
+		if n := src.MissedRuns(); n > 0 {
+			out["ebpf_missed_runs"] = int64(n)
+		}
 		return out
 	}
 	done := make(chan struct{})

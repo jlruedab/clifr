@@ -182,7 +182,7 @@ func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
 	if r.tcp.src.TWEnd {
 		tw = "time-wait end exact"
 	}
-	desc := fmt.Sprintf("events (%s, %s, %s), keyframe every %s", r.tcp.src.Buffer, r.tcp.src.Probes, tw, r.cfg.KeyframeInterval)
+	desc := fmt.Sprintf("events (%s, %s, state %s, %s), keyframe every %s", r.tcp.src.Buffer, r.tcp.src.Probes, r.tcp.src.State, tw, r.cfg.KeyframeInterval)
 	if len(r.tcp.src.Missing) > 0 {
 		desc += ", missing " + strings.Join(r.tcp.src.Missing, " ")
 	}

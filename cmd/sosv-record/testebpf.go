@@ -204,7 +204,7 @@ func testTCP(o bpftcp.Options, check func(string, bool, string)) {
 		return
 	}
 	defer src.Close()
-	fmt.Printf("tcp loaded: buffer %s, probes %s, missing %v\n", src.Buffer, src.Probes, src.Missing)
+	fmt.Printf("tcp loaded: buffer %s, probes %s, state %s, missing %v\n", src.Buffer, src.Probes, src.State, src.Missing)
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		check("tcp: listen", false, err.Error())
@@ -284,7 +284,8 @@ func testTCP(o bpftcp.Options, check func(string, bool, string)) {
 	try("tcp: time-wait continuation", ok1 || ok2, "")
 	_, ok = find(sk["rst"], func(e bpftcp.Event) bool { return e.Kind == bpftcp.ActiveReset })
 	try("tcp: reset sent (SO_LINGER 0)", ok, "")
-	e, ok = find(sk["refused"], func(e bpftcp.Event) bool { return e.New == bpftcp.Close })
+	// By port as well: the pointer may have belonged to an earlier socket of this test.
+	e, ok = find(sk["refused"], func(e bpftcp.Event) bool { return e.New == bpftcp.Close && e.DPort == deadPort })
 	try("tcp: refused connect, reset received", ok && e.ResetsReceived > 0, fmt.Sprintf("resets received %d", e.ResetsReceived))
 	fmt.Printf("tcp drops: %v\n", src.Drops())
 }

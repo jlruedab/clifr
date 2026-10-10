@@ -247,6 +247,18 @@ func (s *Source) Drops() map[Kind]uint64 {
 	return out
 }
 
+// MissedRuns counts the times the kernel did not run one of the programs
+// because another BPF program was running on the CPU: events lost without a
+// trace in Drops (0 before Linux 5.12).
+func (s *Source) MissedRuns() (n uint64) {
+	for _, p := range s.coll.Programs {
+		if st, err := p.Stats(); err == nil {
+			n += st.RecursionMisses
+		}
+	}
+	return n
+}
+
 var eventSize = binary.Size(procRBEvent{})
 
 func decode(raw []byte) (Event, error) {

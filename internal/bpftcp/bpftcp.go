@@ -84,7 +84,7 @@ type Event struct {
 
 type Options struct {
 	ForcePerf    bool // perf event array even if a ring buffer is available
-	ForceKprobes bool // kprobes even if fentry/fexit work
+	ForceKprobes bool // kprobes even if fentry/fexit work, and the classic state tracepoint
 	BufferBytes  int  // ring buffer size, or perf buffer per CPU (0: default)
 	MapEntries   int  // capacity of the per-connection maps (0: default 131072)
 }
@@ -96,6 +96,7 @@ type Source struct {
 	pr      *perf.Reader
 	Buffer  string   // "ringbuf" or "perf"
 	Probes  string   // "fentry" or "kprobe"
+	State   string   // state changes from "tp_btf" or the classic "tracepoint"
 	Missing []string // optional hooks that could not be attached
 	TWEnd   bool     // time-wait ends are reported (inet_twsk_kill attached)
 	lost    atomic.Uint64
@@ -114,18 +115,23 @@ func Open(o Options) (*Source, error) {
 			if fentry && o.ForceKprobes {
 				continue
 			}
-			s, err := open(perfBuf, fentry, o)
-			if err == nil {
-				return s, nil
+			for _, btfState := range []bool{true, false} {
+				if btfState && o.ForceKprobes {
+					continue
+				}
+				s, err := open(perfBuf, fentry, btfState, o)
+				if err == nil {
+					return s, nil
+				}
+				errs = append(errs, fmt.Errorf("buffer %s, probes %s, state %s: %w", map[bool]string{false: "ringbuf", true: "perf"}[perfBuf],
+					map[bool]string{true: "fentry", false: "kprobe"}[fentry], map[bool]string{true: "tp_btf", false: "tracepoint"}[btfState], err))
 			}
-			errs = append(errs, fmt.Errorf("buffer %s, probes %s: %w", map[bool]string{false: "ringbuf", true: "perf"}[perfBuf],
-				map[bool]string{true: "fentry", false: "kprobe"}[fentry], err))
 		}
 	}
 	return nil, errors.Join(errs...)
 }
 
-func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
+func open(perfBuf, fentry, btfState bool, o Options) (s *Source, err error) {
 	var spec *ebpf.CollectionSpec
 	if perfBuf {
 		spec, err = loadTcpPerf()
@@ -152,11 +158,17 @@ func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
 			delete(spec.Programs, p[0])
 		}
 	}
+	if btfState {
+		delete(spec.Programs, "handle_set_state")
+	} else {
+		delete(spec.Programs, "handle_set_state_btf")
+		delete(spec.Programs, "handle_set_state_btf2")
+	}
 	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
 		return nil, err
 	}
-	s = &Source{coll: coll, Buffer: "ringbuf", Probes: "kprobe"}
+	s = &Source{coll: coll, Buffer: "ringbuf", Probes: "kprobe", State: "tracepoint"}
 	defer func() {
 		if err != nil {
 			s.Close()
@@ -225,7 +237,16 @@ func open(perfBuf, fentry bool, o Options) (s *Source, err error) {
 	} else {
 		s.Missing = append(s.Missing, "inet_twsk_kill")
 	}
-	if err = tp("sock", "inet_sock_set_state", "handle_set_state", true); err != nil {
+	if btfState {
+		// The second program first: it reports what the first one misses.
+		for _, p := range []string{"handle_set_state_btf2", "handle_set_state_btf"} {
+			if l, err = link.AttachTracing(link.TracingOptions{Program: coll.Programs[p]}); err != nil {
+				return
+			}
+			s.links = append(s.links, l)
+		}
+		s.State = "tp_btf"
+	} else if err = tp("sock", "inet_sock_set_state", "handle_set_state", true); err != nil {
 		return
 	}
 	if perfBuf {
@@ -319,6 +340,30 @@ func (s *Source) Drops() map[Kind]uint64 {
 		}
 	}
 	return out
+}
+
+// MissedRuns counts the times the kernel did not run one of the programs
+// because a BPF program was already running on the CPU: events or counts
+// lost without a trace in Drops (0 before Linux 5.12). State changes the
+// first state program missed and the second reported are not lost.
+func (s *Source) MissedRuns() (n uint64) {
+	for _, p := range s.coll.Programs {
+		if st, err := p.Stats(); err == nil {
+			n += st.RecursionMisses
+		}
+	}
+	return n - min(n, s.StateRescued())
+}
+
+// StateRescued counts the state changes reported by the second state program.
+func (s *Source) StateRescued() (n uint64) {
+	var perCPU []uint64
+	if m := s.coll.Maps["state_busy"]; m != nil && m.Lookup(uint32(1), &perCPU) == nil {
+		for _, v := range perCPU {
+			n += v
+		}
+	}
+	return n
 }
 
 var eventSize = binary.Size(tcpRBTcpEvent{})
