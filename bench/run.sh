@@ -24,6 +24,8 @@
 #                     calibrate per machine, see README)
 #   --clients N --threads N   pgbench clients/threads (default: 16/4)
 #   --load-args "..." extra flags for bench/bin/load (e.g. "--conns 5000")
+#   --rec-args "..."  extra flags for sosv-record in B, C and D; RUN in them is the
+#                     run's directory (e.g. "--pprof-dir RUN/pprof")
 #   --drop-caches     drop the page cache before each run
 #   --keep-db         keep each run's sosv database (default: delete it after
 #                     saving its size, stats and per-sample table)
@@ -61,7 +63,7 @@ cd "$(dirname "$0")/.."
 ROOT=$PWD
 
 PROFILES=busy CONFIGS="A B C D V1 R1" REPEATS=3 BPF_STATS="" CPUS="" WARMUP=120 MEASURE=900
-PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
+PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" REC_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
 while (($#)); do
     case $1 in
     --profiles) PROFILES=${2//,/ }; shift ;;
@@ -74,6 +76,7 @@ while (($#)); do
     --clients) CLIENTS=$2; shift ;;
     --threads) THREADS=$2; shift ;;
     --load-args) LOAD_ARGS=$2; shift ;;
+    --rec-args) REC_ARGS=$2; shift ;;
     --drop-caches) DROP_CACHES=1 ;;
     --bpf-stats) BPF_STATS=--bpf-stats ;;
     --cpus) CPUS=$2; shift ;;
@@ -170,7 +173,7 @@ recorder_cmd() {
     V1) echo "nice -n 10 ionice -c 3 $BIN/sosv-v1 record --db $RUN/sosv.db --interval 30s --fd-interval 120s"; return ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     esac
-    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir $RUN/data $BPF_STATS $s"
+    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
 }
 
 stop_all() {

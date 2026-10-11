@@ -294,11 +294,21 @@ func (r *Recorder) Run(ctx context.Context) error {
 		if r.cfg.Duration > 0 && time.Since(start) >= r.cfg.Duration {
 			break
 		}
-		if d := time.Until(next); d > 0 {
+		for {
+			d := time.Until(next)
+			if d <= 0 {
+				break
+			}
+			if r.tcp != nil {
+				d = min(d, tcpDrainEvery)
+			}
 			select {
 			case <-ctx.Done():
 				return r.shutdown()
 			case <-time.After(d):
+			}
+			if r.tcp != nil && time.Until(next) > 0 {
+				r.drainTCP()
 			}
 		}
 		if ctx.Err() != nil {

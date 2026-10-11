@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,7 @@ func run(args []string) error {
 	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
 	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof output this often")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
+	fs.IntVar(&c.Parquet.FlushRows, "flush-rows", 400_000, "also write them once this many rows are buffered: lowers the heap's peak under load, for more and smaller files (0 = only by time)")
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")
 	fs.StringVar(&c.Events, "events", "auto", "process events: auto (eBPF, else the proc connector), ebpf, proc_connector or none")
 	fs.StringVar(&c.FDMode, "fd-mode", "held", "open files: held (fds held across two walks, and deleted files) or all (v1: every fd)")
@@ -61,6 +63,7 @@ func run(args []string) error {
 	fs.BoolVar(&c.EBPF.ForceClassicFork, "ebpf-classic-fork", false, "use the classic fork, exec and exit tracepoints even if tp_btf works (to test the fallback)")
 	fs.BoolVar(&c.TCPBPF.ForceKprobes, "ebpf-kprobes", false, "use kprobes and the classic state tracepoint even if fentry/fexit and tp_btf work (to test the fallback)")
 	bpfStats := fs.Bool("bpf-stats", false, "measure the eBPF programs' own run time (adds a little to every run); shown by sosv stats")
+	pprofDir := fs.String("pprof-dir", "", "write the recorder's own CPU and heap profiles to this directory (for development)")
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	maxSize := fs.String("max-size", "0", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
@@ -85,6 +88,11 @@ func run(args []string) error {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}
 	logger := log.New(os.Stderr, "sosv-record: ", log.LstdFlags)
+	if os.Getenv("GOGC") == "" {
+		// The recorder's memory is mostly rows waiting for the next flush,
+		// and garbage on top of them: collect at +50% instead of Go's +100%.
+		debug.SetGCPercent(50)
+	}
 	if *bpfStats {
 		// Kernel-wide while this descriptor is open (Linux 5.8+).
 		st, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME))
@@ -92,6 +100,13 @@ func run(args []string) error {
 			return fmt.Errorf("--bpf-stats: %w", err)
 		}
 		defer st.Close()
+	}
+	if *pprofDir != "" {
+		stopProfile, err := startProfile(*pprofDir)
+		if err != nil {
+			return fmt.Errorf("--pprof-dir: %w", err)
+		}
+		defer stopProfile()
 	}
 	r, err := recorder.New(c, logger)
 	if err != nil {

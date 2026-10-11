@@ -250,6 +250,7 @@ func readConns(t *testing.T, path string) []conn {
 type tcpTruth struct {
 	port, serverPID, clientPID int
 	conns                      []conn
+	from                       int64 // ms: just after the server started
 }
 
 func (e *env) runTCP() tcpTruth {
@@ -260,7 +261,7 @@ func (e *env) runTCP() tcpTruth {
 	if done != "DONE" {
 		e.t.Fatalf("client: %q", done)
 	}
-	tr := tcpTruth{serverPID: srv.Process.Pid, clientPID: cli.Process.Pid, conns: readConns(e.t, out)}
+	tr := tcpTruth{serverPID: srv.Process.Pid, clientPID: cli.Process.Pid, conns: readConns(e.t, out), from: began.UnixMilli()}
 	tr.port, _ = strconv.Atoi(port)
 	cli.Wait()
 	time.Sleep(time.Second) // the server closes its ends
@@ -424,7 +425,9 @@ func (e *env) checkTCP(tr tcpTruth) {
 	extra := 0
 	for _, rows := range m.by {
 		for _, r := range rows {
-			if !r.used && r.dir != "listen" {
+			// Older than the server: a time-wait socket of an earlier owner
+			// of the port, found by the first keyframe.
+			if !r.used && r.dir != "listen" && r.open >= tr.from {
 				extra++
 			}
 		}

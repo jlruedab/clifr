@@ -55,6 +55,8 @@ type tcpTracker struct {
 
 	mu       sync.Mutex
 	queue    []bpftcp.Event
+	spare    []bpftcp.Event // the array of the batch applied last
+	rows     store.Batch    // transitions and guard events of the events applied since the last sample
 	received map[string]int64
 	reported map[string][2]int64
 
@@ -94,6 +96,20 @@ func newTCPTracker(src *bpftcp.Source) *tcpTracker {
 }
 
 // startTCP loads the TCP programs and starts reading their events.
+// tcpReadPause is how long the reader leaves the event buffer alone once it
+// is empty. Events carry their own kernel time and are applied at the next
+// sample, so the pause costs nothing but buffer space.
+const tcpReadPause = 20 * time.Millisecond
+
+// tcpStat: the recorder_stats source of each event kind.
+var tcpStat = func() map[bpftcp.Kind]string {
+	m := map[bpftcp.Kind]string{}
+	for _, k := range bpftcp.Kinds {
+		m[k] = "tcp_" + k.String()
+	}
+	return m
+}()
+
 func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 	src, err := bpftcp.Open(r.cfg.TCPBPF)
 	if err != nil {
@@ -105,23 +121,27 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var batch []bpftcp.Event
 		for {
 			select {
 			case <-done:
 				return
 			default:
 			}
-			e, err := src.Read(time.Second)
-			if errors.Is(err, bpftcp.ErrTimeout) {
-				continue
-			}
-			if err != nil {
+			var err error
+			batch, err = src.ReadBatch(batch[:0], tcpReadPause)
+			if err != nil && !errors.Is(err, bpftcp.ErrTimeout) {
 				r.log.Printf("eBPF TCP read: %v", err)
 				return
 			}
+			if len(batch) == 0 {
+				continue
+			}
 			t.mu.Lock()
-			t.queue = append(t.queue, e)
-			t.received["tcp_"+e.Kind.String()]++
+			t.queue = append(t.queue, batch...)
+			for i := range batch {
+				t.received[tcpStat[batch[i].Kind]]++
+			}
 			t.mu.Unlock()
 		}
 	}()
@@ -145,8 +165,10 @@ func (t *tcpTracker) markQueued() {
 func (t *tcpTracker) take() []bpftcp.Event {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// The previous batch has been applied by now: its array takes the
+	// next events.
 	q := t.queue
-	t.queue = nil
+	t.queue, t.spare = t.spare[:0], q
 	return q
 }
 
@@ -233,10 +255,28 @@ func (c *tconn) setTuple(e bpftcp.Event) bool {
 	return false
 }
 
-// applyTCP folds the queued events into the connection state.
+// tcpDrainEvery: between samples the queued events are folded into the
+// connection state this often, so that the queue holds seconds of events and
+// not a whole sample interval (30 s of a busy server's events were the
+// recorder's largest single use of memory).
+const tcpDrainEvery = 5 * time.Second
+
+// applyTCP folds the queued events into the connection state and hands the
+// sample's rows to b.
 func (r *Recorder) applyTCP(b *store.Batch) {
+	r.drainTCP()
 	t := r.tcp
-	t.recentClosed, t.closedNow = map[uint64]*tconn{}, nil
+	b.TCPTrans = append(b.TCPTrans, t.rows.TCPTrans...)
+	b.Guard = append(b.Guard, t.rows.Guard...)
+	t.rows.TCPTrans, t.rows.Guard = t.rows.TCPTrans[:0], nil
+}
+
+// drainTCP folds the queued events into the connection state; the rows they
+// produce wait in t.rows for the next sample. Called from the sampling
+// goroutine only.
+func (r *Recorder) drainTCP() {
+	t := r.tcp
+	b := &t.rows
 	for _, e := range t.take() {
 		ts := wallMS(e.MonoNS)
 		c := t.conns[e.SK]
@@ -551,6 +591,8 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 			delete(t.lingering, tp)
 		}
 	}
+	// The sample is written: what closed during it is no longer needed.
+	t.recentClosed, t.closedNow = map[uint64]*tconn{}, nil
 }
 
 // closeAllTCP ends every open connection at shutdown (seen until ts).

@@ -43,6 +43,7 @@ import (
 
 type Options struct {
 	FlushInterval time.Duration // default 5 minutes
+	FlushRows     int           // also flush once this many rows are buffered (0: only by time)
 	Retention     time.Duration // 0 = keep everything
 	MaxBytes      int64         // 0 = no size cap
 	Logf          func(format string, args ...any)
@@ -329,10 +330,17 @@ func (s *Store) Write(b *store.Batch) error {
 		s.verify = append(s.verify, verifyRow{ID: s.idBase() + s.verifyID, TS: v.TS, EndTS: v.EndTS, Cmd: v.Cmd,
 			SampleTS: v.SampleTS, IgnorePIDs: v.IgnorePIDs, Output: v.Output})
 	}
-	if b.Sample.TS != 0 && time.Since(s.lastFlush) >= s.opt.FlushInterval {
+	if b.Sample.TS != 0 && (time.Since(s.lastFlush) >= s.opt.FlushInterval || s.opt.FlushRows > 0 && s.buffered() >= s.opt.FlushRows) {
 		return s.Flush()
 	}
 	return nil
+}
+
+// buffered counts the rows waiting for the next flush in the tables that
+// grow with the load: they are what the store's memory consists of.
+func (s *Store) buffered() int {
+	return len(s.trans) + len(s.conns.closed) + len(s.keyframes) + len(s.procs.closed) + len(s.procSamples.rows) +
+		len(s.held.closed) + len(s.socks.closed) + len(s.sockSamples.rows) + len(s.owners.closed) + len(s.files.closed)
 }
 
 // Flush writes everything buffered and rewrites the open files.
@@ -380,7 +388,8 @@ func (s *Store) Flush() error {
 		writeOpen(s, "fds_held", s.held, s.lastFD, func(r *heldRow) *int64 { return &r.FirstSeen }, func(r *heldRow, v int64) { r.LastSeen = &v }),
 		writeOpen(s, "tcp_conns", s.conns, s.lastAny, func(r *tcpConnRow) *int64 { return &r.OpenTS }, func(r *tcpConnRow, v int64) { r.LastSeen = &v }))
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
-	s.trans, s.keyframes, s.reconcile, s.mounts = nil, nil, nil, nil
+	s.trans = s.trans[:0] // no pointers: keep the array
+	s.keyframes, s.reconcile, s.mounts = nil, nil, nil
 	s.conns.reset()
 	s.held.reset()
 	s.procs.reset()

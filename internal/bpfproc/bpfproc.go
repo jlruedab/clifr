@@ -9,12 +9,12 @@ package bpfproc
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -88,6 +88,7 @@ type Source struct {
 	coll   *ebpf.Collection
 	links  []link.Link
 	rb     *ringbuf.Reader
+	rec    ringbuf.Record // reused by Read
 	pr     *perf.Reader
 	Buffer string // "ringbuf" or "perf"
 	Fork   string // fork, exec and exit from "tp_btf" or classic "tracepoint"
@@ -218,11 +219,10 @@ func (s *Source) Read(wait time.Duration) (Event, error) {
 		var raw []byte
 		if s.rb != nil {
 			s.rb.SetDeadline(time.Now().Add(wait))
-			rec, err := s.rb.Read()
-			if err != nil {
+			if err := s.rb.ReadInto(&s.rec); err != nil {
 				return Event{}, err
 			}
-			raw = rec.RawSample
+			raw = s.rec.RawSample
 		} else {
 			s.pr.SetDeadline(time.Now().Add(wait))
 			rec, err := s.pr.Read()
@@ -292,37 +292,30 @@ func (s *Source) ProgStats() map[string][2]uint64 {
 	return out
 }
 
-var eventSize = binary.Size(procRBEvent{})
+const eventSize = int(unsafe.Sizeof(procRBEvent{}))
 
+// decode copies the raw event into the generated struct (host layout, the
+// same bytes the kernel side wrote); no reflection. Fork, exit and OOM
+// events stop before filename.
 func decode(raw []byte) (Event, error) {
-	buf := make([]byte, eventSize) // fork/exit/oom events stop before filename
-	copy(buf, raw)
 	var r procRBEvent
-	if err := binary.Read(bytes.NewReader(buf), binary.NativeEndian, &r); err != nil {
-		return Event{}, err
-	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(&r)), eventSize), raw)
 	e := Event{Kind: Kind(r.Kind), PID: int(r.Pid), PPID: int(r.Ppid), UID: int(r.Uid), MonoNS: r.MonoNs,
 		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb}
 	if e.Kind == Exec {
 		e.Filename = cstr(r.Filename[:])
 		n := min(int(r.ArgsLen), ArgsMax)
-		args := make([]byte, n)
-		for i := range args {
-			args[i] = byte(r.Args[i])
-		}
-		e.Cmdline = procfs.ParseCmdline(args)
+		e.Cmdline = procfs.ParseCmdline(unsafe.Slice((*byte)(unsafe.Pointer(&r.Args[0])), n))
 		e.ArgsTruncated = int(r.ArgsLen) > ArgsMax
 	}
 	return e, nil
 }
 
-func cstr(b []int8) string {
-	out := make([]byte, 0, len(b))
-	for _, c := range b {
-		if c == 0 {
-			break
-		}
-		out = append(out, byte(c))
+// cstr converts a NUL-terminated C string.
+func cstr(c []int8) string {
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&c[0])), len(c))
+	if i := bytes.IndexByte(b, 0); i >= 0 {
+		b = b[:i]
 	}
-	return string(out)
+	return string(b)
 }

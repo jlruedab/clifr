@@ -8,14 +8,13 @@
 package bpftcp
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/netip"
 	"os"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -93,6 +92,7 @@ type Source struct {
 	coll    *ebpf.Collection
 	links   []link.Link
 	rb      *ringbuf.Reader
+	rec     ringbuf.Record // reused by ReadBatch
 	pr      *perf.Reader
 	Buffer  string   // "ringbuf" or "perf"
 	Probes  string   // "fentry" or "kprobe"
@@ -306,6 +306,44 @@ func (s *Source) Read(wait time.Duration) (Event, error) {
 	}
 }
 
+// batchMax bounds one ReadBatch, so that the caller's lock is taken regularly.
+const batchMax = 4096
+
+// ReadBatch appends the events waiting in the buffer to dst, without
+// blocking; with none waiting it sleeps for wait and returns ErrTimeout.
+// Reading in batches instead of one wake-up per event is what keeps the
+// reader cheap at high event rates: the kernel wakes a ring buffer's reader
+// only when it had caught up. (Perf buffers: one event per call, as Read.)
+func (s *Source) ReadBatch(dst []Event, wait time.Duration) ([]Event, error) {
+	if s.rb == nil {
+		e, err := s.Read(wait)
+		if err != nil {
+			return dst, err
+		}
+		return append(dst, e), nil
+	}
+	s.rb.SetDeadline(time.Now()) // already over: take what is there
+	for n := 0; n < batchMax; n++ {
+		err := s.rb.ReadInto(&s.rec)
+		if errors.Is(err, ErrTimeout) {
+			if n == 0 {
+				time.Sleep(wait)
+				return dst, ErrTimeout
+			}
+			return dst, nil
+		}
+		if err != nil {
+			return dst, err
+		}
+		e, err := decode(s.rec.RawSample)
+		if err != nil {
+			return dst, err
+		}
+		dst = append(dst, e)
+	}
+	return dst, nil
+}
+
 // Counters returns the in-kernel counters of a connection still open.
 func (s *Source) Counters(sk uint64) (retransmits, resetsSent, resetsReceived uint32, ok bool) {
 	var c tcpRBCounters
@@ -379,16 +417,16 @@ func (s *Source) ProgStats() map[string][2]uint64 {
 	return out
 }
 
-var eventSize = binary.Size(tcpRBTcpEvent{})
+const eventSize = int(unsafe.Sizeof(tcpRBTcpEvent{}))
 
+// decode copies the raw event into the generated struct (host layout, the
+// same bytes the kernel side wrote): no reflection, nothing allocated.
 func decode(raw []byte) (Event, error) {
 	if len(raw) < eventSize {
 		return Event{}, fmt.Errorf("short TCP event: %d bytes", len(raw))
 	}
 	var r tcpRBTcpEvent
-	if err := binary.Read(bytes.NewReader(raw[:eventSize]), binary.NativeEndian, &r); err != nil {
-		return Event{}, err
-	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(&r)), eventSize), raw)
 	e := Event{Kind: Kind(r.Kind), MonoNS: r.MonoNs, SK: r.Sk, Old: int(r.Oldstate), New: int(r.Newstate),
 		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport),
 		Owner:       Owner{PID: int(r.Owner.Pid), StartNS: r.Owner.StartNs, FD: int(r.Owner.Fd), Inode: r.Owner.Inode},
