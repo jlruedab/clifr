@@ -96,9 +96,9 @@ func newTCPTracker(src *bpftcp.Source) *tcpTracker {
 }
 
 // startTCP loads the TCP programs and starts reading their events.
-// tcpReadPause is how long the reader leaves the event buffer alone once it
-// is empty. Events carry their own kernel time and are applied at the next
-// sample, so the pause costs nothing but buffer space.
+// tcpReadPause is how long the reader leaves the event buffer alone while
+// events are frequent. Events carry their own kernel time and are applied
+// later anyway, so the pause costs nothing but buffer space.
 const tcpReadPause = 20 * time.Millisecond
 
 // tcpStat: the recorder_stats source of each event kind.
@@ -129,7 +129,7 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 			default:
 			}
 			var err error
-			batch, err = src.ReadBatch(batch[:0], tcpReadPause)
+			batch, err = src.ReadBatch(batch[:0], time.Second, tcpReadPause)
 			if err != nil && !errors.Is(err, bpftcp.ErrTimeout) {
 				r.log.Printf("eBPF TCP read: %v", err)
 				return

@@ -93,6 +93,7 @@ type Source struct {
 	links   []link.Link
 	rb      *ringbuf.Reader
 	rec     ringbuf.Record // reused by ReadBatch
+	busy    bool           // ReadBatch: events are frequent, read in batches
 	pr      *perf.Reader
 	Buffer  string   // "ringbuf" or "perf"
 	Probes  string   // "fentry" or "kprobe"
@@ -309,12 +310,16 @@ func (s *Source) Read(wait time.Duration) (Event, error) {
 // batchMax bounds one ReadBatch, so that the caller's lock is taken regularly.
 const batchMax = 4096
 
-// ReadBatch appends the events waiting in the buffer to dst, without
-// blocking; with none waiting it sleeps for wait and returns ErrTimeout.
-// Reading in batches instead of one wake-up per event is what keeps the
-// reader cheap at high event rates: the kernel wakes a ring buffer's reader
-// only when it had caught up. (Perf buffers: one event per call, as Read.)
-func (s *Source) ReadBatch(dst []Event, wait time.Duration) ([]Event, error) {
+// ReadBatch appends the events waiting in the buffer to dst. With none
+// waiting it blocks for the next one, up to wait (ErrTimeout after that). If
+// that one came within half of pause, events are frequent: from then on each
+// call first leaves the buffer alone for pause and takes what has gathered,
+// until a pause brings fewer than busyBatch events. Reading in batches
+// instead of one wake-up per event is what keeps the reader cheap at high
+// event rates (the kernel wakes a ring buffer's reader only when it had caught
+// up), and blocking keeps it asleep when there are none. (Perf buffers: one
+// event per call, as Read.)
+func (s *Source) ReadBatch(dst []Event, wait, pause time.Duration) ([]Event, error) {
 	if s.rb == nil {
 		e, err := s.Read(wait)
 		if err != nil {
@@ -322,15 +327,41 @@ func (s *Source) ReadBatch(dst []Event, wait time.Duration) ([]Event, error) {
 		}
 		return append(dst, e), nil
 	}
+	if s.busy {
+		// Events were frequent a moment ago: one wake-up per pause.
+		time.Sleep(pause)
+	}
+	dst, err := s.drain(dst)
+	s.busy = s.busy && len(dst) >= busyBatch
+	if err != nil || len(dst) > 0 {
+		return dst, err
+	}
+	t0 := time.Now()
+	s.rb.SetDeadline(t0.Add(wait))
+	if err := s.rb.ReadInto(&s.rec); err != nil {
+		return dst, err
+	}
+	e, err := decode(s.rec.RawSample)
+	if err != nil {
+		return dst, err
+	}
+	dst = append(dst, e)
+	if time.Since(t0) < pause/2 {
+		s.busy = true
+	}
+	return dst, nil
+}
+
+// busyBatch: fewer events than this in one pause end the batching.
+const busyBatch = 4
+
+// drain appends what is in the ring buffer now, without blocking.
+func (s *Source) drain(dst []Event) ([]Event, error) {
 	s.rb.SetDeadline(time.Now()) // already over: take what is there
 	for n := 0; n < batchMax; n++ {
 		err := s.rb.ReadInto(&s.rec)
 		if errors.Is(err, ErrTimeout) {
-			if n == 0 {
-				time.Sleep(wait)
-				return dst, ErrTimeout
-			}
-			return dst, nil
+			break
 		}
 		if err != nil {
 			return dst, err
