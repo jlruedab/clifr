@@ -189,10 +189,8 @@ var costMetrics = []metricDef{
 	{"store_per_h", "DB (or atop file) growth per hour", bytesFmt},
 	{"store_per_day", "DB growth per day (extrapolated)", bytesFmt},
 	{"day_per_1k_procs", "DB per day per 1,000 processes", bytesFmt},
-	{"day_per_10k_socks", "DB per day per 10,000 sockets", bytesFmt},
 	{"rows_per_sample", "Rows written per sample", func(v float64) string { return numFmt(v, 0) }},
 	{"nproc", "Processes per sample", func(v float64) string { return numFmt(v, 0) }},
-	{"nsock", "Sockets per sample", func(v float64) string { return numFmt(v, 0) }},
 	{"skipped", "Skipped samples", func(v float64) string { return numFmt(v, 0) }},
 	{"fd_interval_end", "fd interval at the end, s (guard rail)", func(v float64) string { return numFmt(v, 0) }},
 }
@@ -465,6 +463,9 @@ func scalingSections(s *Scaling) []section {
 			gw.label() + ratioText(gw), signedBytes(gd.PerUnit*unit) + " " + per, gd.label() + ratioText(gd)})
 	}
 	sec.Blocks = append(sec.Blocks, block{Table: t}, block{Table: gt})
+	if bt := bpfTable(s); bt != nil {
+		sec.Blocks = append(sec.Blocks, block{Table: bt})
+	}
 	gt.Note = "Growth compares the marginal cost on the upper segment (middle to highest value) with the lower one (lowest to middle): " +
 		"a ratio near 1 is linear, above 1.4 faster than linear. Costs include the fixed baseline load, so only the marginal figures isolate one dimension."
 	for _, dim := range s.Dims {
@@ -494,6 +495,28 @@ func scalingSections(s *Scaling) []section {
 		sec.Blocks = append(sec.Blocks, sub.Blocks...)
 	}
 	return []section{sec}
+}
+
+// bpfTable is the eBPF programs' own run time per scaling point; nil when no
+// point recorded it.
+func bpfTable(s *Scaling) *table {
+	t := &table{Head: []string{"Dimension", "Value", "eBPF CPU % of one core", "Recorder + eBPF", "Program runs/s", "ns per run", "Costliest program (share)"}}
+	for _, dim := range s.Dims {
+		for _, p := range dimPoints(s, dim) {
+			if p.BPFPct <= 0 {
+				continue
+			}
+			t.Rows = append(t.Rows, []string{dim, tickText(p.Value), pct(p.BPFPct), pct(p.CPUPct + p.BPFPct),
+				numFmt(p.BPFRunsPS, 0), numFmt(p.BPFNSRun, 0), fmt.Sprintf("%s (%s%%)", p.BPFTop, numFmt(p.BPFTopPct, 0))})
+		}
+	}
+	if len(t.Rows) == 0 {
+		return nil
+	}
+	t.Note = "eBPF programs: run time the kernel measured for the recorder's programs (kernel.bpf_stats_enabled, sosv-record --bpf-stats). " +
+		"They run inside the system calls and kernel paths of the observed processes, so this time is charged to those processes and is not part of the recorder's CPU column; " +
+		"the measurement itself adds a little to every run."
+	return t
 }
 
 func ratioText(g growth) string {
@@ -594,9 +617,9 @@ func (r *Report) method() section {
 	items := []string{
 		"Every process under test ran in its own systemd scope with CPU, memory and IO accounting; cgroup v2 counters and system-wide /proc counters were sampled every 5 s. Rates are counter differences over the measured window.",
 		"The recorder (and atop) ran with nice 10 and the idle IO class, like the shipped unit, but without its CPUQuota/MemoryMax, so the true cost is measured, not the cap. The sosv CPU guard rail (2% budget) was active in the matrix runs and may lengthen the fd interval; its events are listed per profile.",
-		"Workload: pgbench, by default read-only (-S) at a fixed transaction rate with the database cached in memory, and its output written to RAM. On the test VM the disk stalls for tens of seconds under write load, which made a read/write workload measure the host's flushing instead of the recorder. The impact on a disk-bound workload is therefore not measured here.",
+		"Workload: pgbench, by default read-only (-S) at a fixed transaction rate with the database cached in memory, and its output written to RAM. The impact on a disk-bound workload is not measured here.",
 		"Confidence intervals: t-distribution over the repeats (mean ± t·s/√n); differences vs. the baseline use Welch's interval. With fewer than two repeats no interval is given.",
-		"Disk use is an upper bound: sosv writes one SQLite transaction per sample.",
+		"Disk written is more than the data kept: the Parquet recorder rewrites the still-open entities at every flush and compacts hourly; v1 (SQLite) writes one transaction per sample.",
 		"Per-day figures extrapolate the measured window linearly.",
 	}
 	s.Blocks = append(s.Blocks, block{Items: items})

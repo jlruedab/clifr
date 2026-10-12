@@ -116,6 +116,12 @@ type Point struct {
 	AnonMax    float64 // bytes
 	NSock      float64
 	Samples    int
+	// The eBPF programs' own run time (sosv-stats.json; recorded with --bpf-stats).
+	BPFPct    float64 // % of one core
+	BPFRunsPS float64 // program runs per second
+	BPFNSRun  float64 // mean ns per run
+	BPFTop    string  // the program with the most run time
+	BPFTopPct float64 // its share of the eBPF run time, %
 }
 
 // Accuracy is one bench/accuracy.sh results directory.
@@ -392,7 +398,6 @@ func (run *Run) loadSamples() error {
 	day := m["store_per_h"] * 24
 	m["store_per_day"] = day
 	m["day_per_1k_procs"] = day / (m["nproc"] / 1000)
-	m["day_per_10k_socks"] = day / (m["nsock"] / 10000)
 	run.Guard = map[string]int{}
 	if g, err := readCSV(filepath.Join(run.Dir, "guard_events.csv.gz")); err == nil {
 		for _, e := range g {
@@ -510,8 +515,37 @@ func loadScaling(dir string, env map[string]string) (*Scaling, error) {
 			}
 			p.AnonMax = maxOf(anon)
 		}
+		p.loadBPF(filepath.Join(pdir, "sosv-stats.json"))
 	}
 	return s, nil
+}
+
+// loadBPF reads the eBPF programs' run time from the point's sosv stats, if
+// they were recorded.
+func (p *Point) loadBPF(path string) {
+	var st struct {
+		Pct   float64 `json:"bpf_cpu_pct_one_core"`
+		Progs map[string]struct {
+			Runs int64 `json:"runs"`
+			NS   int64 `json:"run_time_ns"`
+		} `json:"bpf_programs"`
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(b, &st) != nil || st.Pct <= 0 {
+		return
+	}
+	var runs, ns, top int64
+	for name, pr := range st.Progs {
+		runs, ns = runs+pr.Runs, ns+pr.NS
+		if pr.NS > top || pr.NS == top && name < p.BPFTop {
+			top, p.BPFTop = pr.NS, name
+		}
+	}
+	if runs == 0 || ns == 0 {
+		return
+	}
+	p.BPFPct, p.BPFNSRun, p.BPFTopPct = st.Pct, float64(ns)/float64(runs), float64(top)/float64(ns)*100
+	p.BPFRunsPS = float64(runs) / (float64(ns) / 1e9 / (st.Pct / 100))
 }
 
 func loadPassive(dir string, env map[string]string) (*Run, error) {

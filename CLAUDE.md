@@ -121,5 +121,12 @@ v2:
 4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [x] Long-held fd snapshots, mount events
 6. [x] Ground-truth tests (`test/truth`; full scale 41/41 checks, results: truth-full-20261010-1602)
-7. [ ] Benchmark: bpf_stats, new matrix, scaling, report
-8. [ ] README
+7. [x] Benchmark: bpf_stats, new matrix, scaling, report (results: busy-20261012-1050,
+   scaling-20261012-1050, report-20261012-1050). Open: CPU above the 2% budget at 14 of
+   15 scaling points (so the guard rail stretches the fd interval), memory about twice
+   v1's, a small measurable rise of pgbench average and p99.9 latency.
+8. [ ] System-wide counters (after the M7 scaling run): /proc/stat, loadavg, meminfo,
+   vmstat, diskstats per sample (raw cumulative counters; system, per-CPU and per-disk
+   tables); `sosv uptime|vmstat|mpstat|iostat`; `sosv verify` and fixtures. No user
+   count for `uptime` at first.
+9. [ ] README
