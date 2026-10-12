@@ -50,7 +50,7 @@ func run(args []string) error {
 	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
 	budget := fs.String("cpu-budget", "2%", "recorder CPU budget, percent of one core")
 	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
-	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof output this often")
+	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof and uptime/vmstat/mpstat/iostat output this often")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
 	fs.IntVar(&c.Parquet.FlushRows, "flush-rows", 400_000, "also write them once this many rows are buffered: lowers the heap's peak under load, for more and smaller files (0 = only by time)")
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")

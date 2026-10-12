@@ -121,6 +121,41 @@ CREATE TABLE IF NOT EXISTS mounts (
 	mount_id INTEGER, mount_point TEXT, source TEXT, fstype TEXT, options TEXT
 );
 
+-- System-wide counters, one row per sample: the kernel's raw values, cumulative
+-- since boot unless they describe the moment (loads in hundredths, memory in kB).
+CREATE TABLE IF NOT EXISTS sys_samples (
+	ts INTEGER NOT NULL,
+	uptime_ms INTEGER,                       -- since boot
+	load1 INTEGER, load5 INTEGER, load15 INTEGER,
+	runnable INTEGER, threads INTEGER,       -- /proc/loadavg: scheduling entities
+	procs_running INTEGER, procs_blocked INTEGER,
+	intr INTEGER, ctxt INTEGER, forks INTEGER, softirq INTEGER,
+	mem_total INTEGER, mem_free INTEGER, mem_available INTEGER, buffers INTEGER, cached INTEGER,
+	swap_cached INTEGER, active INTEGER, inactive INTEGER, swap_total INTEGER, swap_free INTEGER,
+	dirty INTEGER, writeback INTEGER, shmem INTEGER, slab INTEGER, sreclaimable INTEGER,
+	pgpgin INTEGER, pgpgout INTEGER, pswpin INTEGER, pswpout INTEGER, pgfault INTEGER, pgmajfault INTEGER
+);
+CREATE INDEX IF NOT EXISTS sys_samples_ts ON sys_samples(ts);
+
+-- CPU times in clock ticks; cpu -1 is the total over all CPUs.
+CREATE TABLE IF NOT EXISTS cpu_samples (
+	ts INTEGER NOT NULL, cpu INTEGER NOT NULL,
+	user INTEGER, nice INTEGER, system INTEGER, idle INTEGER, iowait INTEGER,
+	irq INTEGER, softirq INTEGER, steal INTEGER, guest INTEGER, guest_nice INTEGER
+);
+CREATE INDEX IF NOT EXISTS cpu_samples_ts ON cpu_samples(ts);
+
+-- /proc/diskstats of the devices that have done I/O (sectors of 512 bytes, times in ms).
+CREATE TABLE IF NOT EXISTS disk_samples (
+	ts INTEGER NOT NULL, major INTEGER, minor INTEGER, name TEXT NOT NULL,
+	part INTEGER NOT NULL,         -- 1: a partition (iostat lists whole devices)
+	rd_ios INTEGER, rd_merges INTEGER, rd_sectors INTEGER, rd_ticks INTEGER,
+	wr_ios INTEGER, wr_merges INTEGER, wr_sectors INTEGER, wr_ticks INTEGER,
+	dc_ios INTEGER, dc_merges INTEGER, dc_sectors INTEGER, dc_ticks INTEGER,
+	in_flight INTEGER, io_ticks INTEGER, time_in_queue INTEGER, fl_ios INTEGER, fl_ticks INTEGER
+);
+CREATE INDEX IF NOT EXISTS disk_samples_ts ON disk_samples(ts);
+
 CREATE TABLE IF NOT EXISTS oom_events (
 	ts INTEGER NOT NULL, pid INTEGER NOT NULL,
 	start_time INTEGER,            -- with pid, identifies the victim in processes

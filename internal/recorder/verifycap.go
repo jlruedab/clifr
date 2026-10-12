@@ -15,6 +15,12 @@ import (
 // verifyCommands are run right after a checkpoint sample. Their output is
 // stored so `sosv verify` can compare it with the reconstruction.
 var verifyCommands = [][]string{
+	// The system-wide tools first: they are compared with the counters of
+	// the sample, which keep moving.
+	{"uptime"},
+	{"vmstat"},
+	{"mpstat", "-P", "ALL"},
+	{"iostat", "-dx"},
 	{"ps", "aux"},
 	{"ss", "-tanp"},
 	{"lsof", "-n", "-P"},

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -115,6 +116,8 @@ func Run(db *store.DB) (*Report, error) {
 			var cur map[string]lsofLine
 			res, cur, err = compareLsof(db, s, prevLsof)
 			prevLsof = cur
+		case "uptime", "vmstat", "mpstat -P ALL", "iostat -dx":
+			res, err = compareSystem(db, s)
 		default:
 			continue
 		}
@@ -747,14 +750,16 @@ func Print(w io.Writer, rep *Report, verbose bool) {
 		}
 	}
 	fmt.Fprintf(w, "\nTOTAL over %d checkpoints\n", len(rep.Checkpoints))
-	for _, c := range []string{"ps aux", "ss -tanp", "lsof -n -P"} {
+	for _, c := range append([]string{"ps aux", "ss -tanp", "lsof -n -P"}, systemCommands...) {
 		if r, ok := rep.Totals[c]; ok {
 			printResult(w, r, true)
 		}
 	}
 	fmt.Fprintln(w, "\nNot compared:")
-	for _, c := range []string{"ps aux", "ss -tanp", "lsof -n -P"} {
-		fmt.Fprintf(w, "  %-11s %s\n", c, rep.IgnoredFields[c])
+	for _, c := range append([]string{"ps aux", "ss -tanp", "lsof -n -P"}, systemCommands...) {
+		if _, ok := rep.Totals[c]; ok || !slices.Contains(systemCommands, c) {
+			fmt.Fprintf(w, "  %-11s %s\n", c, rep.IgnoredFields[c])
+		}
 	}
 	fmt.Fprintln(w, "churn = present on one side only, and the database shows it starting or ending between the\n"+
 		"checkpoint sample and the sample taken right after the real commands finished. gap = how long after\n"+

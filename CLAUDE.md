@@ -1,10 +1,10 @@
 # sosv — Linux flight recorder (proof of concept)
 
 `sosv-record` continuously records which processes existed, which sockets and open
-files each one held, and short-lived process start/exit events, as Parquet files
-(or, for v1 comparisons, one SQLite file).
-Query subcommands (`ps`, `lsof`, `ss`, `life`, `stats`, `verify`) reconstruct the
-output of the real tools for a past moment or time range.
+files each one held, short-lived process start/exit events and the system-wide
+counters, as Parquet files (or, for v1 comparisons, one SQLite file).
+Query subcommands (`ps`, `lsof`, `ss`, `life`, `uptime`, `vmstat`, `mpstat`, `iostat`,
+`stats`, `verify`) reconstruct the output of the real tools for a past moment or time range.
 
 The PoC exists to prove two things with evidence: **accuracy** (reconstruction vs. the
 real tools) and **cost** (CPU / memory / disk of recording and its impact on a busy
@@ -37,7 +37,8 @@ user's go-ahead.
 ## Layout
 - `cmd/sosv-record/` — the recorder binary (static, no cgo).
 - `cmd/sosv/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
-- `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo).
+- `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
+  system-wide stat, loadavg, meminfo, vmstat, diskstats).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
 - `internal/bpfproc/` — eBPF process events (fork/exec/exit, OOM): `procevents.bpf.c`
   (CO-RE, no vmlinux.h) and the committed bpf2go objects; `go generate ./internal/bpfproc`
@@ -85,6 +86,12 @@ user's go-ahead.
 - Mounts: `mounts` table (present/mount/unmount/remount) from POLLPRI on mountinfo, opened
   with raw open(2): Go's own epoll would consume the kernel's change notification.
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
+- System-wide counters: every sample writes one `sys_samples` row, one `cpu_samples` row per CPU
+  (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,
+  from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:
+  `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
+  `sosv verify` compares, with a tolerance), a range = one report per sample interval. No rates
+  are stored; resolution = `--interval`. `uptime` has no user count.
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
 ## Commands
@@ -125,8 +132,8 @@ v2:
    scaling-20261012-1050, report-20261012-1050). Open: CPU above the 2% budget at 14 of
    15 scaling points (so the guard rail stretches the fd interval), memory about twice
    v1's, a small measurable rise of pgbench average and p99.9 latency.
-8. [ ] System-wide counters (after the M7 scaling run): /proc/stat, loadavg, meminfo,
-   vmstat, diskstats per sample (raw cumulative counters; system, per-CPU and per-disk
-   tables); `sosv uptime|vmstat|mpstat|iostat`; `sosv verify` and fixtures. No user
-   count for `uptime` at first.
+8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
+   (raw cumulative counters; system, per-CPU and per-disk tables); `sosv uptime|vmstat|
+   mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. Not in the
+   M7 benchmark numbers: about 0.2 ms of reads per sample.
 9. [ ] README

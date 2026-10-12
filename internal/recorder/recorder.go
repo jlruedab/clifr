@@ -80,6 +80,7 @@ type Recorder struct {
 	db    store.Backend
 	log   *log.Logger
 	boot  int64 // boot time, unix ms
+	sys   *sysSampler
 	gen   uint64
 	procs map[procKey]*procEntry
 	ids   map[string]int64 // next id per table
@@ -120,7 +121,7 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: preciseBootMS(fs, btime),
+	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
@@ -143,7 +144,7 @@ func New(cfg Config, logger *log.Logger) (*Recorder, error) {
 	host, _ := os.Hostname()
 	for k, v := range map[string]string{
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
-		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks),
+		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks), "page_kb": strconv.Itoa(os.Getpagesize() / 1024),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
@@ -399,6 +400,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	r.pending = store.Batch{}
 
 	t0 := time.Now()
+	r.sampleSystem(ts, &b) // first: its counters belong to ts
 	nev := r.applyEvents(ts, &b)
 	if r.mounts != nil {
 		b.Mounts = append(b.Mounts, r.mounts.take()...)

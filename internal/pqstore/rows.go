@@ -300,3 +300,96 @@ func fileOf(f store.FileRow) fileRow {
 	}
 	return r
 }
+
+// The system-wide counter tables (sys_samples, cpu_samples, disk_samples).
+type sysRow struct {
+	TS           int64 `parquet:"ts"`
+	UptimeMS     int64 `parquet:"uptime_ms"`
+	Load1        int32 `parquet:"load1"`
+	Load5        int32 `parquet:"load5"`
+	Load15       int32 `parquet:"load15"`
+	Runnable     int32 `parquet:"runnable"`
+	Threads      int32 `parquet:"threads"`
+	ProcsRunning int32 `parquet:"procs_running"`
+	ProcsBlocked int32 `parquet:"procs_blocked"`
+	Intr         int64 `parquet:"intr"`
+	Ctxt         int64 `parquet:"ctxt"`
+	Forks        int64 `parquet:"forks"`
+	SoftIRQ      int64 `parquet:"softirq"`
+	MemTotal     int64 `parquet:"mem_total"`
+	MemFree      int64 `parquet:"mem_free"`
+	MemAvailable int64 `parquet:"mem_available"`
+	Buffers      int64 `parquet:"buffers"`
+	Cached       int64 `parquet:"cached"`
+	SwapCached   int64 `parquet:"swap_cached"`
+	Active       int64 `parquet:"active"`
+	Inactive     int64 `parquet:"inactive"`
+	SwapTotal    int64 `parquet:"swap_total"`
+	SwapFree     int64 `parquet:"swap_free"`
+	Dirty        int64 `parquet:"dirty"`
+	Writeback    int64 `parquet:"writeback"`
+	Shmem        int64 `parquet:"shmem"`
+	Slab         int64 `parquet:"slab"`
+	SReclaimable int64 `parquet:"sreclaimable"`
+	PgpgIn       int64 `parquet:"pgpgin"`
+	PgpgOut      int64 `parquet:"pgpgout"`
+	PswpIn       int64 `parquet:"pswpin"`
+	PswpOut      int64 `parquet:"pswpout"`
+	PgFault      int64 `parquet:"pgfault"`
+	PgMajFault   int64 `parquet:"pgmajfault"`
+}
+
+func sysOf(s *store.SysSample) sysRow {
+	return sysRow{TS: s.TS, UptimeMS: s.UptimeMS,
+		Load1: int32(s.Load1), Load5: int32(s.Load5), Load15: int32(s.Load15), Runnable: int32(s.Runnable), Threads: int32(s.Threads), ProcsRunning: int32(s.ProcsRunning), ProcsBlocked: int32(s.ProcsBlocked),
+		Intr: s.Intr, Ctxt: s.Ctxt, Forks: s.Forks, SoftIRQ: s.SoftIRQ, MemTotal: s.MemTotal, MemFree: s.MemFree, MemAvailable: s.MemAvailable, Buffers: s.Buffers, Cached: s.Cached, SwapCached: s.SwapCached, Active: s.Active, Inactive: s.Inactive, SwapTotal: s.SwapTotal, SwapFree: s.SwapFree, Dirty: s.Dirty, Writeback: s.Writeback, Shmem: s.Shmem, Slab: s.Slab, SReclaimable: s.SReclaimable, PgpgIn: s.PgpgIn, PgpgOut: s.PgpgOut, PswpIn: s.PswpIn, PswpOut: s.PswpOut, PgFault: s.PgFault, PgMajFault: s.PgMajFault}
+}
+
+type cpuRow struct {
+	TS        int64 `parquet:"ts"`
+	CPU       int32 `parquet:"cpu"`
+	User      int64 `parquet:"user"`
+	Nice      int64 `parquet:"nice"`
+	System    int64 `parquet:"system"`
+	Idle      int64 `parquet:"idle"`
+	IOWait    int64 `parquet:"iowait"`
+	IRQ       int64 `parquet:"irq"`
+	SoftIRQ   int64 `parquet:"softirq"`
+	Steal     int64 `parquet:"steal"`
+	Guest     int64 `parquet:"guest"`
+	GuestNice int64 `parquet:"guest_nice"`
+}
+
+func cpuOf(c store.CPUSample) cpuRow {
+	return cpuRow{TS: c.TS, CPU: int32(c.CPU), User: c.T[0], Nice: c.T[1], System: c.T[2], Idle: c.T[3], IOWait: c.T[4], IRQ: c.T[5], SoftIRQ: c.T[6], Steal: c.T[7], Guest: c.T[8], GuestNice: c.T[9]}
+}
+
+type diskRow struct {
+	TS          int64  `parquet:"ts"`
+	Major       int32  `parquet:"major"`
+	Minor       int32  `parquet:"minor"`
+	Name        string `parquet:"name,dict"`
+	Part        int32  `parquet:"part"`
+	RdIOs       int64  `parquet:"rd_ios"`
+	RdMerges    int64  `parquet:"rd_merges"`
+	RdSectors   int64  `parquet:"rd_sectors"`
+	RdTicks     int64  `parquet:"rd_ticks"`
+	WrIOs       int64  `parquet:"wr_ios"`
+	WrMerges    int64  `parquet:"wr_merges"`
+	WrSectors   int64  `parquet:"wr_sectors"`
+	WrTicks     int64  `parquet:"wr_ticks"`
+	DcIOs       int64  `parquet:"dc_ios"`
+	DcMerges    int64  `parquet:"dc_merges"`
+	DcSectors   int64  `parquet:"dc_sectors"`
+	DcTicks     int64  `parquet:"dc_ticks"`
+	InFlight    int64  `parquet:"in_flight"`
+	IOTicks     int64  `parquet:"io_ticks"`
+	TimeInQueue int64  `parquet:"time_in_queue"`
+	FlIOs       int64  `parquet:"fl_ios"`
+	FlTicks     int64  `parquet:"fl_ticks"`
+}
+
+func diskOf(d store.DiskSample) diskRow {
+	return diskRow{TS: d.TS, Major: int32(d.Major), Minor: int32(d.Minor), Name: d.Name, Part: int32(b2i(d.Part)),
+		RdIOs: d.V[0], RdMerges: d.V[1], RdSectors: d.V[2], RdTicks: d.V[3], WrIOs: d.V[4], WrMerges: d.V[5], WrSectors: d.V[6], WrTicks: d.V[7], DcIOs: d.V[8], DcMerges: d.V[9], DcSectors: d.V[10], DcTicks: d.V[11], InFlight: d.V[12], IOTicks: d.V[13], TimeInQueue: d.V[14], FlIOs: d.V[15], FlTicks: d.V[16]}
+}

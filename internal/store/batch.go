@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 )
 
 type Sample struct {
@@ -85,6 +86,45 @@ type MountEvent struct {
 	Source  string
 	FSType  string
 	Options string
+}
+
+// SysSample is the system-wide state at one sample: the kernel's raw values
+// behind uptime, vmstat, mpstat and iostat. Counters are cumulative since
+// boot; loads are in hundredths, memory in kB.
+type SysSample struct {
+	TS                                                    int64
+	UptimeMS                                              int64 // since boot
+	Load1, Load5, Load15                                  int
+	Runnable, Threads                                     int // /proc/loadavg: scheduling entities
+	ProcsRunning, ProcsBlocked                            int
+	Intr, Ctxt, Forks, SoftIRQ                            int64
+	MemTotal, MemFree, MemAvailable, Buffers, Cached      int64
+	SwapCached, Active, Inactive, SwapTotal, SwapFree     int64
+	Dirty, Writeback, Shmem, Slab, SReclaimable           int64
+	PgpgIn, PgpgOut, PswpIn, PswpOut, PgFault, PgMajFault int64
+}
+
+// CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).
+var (
+	CPUCols  = []string{"user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal", "guest", "guest_nice"}
+	DiskCols = []string{"rd_ios", "rd_merges", "rd_sectors", "rd_ticks", "wr_ios", "wr_merges", "wr_sectors", "wr_ticks",
+		"dc_ios", "dc_merges", "dc_sectors", "dc_ticks", "in_flight", "io_ticks", "time_in_queue", "fl_ios", "fl_ticks"}
+)
+
+// CPUSample is one CPU's times in clock ticks; CPU -1 is the total.
+type CPUSample struct {
+	TS  int64
+	CPU int
+	T   [10]int64
+}
+
+// DiskSample is one /proc/diskstats line (sectors of 512 bytes, times in ms).
+type DiskSample struct {
+	TS           int64
+	Major, Minor int
+	Name         string
+	Part         bool // a partition: iostat lists only whole devices
+	V            [17]int64
 }
 
 // TCPConn is one TCP connection (or listening socket) from eBPF events, or
@@ -252,6 +292,9 @@ type Batch struct {
 	Guard       []GuardEvent
 	Verify      []VerifySnap
 	Skips       []int64 // timestamps of skipped sample slots
+	Sys         *SysSample
+	CPUs        []CPUSample
+	Disks       []DiskSample
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -261,7 +304,8 @@ func (b *Batch) Rows() int {
 		len(b.OwnInserts) + len(b.OwnCloses) + len(b.FileInserts) + len(b.FileCloses) +
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
-		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile)
+		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
+		len(b.CPUs) + len(b.Disks)
 }
 
 func nullInt(p *int64) any {
@@ -505,6 +549,39 @@ func (d *DB) Write(b *Batch) error {
 				})
 		},
 		func() error {
+			if s := b.Sys; s != nil {
+				if _, err := tx.Exec(`INSERT INTO sys_samples VALUES(`+marks(34)+`)`, s.TS, s.UptimeMS, s.Load1, s.Load5, s.Load15,
+					s.Runnable, s.Threads, s.ProcsRunning, s.ProcsBlocked, s.Intr, s.Ctxt, s.Forks, s.SoftIRQ,
+					s.MemTotal, s.MemFree, s.MemAvailable, s.Buffers, s.Cached, s.SwapCached, s.Active, s.Inactive,
+					s.SwapTotal, s.SwapFree, s.Dirty, s.Writeback, s.Shmem, s.Slab, s.SReclaimable,
+					s.PgpgIn, s.PgpgOut, s.PswpIn, s.PswpOut, s.PgFault, s.PgMajFault); err != nil {
+					return err
+				}
+			}
+			if err := each(`INSERT INTO cpu_samples VALUES(`+marks(2+len(CPUCols))+`)`,
+				len(b.CPUs), func(st *sql.Stmt, i int) error {
+					c := b.CPUs[i]
+					args := []any{c.TS, c.CPU}
+					for _, v := range c.T {
+						args = append(args, v)
+					}
+					_, err := st.Exec(args...)
+					return err
+				}); err != nil {
+				return err
+			}
+			return each(`INSERT INTO disk_samples VALUES(`+marks(5+len(DiskCols))+`)`,
+				len(b.Disks), func(st *sql.Stmt, i int) error {
+					d := b.Disks[i]
+					args := []any{d.TS, d.Major, d.Minor, d.Name, b2i(d.Part)}
+					for _, v := range d.V {
+						args = append(args, v)
+					}
+					_, err := st.Exec(args...)
+					return err
+				})
+		},
+		func() error {
 			return each(`INSERT INTO guard_events(ts, kind, detail) VALUES(?,?,?)`,
 				len(b.Guard), func(st *sql.Stmt, i int) error {
 					g := b.Guard[i]
@@ -529,3 +606,6 @@ func (d *DB) Write(b *Batch) error {
 	}
 	return tx.Commit()
 }
+
+// marks returns n comma-separated SQL placeholders.
+func marks(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }

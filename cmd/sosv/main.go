@@ -33,7 +33,11 @@ commands (record with sosv-record):
   life     sosv life [--name REGEX] [--start_from A --end_at B]
   oom      sosv oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
   mounts   sosv mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
-  verify   compare saved real ps/ss/lsof output (record --verify-every) with reconstructions
+  uptime   sosv uptime --at T | --start_from A --end_at B: uptime and load averages (no user count)
+  vmstat   sosv vmstat --at T (averages since boot) | --start_from A --end_at B [--step D] (one line per interval)
+  mpstat   sosv mpstat [-P ALL|N,M] --at T | --start_from A --end_at B [--step D]
+  iostat   sosv iostat [-x] [-d] [-p] --at T | --start_from A --end_at B [--step D]
+  verify   compare saved real ps/ss/lsof and uptime/vmstat/mpstat/iostat output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
   export   sosv export TABLE: one recorded table as CSV (e.g. samples, guard_events)
 
@@ -62,6 +66,8 @@ func main() {
 		err = cmdOOM(args)
 	case "mounts":
 		err = cmdMounts(args)
+	case "uptime", "vmstat", "mpstat", "iostat":
+		err = cmdSystem(cmd, args)
 	case "verify":
 		err = cmdVerify(args)
 	case "stats":
@@ -551,5 +557,72 @@ func cmdMounts(args []string) error {
 		return query.PrintJSON(os.Stdout, rows)
 	}
 	query.PrintMounts(os.Stdout, rows, w.IsRange())
+	return nil
+}
+
+// cmdSystem runs uptime, vmstat, mpstat or iostat on the recorded system-wide
+// counters: at a point in time the averages since boot (what the real tool
+// prints without an interval), over a range one report per sample interval.
+func cmdSystem(name string, args []string) error {
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	var q queryFlags
+	q.register(fs)
+	step := fs.Duration("step", 0, "with a range: report intervals at least this long (default: every sample)")
+	var cpus *string
+	var extended, devOnly, parts *bool
+	switch name {
+	case "mpstat":
+		cpus = fs.String("P", "", "CPUs: ALL, or numbers separated by commas (default: only the total)")
+	case "iostat":
+		extended = fs.Bool("x", false, "extended device statistics")
+		devOnly = fs.Bool("d", false, "device report only (no avg-cpu)")
+		parts = fs.Bool("p", false, "also list partitions")
+	}
+	if _, err := parse(fs, args); err != nil {
+		return err
+	}
+	w, err := q.window(true)
+	if err != nil {
+		return err
+	}
+	db, err := q.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	spans, err := query.SysSpans(db, w, step.Milliseconds())
+	if err != nil {
+		return err
+	}
+	if w.IsRange() {
+		query.Header("%s: %d intervals between samples, %s .. %s", name, len(spans), query.FormatMS(spans[0].From), query.FormatMS(spans[len(spans)-1].To))
+	} else if name == "uptime" {
+		query.Header("uptime at the sample of %s (logged-in users are not recorded)", query.FormatMS(spans[0].To))
+	} else {
+		query.Header("%s: averages since boot at the sample of %s", name, query.FormatMS(spans[0].To))
+	}
+	var rows any
+	var print func()
+	switch name {
+	case "uptime":
+		r, e := query.Uptime(db, spans)
+		rows, err, print = r, e, func() { query.PrintUptime(os.Stdout, r) }
+	case "vmstat":
+		r, e := query.VMStat(db, spans)
+		rows, err, print = r, e, func() { query.PrintVMStat(os.Stdout, r) }
+	case "mpstat":
+		r, e := query.MPStat(db, spans, *cpus)
+		rows, err, print = r, e, func() { query.PrintMPStat(os.Stdout, r) }
+	case "iostat":
+		r, e := query.IOStat(db, spans, *parts)
+		rows, err, print = r, e, func() { query.PrintIOStat(os.Stdout, r, *extended, *devOnly) }
+	}
+	if err != nil {
+		return err
+	}
+	if q.json {
+		return query.PrintJSON(os.Stdout, rows)
+	}
+	print()
 	return nil
 }
