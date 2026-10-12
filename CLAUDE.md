@@ -136,4 +136,4 @@ v2:
    (raw cumulative counters; system, per-CPU and per-disk tables); `sosv uptime|vmstat|
    mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. Not in the
    M7 benchmark numbers: about 0.2 ms of reads per sample.
-9. [ ] README
+9. [x] README (v2: build, recording, querying, tests, benchmark, results of M6–M8, limitations)
