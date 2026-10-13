@@ -620,6 +620,14 @@ func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result,
 	}
 	real := parseLsof(snap.output, &res, snap.ignore)
 	all := real
+	rec := map[string]lsofLine{}
+	for _, r := range recon {
+		if snap.ignore[r.PID] {
+			continue
+		}
+		fd, mode := splitFD(r.FD)
+		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, r.Name), inode: r.SockInode}
+	}
 	if query.FDsHeld(db) {
 		// Held storage records an fd at the second walk that sees it. An fd
 		// the previous checkpoint's real lsof (one walk earlier) did not
@@ -630,7 +638,7 @@ func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result,
 				real[k] = r
 				continue
 			}
-			if _, inRecon := reconHas(recon, k, snap.ignore); inRecon {
+			if _, inRecon := rec[k]; inRecon {
 				real[k] = r
 				continue
 			}
@@ -640,14 +648,6 @@ func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result,
 				res.Ignored["fds new since the previous walk (held storage starts at the second)"]++
 			}
 		}
-	}
-	rec := map[string]lsofLine{}
-	for _, r := range recon {
-		if snap.ignore[r.PID] {
-			continue
-		}
-		fd, mode := splitFD(r.FD)
-		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, r.Name), inode: r.SockInode}
 	}
 	res.Real, res.Recon = len(real), len(rec)
 	keyParts := func(k string) (int, string) {
@@ -841,18 +841,4 @@ func compareSSEvents(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	return res, nil
-}
-
-// reconHas reports whether the reconstruction has the row key ("pid fd").
-func reconHas(recon []query.LsofRow, key string, ignore map[int]bool) (query.LsofRow, bool) {
-	for _, r := range recon {
-		if ignore[r.PID] {
-			continue
-		}
-		fd, _ := splitFD(r.FD)
-		if strconv.Itoa(r.PID)+" "+fd == key {
-			return r, true
-		}
-	}
-	return query.LsofRow{}, false
 }
