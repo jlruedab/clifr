@@ -124,3 +124,19 @@ func TestDumpMatchesProcNet(t *testing.T) {
 		}
 	}
 }
+
+// The kernel appends INET_DIAG_SKV6ONLY to IPv6 listening sockets.
+func TestParseV6Only(t *testing.T) {
+	any6 := netip.IPv6Unspecified()
+	for _, v := range []byte{0, 1} {
+		m := diagMsg(1, unix.AF_INET6, 10, any6, any6, 8080, 0, 0, 128, 0, 42)
+		a := m[16+msgLen:] // nlattr: len 5, type 11, one byte
+		binary.NativeEndian.PutUint16(a[0:], 5)
+		binary.NativeEndian.PutUint16(a[2:], attrSKV6Only)
+		a[4] = v
+		out, _, err := ParseMessages(m, 1, unix.IPPROTO_TCP, nil)
+		if err != nil || len(out) != 1 || out[0].V6Only != (v == 1) {
+			t.Errorf("v6only byte %d: out=%+v err=%v", v, out, err)
+		}
+	}
+}

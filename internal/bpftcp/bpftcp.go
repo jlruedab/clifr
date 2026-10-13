@@ -77,6 +77,7 @@ type Event struct {
 	SPort    int
 	DPort    int
 	Owner    Owner
+	V6Only   bool // State to Listen: an IPv6 socket that does not accept IPv4
 	// State to Close: the connection's counters.
 	Retransmits, ResetsSent, ResetsReceived uint32
 }
@@ -452,6 +453,8 @@ const eventSize = int(unsafe.Sizeof(tcpRBTcpEvent{}))
 
 // decode copies the raw event into the generated struct (host layout, the
 // same bytes the kernel side wrote): no reflection, nothing allocated.
+const flagV6Only = 1 // FLAG_V6ONLY in tcpevents.bpf.c
+
 func decode(raw []byte) (Event, error) {
 	if len(raw) < eventSize {
 		return Event{}, fmt.Errorf("short TCP event: %d bytes", len(raw))
@@ -459,7 +462,7 @@ func decode(raw []byte) (Event, error) {
 	var r tcpRBTcpEvent
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(&r)), eventSize), raw)
 	e := Event{Kind: Kind(r.Kind), MonoNS: r.MonoNs, SK: r.Sk, Old: int(r.Oldstate), New: int(r.Newstate),
-		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport),
+		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport), V6Only: r.Flags&flagV6Only != 0,
 		Owner:       Owner{PID: int(r.Owner.Pid), StartNS: r.Owner.StartNs, FD: int(r.Owner.Fd), Inode: r.Owner.Inode},
 		Retransmits: r.Counters.Retransmits, ResetsSent: r.Counters.ResetsSent, ResetsReceived: r.Counters.ResetsReceived}
 	if e.Kind == State || e.Kind == TimeWaitEnd {

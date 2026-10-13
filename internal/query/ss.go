@@ -250,6 +250,19 @@ func fmtAddr(a netip.Addr, ifname string) string {
 	return s
 }
 
+// fmtAddrDual is fmtAddr for sockets recorded with their IPV6_V6ONLY flag:
+// like ss, it prints the unspecified IPv6 address of a socket that also
+// accepts IPv4 as "*".
+func fmtAddrDual(a netip.Addr, ifname string, v6only bool) string {
+	if a.Is6() && a.IsUnspecified() && !v6only {
+		if ifname != "" {
+			return "*%" + ifname
+		}
+		return "*"
+	}
+	return fmtAddr(a, ifname)
+}
+
 func fmtPort(p int) string {
 	if p == 0 {
 		return "*"

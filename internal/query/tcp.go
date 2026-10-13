@@ -58,7 +58,7 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 		       c.close_ts, c.linger_state, c.linger_until,
 		       COALESCE((SELECT x.new_state FROM tcp_transitions x WHERE x.conn_id = c.id AND x.ts <= ?1
 		                 ORDER BY x.ts DESC, x.seq DESC LIMIT 1), c.first_state),
-		       COALESCE(p.comm, ''), COALESCE(k.recv_q, 0), COALESCE(k.send_q, 0)
+		       COALESCE(p.comm, ''), COALESCE(k.recv_q, 0), COALESCE(k.send_q, 0), COALESCE(c.v6only, 1)
 		FROM tcp_conns c
 		LEFT JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
 		LEFT JOIN tcp_keyframes k ON k.ts = ?2 AND k.conn_id = c.id
@@ -77,10 +77,10 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 	for q.Next() {
 		var r SSRow
 		var la, ra, comm, ifn string
-		var pid, fd, lingerState, state int
+		var pid, fd, lingerState, state, v6only int
 		var ownerUntil, closeTS, lingerUntil sql.NullInt64
 		if err := q.Scan(&r.id, &la, &r.LPort, &ra, &r.RPort, &r.Inode, &pid, &fd, &ownerUntil, &ifn, &closeTS,
-			&lingerState, &lingerUntil, &state, &comm, &r.RecvQ, &r.SendQ); err != nil {
+			&lingerState, &lingerUntil, &state, &comm, &r.RecvQ, &r.SendQ, &v6only); err != nil {
 			return nil, kf, err
 		}
 		r.Proto = "tcp"
@@ -98,8 +98,8 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 			continue // no state yet, or a connect still being set up
 		}
 		r.State = sockdiag.StateName(state)
-		r.Local = fmtAddr(r.laddr, ifn)
-		r.Peer = fmtAddr(r.raddr, "")
+		r.Local = fmtAddrDual(r.laddr, ifn, v6only != 0)
+		r.Peer = fmtAddrDual(r.raddr, "", v6only != 0)
 		if !f.Match(&r) {
 			continue
 		}
@@ -125,7 +125,8 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 
 func udpAt(db *store.DB, kf int64, f SockFilter) ([]SSRow, error) {
 	q, err := db.Query(`
-		SELECT k.laddr, k.lport, k.raddr, k.rport, k.inode, k.state, k.recv_q, k.send_q, k.pid, k.fd, COALESCE(p.comm, '')
+		SELECT k.laddr, k.lport, k.raddr, k.rport, k.inode, k.state, k.recv_q, k.send_q, k.pid, k.fd, COALESCE(p.comm, ''),
+		       COALESCE(k.v6only, 1)
 		FROM tcp_keyframes k LEFT JOIN processes p ON p.pid = k.pid AND p.start_time = k.start_time
 		WHERE k.ts = ?1 AND k.proto = 'udp'`, kf)
 	if err != nil {
@@ -136,14 +137,14 @@ func udpAt(db *store.DB, kf int64, f SockFilter) ([]SSRow, error) {
 	for q.Next() {
 		var r SSRow
 		var la, ra, comm string
-		var st, pid, fd int
-		if err := q.Scan(&la, &r.LPort, &ra, &r.RPort, &r.Inode, &st, &r.RecvQ, &r.SendQ, &pid, &fd, &comm); err != nil {
+		var st, pid, fd, v6only int
+		if err := q.Scan(&la, &r.LPort, &ra, &r.RPort, &r.Inode, &st, &r.RecvQ, &r.SendQ, &pid, &fd, &comm, &v6only); err != nil {
 			return nil, err
 		}
 		r.Proto = "udp"
 		r.laddr, _ = netip.ParseAddr(la)
 		r.raddr, _ = netip.ParseAddr(ra)
-		r.State, r.Local, r.Peer = sockdiag.StateName(st), fmtAddr(r.laddr, ""), fmtAddr(r.raddr, "")
+		r.State, r.Local, r.Peer = sockdiag.StateName(st), fmtAddrDual(r.laddr, "", v6only != 0), fmtAddrDual(r.raddr, "", v6only != 0)
 		if pid != 0 {
 			r.Owners = []Owner{{Comm: comm, PID: pid, FD: fd}}
 		}

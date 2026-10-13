@@ -262,8 +262,9 @@ checkpoints and compared with the reconstruction for the same moment.
   counts as explained when the recording shows the process, socket or fd
   starting or ending in that gap.
 - `ss`, not explained: two dual-stack listeners of one desktop process at
-  every checkpoint, which the real `ss` prints as `*:1716` and sosv as
-  `[::]:1716` (see Limitations), and one TIME-WAIT row.
+  every checkpoint, which the real `ss` prints as `*:1716` and sosv printed
+  as `[::]:1716` (fixed since: the flag is now recorded), and one TIME-WAIT
+  row.
 - `lsof`, not explained (not investigated): pidfds of the load generator,
   timerfds of desktop processes, and short-lived deleted shared-memory files
   and sockets of a browser.
@@ -354,9 +355,10 @@ processes and is not part of the recorder's CPU figure.
   are the values at the sample. On its since-boot line procps-ng 4.0.4
   prints a context-switch figure that is not per second; sosv prints the
   per-second rate. Interval output is not compared by `sosv verify`.
-- **Dual-stack listeners in `ss`**: whether an IPv6 socket also accepts IPv4
-  (IPV6_V6ONLY off) is not recorded, so a listener the real `ss` prints as
-  `*:port` appears as `[::]:port`.
+- **Dual-stack listeners in `ss`**: recordings made with a recorder older than
+  2026-10-13 do not have the IPV6_V6ONLY flag, so a listener the real `ss` prints as `*:port`
+  appears there as `[::]:port`. A listener's backlog (Send-Q) is 0 until
+  the next keyframe, like the other queue values.
 - **Namespaces**: only the host network namespace's sockets and the
   recorder's mount namespace are recorded.
 - **Zombie processes** disappear from `sosv ps` at their exit event, while

@@ -66,7 +66,10 @@ wait for the user's go-ahead.
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
   newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;
-  `--tcp sample` keeps v1 sampling. Kernel sock pointers are reused quickly: never key
+  `--tcp sample` keeps v1 sampling. `v6only` (tcp_conns, tcp_keyframes): 1 = an IPv6 socket
+  that does not accept IPv4, from the listen event and from sock_diag (listening and
+  unconnected sockets); `ss` prints `::` of the others as `*`. NULL in older recordings
+  (printed as before, `[::]`). Kernel sock pointers are reused quickly: never key
   anything that must survive a close by the pointer alone.
 - eBPF losses that leave no trace in the drop counters: the kernel does not run a tracing
   program on a CPU where it is already running (interrupted or preempted), and no classic

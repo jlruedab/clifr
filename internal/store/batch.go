@@ -139,6 +139,7 @@ type TCPConn struct {
 	IfName     string // bound to a device (from a keyframe), as ss shows "addr%if"
 	Inode      uint64
 	Family     int
+	V6Only     bool // IPv6 socket that does not accept IPv4 (known for listeners)
 	LAddr      string
 	LPort      int
 	RAddr      string
@@ -184,6 +185,7 @@ type KeyframeRow struct {
 	PID          int   // holder from events or the last fd walk; 0: unknown
 	StartTime    int64
 	FD           int
+	V6Only       bool
 }
 
 // ReconcileRow compares a keyframe with the event state: connections in the
@@ -428,12 +430,12 @@ func (d *DB) Write(b *Batch) error {
 		func() error {
 			return each(`INSERT OR REPLACE INTO tcp_conns(id, pid, start_time, fd, owner_until, ifname, inode, family, laddr, lport,
 				raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until,
-				retransmits, resets_sent, resets_received, source, last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				retransmits, resets_sent, resets_received, source, last_seen, v6only) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.TCPConns), func(st *sql.Stmt, i int) error {
 					c := b.TCPConns[i]
 					_, err := st.Exec(c.ID, c.PID, c.StartTime, c.FD, nullInt(c.OwnerUntil), c.IfName, int64(c.Inode), c.Family, c.LAddr, c.LPort,
 						c.RAddr, c.RPort, c.Direction, c.OpenTS, nullInt(c.CloseTS), c.FirstState, c.FinalState, c.LingerState,
-						nullInt(c.LingerUntil), c.Retransmits, c.ResetsSent, c.ResetsReceived, c.Source, c.LastSeen)
+						nullInt(c.LingerUntil), c.Retransmits, c.ResetsSent, c.ResetsReceived, c.Source, c.LastSeen, b2i(c.V6Only))
 					return err
 				})
 		},
@@ -447,11 +449,11 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error {
 			return each(`INSERT INTO tcp_keyframes(ts, proto, family, laddr, lport, raddr, rport, inode, state, recv_q, send_q,
-				uid, conn_id, pid, start_time, fd) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				uid, conn_id, pid, start_time, fd, v6only) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.Keyframes), func(st *sql.Stmt, i int) error {
 					k := b.Keyframes[i]
 					_, err := st.Exec(k.TS, k.Proto, k.Family, k.LAddr, k.LPort, k.RAddr, k.RPort, int64(k.Inode), k.State,
-						k.RecvQ, k.SendQ, k.UID, k.ConnID, k.PID, k.StartTime, k.FD)
+						k.RecvQ, k.SendQ, k.UID, k.ConnID, k.PID, k.StartTime, k.FD, b2i(k.V6Only))
 					return err
 				})
 		},

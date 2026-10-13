@@ -79,6 +79,7 @@ struct sock_common {
 		};
 	};
 	unsigned short skc_family;
+	unsigned char skc_ipv6only : 1;
 	struct in6_addr skc_v6_daddr;
 	struct in6_addr skc_v6_rcv_saddr;
 } __attribute__((preserve_access_index));
@@ -167,6 +168,8 @@ struct counters {
 	__u32 pad;
 };
 
+#define FLAG_V6ONLY 1 // tcp_event.flags
+
 struct tcp_event {
 	__u32 kind;
 	__s32 oldstate;
@@ -174,7 +177,7 @@ struct tcp_event {
 	__u16 family;
 	__u16 sport;
 	__u16 dport;
-	__u16 pad;
+	__u16 flags; // EV_STATE to TCP_LISTEN only: FLAG_V6ONLY
 	__u32 pad2;
 	__u64 mono_ns;
 	__u64 sk;
@@ -293,6 +296,13 @@ static __always_inline int state_event(void *ctx, struct tcp_event *e)
 			o.fd = *fd;
 		o.inode = sock_inode((void *)e->sk);
 		bpf_map_update_elem(&owners, &e->sk, &o, BPF_ANY);
+	}
+	if (e->newstate == TCP_LISTEN && e->family == 10 /* AF_INET6 */) {
+		// IPV6_V6ONLY cannot change once the socket is bound. Without it
+		// the socket also accepts IPv4, and ss prints its address as "*".
+		struct sock *sk = (void *)e->sk;
+		if (BPF_CORE_READ_BITFIELD_PROBED(sk, __sk_common.skc_ipv6only))
+			e->flags |= FLAG_V6ONLY;
 	}
 	struct owner *o = bpf_map_lookup_elem(&owners, &e->sk);
 	if (o)

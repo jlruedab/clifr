@@ -37,7 +37,7 @@ type tcpRBTcpEvent struct {
 	Family   uint16
 	Sport    uint16
 	Dport    uint16
-	Pad      uint16
+	Flags    uint16
 	Pad2     uint32
 	MonoNs   uint64
 	Sk       uint64

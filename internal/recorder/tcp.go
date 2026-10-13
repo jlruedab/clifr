@@ -241,9 +241,10 @@ func (c *tconn) setOwner(r *Recorder, o bpftcp.Owner) {
 }
 
 // setTuple records the connection's addresses; it reports whether they
-// changed (a connect gets its source port after its first event).
+// changed (a connect gets its source port after its first event). A
+// listening socket has a local port only.
 func (c *tconn) setTuple(e bpftcp.Event) bool {
-	if e.DPort == 0 || e.SPort == 0 {
+	if e.SPort == 0 || e.DPort == 0 && e.New != bpftcp.Listen {
 		return false
 	}
 	l, rr := e.SAddr.String(), e.DAddr.String()
@@ -313,6 +314,9 @@ func (r *Recorder) drainTCP() {
 				}
 			}
 			c.setOwner(r, e.Owner)
+			if e.New == bpftcp.Listen && c.row.V6Only != e.V6Only {
+				c.row.V6Only, c.dirty = e.V6Only, true
+			}
 			if c.row.Inode != 0 {
 				t.byInode[c.row.Inode] = c
 			}
@@ -478,7 +482,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 	for _, s := range list {
 		kf := store.KeyframeRow{TS: start, Proto: s.Proto, Family: s.Family, LAddr: s.LAddr.String(), LPort: s.LPort,
 			RAddr: s.RAddr.String(), RPort: s.RPort, Inode: s.Inode, State: s.State, RecvQ: int64(s.RxQ),
-			SendQ: int64(s.TxQ), UID: int(s.UID), FD: -1}
+			SendQ: int64(s.TxQ), UID: int(s.UID), FD: -1, V6Only: s.V6Only}
 		if h, ok := t.holders[s.Inode]; ok && s.Inode != 0 {
 			kf.PID, kf.StartTime, kf.FD = h.key.pid, h.key.start, h.fd
 		}
@@ -503,6 +507,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			c = t.newConn(r, start, "keyframe")
 			c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = s.Family, kf.LAddr, s.LPort, kf.RAddr, s.RPort
 			c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, s.State, s.State, ifName(s.IfIndex)
+			c.row.V6Only = s.V6Only
 			if s.State == bpftcp.Listen {
 				c.row.Direction = "listen"
 			}

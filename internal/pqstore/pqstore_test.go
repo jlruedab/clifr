@@ -112,3 +112,38 @@ func TestLargeTextCompresses(t *testing.T) {
 		t.Errorf("%d bytes of text stored in %d bytes", len(b), fi.Size())
 	}
 }
+
+// A file written before a column was added must still be readable with the
+// current row type (compaction copies old files): the new column reads as 0.
+func TestReadOlderSchema(t *testing.T) {
+	type oldKeyframeRow struct {
+		TS    int64  `parquet:"ts"`
+		Proto string `parquet:"proto,dict"`
+		LPort int32  `parquet:"lport"`
+		FD    int32  `parquet:"fd"`
+	}
+	dir := t.TempDir()
+	old, out := filepath.Join(dir, "old.parquet"), filepath.Join(dir, "new.parquet")
+	if err := writeFile(old, []oldKeyframeRow{{TS: 5, Proto: "tcp", LPort: 22, FD: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := parquet.NewGenericWriter[keyframeRow](f, writerOptions...)
+	if err := copyRows(old, w, make([]keyframeRow, 16)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	rows, err := parquet.ReadFile[keyframeRow](out)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+	if r := rows[0]; r.TS != 5 || r.Proto != "tcp" || r.LPort != 22 || r.FD != 3 || r.V6Only != 0 {
+		t.Errorf("got %+v", r)
+	}
+}

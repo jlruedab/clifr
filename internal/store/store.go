@@ -177,7 +177,8 @@ CREATE TABLE IF NOT EXISTS tcp_conns (
 	first_state INTEGER, final_state INTEGER,
 	linger_state INTEGER, linger_until INTEGER, -- time-wait continuation (estimated end)
 	retransmits INTEGER, resets_sent INTEGER, resets_received INTEGER,
-	source TEXT, last_seen INTEGER
+	source TEXT, last_seen INTEGER,
+	v6only INTEGER                 -- 1: IPv6 socket that does not accept IPv4 (listeners)
 );
 CREATE INDEX IF NOT EXISTS tcp_conns_open ON tcp_conns(open_ts);
 
@@ -191,7 +192,8 @@ CREATE TABLE IF NOT EXISTS tcp_keyframes (
 	ts INTEGER NOT NULL, proto TEXT, family INTEGER,
 	laddr TEXT, lport INTEGER, raddr TEXT, rport INTEGER, inode INTEGER,
 	state INTEGER, recv_q INTEGER, send_q INTEGER, uid INTEGER,
-	conn_id INTEGER, pid INTEGER, start_time INTEGER, fd INTEGER
+	conn_id INTEGER, pid INTEGER, start_time INTEGER, fd INTEGER,
+	v6only INTEGER
 );
 CREATE INDEX IF NOT EXISTS tcp_keyframes_ts ON tcp_keyframes(ts);
 
@@ -347,7 +349,8 @@ func dirSize(dir string) int64 {
 // database (CREATE TABLE IF NOT EXISTS leaves old tables as they are).
 func migrate(db *sql.DB) error {
 	add := map[string][]string{"processes": {"exe TEXT", "exec_ts INTEGER", "exit_ts INTEGER",
-		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0"}}
+		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0"},
+		"tcp_conns": {"v6only INTEGER"}, "tcp_keyframes": {"v6only INTEGER"}}
 	for table, cols := range add {
 		have := map[string]bool{}
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)

@@ -189,6 +189,7 @@ type tcpConnRow struct {
 	ResetsReceived int32  `parquet:"resets_received"`
 	Source         string `parquet:"source,dict"`
 	LastSeen       *int64 `parquet:"last_seen,optional"`
+	V6Only         int32  `parquet:"v6only"`
 }
 
 type tcpTransRow struct {
@@ -216,6 +217,7 @@ type keyframeRow struct {
 	PID       int32  `parquet:"pid"`
 	StartTime int64  `parquet:"start_time"`
 	FD        int32  `parquet:"fd"`
+	V6Only    int32  `parquet:"v6only"`
 }
 
 type reconcileRow struct {
@@ -233,13 +235,14 @@ func tcpConnOf(c store.TCPConn) tcpConnRow {
 		RPort: int32(c.RPort), Direction: c.Direction, OpenTS: c.OpenTS, CloseTS: c.CloseTS,
 		FirstState: int32(c.FirstState), FinalState: int32(c.FinalState), LingerState: int32(c.LingerState),
 		LingerUntil: c.LingerUntil, Retransmits: int32(c.Retransmits), ResetsSent: int32(c.ResetsSent),
-		ResetsReceived: int32(c.ResetsReceived), Source: c.Source, LastSeen: ptr(c.LastSeen)}
+		ResetsReceived: int32(c.ResetsReceived), Source: c.Source, LastSeen: ptr(c.LastSeen), V6Only: b2i(c.V6Only)}
 }
 
 func keyframeOf(k store.KeyframeRow) keyframeRow {
 	return keyframeRow{TS: k.TS, Proto: k.Proto, Family: int32(k.Family), LAddr: k.LAddr, LPort: int32(k.LPort),
 		RAddr: k.RAddr, RPort: int32(k.RPort), Inode: int64(k.Inode), State: int32(k.State), RecvQ: k.RecvQ,
-		SendQ: k.SendQ, UID: int32(k.UID), ConnID: k.ConnID, PID: int32(k.PID), StartTime: k.StartTime, FD: int32(k.FD)}
+		SendQ: k.SendQ, UID: int32(k.UID), ConnID: k.ConnID, PID: int32(k.PID), StartTime: k.StartTime, FD: int32(k.FD),
+		V6Only: b2i(k.V6Only)}
 }
 
 type metaRow struct {

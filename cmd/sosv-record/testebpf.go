@@ -234,6 +234,17 @@ func testTCP(o bpftcp.Options, check func(string, bool, string)) {
 	deadPort := dead.Addr().(*net.TCPAddr).Port
 	dead.Close()
 	net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", deadPort), time.Second)
+	// IPv6 listeners: Go leaves IPV6_V6ONLY off for "tcp" on the wildcard
+	// address and sets it for "tcp6".
+	dual, _ := net.Listen("tcp", "[::]:0")
+	only6, _ := net.Listen("tcp6", "[::]:0")
+	v6ports := [2]int{}
+	for i, l := range []net.Listener{dual, only6} {
+		if l != nil {
+			v6ports[i] = l.Addr().(*net.TCPAddr).Port
+			defer l.Close()
+		}
+	}
 	time.Sleep(300 * time.Millisecond)
 	ln.Close()
 
@@ -287,5 +298,17 @@ func testTCP(o bpftcp.Options, check func(string, bool, string)) {
 	// By port as well: the pointer may have belonged to an earlier socket of this test.
 	e, ok = find(sk["refused"], func(e bpftcp.Event) bool { return e.New == bpftcp.Close && e.DPort == deadPort })
 	try("tcp: refused connect, reset received", ok && e.ResetsReceived > 0, fmt.Sprintf("resets received %d", e.ResetsReceived))
+	if v6ports[0] != 0 && v6ports[1] != 0 {
+		got := map[int]string{}
+		for _, e := range evs {
+			if e.Kind == bpftcp.State && e.New == bpftcp.Listen && e.Family == 10 {
+				got[e.SPort] = fmt.Sprintf("%v v6only=%v", e.SAddr, e.V6Only)
+			}
+		}
+		d, o := got[v6ports[0]], got[v6ports[1]]
+		try("tcp: IPv6 listener, v6only flag", d == ":: v6only=false" && o == ":: v6only=true", fmt.Sprintf("dual-stack %q, IPv6 only %q", d, o))
+	} else {
+		fmt.Println("SKIP  tcp: IPv6 listener, v6only flag (no IPv6 listener possible)")
+	}
 	fmt.Printf("tcp drops: %v\n", src.Drops())
 }

@@ -59,3 +59,23 @@ func TestPSFormatting(t *testing.T) {
 		t.Errorf("kernel thread: %q", c)
 	}
 }
+
+func TestFmtAddrDual(t *testing.T) {
+	any6, any4 := netip.IPv6Unspecified(), netip.IPv4Unspecified()
+	for _, c := range []struct {
+		a      netip.Addr
+		ifname string
+		v6only bool
+		want   string
+	}{
+		{any6, "", false, "*"}, // also accepts IPv4: ss prints "*"
+		{any6, "", true, "[::]"},
+		{any6, "eth0", false, "*%eth0"},
+		{any4, "", false, "0.0.0.0"},
+		{netip.MustParseAddr("::1"), "", false, "[::1]"},
+	} {
+		if got := fmtAddrDual(c.a, c.ifname, c.v6only); got != c.want {
+			t.Errorf("fmtAddrDual(%v, %q, %v) = %q, want %q", c.a, c.ifname, c.v6only, got, c.want)
+		}
+	}
+}

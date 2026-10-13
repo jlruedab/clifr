@@ -28,12 +28,17 @@ type Socket struct {
 	Inode   uint64 // 0 for TIME-WAIT and request sockets
 	Timer   int    // idiag_timer: 3 = time-wait timer
 	Expires uint32 // ms until the timer fires (for TIME-WAIT: until it ends)
+	// V6Only: an IPv6 socket that does not accept IPv4 (IPV6_V6ONLY). The
+	// kernel reports it for listening and unconnected sockets; ss prints the
+	// unspecified address of the others as "*".
+	V6Only bool
 }
 
 const (
 	sockDiagByFamily = 20
 	reqLen           = 16 + 56 // nlmsghdr + inet_diag_req_v2
 	msgLen           = 72      // inet_diag_msg without attributes
+	attrSKV6Only     = 11      // INET_DIAG_SKV6ONLY: one byte
 	allStates        = 0xffffffff
 )
 
@@ -175,5 +180,16 @@ func parseDiagMsg(m []byte, proto uint8) (Socket, bool) {
 	s.TxQ = ne.Uint32(m[60:])
 	s.UID = ne.Uint32(m[64:])
 	s.Inode = uint64(ne.Uint32(m[68:]))
+	// Attributes: struct nlattr {u16 len, u16 type}, padded to 4 bytes.
+	for a := m[msgLen:]; len(a) >= 4; {
+		l := int(ne.Uint16(a[0:]))
+		if l < 4 || l > len(a) {
+			break
+		}
+		if ne.Uint16(a[2:]) == attrSKV6Only && l >= 5 {
+			s.V6Only = a[4] != 0
+		}
+		a = a[min((l+3)&^3, len(a)):]
+	}
 	return s, true
 }
