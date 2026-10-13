@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS verify_snapshots (
 	id INTEGER PRIMARY KEY,
 	ts INTEGER NOT NULL,           -- when the real command started
 	end_ts INTEGER,                -- when it finished
-	cmd TEXT NOT NULL,             -- "ps aux", "ss -tanp", "lsof -n -P"
+	cmd TEXT NOT NULL,             -- "ps aux", "ss -tanp", "lsof -n -P -K i", ...
 	sample_ts INTEGER,             -- the sample it is compared with
 	ignore_pids TEXT,              -- recorder and tool PIDs, comma separated
 	output TEXT NOT NULL

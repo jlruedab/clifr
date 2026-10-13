@@ -60,7 +60,7 @@ var ignoredFields = map[string]string{
 	"ps aux": "%CPU and %MEM (rounding; derived from TIME and RSS, which are compared); " +
 		"the work-item suffix of kernel worker names ([kworker/1:3-events]), which changes every few ms",
 	"ss -tanp": "none",
-	"lsof -n -P": "DEVICE and SIZE/OFF (not recorded); mem/DEL/mmap rows (mapped files are not recorded); thread (TID) rows; kernel-thread txt placeholders; " +
+	"lsof -n -P": "DEVICE and SIZE/OFF (not recorded); mem/DEL/mmap rows (mapped files are not recorded); thread (TID) rows (captured with -K i: none); kernel-thread txt placeholders; " +
 		"TYPE and NAME of sockets lsof could not resolve (TYPE sock: newer than lsof's own /proc/net read), which are matched by inode instead",
 }
 
@@ -103,6 +103,9 @@ func Run(db *store.DB) (*Report, error) {
 	for _, s := range snaps {
 		var res Result
 		var err error
+		if s.cmd == "lsof -n -P -K i" {
+			s.cmd = "lsof -n -P" // the same rows without the per-thread ones, which were never compared
+		}
 		switch s.cmd {
 		case "ps aux":
 			res, err = comparePS(db, s)
@@ -599,6 +602,12 @@ func fdChurn(db *store.DB, pid int, fd string, s, next, nextAny int64, window [2
 		 (c.owner_until > ?3 AND c.owner_until <= ?4))`, pid, num, window[0], window[1]) {
 		return true
 	}
+	// Held storage: first_seen is the first walk that saw the fd, so a row
+	// starting at the next walk opened in the gap.
+	if query.FDsHeld(db) && exists(db, `SELECT 1 FROM fds_held x WHERE x.pid = ?1 AND x.fd = ?2 AND `+changed,
+		pid, num, s, next, noNext) {
+		return true
+	}
 	return exists(db, `SELECT 1 FROM open_files x JOIN processes p ON p.id = x.proc_id
 		WHERE p.pid = ?1 AND x.fd = ?2 AND `+changed, pid, num, s, next, noNext) ||
 		window[1] == 0 && exists(db, `SELECT 1 FROM sock_owners x JOIN processes p ON p.id = x.proc_id
@@ -634,7 +643,9 @@ func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result,
 		// have is not expected yet.
 		real = map[string]lsofLine{}
 		for k, r := range all {
-			if p, ok := prev[k]; ok && p.name == r.name && p.typ == r.typ {
+			// The same fd number with another inode is another open file
+			// (a pidfd has its own inode per process since Linux 6.9).
+			if p, ok := prev[k]; ok && p.name == r.name && p.typ == r.typ && p.node == r.node {
 				real[k] = r
 				continue
 			}

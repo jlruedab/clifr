@@ -23,7 +23,9 @@ var verifyCommands = [][]string{
 	{"iostat", "-dx"},
 	{"ps", "aux"},
 	{"ss", "-tanp"},
-	{"lsof", "-n", "-P"},
+	// -K i: no per-thread rows. They repeat the process's rows (a million
+	// lines on a busy server) and are not compared.
+	{"lsof", "-n", "-P", "-K", "i"},
 }
 
 // captureVerify runs the real tools and queues their output for the next

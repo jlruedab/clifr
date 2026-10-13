@@ -248,36 +248,38 @@ idle machine): `uptime`, `vmstat`, `mpstat -P ALL` (92 rows) and `iostat -dx`
 (232 rows) all matched the real tools' output within 1% or 0.02.
 
 Against the real tools at the busy load (2026-10-13,
-`accuracy-busy-20261013-1833`): 20 minutes, the real commands captured at 10
+`accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10
 checkpoints and compared with the reconstruction for the same moment.
 
 | Tool | Rows in the real output | Matched | Only on one side, started or ended while the real command ran (missing / extra) | Only on one side, not explained (missing / extra) |
 |---|---|---|---|---|
-| `ps aux` | 25,142 | 99.92% | 20 / 26 | 0 / 0 |
-| `ss -tanp` | 696,109 | 99.53% | 3,224 / 3,635 | 21 / 21 |
-| `lsof -n -P` | 1,099,706 | 99.99% | 55 / 1,069 | 17 / 65 |
+| `ps aux` | 25,158 | 99.92% | 20 / 26 | 0 / 0 |
+| `ss -tanp` | 697,048 | 99.54% | 3,180 / 2,352 | 2 / 2 |
+| `lsof -n -P` | 1,099,499 | 100.00% | 0 / 525 | 1 / 52 |
 
-- The real `ss` finished about 1 s after the sample and the real `lsof` about
-  12 s after it, with 500 connections opening and closing per second. A row
-  counts as explained when the recording shows the process, socket or fd
-  starting or ending in that gap.
-- `ss`, not explained: two dual-stack listeners of one desktop process at
-  every checkpoint, which the real `ss` prints as `*:1716` and sosv printed
-  as `[::]:1716` (fixed since: the flag is now recorded), and one TIME-WAIT
-  row.
-- `lsof`, not explained (not investigated): pidfds of the load generator,
-  timerfds of desktop processes, and short-lived deleted shared-memory files
-  and sockets of a browser.
-- Fields of matched rows that did not change in the gap: `ps` 99.38% exact
+- The real `ss` finished about 1.3 s after the sample and the real `lsof`
+  about 2.3 s after it, with 500 connections opening and closing per second.
+  A row counts as explained when the recording shows the process, socket or
+  fd starting or ending in that gap.
+- `ss`, not explained: TIME-WAIT sockets that the real `ss` prints with a
+  device suffix (`addr%wlp...`), which sosv does not have for them.
+- `lsof`, not explained (not investigated further): mostly pidfds of the
+  load generator and timerfds of desktop processes.
+- Fields of matched rows that did not change in the gap: `ps` 99.40% exact
   (RSS, state and CPU time move between the sample and the command), `ss`
-  99.99%, `lsof` 99.91%.
-- System-wide tools at the same checkpoints: `vmstat` 10 of 10 and `mpstat`
-  230 of 230 rows within tolerance; `iostat` 568 of 570 rows (write rates at
-  the first checkpoint); `uptime` 8 of 10 (a load average off by more than
-  0.05 at the second and third checkpoints).
-- The recorder dropped no event. With the captures it used 947 MiB on
-  average (1.4 GiB at most): `--verify-every` is a test aid, not for
-  production.
+  99.99%, `lsof` 99.94%.
+- System-wide tools at the same checkpoints: `vmstat` 10 of 10, `mpstat`
+  230 of 230 and `iostat` 570 of 570 rows within tolerance; `uptime` 9 of 10
+  (one load average off by more than 0.05).
+- The recorder dropped no event. With the captures it used 387 MiB on
+  average (510 MiB at most), against 327 MiB without them.
+
+An earlier run the same day (`accuracy-busy-20261013-1833`) had 21 / 21
+unexplained `ss` rows and 17 / 65 `lsof` rows. It led to three fixes: the
+IPV6_V6ONLY flag is recorded (dual-stack listeners), `sosv verify` checks
+the held-fd table for files that changed in the gap, and the real `lsof` is
+captured without per-thread rows (1.2 million lines and 12 s per checkpoint
+before, which also took the recorder to 947 MiB).
 
 ### Cost at the busy load
 
