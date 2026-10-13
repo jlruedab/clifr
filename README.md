@@ -98,7 +98,7 @@ last flush.
 ### As a service
 
 `deploy/sosv.service` runs the recorder with Nice=10, the idle IO class,
-CPUQuota=5%, MemoryMax=256M, a read-only filesystem except its state
+CPUQuota=5%, MemoryMax=768M, a read-only filesystem except its state
 directory and only the capabilities it needs (listed in the unit; kernels
 before 5.8 need CAP_SYS_ADMIN for eBPF):
 
@@ -106,8 +106,11 @@ before 5.8 need CAP_SYS_ADMIN for eBPF):
     sudo install -m 0644 deploy/sosv.service /etc/systemd/system/
     sudo systemctl daemon-reload && sudo systemctl enable --now sosv
 
-Read [Limitations](#limitations) before using these limits on a busy server:
-the measured memory at the busy benchmark load is above MemoryMax.
+MemoryMax is about 1.5 times the highest memory measured in the benchmark
+(502 MiB with 100,000 connections). Read [Limitations](#limitations) before
+relying on the CPU limit on a busy server: the measured CPU at the busy
+benchmark load (5.2% of one core) is at CPUQuota, so the recorder would be
+throttled there.
 
 ## Querying
 
@@ -244,8 +247,36 @@ System-wide tools (2026-10-12, a 25 s recording with 4 checkpoints on the
 idle machine): `uptime`, `vmstat`, `mpstat -P ALL` (92 rows) and `iostat -dx`
 (232 rows) all matched the real tools' output within 1% or 0.02.
 
-Not measured on this machine: `sosv verify` of `ps`, `ss` and `lsof` under
-the busy load (`bench/accuracy.sh`).
+Against the real tools at the busy load (2026-10-13,
+`accuracy-busy-20261013-1833`): 20 minutes, the real commands captured at 10
+checkpoints and compared with the reconstruction for the same moment.
+
+| Tool | Rows in the real output | Matched | Only on one side, started or ended while the real command ran (missing / extra) | Only on one side, not explained (missing / extra) |
+|---|---|---|---|---|
+| `ps aux` | 25,142 | 99.92% | 20 / 26 | 0 / 0 |
+| `ss -tanp` | 696,109 | 99.53% | 3,224 / 3,635 | 21 / 21 |
+| `lsof -n -P` | 1,099,706 | 99.99% | 55 / 1,069 | 17 / 65 |
+
+- The real `ss` finished about 1 s after the sample and the real `lsof` about
+  12 s after it, with 500 connections opening and closing per second. A row
+  counts as explained when the recording shows the process, socket or fd
+  starting or ending in that gap.
+- `ss`, not explained: two dual-stack listeners of one desktop process at
+  every checkpoint, which the real `ss` prints as `*:1716` and sosv as
+  `[::]:1716` (see Limitations), and one TIME-WAIT row.
+- `lsof`, not explained (not investigated): pidfds of the load generator,
+  timerfds of desktop processes, and short-lived deleted shared-memory files
+  and sockets of a browser.
+- Fields of matched rows that did not change in the gap: `ps` 99.38% exact
+  (RSS, state and CPU time move between the sample and the command), `ss`
+  99.99%, `lsof` 99.91%.
+- System-wide tools at the same checkpoints: `vmstat` 10 of 10 and `mpstat`
+  230 of 230 rows within tolerance; `iostat` 568 of 570 rows (write rates at
+  the first checkpoint); `uptime` 8 of 10 (a load average off by more than
+  0.05 at the second and third checkpoints).
+- The recorder dropped no event. With the captures it used 947 MiB on
+  average (1.4 GiB at most): `--verify-every` is a test aid, not for
+  production.
 
 ### Cost at the busy load
 
@@ -301,9 +332,13 @@ processes and is not part of the recorder's CPU figure.
 - **The guard rail then degrades open-file data.** In every matrix run it
   stretched the fd interval from 2 to 16 minutes (default configuration).
   It only lengthens that interval; process sampling and events continue.
-- **Memory is about twice v1's** and above the shipped unit's MemoryMax=256M
-  at the busy load, so under that unit the recorder would be reclaimed or
-  killed there. Rows are buffered until the 5-minute flush.
+- **Memory is about twice v1's**: 327 MiB on average at the busy load and up
+  to 502 MiB with 100,000 connections. Rows are buffered until the 5-minute
+  flush. The shipped unit allows 768 MiB; above that the recorder is killed
+  and restarted, losing the rows since the last flush.
+- **The shipped unit's CPUQuota=5% is at the measured cost** at the busy load
+  (5.2% of one core without the cap). The recorder has not been run under
+  the unit at that load: throttled, it may fall behind on events.
 - **Tail latency**: a small but measurable rise of pgbench's average and
   p99.9 latency in the last batch; the cause is not investigated.
 - **Open files are sampled.** A file opened and closed between two walks is
@@ -319,6 +354,9 @@ processes and is not part of the recorder's CPU figure.
   are the values at the sample. On its since-boot line procps-ng 4.0.4
   prints a context-switch figure that is not per second; sosv prints the
   per-second rate. Interval output is not compared by `sosv verify`.
+- **Dual-stack listeners in `ss`**: whether an IPv6 socket also accepts IPv4
+  (IPV6_V6ONLY off) is not recorded, so a listener the real `ss` prints as
+  `*:port` appears as `[::]:port`.
 - **Namespaces**: only the host network namespace's sockets and the
   recorder's mount namespace are recorded.
 - **Zombie processes** disappear from `sosv ps` at their exit event, while

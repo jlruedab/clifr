@@ -10,7 +10,7 @@
 #          (72h) is deleted, and the oldest hours go first above --max-size.
 
 [Unit]
-Description=sosv flight recorder (processes, sockets, open files)
+Description=sosv flight recorder (processes, sockets, open files, system counters)
 Documentation=file:///usr/local/share/doc/sosv/README.md
 After=local-fs.target
 
@@ -23,11 +23,14 @@ StateDirectory=sosv
 StateDirectoryMode=0700
 
 # Resource limits: the recorder must never compete with the real workload.
-CPUAccounting=yes
 MemoryAccounting=yes
 IOAccounting=yes
 CPUQuota=5%
-MemoryMax=256M
+# Measured on a 22-CPU machine: 327 MiB on average (397 at most) with 20,000
+# connections and 500 new ones per second, 502 MiB at most with 100,000
+# connections. Above the limit the kernel kills the recorder and systemd
+# restarts it: the rows since the last flush (up to 5 minutes) are lost.
+MemoryMax=768M
 Nice=10
 IOSchedulingClass=idle
 

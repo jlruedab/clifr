@@ -21,7 +21,7 @@
 #         the flight record.
 #
 # Safety on a production server:
-#   - The recorder runs with CPUQuota=5%, MemoryMax=256M, Nice=10,
+#   - The recorder runs with CPUQuota=5%, MemoryMax=768M, Nice=10,
 #     IOSchedulingClass=idle, ProtectSystem=strict (writable: DIR only),
 #     NoNewPrivileges and only CAP_SYS_PTRACE, CAP_DAC_READ_SEARCH and
 #     CAP_NET_ADMIN. Its own guard rail (2% CPU budget) lengthens the fd
@@ -93,7 +93,7 @@ start() {
     # Same limits and sandbox as deploy/sosv.service.
     systemd-run --quiet --unit=$REC --description="sosv recorder (passive benchmark)" \
         -p CPUAccounting=yes -p MemoryAccounting=yes -p IOAccounting=yes \
-        -p CPUQuota=5% -p MemoryMax=256M -p Nice=10 -p IOSchedulingClass=idle \
+        -p CPUQuota=5% -p MemoryMax=768M -p Nice=10 -p IOSchedulingClass=idle \
         -p "CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN" \
         -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=read-only \
         -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \

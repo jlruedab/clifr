@@ -10,11 +10,11 @@ The PoC exists to prove two things with evidence: **accuracy** (reconstruction v
 real tools) and **cost** (CPU / memory / disk of recording and its impact on a busy
 workload). The benchmark results under `bench/` are the main deliverable, not CLI polish.
 
-**Current state:** v2 refactor in progress (event-based recorder, Parquet,
-DuckDB CLI). v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
-benchmarkable side by side. `HANDOFF.md` has the v1 benchmark history.
-Build one v2 milestone at a time, run it, report results, and wait for the
-user's go-ahead.
+**Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
+1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
+benchmarkable side by side. `HANDOFF.md` has the current results, the open
+items and the history. Do one step at a time, run it, report results, and
+wait for the user's go-ahead.
 
 ## Hard constraints (v2)
 - Two binaries. `sosv-record`: pure Go, static, `CGO_ENABLED=0`, runs on the
@@ -103,19 +103,20 @@ user's go-ahead.
   `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`
 - Quick manual run: `sudo ./sosv-record --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
   then `./sosv ps aux --data-dir /tmp/d --at "..."`
-- Machine notes: v2 milestones 6–8 run on the current VM: 22 vCPU, 61 GB RAM,
+- Machine notes: v2 milestones 6–9 ran on the current machine (bare metal,
+  Intel Core Ultra 7 155H): 22 logical CPUs, 61 GB RAM,
   Ubuntu 26.04, kernel 7.0, Go 1.27, PostgreSQL 18 (uutils coreutils: do not
   rely on GNU-only `date` etc.). Set up with `sudo bench/setup.sh` on 2026-10-10;
   unit tests, both `--test-ebpf` modes and the e2e test pass there. Earlier
   numbers are not comparable with it: v1 and v2 milestones 1–5 ran on the old
   8 vCPU VM (kernel 6.8, failing disk), the busy 20261008-0721 batch on a
-  4 vCPU Ubuntu 26.04 VM. The pgbench rate must be calibrated again here.
+  4 vCPU Ubuntu 26.04 VM. Calibrated pgbench rate here: `--rate 80000 --cpus 0-11`.
   Bench scripts abort below 1.5 GB free and validate every run
   (`bench/report -validate`).
 - The committed eBPF objects are in sync with the `.bpf.c` sources and load on
   any supported kernel unchanged (CO-RE): no regeneration per machine or kernel,
   only after editing a `.bpf.c` file (`go generate`; needs the apt packages
-  clang-18, llvm-18 and libbpf-dev, installed on the current VM since M6).
+  clang-18, llvm-18 and libbpf-dev, installed on the current machine since M6).
 
 ## Milestone status
 v1 (tag `v1-snapshot`): milestones 1–9 done; its report generator and

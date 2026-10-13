@@ -530,7 +530,7 @@ func ratioText(g growth) string {
 
 func passiveSection(p *Run) section {
 	s := section{Title: "Real server: " + p.ID, Level: 2}
-	s.Blocks = append(s.Blocks, block{Para: fmt.Sprintf("Recorder under the shipped unit's limits (CPUQuota=5%%, MemoryMax=256M), no generated load; %s measured.",
+	s.Blocks = append(s.Blocks, block{Para: fmt.Sprintf("Recorder under the shipped unit's CPUQuota and MemoryMax, no generated load; %s measured.",
 		dur(float64(p.To-p.From)/1000))})
 	t := &table{KV: true, Head: []string{"Metric", "Value"}}
 	for _, md := range append(costMetrics, metricDef{"throttled_pct", "Time throttled by CPUQuota, %", func(v float64) string { return numFmt(v, 1) }}) {
