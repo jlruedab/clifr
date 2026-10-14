@@ -65,6 +65,7 @@ func run(args []string) error {
 	bpfStats := fs.Bool("bpf-stats", false, "measure the eBPF programs' own run time (adds a little to every run); shown by sosv stats")
 	pprofDir := fs.String("pprof-dir", "", "write the recorder's own CPU and heap profiles to this directory (for development)")
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
+	heapTarget := fs.String("gc-heap-target", "384M", "heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50 (0 = always 50; GOGC or GOMEMLIMIT in the environment turn this off)")
 	maxSize := fs.String("max-size", "0", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -88,10 +89,18 @@ func run(args []string) error {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}
 	logger := log.New(os.Stderr, "sosv-record: ", log.LstdFlags)
-	if os.Getenv("GOGC") == "" {
-		// The recorder's memory is mostly rows waiting for the next flush,
-		// and garbage on top of them: collect at +50% instead of Go's +100%.
-		debug.SetGCPercent(50)
+	if os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" {
+		target, err := parseSize(*heapTarget)
+		if err != nil {
+			return fmt.Errorf("--gc-heap-target: %w", err)
+		}
+		if target > 0 {
+			stop := make(chan struct{})
+			defer close(stop)
+			go tuneGC(uint64(target), 5*time.Second, stop)
+		} else {
+			debug.SetGCPercent(gcPercentMin)
+		}
 	}
 	if *bpfStats {
 		// Kernel-wide while this descriptor is open (Linux 5.8+).

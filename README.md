@@ -57,6 +57,7 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
 | `--retention` / `--max-size` | 72h / none | delete old data; the oldest hours go first above the size cap |
+| `--gc-heap-target` | 384M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
 | `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
@@ -343,7 +344,15 @@ processes and is not part of the recorder's CPU figure.
 - **Memory is about twice v1's**: 327 MiB on average at the busy load and up
   to 502 MiB with 100,000 connections. Rows are buffered until the 5-minute
   flush. The shipped unit allows 768 MiB; above that the recorder is killed
-  and restarted, losing the rows since the last flush.
+  and restarted, losing the rows since the last flush. (Matrix numbers.)
+  Since 2026-10-14 the recorder trades some memory for CPU: garbage is
+  collected at Go's default rate while the heap is small
+  (`--gc-heap-target`). In single runs this cost about 85–90 MiB more
+  anonymous memory (busy load 388 MiB average, 494 MiB max; 100,000
+  connections 517 / 568 MiB) and saved about 0.5% of one core at the busy
+  load. A fixed Go memory limit (`GOMEMLIMIT`) is not a safe alternative:
+  at 384 MiB it took the recorder to 11% of one core with 100,000
+  connections, mostly collecting.
 - **The shipped unit's CPUQuota=5% is at the measured cost** at the busy load
   (5.2% of one core without the cap). The recorder has not been run under
   the unit at that load: throttled, it may fall behind on events.
