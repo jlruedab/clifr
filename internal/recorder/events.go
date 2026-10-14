@@ -303,7 +303,7 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 		}
 		pe.kind = evFork
 		pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID) // the parent's, until it execs
-		r.readTTY(&pe)
+		r.eventTTY(&pe, e)
 	case bpfproc.Exec:
 		pe.kind = evExec
 		pe.attrs.Cmdline, pe.attrs.Exe, pe.attrs.ExecTS = e.Cmdline, e.Filename, pe.ts
@@ -312,9 +312,12 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 				pe.attrs.Cmdline = full
 			}
 		}
-		r.readTTY(&pe)
+		r.eventTTY(&pe, e)
 	case bpfproc.Exit:
 		pe.kind = evExit
+		if e.HaveTTY { // a process seen only at its exit is stored from this event
+			pe.tty, pe.sid, pe.pgrp = e.TTY, e.SID, e.PGRP
+		}
 		code, sig := e.ExitStatus()
 		if sig != 0 {
 			pe.signal = &sig
@@ -343,7 +346,13 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 	return pe, true
 }
 
-func (r *Recorder) readTTY(pe *procEvent) {
+// eventTTY sets terminal, session and process group from the event, or
+// from /proc/<pid>/stat on kernels where the event lacks them.
+func (r *Recorder) eventTTY(pe *procEvent, e bpfproc.Event) {
+	if e.HaveTTY {
+		pe.tty, pe.sid, pe.pgrp = e.TTY, e.SID, e.PGRP
+		return
+	}
 	if st, err := r.fs.ReadStat(pe.pid); err == nil {
 		pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
 	}

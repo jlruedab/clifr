@@ -24,6 +24,10 @@ type procRBEvent struct {
 	ExitCode int32
 	ArgsLen  uint32
 	RssKb    uint64
+	TtyNr    uint32
+	Sid      int32
+	Pgrp     int32
+	Flags    uint32
 	Comm     [16]int8
 	Filename [256]int8
 	Args     [1024]int8

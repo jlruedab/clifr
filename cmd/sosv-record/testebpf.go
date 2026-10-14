@@ -11,8 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"sosv/internal/bpfproc"
 	"sosv/internal/bpftcp"
+	"sosv/internal/procfs"
 )
 
 // testEBPF loads the eBPF programs, triggers each event type and checks that
@@ -82,7 +85,19 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 	code, sig := e.ExitStatus()
 	check("exit code", e.Kind == bpfproc.Exit && code == 3 && sig == 0, fmt.Sprintf("code %d, signal %d", code, sig))
 
-	// A command line longer than the event carries.
+	// Session, process group and terminal: the child inherits ours.
+	if me, err := procfs.New("/proc").ReadStat(os.Getpid()); err != nil {
+		check("fork/exec/exit: session, terminal", false, err.Error())
+	} else {
+		same := func(ev bpfproc.Event) bool {
+			return !ev.HaveTTY || ev.SID == me.Session && ev.PGRP == me.PGRP && ev.TTY == me.TTY
+		}
+		check("fork/exec/exit: session, terminal", same(f) && same(x) && same(e),
+			fmt.Sprintf("sid %d, pgrp %d, tty %d in the events (carried: %v); ours %d, %d, %d",
+				x.SID, x.PGRP, x.TTY, x.HaveTTY, me.Session, me.PGRP, me.TTY))
+	}
+	testPTY(wait, check)
+
 	long := strings.Repeat("x", 2000)
 	cmd = exec.Command("/bin/sh", "-c", "exit 0", long)
 	cmd.Start()
@@ -311,4 +326,47 @@ func testTCP(o bpftcp.Options, check func(string, bool, string)) {
 		fmt.Println("SKIP  tcp: IPv6 listener, v6only flag (no IPv6 listener possible)")
 	}
 	fmt.Printf("tcp drops: %v\n", src.Drops())
+}
+
+// testPTY starts a process in a new session on a pseudo-terminal and checks
+// that its exec event carries what /proc/<pid>/stat shows.
+func testPTY(wait func(int, ...bpfproc.Kind) map[bpfproc.Kind]bpfproc.Event, check func(string, bool, string)) {
+	const name = "exec: new session on a pty"
+	ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY, 0)
+	if err != nil {
+		check(name, false, err.Error())
+		return
+	}
+	defer ptmx.Close()
+	n, err := unix.IoctlGetInt(int(ptmx.Fd()), unix.TIOCGPTN)
+	if err == nil {
+		err = unix.IoctlSetPointerInt(int(ptmx.Fd()), unix.TIOCSPTLCK, 0)
+	}
+	if err != nil {
+		check(name, false, err.Error())
+		return
+	}
+	pts, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_RDWR|unix.O_NOCTTY, 0)
+	if err != nil {
+		check(name, false, err.Error())
+		return
+	}
+	defer pts.Close()
+	cmd := exec.Command("/bin/sleep", "2")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = pts, pts, pts
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+	if err := cmd.Start(); err != nil {
+		check(name, false, err.Error())
+		return
+	}
+	defer cmd.Wait()
+	defer cmd.Process.Kill()
+	x := wait(cmd.Process.Pid, bpfproc.Exec)[bpfproc.Exec]
+	st, err := procfs.New("/proc").ReadStat(cmd.Process.Pid)
+	if err != nil {
+		check(name, false, err.Error())
+		return
+	}
+	check(name, x.HaveTTY && x.TTY != 0 && x.TTY == st.TTY && x.SID == st.Session && x.PGRP == st.PGRP,
+		fmt.Sprintf("event: tty %d, sid %d, pgrp %d; /proc: %d, %d, %d (/dev/pts/%d)", x.TTY, x.SID, x.PGRP, st.TTY, st.Session, st.PGRP, n))
 }

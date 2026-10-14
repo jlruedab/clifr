@@ -62,6 +62,11 @@ type Event struct {
 	Status int32
 	// OOM only: victim RSS from the tracepoint (0 on kernels that lack it).
 	RSSKB uint64
+	// Fork (tp_btf), exec and exit, if HaveTTY: controlling terminal (as
+	// tty_nr in /proc/<pid>/stat), session and process group. Not set by the
+	// classic fork tracepoint, OOM events and kernels before 4.19.
+	HaveTTY        bool
+	TTY, SID, PGRP int
 }
 
 // ExitStatus decodes Status: the exit code, or the signal that killed it.
@@ -294,6 +299,8 @@ func (s *Source) ProgStats() map[string][2]uint64 {
 
 const eventSize = int(unsafe.Sizeof(procRBEvent{}))
 
+const flagTTY = 1 // FLAG_TTY in procevents.bpf.c
+
 // decode copies the raw event into the generated struct (host layout, the
 // same bytes the kernel side wrote); no reflection. Fork, exit and OOM
 // events stop before filename.
@@ -301,7 +308,8 @@ func decode(raw []byte) (Event, error) {
 	var r procRBEvent
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(&r)), eventSize), raw)
 	e := Event{Kind: Kind(r.Kind), PID: int(r.Pid), PPID: int(r.Ppid), UID: int(r.Uid), MonoNS: r.MonoNs,
-		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb}
+		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb,
+		HaveTTY: r.Flags&flagTTY != 0, TTY: int(r.TtyNr), SID: int(r.Sid), PGRP: int(r.Pgrp)}
 	if e.Kind == Exec {
 		e.Filename = cstr(r.Filename[:])
 		n := min(int(r.ArgsLen), ArgsMax)

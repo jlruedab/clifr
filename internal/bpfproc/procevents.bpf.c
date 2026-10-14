@@ -28,8 +28,28 @@ struct mm_struct {
 	unsigned long arg_end;
 } __attribute__((preserve_access_index));
 
+struct tty_driver {
+	int major;
+	int minor_start;
+} __attribute__((preserve_access_index));
+
+struct tty_struct {
+	int index;
+	struct tty_driver *driver;
+} __attribute__((preserve_access_index));
+
+struct upid { int nr; } __attribute__((preserve_access_index));
+struct pid { struct upid numbers[1]; } __attribute__((preserve_access_index));
+
+// enum pid_type since Linux 4.19, when the process group and session moved
+// to signal_struct (pids[]) and PIDTYPE_TGID was added.
+#define PIDTYPE_PGID 2
+#define PIDTYPE_SID 3
+
 struct signal_struct {
 	atomic_t live; // threads still running; 0 once the whole process has exited
+	struct pid *pids[4];
+	struct tty_struct *tty; // controlling terminal
 } __attribute__((preserve_access_index));
 
 struct task_struct {
@@ -80,10 +100,16 @@ struct event {
 	__s32 exit_code; // exit: raw wait status; oom: -1
 	__u32 args_len; // exec: full length of the argument area (may exceed ARGS_MAX)
 	__u64 rss_kb; // oom: victim RSS from the tracepoint (0: unknown)
+	__u32 tty_nr; // controlling terminal, encoded as /proc/<pid>/stat shows it (0: none)
+	__s32 sid; // session and process group ids (init pid namespace)
+	__s32 pgrp;
+	__u32 flags; // FLAG_*
 	char comm[TASK_COMM_LEN];
 	char filename[FILENAME_MAX_];
 	char args[ARGS_MAX];
 };
+
+#define FLAG_TTY 1 // tty_nr, sid and pgrp are set
 
 // Fork, exit and OOM events are sent without filename and args.
 #define SHORT_EVENT __builtin_offsetof(struct event, filename)
@@ -137,6 +163,10 @@ static __always_inline struct event *new_event(__u32 kind, __u32 slot)
 	e->args_len = 0;
 	e->rss_kb = 0;
 	e->start_ns = 0;
+	e->tty_nr = 0;
+	e->sid = 0;
+	e->pgrp = 0;
+	e->flags = 0;
 	return e;
 }
 
@@ -159,6 +189,30 @@ static __always_inline __u64 task_start(struct task_struct *t)
 	return BPF_CORE_READ(o, real_start_time);
 }
 
+// fill_tty: terminal, session and process group of t's process, as
+// /proc/<pid>/stat shows them (tty_nr: new_encode_dev of the terminal's
+// device number), so that userspace need not read /proc for them. Not on
+// kernels before 4.19 (no signal->pids): userspace reads /proc there.
+static __always_inline void fill_tty(struct event *e, struct task_struct *t)
+{
+	struct signal_struct *sig = BPF_CORE_READ(t, signal);
+	if (!sig || !bpf_core_field_exists(sig->pids))
+		return;
+	struct pid *p = BPF_CORE_READ(sig, pids[PIDTYPE_SID]);
+	if (p)
+		e->sid = BPF_CORE_READ(p, numbers[0].nr);
+	p = BPF_CORE_READ(sig, pids[PIDTYPE_PGID]);
+	if (p)
+		e->pgrp = BPF_CORE_READ(p, numbers[0].nr);
+	struct tty_struct *tty = BPF_CORE_READ(sig, tty);
+	if (tty) {
+		__u32 major = BPF_CORE_READ(tty, driver, major);
+		__u32 minor = BPF_CORE_READ(tty, driver, minor_start) + BPF_CORE_READ(tty, index);
+		e->tty_nr = (minor & 0xff) | (major << 8) | ((minor & ~0xffu) << 12);
+	}
+	e->flags |= FLAG_TTY;
+}
+
 // fill_current: the calling process's identity. The current task may be any
 // of its threads (at exit, whichever exits last), so start time and comm
 // come from the thread group leader, as in /proc/<pid>/stat.
@@ -170,6 +224,7 @@ static __always_inline void fill_current(struct event *e, struct task_struct *t)
 	e->uid = (__u32)bpf_get_current_uid_gid();
 	e->start_ns = task_start(leader);
 	BPF_CORE_READ_STR_INTO(&e->comm, leader, comm);
+	fill_tty(e, t);
 }
 
 static __always_inline int exec_event(void *ctx, __u32 slot, const char *filename)
@@ -312,6 +367,7 @@ int BPF_PROG(handle_fork_btf, struct task_struct *parent, struct task_struct *ch
 	e->uid = (__u32)bpf_get_current_uid_gid();
 	e->start_ns = task_start(child);
 	bpf_get_current_comm(e->comm, sizeof(e->comm));
+	fill_tty(e, child);
 	send(ctx, e, SHORT_EVENT);
 	return 0;
 }

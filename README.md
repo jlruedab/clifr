@@ -331,8 +331,13 @@ processes and is not part of the recorder's CPU figure.
 ## Limitations
 
 - **CPU is above the 2% budget** at almost every measured load, including the
-  quiet baseline. The remaining cost is mostly system calls in the sampling
-  loop and a `/proc` read for each new process.
+  quiet baseline (numbers of the 1050 batch). The remaining cost is mostly
+  garbage collection, connection events and the Parquet writes, plus the
+  command line read from `/proc` for each new process. Since 2026-10-14
+  terminal, session and process group come in the eBPF event instead of a
+  stat read (kernels 4.19+), and single profiled runs measured 4.07% of one
+  core at the busy load and 2.00% at the scaling baseline; the matrix has
+  not been rerun.
 - **The guard rail degraded open-file data in the matrix above.** In every
   matrix run it stretched the fd interval from 2 to 16 minutes (default
   configuration), although fd walks are a small part of the cost. Since
