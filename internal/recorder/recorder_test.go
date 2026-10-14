@@ -461,31 +461,45 @@ func TestCPUBudget(t *testing.T) {
 	r.fdInterval = 2 * time.Minute
 	t0 := time.UnixMilli(1790001000000)
 	b := &store.Batch{}
-	// 1% of a core for 5 minutes: within budget.
-	for i := 0; i <= 10; i++ {
-		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), int64(i)*300_000, b)
+	var cpu, fd int64
+	i := 0
+	// run feeds n samples, 30 s apart, with cpuUS of CPU and fdUS of fd walk each.
+	run := func(n int, cpuUS, fdUS int64) {
+		for ; n > 0; n-- {
+			i++
+			cpu, fd = cpu+cpuUS, fd+fdUS
+			r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), cpu, fd, b)
+		}
 	}
+	r.checkBudget(t0, 0, 0, b)
+	// 1% of a core for 5 minutes: within budget.
+	run(10, 300_000, 150_000)
 	if r.fdInterval != 2*time.Minute || len(b.Guard) != 0 {
 		t.Fatalf("within budget: fd-interval %s, guard %v", r.fdInterval, b.Guard)
 	}
-	// Then 4% of a core: as soon as the rolling 5-minute average crosses 2%
+	// 4% of a core, a tenth of it fd walks: the interval stays, and the
+	// guard says so once however long it lasts.
+	run(40, 1_200_000, 120_000)
+	if r.fdInterval != 2*time.Minute || len(b.Guard) != 1 || b.Guard[0].Kind != "budget_exceeded" {
+		t.Fatalf("over budget, cheap fd walks: fd-interval %s, guard %+v", r.fdInterval, b.Guard)
+	}
+	// Within budget again, then over it with fd walks as half of the cost:
 	// the guard doubles the interval once and starts a new window.
-	cpu := int64(10 * 300_000)
-	for i := 11; i <= 20; i++ {
-		cpu += 1_200_000
-		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), cpu, b)
+	run(15, 300_000, 150_000)
+	run(8, 1_200_000, 600_000)
+	if last := b.Guard[len(b.Guard)-1]; r.fdInterval != 4*time.Minute || len(b.Guard) != 2 || last.Kind != "fd_interval_up" {
+		t.Fatalf("over budget, costly fd walks: fd-interval %s, guard %+v", r.fdInterval, b.Guard)
 	}
-	if r.fdInterval != 4*time.Minute || len(b.Guard) != 1 || b.Guard[0].Kind != "fd_interval_up" {
-		t.Fatalf("over budget: fd-interval %s, guard %+v", r.fdInterval, b.Guard)
-	}
-	// Still over budget: keeps doubling up to the cap, then reports once.
-	for i := 26; i <= 400; i++ {
-		cpu += 1_200_000
-		r.checkBudget(t0.Add(time.Duration(i)*30*time.Second), cpu, b)
-	}
+	// Still so: keeps doubling up to the cap, then reports once.
+	run(400, 1_200_000, 600_000)
 	last := b.Guard[len(b.Guard)-1]
 	if r.fdInterval != maxFDInterval || last.Kind != "budget_exceeded" {
 		t.Errorf("at cap: fd-interval %s, last guard %+v", r.fdInterval, last)
+	}
+	n := len(b.Guard)
+	run(40, 1_200_000, 600_000)
+	if len(b.Guard) != n {
+		t.Errorf("at cap: reported again: %+v", b.Guard[n:])
 	}
 }
 

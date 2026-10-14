@@ -107,6 +107,7 @@ type Recorder struct {
 
 	fdInterval      time.Duration // current; the CPU guard may lengthen it
 	cpuHist         []cpuPoint
+	fdWalkUS        int64 // time spent in fd walks since the start
 	budgetExhausted bool
 	afterSample     func() // test hook
 }
@@ -451,7 +452,8 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	var ru syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
 	cpuUS := ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
-	r.checkBudget(now, cpuUS, &b)
+	r.fdWalkUS += durFD.Microseconds()
+	r.checkBudget(now, cpuUS, r.fdWalkUS, &b)
 
 	b.Sample = store.Sample{
 		TS: ts, FDWalk: fdWalk,

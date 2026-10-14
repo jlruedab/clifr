@@ -57,7 +57,7 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
 | `--retention` / `--max-size` | 72h / none | delete old data; the oldest hours go first above the size cap |
-| `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) and the change is recorded |
+| `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
 | `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
@@ -332,9 +332,14 @@ processes and is not part of the recorder's CPU figure.
 - **CPU is above the 2% budget** at almost every measured load, including the
   quiet baseline. The remaining cost is mostly system calls in the sampling
   loop and a `/proc` read for each new process.
-- **The guard rail then degrades open-file data.** In every matrix run it
-  stretched the fd interval from 2 to 16 minutes (default configuration).
-  It only lengthens that interval; process sampling and events continue.
+- **The guard rail degraded open-file data in the matrix above.** In every
+  matrix run it stretched the fd interval from 2 to 16 minutes (default
+  configuration), although fd walks are a small part of the cost. Since
+  2026-10-14 it lengthens that interval only when the fd walks are at least
+  a quarter of the recorder's CPU; otherwise it records one
+  `budget_exceeded` event and keeps the interval. In one busy-load run with
+  that change the interval stayed at 2 minutes (fd walks: 7% of 5.13% of
+  one core). The matrix has not been rerun with it.
 - **Memory is about twice v1's**: 327 MiB on average at the busy load and up
   to 502 MiB with 100,000 connections. Rows are buffered until the 5-minute
   flush. The shipped unit allows 768 MiB; above that the recorder is killed

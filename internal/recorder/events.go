@@ -263,13 +263,23 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 
 func ebpfStat(k bpfproc.Kind) string { return "ebpf_" + k.String() }
 
-// wallMS converts a CLOCK_MONOTONIC event time to wall-clock unix ms.
-func wallMS(monoNS uint64) int64 {
+// clockRef is one reading of both clocks, for converting the
+// CLOCK_MONOTONIC times of a batch of events without two system calls each.
+type clockRef struct{ wallMS, monoNS int64 }
+
+func newClockRef() clockRef {
 	var mono unix.Timespec
 	unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono)
-	age := mono.Nano() - int64(monoNS)
-	return time.Now().UnixMilli() - max(age, 0)/1e6
+	return clockRef{time.Now().UnixMilli(), mono.Nano()}
 }
+
+// at converts a CLOCK_MONOTONIC event time to wall-clock unix ms.
+func (c clockRef) at(monoNS uint64) int64 {
+	return c.wallMS - max(c.monoNS-int64(monoNS), 0)/1e6
+}
+
+// wallMS converts a CLOCK_MONOTONIC event time to wall-clock unix ms.
+func wallMS(monoNS uint64) int64 { return newClockRef().at(monoNS) }
 
 // fromBPF turns an eBPF event into a procEvent. Exec, exit and (tp_btf)
 // fork events carry the process's start time, so the key is exact without

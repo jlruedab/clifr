@@ -278,8 +278,9 @@ func (r *Recorder) applyTCP(b *store.Batch) {
 func (r *Recorder) drainTCP() {
 	t := r.tcp
 	b := &t.rows
+	clock := newClockRef()
 	for _, e := range t.take() {
-		ts := wallMS(e.MonoNS)
+		ts := clock.at(e.MonoNS)
 		c := t.conns[e.SK]
 		if e.Owner.PID != 0 {
 			t.fdActive[e.Owner.PID] = true
