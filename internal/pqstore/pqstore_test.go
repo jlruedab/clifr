@@ -147,3 +147,41 @@ func TestReadOlderSchema(t *testing.T) {
 		t.Errorf("got %+v", r)
 	}
 }
+
+// Closed rows past several chunks: lookups by id, replacement in place and
+// the written file keep every row in order.
+func TestRowBufChunks(t *testing.T) {
+	e := newEntity[guardRow]()
+	n := 2*chunkRows + 10
+	for i := range n {
+		e.insert(int64(i), guardRow{TS: int64(i), Kind: "a"}, true)
+	}
+	e.insert(int64(n), guardRow{TS: int64(n)}, false)
+	if !e.close(int64(n), func(r *guardRow) { r.Kind = "closed" }) {
+		t.Fatal("close failed")
+	}
+	if r := e.get(int64(chunkRows + 1)); r == nil || r.TS != chunkRows+1 {
+		t.Fatalf("get: %+v", r)
+	}
+	e.get(int64(chunkRows)).Kind = "b"
+	path := filepath.Join(t.TempDir(), "x.parquet")
+	if err := writeFile(path, e.closed.chunks...); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := parquet.ReadFile[guardRow](path)
+	if err != nil || len(rows) != n+1 || e.closed.len() != n+1 {
+		t.Fatalf("rows=%d len=%d err=%v", len(rows), e.closed.len(), err)
+	}
+	for i, r := range rows {
+		want := "a"
+		switch i {
+		case chunkRows:
+			want = "b"
+		case n:
+			want = "closed"
+		}
+		if r.TS != int64(i) || r.Kind != want {
+			t.Fatalf("row %d: %+v, want ts %d kind %s", i, r, i, want)
+		}
+	}
+}

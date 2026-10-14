@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -576,6 +577,28 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 			c.dirty = false
 		}
 	}
+	// Size the batch's rows once: appending tens of thousands of rows one
+	// by one regrew the slice many times (a quarter of all the recorder's
+	// allocation at the busy load).
+	n := 0
+	count := func(c *tconn) {
+		if c.dirty {
+			n++
+		}
+	}
+	for _, c := range t.conns {
+		count(c)
+	}
+	for _, c := range t.unattached {
+		count(c)
+	}
+	for _, c := range t.closedNow {
+		count(c)
+	}
+	for _, c := range t.lingering {
+		count(c)
+	}
+	b.TCPConns = slices.Grow(b.TCPConns, n)
 	for _, c := range t.conns {
 		emit(c)
 	}

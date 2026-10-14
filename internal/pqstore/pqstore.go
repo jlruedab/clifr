@@ -53,9 +53,38 @@ type Options struct {
 // yet flushed.
 type entity[T any] struct {
 	open      map[int64]*T
-	closed    []T
+	closed    rowBuf[T]
 	closedIdx map[int64]int
 }
+
+// chunkRows is the size of a rowBuf chunk.
+const chunkRows = 4096
+
+// rowBuf is an append-only row buffer in chunks of chunkRows (the first one
+// grows like a slice up to that size). Unlike one slice, it never copies the
+// rows it holds when it grows: at the busy load, regrowing the closed
+// connections' buffer was about an eighth of everything the recorder
+// allocated, and so of its garbage collection.
+type rowBuf[T any] struct {
+	chunks [][]T
+	n      int
+}
+
+func (b *rowBuf[T]) add(row T) {
+	if len(b.chunks) == 0 || len(b.chunks[len(b.chunks)-1]) == chunkRows {
+		var c []T
+		if len(b.chunks) > 0 {
+			c = make([]T, 0, chunkRows)
+		}
+		b.chunks = append(b.chunks, c)
+	}
+	c := &b.chunks[len(b.chunks)-1]
+	*c = append(*c, row)
+	b.n++
+}
+
+func (b *rowBuf[T]) at(i int) *T { return &b.chunks[i/chunkRows][i%chunkRows] }
+func (b *rowBuf[T]) len() int    { return b.n }
 
 func newEntity[T any]() *entity[T] {
 	return &entity[T]{open: map[int64]*T{}, closedIdx: map[int64]int{}}
@@ -63,8 +92,8 @@ func newEntity[T any]() *entity[T] {
 
 func (e *entity[T]) insert(id int64, row T, closed bool) {
 	if closed {
-		e.closedIdx[id] = len(e.closed)
-		e.closed = append(e.closed, row)
+		e.closedIdx[id] = e.closed.len()
+		e.closed.add(row)
 	} else {
 		e.open[id] = &row
 	}
@@ -76,7 +105,7 @@ func (e *entity[T]) get(id int64) *T {
 		return r
 	}
 	if i, ok := e.closedIdx[id]; ok {
-		return &e.closed[i]
+		return e.closed.at(i)
 	}
 	return nil
 }
@@ -97,7 +126,7 @@ func (e *entity[T]) close(id int64, fn func(*T)) bool {
 }
 
 func (e *entity[T]) reset() {
-	e.closed = nil
+	e.closed = rowBuf[T]{}
 	e.closedIdx = map[int64]int{}
 }
 
@@ -282,7 +311,7 @@ func (s *Store) Write(b *store.Batch) error {
 		} else {
 			delete(s.conns.open, c.ID)
 			if i, ok := s.conns.closedIdx[c.ID]; ok {
-				s.conns.closed[i] = row
+				*s.conns.closed.at(i) = row
 			} else {
 				s.conns.insert(c.ID, row, true)
 			}
@@ -351,8 +380,8 @@ func (s *Store) Write(b *store.Batch) error {
 // buffered counts the rows waiting for the next flush in the tables that
 // grow with the load: they are what the store's memory consists of.
 func (s *Store) buffered() int {
-	return len(s.trans) + len(s.conns.closed) + len(s.keyframes) + len(s.procs.closed) + len(s.procSamples.rows) +
-		len(s.held.closed) + len(s.socks.closed) + len(s.sockSamples.rows) + len(s.owners.closed) + len(s.files.closed)
+	return len(s.trans) + s.conns.closed.len() + len(s.keyframes) + s.procs.closed.len() + len(s.procSamples.rows) +
+		s.held.closed.len() + s.socks.closed.len() + len(s.sockSamples.rows) + s.owners.closed.len() + s.files.closed.len()
 }
 
 // Flush writes everything buffered and rewrites the open files.
@@ -371,15 +400,15 @@ func (s *Store) Flush() error {
 		errs = append(errs, err)
 	}
 	part("samples", len(s.samples), func(p string) error { return writeFile(p, s.samples) })
-	part("processes", len(s.procs.closed), func(p string) error { return writeFile(p, s.procs.closed) })
+	part("processes", s.procs.closed.len(), func(p string) error { return writeFile(p, s.procs.closed.chunks...) })
 	part("proc_samples", len(s.procSamples.rows), func(p string) error { return writeFile(p, s.procSamples.rows) })
-	part("sockets", len(s.socks.closed), func(p string) error { return writeFile(p, s.socks.closed) })
+	part("sockets", s.socks.closed.len(), func(p string) error { return writeFile(p, s.socks.closed.chunks...) })
 	part("sock_samples", len(s.sockSamples.rows), func(p string) error { return writeFile(p, s.sockSamples.rows) })
-	part("sock_owners", len(s.owners.closed), func(p string) error { return writeFile(p, s.owners.closed) })
-	part("open_files", len(s.files.closed), func(p string) error { return writeFile(p, s.files.closed) })
-	part("fds_held", len(s.held.closed), func(p string) error { return writeFile(p, s.held.closed) })
+	part("sock_owners", s.owners.closed.len(), func(p string) error { return writeFile(p, s.owners.closed.chunks...) })
+	part("open_files", s.files.closed.len(), func(p string) error { return writeFile(p, s.files.closed.chunks...) })
+	part("fds_held", s.held.closed.len(), func(p string) error { return writeFile(p, s.held.closed.chunks...) })
 	part("mounts", len(s.mounts), func(p string) error { return writeFile(p, s.mounts) })
-	part("tcp_conns", len(s.conns.closed), func(p string) error { return writeFile(p, s.conns.closed) })
+	part("tcp_conns", s.conns.closed.len(), func(p string) error { return writeFile(p, s.conns.closed.chunks...) })
 	part("tcp_transitions", len(s.trans), func(p string) error { return writeFile(p, s.trans) })
 	part("tcp_keyframes", len(s.keyframes), func(p string) error { return writeFile(p, s.keyframes) })
 	part("reconcile", len(s.reconcile), func(p string) error { return writeFile(p, s.reconcile) })
@@ -469,7 +498,8 @@ var writerOptions = []parquet.WriterOption{
 }
 
 // writeFile writes rows to path atomically (temporary file, fsync, rename).
-func writeFile[T any](path string, rows []T) error {
+// writeFile writes the rows, given as one or more slices, to a new file.
+func writeFile[T any](path string, rows ...[]T) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
@@ -479,7 +509,11 @@ func writeFile[T any](path string, rows []T) error {
 		return err
 	}
 	w := parquet.NewGenericWriter[T](f, writerOptions...)
-	_, err = w.Write(rows)
+	for _, r := range rows {
+		if err == nil {
+			_, err = w.Write(r)
+		}
+	}
 	err = errors.Join(err, w.Close(), f.Sync(), f.Close())
 	if err != nil {
 		os.Remove(tmp)
