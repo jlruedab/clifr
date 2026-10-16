@@ -66,6 +66,9 @@ type tcpTracker struct {
 	lingering    map[tuple]*tconn  // closed, still a time-wait socket
 	recentClosed map[uint64]*tconn // latest closed in this sample per sock pointer (late resets, app close)
 	closedNow    []*tconn          // all closed in this sample: a pointer can be reused within one
+	// connRows backs the batch's connection rows, reused at every sample:
+	// the backends copy the rows in Write, before the next sample.
+	connRows []store.TCPConn
 	byInode      map[uint64]*tconn
 	udpInodes    map[uint64]bool // from the last keyframe
 	holders      map[uint64]holder
@@ -577,9 +580,9 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 			c.dirty = false
 		}
 	}
-	// Size the batch's rows once: appending tens of thousands of rows one
-	// by one regrew the slice many times (a quarter of all the recorder's
-	// allocation at the busy load).
+	// Size the batch's rows once and reuse them: appending tens of
+	// thousands of rows one by one regrew the slice many times, and a new
+	// slice per sample was still 9% of all allocation at the busy load.
 	n := 0
 	count := func(c *tconn) {
 		if c.dirty {
@@ -597,6 +600,12 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 	}
 	for _, c := range t.lingering {
 		count(c)
+	}
+	if len(b.TCPConns) == 0 {
+		if cap(t.connRows) > 4*max(n, 1024) {
+			t.connRows = nil // after a peak: do not keep it forever
+		}
+		b.TCPConns = t.connRows[:0]
 	}
 	b.TCPConns = slices.Grow(b.TCPConns, n)
 	for _, c := range t.conns {
@@ -620,6 +629,7 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 			delete(t.lingering, tp)
 		}
 	}
+	t.connRows = b.TCPConns
 	// The sample is written: what closed during it is no longer needed.
 	t.recentClosed, t.closedNow = map[uint64]*tconn{}, nil
 }
