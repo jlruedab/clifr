@@ -189,6 +189,9 @@ free disk and validate every run. Keep the machine otherwise idle.
    read-only throughput measured with the busy load running. `--cpus` pins
    PostgreSQL and pgbench (here to the performance cores of a hybrid CPU).
    `bench/run.sh --smoke` is a 3-minute check of the harness.
+   `--configs N1` runs Prometheus Node Exporter instead, for comparison
+   (package `prometheus-node-exporter`; scraped every 15 s from outside its
+   cgroup).
 
 3. **Scaling** (about 2 hours): no workload; processes, open fds, TCP
    connections, process spawns and connection churn varied one at a time,
@@ -327,6 +330,53 @@ point. The budget is 2% of one core.
 Only 1 of 15 points fits the 2% budget. The eBPF programs run inside the
 observed processes' own kernel paths, so their time is charged to those
 processes and is not part of the recorder's CPU figure.
+
+### Compared with Prometheus Node Exporter
+
+Single runs at the busy load (2026-10-16): sosv with all changes up to
+then (`profile-busy-20261016-1259-pqalloc`) and Node Exporter 1.10.2 with
+the Debian package's default collectors, scraped every 15 s
+(`nodeexp-busy-20261016-1405`).
+
+| | sosv (B) | Node Exporter |
+|---|---:|---:|
+| CPU, % of one core | 4.04 | 1.36 |
+| Memory (anonymous), average / max | 394 / 486 MiB | 9.0 / 9.7 MiB |
+| Data kept on the host | about 175 MB/h | none |
+| Written to disk | 484 MB/h | none |
+| Network | none | 274 KB per scrape (uncompressed) |
+
+Node Exporter's CPU comes mostly from slow collectors on this laptop-class
+machine (`systemd`, `hwmon`, `powersupplyclass`, `thermal_zone`: about
+200 ms per scrape); on a server it would likely be well under 1%. Its data
+is kept by a Prometheus server elsewhere: about 3,100 series, roughly
+23 MB per day at 15 s.
+
+The two do different jobs. Node Exporter reports system counters at each
+scrape and keeps nothing between scrapes. sosv records every process,
+connection and open file so that `ps`, `ss` and `lsof` can be answered for
+any past moment. At this load that is about 1,000 connection ends and
+5,000 TCP state changes per second, 50 process starts per second, and in
+memory 2,554 processes, 7,306 sockets, 57,000 open fds and about 30,000
+connections in time-wait. For the part both do, the system counters, sosv
+keeps about 0.3 MB per day and spends about 0.2 ms per sample.
+
+Estimated floor for sosv at this load, if every reduction we know of were
+made (not measured):
+
+| | Now | Best case in Go | Best case in Rust | Node Exporter |
+|---|---:|---:|---:|---:|
+| Memory (anonymous) | 394 MiB | about 60–100 MiB | about 30–50 MiB | 9 MiB |
+| Data kept | 175 MB/h | about 55–90 MB/h | the same | none (Prometheus: about 1 MB/h) |
+| Written to disk | 484 MB/h | close to the data kept | the same | none |
+
+The tracked state alone is some 20–30 MB in compact form, and each
+connection needs some 15–25 bytes on disk even with a tight encoding
+(about 48 now, transitions included). Only recording less closes the gap:
+at this load all connections are loopback from the load generator, and
+without them sosv is near its idle figures (about 22 MB/h and 171 MiB now).
+The fair comparison for sosv is atop with process accounting or a
+continuous eBPF tracer, not a metrics exporter.
 
 ## Limitations
 
