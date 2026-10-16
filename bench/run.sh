@@ -12,6 +12,9 @@
 #                       D   sosv-record --interval 60s --fd-interval 300s (conservative)
 #                       V1  the v1 recorder (tag v1-snapshot, SQLite) at 30s/120s
 #                       R1  atop -w FILE 30                        (reference)
+#                       N1  Prometheus Node Exporter (default collectors, on
+#                           127.0.0.1:9100), scraped every 15 s from outside its
+#                           scope (comparison; not in the default list)
 #   --bpf-stats       B, C, D: also measure the eBPF programs' run time
 #                     (adds a little to every program run: not for latency figures)
 #   --cpus LIST       pin PostgreSQL and pgbench to these CPUs (e.g. 0-11: the
@@ -101,6 +104,7 @@ for c in $CONFIGS; do
     A | B | C | D) ;;
     V1) [[ -x $BIN/sosv-v1 ]] || die "V1 needs $BIN/sosv-v1; run bench/setup.sh" ;;
     R1) command -v atop >/dev/null || die "R1 needs atop" ;;
+    N1) command -v prometheus-node-exporter >/dev/null || die "N1 needs prometheus-node-exporter" ;;
     R2) die "R2 (PCP pmlogger) is not implemented: PCP is not installed on the test machine" ;;
     *) die "unknown configuration $c" ;;
     esac
@@ -126,6 +130,7 @@ disk_devices "$OUT"
     echo "postgresql=$(sudo -u postgres psql -Atc 'show server_version')"
     echo "pg_settings=$(sudo -u postgres psql -Atc "select string_agg(name||'='||setting, ' ') from pg_settings where name in ('shared_buffers','max_wal_size','max_connections','synchronous_commit')" sosvbench)"
     echo "atop=$(atop -V 2>/dev/null | awk 'NR==1 {print $2}')"
+    echo "node_exporter=$(prometheus-node-exporter --version 2>&1 | awk 'NR==1 {print $3}')"
     echo "profiles=$PROFILES"
     echo "configs=$CONFIGS"
     echo "repeats=$REPEATS"
@@ -172,6 +177,7 @@ recorder_cmd() {
     D) s="--interval 60s --fd-interval 300s" ;;
     V1) echo "nice -n 10 ionice -c 3 $BIN/sosv-v1 record --db $RUN/sosv.db --interval 30s --fd-interval 120s"; return ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
+    N1) echo "nice -n 10 ionice -c 3 prometheus-node-exporter --web.listen-address=127.0.0.1:9100"; return ;;
     esac
     echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
 }
@@ -188,9 +194,9 @@ run_one() {
     chmod 777 "$RUN"
     local start warm meas mend end status=ok cmd
     # Not local: the EXIT trap runs after the function has returned.
-    samp_pid='' wd_pid='' load_pid='' rec_pid=''
+    samp_pid='' wd_pid='' load_pid='' rec_pid='' scrape_pid=''
     start=$(now_ms)
-    trap 'kill $samp_pid $wd_pid 2>/dev/null || true; stop_all' EXIT
+    trap 'kill $samp_pid $wd_pid $scrape_pid 2>/dev/null || true; stop_all' EXIT
 
     (($(free_bytes "$OUT") >= $(min_free_bytes))) || { touch "$RUN/LOWDISK"; return 1; }
 
@@ -239,6 +245,15 @@ run_one() {
         sleep 3
         kill -0 $rec_pid 2>/dev/null || { log "$RUNID: recorder died at start"; tail -3 "$RUN/recorder.log"; return 1; }
     fi
+    if [[ $config == N1 ]]; then
+        # The scraper stands in for Prometheus: outside the measured scope.
+        echo "ts_ms,bytes,seconds" >"$RUN/scrape.csv"
+        (while :; do
+            echo "$(now_ms),$(curl -s -o /dev/null -w '%{size_download},%{time_total}' http://127.0.0.1:9100/metrics)" >>"$RUN/scrape.csv"
+            sleep 15
+        done) &
+        scrape_pid=$!
+    fi
 
     warm=$(now_ms)
     log "$RUNID: warm-up ${WARMUP}s"
@@ -249,6 +264,10 @@ run_one() {
     mend=$(now_ms)
     sed -n 2p "$RUN/workload/workload.csv" | awk -F, '{printf "    tps %.0f  lat avg %s ms  p95 %s ms  p99 %s ms  p99.9 %s ms\n", $1, $2, $4, $5, $6}'
 
+    if [[ -n $scrape_pid ]]; then
+        kill $scrape_pid 2>/dev/null || true
+        wait $scrape_pid 2>/dev/null || true
+    fi
     if [[ -n $rec_pid ]]; then
         kill -0 $rec_pid 2>/dev/null || { log "$RUNID: recorder exited during the run"; status=recorder_died; }
         systemctl stop "sosvbench-rec-$RUNID.scope" 2>/dev/null || true # SIGTERM, clean shutdown

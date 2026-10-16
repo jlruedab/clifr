@@ -52,7 +52,8 @@ func (r *Report) validate() []string {
 			need(w, "recorder anonymous memory", x["rec_anon_avg"], 64*kib, math.Inf(1))
 			need(w, "disk written per hour", x["write_per_h"], 0, math.Inf(1))
 			// DB growth needs at least 5 samples (slopePerHour); a smoke run has fewer.
-			if !run.HasSosv || x["samples"] >= 5 {
+			// Node Exporter (N1) stores nothing.
+			if run.Config != "N1" && (!run.HasSosv || x["samples"] >= 5) {
 				need(w, "DB or log file growth per hour", x["store_per_h"], kib, math.Inf(1))
 			}
 			if run.HasSosv && len(run.Samples) < 2 {

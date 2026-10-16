@@ -38,9 +38,10 @@ var configDesc = map[string]string{
 	"D":  "sosv-record --interval 60s --fd-interval 300s (v2 conservative)",
 	"V1": "v1 recorder (snapshots, SQLite) --interval 30s --fd-interval 120s",
 	"R1": "atop -w FILE 30 (reference)",
+	"N1": "Prometheus Node Exporter, scraped every 15 s (comparison)",
 }
 
-var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "V1": "--s5", "R1": "--s4", "passive": "--s1"}
+var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "V1": "--s5", "R1": "--s4", "N1": "--s5", "passive": "--s1"}
 
 func color(cfg string) string {
 	if c, ok := configColor[cfg]; ok {
