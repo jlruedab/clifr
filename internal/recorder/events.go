@@ -47,6 +47,9 @@ type procEvent struct {
 	exitCode, signal *int
 	// OOM: the victim's RSS at the kill, 0 if unknown.
 	rssKB int64
+	// Fork (eBPF): the command line is the parent's, set when the event is
+	// applied.
+	parentCmd bool
 }
 
 // evProc is a process known only from events so far.
@@ -302,7 +305,10 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 			return pe, true
 		}
 		pe.kind = evFork
-		pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID) // the parent's, until it execs
+		// The child runs the parent's command line until it execs; it is
+		// taken from the parent when the event is applied, not read from
+		// /proc here (the largest /proc read at the busy load).
+		pe.parentCmd = true
 		r.eventTTY(&pe, e)
 	case bpfproc.Exec:
 		pe.kind = evExec
@@ -344,6 +350,23 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 		return pe, false
 	}
 	return pe, true
+}
+
+// parentCmdline is the command line of the process ppid as the events
+// applied so far leave it: the one a child sees right after its fork, since
+// events are applied in order. A parent the recorder does not know yet is
+// read from /proc.
+func (r *Recorder) parentCmdline(ppid int) string {
+	if e := r.byPID[ppid]; e != nil && e.exit == 0 {
+		return e.upd.Cmdline
+	}
+	if k, ok := r.evByPID[ppid]; ok {
+		if ep := r.evProcs[k]; ep != nil && ep.exit == 0 {
+			return ep.ev.attrs.Cmdline
+		}
+	}
+	cmd, _ := r.fs.ReadCmdline(ppid)
+	return cmd
 }
 
 // eventTTY sets terminal, session and process group from the event, or
@@ -402,6 +425,9 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 		case evFork, evExec:
 			if !ev.haveStat {
 				continue // gone before we could read it: nothing reliable to store
+			}
+			if ev.parentCmd {
+				ev.attrs.Cmdline = r.parentCmdline(ev.attrs.PPID)
 			}
 			if e := r.procs[ev.key]; e != nil {
 				if ev.kind == evExec { // a sampled process exec'd: new command line

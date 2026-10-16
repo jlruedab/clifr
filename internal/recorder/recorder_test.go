@@ -422,6 +422,63 @@ func TestEvents(t *testing.T) {
 	}
 }
 
+func TestForkCmdlineFromParent(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "daemon", 100, 0)
+	r, dbPath := newTestRecorder(t, fp.root)
+	r.events = newEventQueue()
+	t1 := time.UnixMilli(1790001000000)
+	t2 := t1.Add(30 * time.Second)
+	must(t, r.sample(t1, true))
+	fp.set(90, "other", 100, 0) // not sampled yet: read from /proc at its child's fork
+
+	boot := int64(1790000000000)
+	key := func(pid int) procKey { return procKey{pid: pid, start: boot + 1005*1000 + int64(pid)} }
+	fork := func(pid, ppid int) procEvent {
+		k := key(pid)
+		return procEvent{kind: evFork, pid: pid, ts: k.start, haveStat: true, key: k, parentCmd: true,
+			attrs: store.ProcUpdate{PPID: ppid, Comm: "x", Source: srcEBPF}}
+	}
+	exec := func(pid int, cmd string) procEvent {
+		e := fork(pid, 0)
+		e.kind, e.parentCmd, e.ts, e.attrs.Cmdline = evExec, false, e.ts+1, cmd
+		return e
+	}
+	exit := func(pid int) procEvent {
+		e := fork(pid, 0)
+		e.kind, e.parentCmd, e.ts = evExit, false, e.ts+100
+		return e
+	}
+	r.events.list = []procEvent{
+		fork(70, 10), exit(70), // fork only, of a sampled parent
+		fork(80, 10), exec(80, "/bin/sh -c work"), // a shell that forks before and after...
+		fork(81, 80), exit(81), // ...its child sees the shell's command line, not the daemon's
+		exit(80),
+		fork(91, 90), exit(91), // a parent the recorder does not know
+	}
+	must(t, r.sample(t2, false))
+	must(t, r.shutdown())
+	r.db.Close()
+
+	db, err := store.Open(dbPath, true)
+	must(t, err)
+	defer db.Close()
+	got := map[int]string{}
+	rows, _ := db.Query(`SELECT pid, cmdline FROM processes`)
+	for rows.Next() {
+		var pid int
+		var cmd string
+		rows.Scan(&pid, &cmd)
+		got[pid] = cmd
+	}
+	rows.Close()
+	for pid, w := range map[int]string{70: "/bin/daemon -x", 80: "/bin/sh -c work", 81: "/bin/sh -c work", 91: "/bin/other -x"} {
+		if got[pid] != w {
+			t.Errorf("pid %d: cmdline %q, want %q", pid, got[pid], w)
+		}
+	}
+}
+
 func TestSkipOnOverrun(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "a", 100, 0)
