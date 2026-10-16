@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,6 +36,68 @@ func New(root string) FS {
 
 func (f FS) path(parts ...string) string {
 	return filepath.Join(append([]string{f.Root}, parts...)...)
+}
+
+// bufPool holds the buffers of readPID.
+var bufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
+
+// readPID reads <root>/<pid>/<name> with raw system calls into a pooled
+// buffer and passes it to parse, which must not keep it. Per file that is
+// openat, read and close: os.ReadFile also stats the file, goes through the
+// runtime's poller and allocates the path and the contents (together a
+// sixth of the recorder's CPU at the busy load). A read shorter than the
+// space left is the end of the file: /proc fills a read as far as it can,
+// and so does a regular file in a fixture.
+func (f FS) readPID(pid int, name string, parse func([]byte) error) error {
+	bp := bufPool.Get().(*[]byte)
+	defer bufPool.Put(bp)
+	buf := *bp
+	var pathBuf [128]byte // the NUL-terminated path, without allocating
+	path := append(pathBuf[:0], f.Root...)
+	path = append(path, '/')
+	path = strconv.AppendInt(path, int64(pid), 10)
+	path = append(path, '/')
+	path = append(path, name...)
+	path = append(path, 0)
+	fd, err := openat(path)
+	if err != nil {
+		return &fs.PathError{Op: "open", Path: string(path[:len(path)-1]), Err: err}
+	}
+	defer unix.Close(fd)
+	n := 0
+	for {
+		m, err := unix.Read(fd, buf[n:])
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return &fs.PathError{Op: "read", Path: string(path[:len(path)-1]), Err: err}
+		}
+		n += m
+		if m == 0 || n < len(buf) {
+			break
+		}
+		buf = append(buf, make([]byte, len(buf))...) // full: grow and read on
+		*bp = buf
+	}
+	return parse(buf[:n])
+}
+
+var atFDCWD = unix.AT_FDCWD // a variable: the constant is negative
+
+// openat opens a NUL-terminated path read-only.
+func openat(path []byte) (int, error) {
+	for {
+		fd, _, e := unix.Syscall6(unix.SYS_OPENAT, uintptr(atFDCWD), uintptr(unsafe.Pointer(&path[0])),
+			uintptr(unix.O_RDONLY|unix.O_CLOEXEC), 0, 0, 0)
+		if e == unix.EINTR {
+			continue
+		}
+		if e != 0 {
+			return -1, e
+		}
+		return int(fd), nil
+	}
 }
 
 // IsGone reports whether err means the process (or fd) disappeared while we
@@ -87,12 +151,9 @@ type Stat struct {
 	RSS        int64  // pages
 }
 
-func (f FS) ReadStat(pid int) (Stat, error) {
-	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "stat"))
-	if err != nil {
-		return Stat{}, err
-	}
-	return ParseStat(b)
+func (f FS) ReadStat(pid int) (st Stat, err error) {
+	err = f.readPID(pid, "stat", func(b []byte) (err error) { st, err = ParseStat(b); return })
+	return
 }
 
 // ParseStat parses /proc/<pid>/stat. comm may contain spaces and parentheses,
@@ -136,11 +197,8 @@ func ParseStat(b []byte) (Stat, error) {
 // RSS comes from statm rather than stat: since kernel 6.2 the stat value is
 // an approximate per-CPU counter while statm (like ps) uses the exact sum.
 func (f FS) ReadStatm(pid int) (size, resident int64, err error) {
-	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "statm"))
-	if err != nil {
-		return 0, 0, err
-	}
-	return ParseStatm(b)
+	err = f.readPID(pid, "statm", func(b []byte) (err error) { size, resident, err = ParseStatm(b); return })
+	return
 }
 
 func ParseStatm(b []byte) (size, resident int64, err error) {
@@ -158,12 +216,9 @@ type Status struct {
 	VmLckK int64
 }
 
-func (f FS) ReadStatus(pid int) (Status, error) {
-	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "status"))
-	if err != nil {
-		return Status{}, err
-	}
-	return ParseStatus(b)
+func (f FS) ReadStatus(pid int) (st Status, err error) {
+	err = f.readPID(pid, "status", func(b []byte) (err error) { st, err = ParseStatus(b); return })
+	return
 }
 
 func ParseStatus(b []byte) (Status, error) {
@@ -196,12 +251,9 @@ func ParseStatus(b []byte) (Status, error) {
 
 // ReadCmdline returns argv joined by spaces, or "" for kernel threads and
 // zombies.
-func (f FS) ReadCmdline(pid int) (string, error) {
-	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "cmdline"))
-	if err != nil {
-		return "", err
-	}
-	return ParseCmdline(b), nil
+func (f FS) ReadCmdline(pid int) (cmd string, err error) {
+	err = f.readPID(pid, "cmdline", func(b []byte) error { cmd = ParseCmdline(b); return nil })
+	return
 }
 
 func ParseCmdline(b []byte) string {
@@ -343,12 +395,9 @@ func atou(s string) uint64 {
 
 // ReadFDFlags returns the open flags (octal "flags:" line) of
 // /proc/<pid>/fdinfo/<fd>. Only read for newly seen fds.
-func (f FS) ReadFDFlags(pid, fd int) (uint64, error) {
-	b, err := os.ReadFile(f.path(strconv.Itoa(pid), "fdinfo", strconv.Itoa(fd)))
-	if err != nil {
-		return 0, err
-	}
-	return ParseFDFlags(b)
+func (f FS) ReadFDFlags(pid, fd int) (flags uint64, err error) {
+	err = f.readPID(pid, "fdinfo/"+strconv.Itoa(fd), func(b []byte) (err error) { flags, err = ParseFDFlags(b); return })
+	return
 }
 
 func ParseFDFlags(b []byte) (uint64, error) {

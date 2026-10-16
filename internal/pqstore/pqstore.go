@@ -513,7 +513,7 @@ func (s *Store) Close() error {
 // truncated to 16 bytes (and left out for long text columns), which keeps
 // them useful for the numeric and short columns.
 var writerOptions = []parquet.WriterOption{
-	parquet.Compression(&parquet.Zstd),
+	parquet.Compression(zstdPages),
 	parquet.DataPageStatistics(false),
 	parquet.ColumnIndexSizeLimit(func([]string) int { return 16 }),
 	parquet.SkipPageBounds("output"), parquet.SkipPageBounds("cmdline"),

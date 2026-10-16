@@ -5,6 +5,7 @@ go 1.25.0
 toolchain go1.26.8
 
 require (
+	github.com/klauspost/compress v1.18.3
 	github.com/parquet-go/parquet-go v0.32.0
 	golang.org/x/sys v0.43.0
 	modernc.org/sqlite v1.34.5
@@ -26,7 +27,6 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect

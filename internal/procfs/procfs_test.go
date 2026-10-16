@@ -1,7 +1,11 @@
 package procfs
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -150,5 +154,54 @@ func TestParseMountInfo(t *testing.T) {
 	if len(m) != 3 || m[1].Point != "/mnt/my data" || m[1].Source != "tmp fs" || m[1].FSType != "tmpfs" ||
 		m[2].Source != "server:/export" || m[2].FSType != "nfs4" || m[0].ID != 22 {
 		t.Errorf("%+v", m)
+	}
+}
+
+func TestReadPIDLargeFile(t *testing.T) {
+	// A command line longer than the pooled buffer, and one read after it
+	// with a short file: the buffer grows and is reused correctly.
+	root := t.TempDir()
+	long := strings.Repeat("x", 10000)
+	for pid, body := range map[string]string{"1": "prog\x00" + long + "\x00", "2": "short\x00arg\x00"} {
+		if err := os.MkdirAll(filepath.Join(root, pid), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, pid, "cmdline"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := New(root)
+	if cmd, err := f.ReadCmdline(1); err != nil || cmd != "prog "+long {
+		t.Fatalf("long cmdline: %d bytes, %v", len(cmd), err)
+	}
+	if cmd, err := f.ReadCmdline(2); err != nil || cmd != "short arg" {
+		t.Fatalf("short cmdline after a long one: %q, %v", cmd, err)
+	}
+	if _, err := f.ReadCmdline(3); !IsGone(err) {
+		t.Fatalf("missing process: %v, want gone", err)
+	}
+}
+
+func BenchmarkReadStatSelf(b *testing.B) {
+	f := New("")
+	pid := os.Getpid()
+	for b.Loop() {
+		if _, err := f.ReadStat(pid); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkReadStatSelfOSReadFile: the previous way, for comparison.
+func BenchmarkReadStatSelfOSReadFile(b *testing.B) {
+	p := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "stat")
+	for b.Loop() {
+		buf, err := os.ReadFile(p)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := ParseStat(buf); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
