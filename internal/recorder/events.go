@@ -71,6 +71,36 @@ type eventQueue struct {
 	reported map[string][2]int64     // received and dropped at the last report
 	drops    func() map[string]int64 // eBPF: events the kernel side could not send
 	progs    func() map[string][2]uint64
+	// eBPF: flush asks the reader for every event sent so far; it signals
+	// synced once they are queued. Nil for the proc connector.
+	flush  func() error
+	synced chan struct{}
+}
+
+// syncWait bounds how long a sample waits for the event reader.
+const syncWait = 200 * time.Millisecond
+
+// sync returns once the events sent before it are queued (or after
+// syncWait). Most process events do not wake the reader (see OUTPUT in
+// procevents.bpf.c), so without it an exit could arrive after the sample
+// that found the process gone and be recorded as a second process.
+func (q *eventQueue) sync() {
+	if q.flush == nil {
+		return
+	}
+	select {
+	case <-q.synced: // left over from an earlier sync that timed out
+	default:
+	}
+	if q.flush() != nil {
+		return
+	}
+	t := time.NewTimer(syncWait)
+	defer t.Stop()
+	select {
+	case <-q.synced:
+	case <-t.C:
+	}
 }
 
 // recorder_stats sources for the eBPF programs' own cost (with --bpf-stats):
@@ -229,11 +259,13 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 		return out
 	}
 	r.events.progs = src.ProgStats
+	r.events.flush, r.events.synced = src.Flush, make(chan struct{}, 1)
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var batch []bpfproc.Event
 		for {
 			select {
 			case <-done:
@@ -242,18 +274,24 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 				return
 			default:
 			}
-			e, err := src.Read(time.Second)
-			if errors.Is(err, bpfproc.ErrTimeout) {
-				continue
-			}
-			if err != nil {
+			var err error
+			batch, err = src.ReadBatch(batch[:0], time.Second)
+			if err != nil && !errors.Is(err, bpfproc.ErrTimeout) && !errors.Is(err, bpfproc.ErrFlushed) {
 				r.log.Printf("eBPF event read: %v; continuing with sampling only", err)
 				return
 			}
-			if pe, ok := r.fromBPF(e); ok {
-				r.events.push([]procEvent{pe}, ebpfStat(e.Kind), 1)
-			} else {
-				r.events.push(nil, ebpfStat(e.Kind), 1)
+			for _, e := range batch {
+				if pe, ok := r.fromBPF(e); ok {
+					r.events.push([]procEvent{pe}, ebpfStat(e.Kind), 1)
+				} else {
+					r.events.push(nil, ebpfStat(e.Kind), 1)
+				}
+			}
+			if errors.Is(err, bpfproc.ErrFlushed) {
+				select {
+				case r.events.synced <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -414,6 +452,7 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 	if r.events == nil {
 		return 0
 	}
+	r.events.sync()
 	evs, lost := r.events.take()
 	if lost > r.lostReported {
 		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "events_lost",

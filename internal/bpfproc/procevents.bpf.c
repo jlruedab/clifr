@@ -120,13 +120,19 @@ struct {
 	__uint(key_size, sizeof(__u32));
 	__uint(value_size, sizeof(__u32));
 } events SEC(".maps");
-#define OUTPUT(ctx, e, size) bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, e, size)
+#define OUTPUT(ctx, e, size, wake) bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, e, size)
 #else
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
 	__uint(max_entries, 4 << 20); // userspace may resize
 } events SEC(".maps");
-#define OUTPUT(ctx, e, size) bpf_ringbuf_output(&events, e, size, 0)
+// The reader is woken only for events it must act on at once (it reads
+// /proc while the process still exists) and when the buffer is a quarter
+// full; otherwise it takes what has gathered once a second and before each
+// sample. One wake-up per event cost the recorder more than handling it.
+#define OUTPUT(ctx, e, size, wake) bpf_ringbuf_output(&events, e, size, \
+	(wake) || bpf_ringbuf_query(&events, BPF_RB_AVAIL_DATA) > bpf_ringbuf_query(&events, BPF_RB_RING_SIZE) / 4 \
+		? BPF_RB_FORCE_WAKEUP : BPF_RB_NO_WAKEUP)
 #endif
 
 // Events that could not be sent (buffer full), per kind.
@@ -170,9 +176,10 @@ static __always_inline struct event *new_event(__u32 kind, __u32 slot)
 	return e;
 }
 
-static __always_inline void send(void *ctx, struct event *e, __u64 size)
+// send outputs e; wake: userspace must see it at once (see OUTPUT).
+static __always_inline void send(void *ctx, struct event *e, __u64 size, int wake)
 {
-	if (OUTPUT(ctx, e, size) != 0) {
+	if (OUTPUT(ctx, e, size, wake) != 0) {
 		__u32 k = e->kind;
 		__u64 *n = bpf_map_lookup_elem(&drops, &k);
 		if (n)
@@ -244,7 +251,9 @@ static __always_inline int exec_event(void *ctx, __u32 slot, const char *filenam
 		len = ARGS_MAX - 1;
 	if (bpf_probe_read_user(e->args, len & (ARGS_MAX - 1), (void *)start) != 0)
 		e->args_len = 0;
-	send(ctx, e, sizeof(*e));
+	// A long command line is completed from /proc, and without terminal
+	// information (kernels before 4.19) the stat file is read.
+	send(ctx, e, sizeof(*e), e->args_len > ARGS_MAX - 1 || !(e->flags & FLAG_TTY));
 	return 0;
 }
 
@@ -260,7 +269,7 @@ static __always_inline int exit_event(void *ctx, __u32 slot)
 		return 0;
 	fill_current(e, t);
 	e->exit_code = BPF_CORE_READ(t, exit_code);
-	send(ctx, e, SHORT_EVENT);
+	send(ctx, e, SHORT_EVENT, 0);
 	return 0;
 }
 
@@ -368,7 +377,7 @@ int BPF_PROG(handle_fork_btf, struct task_struct *parent, struct task_struct *ch
 	e->start_ns = task_start(child);
 	bpf_get_current_comm(e->comm, sizeof(e->comm));
 	fill_tty(e, child);
-	send(ctx, e, SHORT_EVENT);
+	send(ctx, e, SHORT_EVENT, !(e->flags & FLAG_TTY));
 	return 0;
 }
 
@@ -384,7 +393,7 @@ int handle_fork_tp(struct trace_event_raw_sched_process_fork *ctx)
 	e->ppid = bpf_get_current_pid_tgid() >> 32; // the tracepoint's parent_pid is a thread id
 	e->uid = (__u32)bpf_get_current_uid_gid();
 	bpf_get_current_comm(e->comm, sizeof(e->comm));
-	send(ctx, e, SHORT_EVENT);
+	send(ctx, e, SHORT_EVENT, 1); // userspace reads the child's /proc entries
 	return 0;
 }
 
@@ -398,7 +407,7 @@ int handle_oom(struct trace_event_raw_mark_victim *ctx)
 	e->exit_code = -1;
 	if (bpf_core_field_exists(ctx->anon_rss))
 		e->rss_kb = BPF_CORE_READ(ctx, anon_rss) + BPF_CORE_READ(ctx, file_rss) + BPF_CORE_READ(ctx, shmem_rss);
-	send(ctx, e, SHORT_EVENT);
+	send(ctx, e, SHORT_EVENT, 1); // userspace reads the victim's /proc entries
 	return 0;
 }
 

@@ -244,6 +244,57 @@ func (s *Source) Read(wait time.Duration) (Event, error) {
 	}
 }
 
+// ErrFlushed is returned by ReadBatch once it has returned every event
+// that was waiting when Flush was called.
+var ErrFlushed = ringbuf.ErrFlushed // the same error as perf.ErrFlushed
+
+// Flush makes the reader return what is waiting now, then ErrFlushed.
+func (s *Source) Flush() error {
+	if s.rb != nil {
+		return s.rb.Flush()
+	}
+	return s.pr.Flush()
+}
+
+// batchMax bounds one ReadBatch.
+const batchMax = 4096
+
+// ReadBatch appends to dst the events that are waiting. With none waiting
+// it blocks until the kernel wakes it (an event that must be handled at
+// once, or a filling buffer: see OUTPUT in procevents.bpf.c), until wait,
+// or until Flush. Events sent without a wake-up are taken at the next call.
+// It returns ErrTimeout if nothing came and ErrFlushed (with the events
+// before it) after a Flush.
+func (s *Source) ReadBatch(dst []Event, wait time.Duration) ([]Event, error) {
+	if s.rb == nil {
+		e, err := s.Read(wait)
+		if err != nil {
+			return dst, err
+		}
+		return append(dst, e), nil
+	}
+	s.rb.SetDeadline(time.Now().Add(wait))
+	n := len(dst)
+	for len(dst)-n < batchMax {
+		err := s.rb.ReadInto(&s.rec)
+		if errors.Is(err, ErrTimeout) && len(dst) > n {
+			return dst, nil
+		}
+		if err != nil {
+			return dst, err
+		}
+		e, err := decode(s.rec.RawSample)
+		if err != nil {
+			return dst, err
+		}
+		dst = append(dst, e)
+		if len(dst) == n+1 {
+			s.rb.SetDeadline(time.Now()) // woken: take the rest without waiting
+		}
+	}
+	return dst, nil
+}
+
 // Drops returns, per kind, the events the kernel side could not send, plus
 // (index 0) perf samples lost without a known kind.
 func (s *Source) Drops() map[Kind]uint64 {
