@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -55,6 +56,7 @@ type entity[T any] struct {
 	open      map[int64]*T
 	closed    rowBuf[T]
 	closedIdx map[int64]int
+	scratch   []T // writeOpen's rows, reused at every flush
 }
 
 // chunkRows is the size of a rowBuf chunk.
@@ -95,7 +97,9 @@ func (e *entity[T]) insert(id int64, row T, closed bool) {
 		e.closedIdx[id] = e.closed.len()
 		e.closed.add(row)
 	} else {
-		e.open[id] = &row
+		p := new(T) // not &row: that would move every row to the heap
+		*p = row
+		e.open[id] = p
 	}
 }
 
@@ -127,7 +131,7 @@ func (e *entity[T]) close(id int64, fn func(*T)) bool {
 
 func (e *entity[T]) reset() {
 	e.closed = rowBuf[T]{}
-	e.closedIdx = map[int64]int{}
+	clear(e.closedIdx) // keeps its size for the next window
 }
 
 // keyed is an append-only table where a second row for the same key in the
@@ -170,7 +174,7 @@ type Store struct {
 	cpus        []cpuRow
 	disks       []diskRow
 	trans       []tcpTransRow
-	keyframes   []keyframeRow
+	keyframes   rowBuf[keyframeRow]
 	reconcile   []reconcileRow
 	guard       []guardRow
 	oom         []oomRow
@@ -305,9 +309,17 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, c := range b.TCPConns {
 		// Whole rows: the newest version replaces the open or buffered one.
+		// An open row is updated in place: a new row per version was the
+		// largest allocation of the store at the busy load.
 		row := tcpConnOf(c)
 		if c.CloseTS == nil {
-			s.conns.open[c.ID] = &row
+			if p := s.conns.open[c.ID]; p != nil {
+				*p = row
+			} else {
+				p = new(tcpConnRow)
+				*p = row
+				s.conns.open[c.ID] = p
+			}
 		} else {
 			delete(s.conns.open, c.ID)
 			if i, ok := s.conns.closedIdx[c.ID]; ok {
@@ -321,7 +333,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.trans = append(s.trans, tcpTransRow{ConnID: t.ConnID, TS: t.TS, Seq: int32(t.Seq), Old: int32(t.Old), New: int32(t.New)})
 	}
 	for _, k := range b.Keyframes {
-		s.keyframes = append(s.keyframes, keyframeOf(k))
+		s.keyframes.add(keyframeOf(k))
 	}
 	for _, r := range b.Reconcile {
 		s.reconcile = append(s.reconcile, reconcileRow{TS: r.TS, Kind: r.Kind, DumpRows: int32(r.DumpRows),
@@ -380,7 +392,7 @@ func (s *Store) Write(b *store.Batch) error {
 // buffered counts the rows waiting for the next flush in the tables that
 // grow with the load: they are what the store's memory consists of.
 func (s *Store) buffered() int {
-	return len(s.trans) + s.conns.closed.len() + len(s.keyframes) + s.procs.closed.len() + len(s.procSamples.rows) +
+	return len(s.trans) + s.conns.closed.len() + s.keyframes.len() + s.procs.closed.len() + len(s.procSamples.rows) +
 		s.held.closed.len() + s.socks.closed.len() + len(s.sockSamples.rows) + s.owners.closed.len() + s.files.closed.len()
 }
 
@@ -410,7 +422,7 @@ func (s *Store) Flush() error {
 	part("mounts", len(s.mounts), func(p string) error { return writeFile(p, s.mounts) })
 	part("tcp_conns", s.conns.closed.len(), func(p string) error { return writeFile(p, s.conns.closed.chunks...) })
 	part("tcp_transitions", len(s.trans), func(p string) error { return writeFile(p, s.trans) })
-	part("tcp_keyframes", len(s.keyframes), func(p string) error { return writeFile(p, s.keyframes) })
+	part("tcp_keyframes", s.keyframes.len(), func(p string) error { return writeFile(p, s.keyframes.chunks...) })
 	part("reconcile", len(s.reconcile), func(p string) error { return writeFile(p, s.reconcile) })
 	part("oom_events", len(s.oom), func(p string) error { return writeFile(p, s.oom) })
 	part("recorder_stats", len(s.stats), func(p string) error { return writeFile(p, s.stats) })
@@ -425,15 +437,15 @@ func (s *Store) Flush() error {
 	}
 	// Open rows, seen until the last sample (open files: the last fd walk).
 	errs = append(errs,
-		writeOpen(s, "processes", s.procs, s.lastAny, func(r *processRow) *int64 { return &r.FirstSeen }, func(r *processRow, v int64) { r.LastSeen = &v }),
-		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) *int64 { return &r.FirstSeen }, func(r *socketRow, v int64) { r.LastSeen = &v }),
-		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) *int64 { return &r.FirstSeen }, func(r *ownerRow, v int64) { r.LastSeen = &v }),
-		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) *int64 { return &r.FirstSeen }, func(r *fileRow, v int64) { r.LastSeen = &v }),
-		writeOpen(s, "fds_held", s.held, s.lastFD, func(r *heldRow) *int64 { return &r.FirstSeen }, func(r *heldRow, v int64) { r.LastSeen = &v }),
-		writeOpen(s, "tcp_conns", s.conns, s.lastAny, func(r *tcpConnRow) *int64 { return &r.OpenTS }, func(r *tcpConnRow, v int64) { r.LastSeen = &v }))
+		writeOpen(s, "processes", s.procs, s.lastAny, func(r *processRow) *int64 { return &r.FirstSeen }, func(r *processRow, v *int64) { r.LastSeen = v }),
+		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) *int64 { return &r.FirstSeen }, func(r *socketRow, v *int64) { r.LastSeen = v }),
+		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) *int64 { return &r.FirstSeen }, func(r *ownerRow, v *int64) { r.LastSeen = v }),
+		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) *int64 { return &r.FirstSeen }, func(r *fileRow, v *int64) { r.LastSeen = v }),
+		writeOpen(s, "fds_held", s.held, s.lastFD, func(r *heldRow) *int64 { return &r.FirstSeen }, func(r *heldRow, v *int64) { r.LastSeen = v }),
+		writeOpen(s, "tcp_conns", s.conns, s.lastAny, func(r *tcpConnRow) *int64 { return &r.OpenTS }, func(r *tcpConnRow, v *int64) { r.LastSeen = v }))
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
-	s.keyframes, s.reconcile, s.mounts = nil, nil, nil
+	s.keyframes, s.reconcile, s.mounts = rowBuf[keyframeRow]{}, nil, nil
 	s.sys, s.cpus, s.disks = s.sys[:0], s.cpus[:0], s.disks[:0]
 	s.conns.reset()
 	s.held.reset()
@@ -453,7 +465,7 @@ func (s *Store) Flush() error {
 }
 
 // writeOpen rewrites the run's open file for an entity table.
-func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) *int64, setLast func(*T, int64)) error {
+func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) *int64, setLast func(*T, *int64)) error {
 	p := filepath.Join(s.dir, table, "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(e.open) == 0 {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -461,12 +473,23 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 		}
 		return nil
 	}
-	rows := make([]T, 0, len(e.open))
+	// One last_seen value shared by every row that started before it.
+	lastp := new(int64)
+	*lastp = last
+	rows := slices.Grow(e.scratch[:0], len(e.open))
 	for _, r := range e.open {
-		x := *r
-		setLast(&x, max(last, *first(&x)))
-		rows = append(rows, x)
+		rows = append(rows, *r)
+		x := &rows[len(rows)-1]
+		if f := *first(x); f > last {
+			v := new(int64)
+			*v = f
+			setLast(x, v)
+		} else {
+			setLast(x, lastp)
+		}
 	}
+	clear(rows[len(rows):cap(rows)]) // no stale strings from a larger flush
+	e.scratch = rows
 	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		return err
 	}
