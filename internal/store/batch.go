@@ -129,35 +129,39 @@ type DiskSample struct {
 
 // TCPConn is one TCP connection (or listening socket) from eBPF events, or
 // first seen in a keyframe. Rows are written whole: a later row with the same
-// ID replaces the earlier one (the connection's newest state).
+// ID replaces the earlier one (the connection's newest state). The recorder
+// holds one per connection: no strings or pointers (see compact.go), and at
+// most 128 bytes (an allocation size class). Times are Unix ms; 0 is "none"
+// (NULL in the tables).
 type TCPConn struct {
-	ID         int64
-	PID        int    // owner (connect, listen or accept); 0: unknown
-	StartTime  int64  // owner's start time (with PID, the process key)
-	FD         int    // owner's fd; -1: unknown
-	OwnerUntil *int64 // the application closed the socket
-	IfName     string // bound to a device (from a keyframe), as ss shows "addr%if"
-	Inode      uint64
-	Family     int
-	V6Only     bool // IPv6 socket that does not accept IPv4 (known for listeners)
-	LAddr      string
-	LPort      int
-	RAddr      string
-	RPort      int
-	Direction  string // active, passive, listen or unknown
-	OpenTS     int64
-	CloseTS    *int64
-	FirstState int // state when first seen (keyframe-adopted connections have no transitions)
-	FinalState int // state just before TCP_CLOSE
+	ID          int64
+	StartTime   int64 // owner's start time (with PID, the process key)
+	OwnerUntil  int64 // the application closed the socket
+	Inode       uint64
+	OpenTS      int64
+	CloseTS     int64
+	LingerUntil int64 // the time-wait socket's end (estimated, or exact from an event)
+	LastSeen    int64 // time of this version of the row
+	LAddr       Addr
+	RAddr       Addr
+	PID         int32 // owner (connect, listen or accept); 0: unknown
+	FD          int32 // owner's fd; -1: unknown
+	LPort       uint16
+	RPort       uint16
+	Retransmits uint32
+	// ResetsSent and ResetsReceived stop at 65,535.
+	ResetsSent     uint16
+	ResetsReceived uint16
+	Family         uint8 // 4 or 6; 0: addresses not known yet
+	FirstState     uint8 // state when first seen (keyframe-adopted connections have no transitions)
+	FinalState     uint8 // state just before TCP_CLOSE
 	// LingerState (TIME_WAIT or FIN_WAIT2) is the time-wait socket that
-	// continues after CloseTS, until about LingerUntil (estimated).
-	LingerState    int
-	LingerUntil    *int64
-	Retransmits    int
-	ResetsSent     int
-	ResetsReceived int
-	Source         string // ebpf or keyframe
-	LastSeen       int64  // time of this version of the row
+	// continues after CloseTS, until about LingerUntil.
+	LingerState uint8
+	Direction   Direction
+	Source      ConnSource
+	V6Only      bool // IPv6 socket that does not accept IPv4 (known for listeners)
+	IfName      Name // bound to a device (from a keyframe), as ss shows "addr%if"
 }
 
 type TCPTransition struct {
@@ -168,23 +172,24 @@ type TCPTransition struct {
 }
 
 // KeyframeRow is one socket of a full sock_diag dump (TCP and UDP): the only
-// place with exact queues, and UDP's only record.
+// place with exact queues, and UDP's only record. No strings or pointers,
+// like TCPConn.
 type KeyframeRow struct {
 	TS           int64
-	Proto        string
-	Family       int
-	LAddr        string
-	LPort        int
-	RAddr        string
-	RPort        int
 	Inode        uint64
-	State        int
 	RecvQ, SendQ int64
-	UID          int
 	ConnID       int64 // TCP: the matching connection, 0 if none
-	PID          int   // holder from events or the last fd walk; 0: unknown
 	StartTime    int64
-	FD           int
+	LAddr        Addr
+	RAddr        Addr
+	PID          int32 // holder from events or the last fd walk; 0: unknown
+	FD           int32
+	UID          int32
+	LPort        uint16
+	RPort        uint16
+	Family       uint8
+	State        uint8
+	Proto        Proto
 	V6Only       bool
 }
 
@@ -317,6 +322,14 @@ func nullInt(p *int64) any {
 	return *p
 }
 
+// nullTS is a time, NULL when 0.
+func nullTS(v int64) any {
+	if v == 0 {
+		return nil
+	}
+	return v
+}
+
 func nullIntp(p *int) any {
 	if p == nil {
 		return nil
@@ -432,10 +445,12 @@ func (d *DB) Write(b *Batch) error {
 				raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until,
 				retransmits, resets_sent, resets_received, source, last_seen, v6only) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.TCPConns), func(st *sql.Stmt, i int) error {
-					c := b.TCPConns[i]
-					_, err := st.Exec(c.ID, c.PID, c.StartTime, c.FD, nullInt(c.OwnerUntil), c.IfName, int64(c.Inode), c.Family, c.LAddr, c.LPort,
-						c.RAddr, c.RPort, c.Direction, c.OpenTS, nullInt(c.CloseTS), c.FirstState, c.FinalState, c.LingerState,
-						nullInt(c.LingerUntil), c.Retransmits, c.ResetsSent, c.ResetsReceived, c.Source, c.LastSeen, b2i(c.V6Only))
+					c := &b.TCPConns[i]
+					f := int(c.Family)
+					_, err := st.Exec(c.ID, c.PID, c.StartTime, c.FD, nullTS(c.OwnerUntil), c.IfName.String(), int64(c.Inode), c.Family,
+						c.LAddr.String(f), c.LPort, c.RAddr.String(f), c.RPort, c.Direction.String(), c.OpenTS, nullTS(c.CloseTS),
+						c.FirstState, c.FinalState, c.LingerState, nullTS(c.LingerUntil), c.Retransmits, c.ResetsSent,
+						c.ResetsReceived, c.Source.String(), c.LastSeen, b2i(c.V6Only))
 					return err
 				})
 		},
@@ -451,8 +466,9 @@ func (d *DB) Write(b *Batch) error {
 			return each(`INSERT INTO tcp_keyframes(ts, proto, family, laddr, lport, raddr, rport, inode, state, recv_q, send_q,
 				uid, conn_id, pid, start_time, fd, v6only) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.Keyframes), func(st *sql.Stmt, i int) error {
-					k := b.Keyframes[i]
-					_, err := st.Exec(k.TS, k.Proto, k.Family, k.LAddr, k.LPort, k.RAddr, k.RPort, int64(k.Inode), k.State,
+					k := &b.Keyframes[i]
+					f := int(k.Family)
+					_, err := st.Exec(k.TS, k.Proto.String(), k.Family, k.LAddr.String(f), k.LPort, k.RAddr.String(f), k.RPort, int64(k.Inode), k.State,
 						k.RecvQ, k.SendQ, k.UID, k.ConnID, k.PID, k.StartTime, k.FD, b2i(k.V6Only))
 					return err
 				})

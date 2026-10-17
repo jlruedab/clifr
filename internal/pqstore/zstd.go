@@ -18,7 +18,7 @@ type zstdCodec struct {
 
 var zstdPages = &zstdCodec{encoders: make(chan *zstd.Encoder, 4)}
 
-func (c *zstdCodec) String() string                           { return "ZSTD" }
+func (c *zstdCodec) String() string                            { return "ZSTD" }
 func (c *zstdCodec) CompressionCodec() format.CompressionCodec { return format.Zstd }
 
 func (c *zstdCodec) Encode(dst, src []byte) ([]byte, error) {

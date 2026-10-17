@@ -38,12 +38,12 @@ type processRow struct {
 	PGRP      int32  `parquet:"pgrp"`
 	Locked    int32  `parquet:"locked"`
 	FirstSeen int64  `parquet:"first_seen"`
-	LastSeen  *int64 `parquet:"last_seen,optional"`
-	Ended     *int64 `parquet:"ended,optional"`
+	LastSeen  int64  `parquet:"last_seen,optional"`
+	Ended     int64  `parquet:"ended,optional"`
 	Source    string `parquet:"source,dict"`
 	Exe       string `parquet:"exe,dict"`
-	ExecTS    *int64 `parquet:"exec_ts,optional"`
-	ExitTS    *int64 `parquet:"exit_ts,optional"`
+	ExecTS    int64  `parquet:"exec_ts,optional"`
+	ExitTS    int64  `parquet:"exit_ts,optional"`
 	ExitCode  *int32 `parquet:"exit_code,optional"`
 	Signal    *int32 `parquet:"signal,optional"`
 	OOMKilled int32  `parquet:"oom_killed"`
@@ -73,7 +73,7 @@ type socketRow struct {
 	IfName    string `parquet:"ifname,dict"`
 	UID       int32  `parquet:"uid"`
 	FirstSeen int64  `parquet:"first_seen"`
-	LastSeen  *int64 `parquet:"last_seen,optional"`
+	LastSeen  int64  `parquet:"last_seen,optional"`
 }
 
 type sockSampleRow struct {
@@ -85,12 +85,12 @@ type sockSampleRow struct {
 }
 
 type ownerRow struct {
-	ID        int64  `parquet:"id"`
-	SockID    int64  `parquet:"sock_id"`
-	ProcID    int64  `parquet:"proc_id"`
-	FD        int32  `parquet:"fd"`
-	FirstSeen int64  `parquet:"first_seen"`
-	LastSeen  *int64 `parquet:"last_seen,optional"`
+	ID        int64 `parquet:"id"`
+	SockID    int64 `parquet:"sock_id"`
+	ProcID    int64 `parquet:"proc_id"`
+	FD        int32 `parquet:"fd"`
+	FirstSeen int64 `parquet:"first_seen"`
+	LastSeen  int64 `parquet:"last_seen,optional"`
 }
 
 type fileRow struct {
@@ -104,7 +104,7 @@ type fileRow struct {
 	Name      *string `parquet:"name,optional"`
 	Node      int64   `parquet:"node"`
 	FirstSeen int64   `parquet:"first_seen"`
-	LastSeen  *int64  `parquet:"last_seen,optional"`
+	LastSeen  int64   `parquet:"last_seen,optional"`
 }
 
 type guardRow struct {
@@ -151,7 +151,13 @@ type heldRow struct {
 	Name      string `parquet:"name"`
 	Node      int64  `parquet:"node"`
 	FirstSeen int64  `parquet:"first_seen"`
-	LastSeen  *int64 `parquet:"last_seen,optional"`
+	LastSeen  int64  `parquet:"last_seen,optional"` // 0 is written as NULL
+}
+
+func heldOf(r *heldRow, h *heldRec) {
+	*r = heldRow{ID: h.ID, PID: int32(h.PID), StartTime: h.StartTime, FD: int32(h.FD), Target: h.Target,
+		Deleted: b2i(h.Deleted), FType: h.FType, Mode: h.Mode, Name: h.Name, Node: h.Node, FirstSeen: h.FirstSeen,
+		LastSeen: h.LastSeen}
 }
 
 type mountRow struct {
@@ -169,7 +175,7 @@ type tcpConnRow struct {
 	PID            int32  `parquet:"pid"`
 	StartTime      int64  `parquet:"start_time"`
 	FD             int32  `parquet:"fd"`
-	OwnerUntil     *int64 `parquet:"owner_until,optional"`
+	OwnerUntil     int64  `parquet:"owner_until,optional"` // optional: 0 is written as NULL
 	IfName         string `parquet:"ifname,dict"`
 	Inode          int64  `parquet:"inode"`
 	Family         int32  `parquet:"family"`
@@ -179,16 +185,16 @@ type tcpConnRow struct {
 	RPort          int32  `parquet:"rport"`
 	Direction      string `parquet:"direction,dict"`
 	OpenTS         int64  `parquet:"open_ts"`
-	CloseTS        *int64 `parquet:"close_ts,optional"`
+	CloseTS        int64  `parquet:"close_ts,optional"`
 	FirstState     int32  `parquet:"first_state"`
 	FinalState     int32  `parquet:"final_state"`
 	LingerState    int32  `parquet:"linger_state"`
-	LingerUntil    *int64 `parquet:"linger_until,optional"`
+	LingerUntil    int64  `parquet:"linger_until,optional"`
 	Retransmits    int32  `parquet:"retransmits"`
 	ResetsSent     int32  `parquet:"resets_sent"`
 	ResetsReceived int32  `parquet:"resets_received"`
 	Source         string `parquet:"source,dict"`
-	LastSeen       *int64 `parquet:"last_seen,optional"`
+	LastSeen       int64  `parquet:"last_seen,optional"`
 	V6Only         int32  `parquet:"v6only"`
 }
 
@@ -229,20 +235,48 @@ type reconcileRow struct {
 	Initial  int32  `parquet:"initial"`
 }
 
-func tcpConnOf(c store.TCPConn) tcpConnRow {
-	return tcpConnRow{ID: c.ID, PID: int32(c.PID), StartTime: c.StartTime, FD: int32(c.FD), OwnerUntil: c.OwnerUntil, IfName: c.IfName,
-		Inode: int64(c.Inode), Family: int32(c.Family), LAddr: c.LAddr, LPort: int32(c.LPort), RAddr: c.RAddr,
-		RPort: int32(c.RPort), Direction: c.Direction, OpenTS: c.OpenTS, CloseTS: c.CloseTS,
-		FirstState: int32(c.FirstState), FinalState: int32(c.FinalState), LingerState: int32(c.LingerState),
-		LingerUntil: c.LingerUntil, Retransmits: int32(c.Retransmits), ResetsSent: int32(c.ResetsSent),
-		ResetsReceived: int32(c.ResetsReceived), Source: c.Source, LastSeen: ptr(c.LastSeen), V6Only: b2i(c.V6Only)}
+// tcpConnOf converts a connection to its file row; a is the store's
+// address text cache.
+func tcpConnOf(r *tcpConnRow, c *store.TCPConn, a *addrCache) {
+	*r = tcpConnRow{ID: c.ID, PID: c.PID, StartTime: c.StartTime, FD: c.FD, OwnerUntil: c.OwnerUntil, IfName: c.IfName.String(),
+		Inode: int64(c.Inode), Family: int32(c.Family), LAddr: a.text(c.LAddr, c.Family), LPort: int32(c.LPort),
+		RAddr: a.text(c.RAddr, c.Family), RPort: int32(c.RPort), Direction: c.Direction.String(), OpenTS: c.OpenTS,
+		CloseTS: c.CloseTS, FirstState: int32(c.FirstState), FinalState: int32(c.FinalState),
+		LingerState: int32(c.LingerState), LingerUntil: c.LingerUntil, Retransmits: int32(c.Retransmits),
+		ResetsSent: int32(c.ResetsSent), ResetsReceived: int32(c.ResetsReceived), Source: c.Source.String(),
+		LastSeen: c.LastSeen, V6Only: b2i(c.V6Only)}
 }
 
-func keyframeOf(k store.KeyframeRow) keyframeRow {
-	return keyframeRow{TS: k.TS, Proto: k.Proto, Family: int32(k.Family), LAddr: k.LAddr, LPort: int32(k.LPort),
-		RAddr: k.RAddr, RPort: int32(k.RPort), Inode: int64(k.Inode), State: int32(k.State), RecvQ: k.RecvQ,
-		SendQ: k.SendQ, UID: int32(k.UID), ConnID: k.ConnID, PID: int32(k.PID), StartTime: k.StartTime, FD: int32(k.FD),
-		V6Only: b2i(k.V6Only)}
+func keyframeOf(r *keyframeRow, k *store.KeyframeRow, a *addrCache) {
+	*r = keyframeRow{TS: k.TS, Proto: k.Proto.String(), Family: int32(k.Family), LAddr: a.text(k.LAddr, k.Family),
+		LPort: int32(k.LPort), RAddr: a.text(k.RAddr, k.Family), RPort: int32(k.RPort), Inode: int64(k.Inode),
+		State: int32(k.State), RecvQ: k.RecvQ, SendQ: k.SendQ, UID: k.UID, ConnID: k.ConnID, PID: k.PID,
+		StartTime: k.StartTime, FD: k.FD, V6Only: b2i(k.V6Only)}
+}
+
+// addrCache keeps the text of the addresses written recently: a busy
+// server's connections share few addresses, and each one converted anew
+// was an allocation per row.
+type addrCache struct {
+	m map[addrKey]string
+}
+
+type addrKey struct {
+	a store.Addr
+	f uint8
+}
+
+func (c *addrCache) text(a store.Addr, family uint8) string {
+	k := addrKey{a, family}
+	if s, ok := c.m[k]; ok {
+		return s
+	}
+	if c.m == nil || len(c.m) >= 1<<16 {
+		c.m = map[addrKey]string{}
+	}
+	s := a.String(int(family))
+	c.m[k] = s
+	return s
 }
 
 type metaRow struct {
@@ -253,6 +287,15 @@ type metaRow struct {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// val is *p, 0 for nil: optional int64 columns write 0 as NULL, so times
+// need no pointer per row.
+func val(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
 
 func b2i(b bool) int32 {
 	if b {
@@ -272,8 +315,8 @@ func sampleOf(s store.Sample) sampleRow {
 func processOf(p store.ProcRow) processRow {
 	return processRow{ID: p.ID, PID: int32(p.PID), StartTime: p.StartTime, PPID: int32(p.PPID), UID: int32(p.UID),
 		Comm: p.Comm, Cmdline: p.Cmdline, TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
-		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: p.LastSeen, Ended: p.Ended, Source: p.Source,
-		Exe: p.Exe, ExecTS: p.ExecTS, ExitTS: p.ExitTS, ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
+		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
+		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
 		OOMKilled: b2i(p.OOMKilled)}
 }
 

@@ -14,13 +14,18 @@ type fileKey struct {
 	target string
 }
 
+func (k fileKey) procFD() procfs.FD { return procfs.FD{Num: k.fd, Target: k.target} }
+
+// fileEntry has no pointers (the target is the key's). The map holds
+// pointers to entries, so updating one never reassigns its key: that would
+// replace the stored target string with the one just read, and the held-fd
+// row would keep the old one.
 type fileEntry struct {
 	id    int64 // row id; held mode: 0 until stored
 	gen   uint64
 	first int64 // walk that first saw it
 	last  int64 // last walk that saw it
 	walks int   // consecutive walks of its process that saw it
-	fd    procfs.FD
 }
 
 // sockNames holds lsof names for non-inet sockets, read once per full walk.
@@ -122,7 +127,7 @@ func (r *Recorder) observeFiles(p *procEntry, fds []procfs.FD, ts int64, names s
 		k := fileKey{fd: fd.Num, target: fd.Target}
 		e := p.files[k]
 		if e == nil {
-			e = &fileEntry{first: ts, fd: fd}
+			e = &fileEntry{first: ts}
 			p.files[k] = e
 			if !r.heldMode() {
 				e.id = r.nextID("open_files")
@@ -133,7 +138,7 @@ func (r *Recorder) observeFiles(p *procEntry, fds []procfs.FD, ts int64, names s
 		}
 		e.gen, e.last = r.gen, ts
 		e.walks++
-		r.storeHeld(p, e, names, b)
+		r.storeHeld(p, k, e, names, b)
 	}
 	for k, e := range p.files {
 		if e.gen != r.gen {
@@ -146,32 +151,32 @@ func (r *Recorder) observeFiles(p *procEntry, fds []procfs.FD, ts int64, names s
 // presumeFiles: the process's fd count did not change, so its fds are
 // taken to be the ones of its last walk (without reading them).
 func (r *Recorder) presumeFiles(p *procEntry, ts int64, names sockNames, b *store.Batch) {
-	for _, e := range p.files {
-		r.noteSocket(p, e.fd)
+	for k, e := range p.files {
+		r.noteSocket(p, k.procFD())
 		e.gen, e.last = r.gen, ts
 		e.walks++
-		r.storeHeld(p, e, names, b)
+		r.storeHeld(p, k, e, names, b)
 	}
 }
 
 // storeHeld writes a held-mode entry once it qualifies: seen in two
 // consecutive walks, or a deleted file (at once).
-func (r *Recorder) storeHeld(p *procEntry, e *fileEntry, names sockNames, b *store.Batch) {
+func (r *Recorder) storeHeld(p *procEntry, k fileKey, e *fileEntry, names sockNames, b *store.Batch) {
 	if !r.heldMode() || e.id != 0 {
 		return
 	}
-	deleted := strings.HasSuffix(e.fd.Target, " (deleted)")
+	deleted := strings.HasSuffix(k.target, " (deleted)")
 	if e.walks < 2 && !deleted {
 		return
 	}
-	if r.ownedSocket(p, e.fd) {
+	if r.ownedSocket(p, k.procFD()) {
 		e.id = -1 // tcp_conns (or the keyframe) already says who holds it
 		return
 	}
 	e.id = r.nextID("fds_held")
-	f := r.fileRow(p, e.fd, names)
-	b.HeldInserts = append(b.HeldInserts, store.HeldFD{ID: e.id, PID: p.key.pid, StartTime: p.key.start, FD: e.fd.Num,
-		Target: e.fd.Target, Deleted: deleted, FType: f.FType, Mode: f.Mode, Name: f.Name, Node: f.Node, FirstSeen: e.first})
+	f := r.fileRow(p, k.procFD(), names)
+	b.HeldInserts = append(b.HeldInserts, store.HeldFD{ID: e.id, PID: p.key.pid, StartTime: p.key.start, FD: k.fd,
+		Target: k.target, Deleted: deleted, FType: f.FType, Mode: f.Mode, Name: f.Name, Node: f.Node, FirstSeen: e.first})
 }
 
 // fileRow reads what lsof shows about an fd (type, mode, inode).
@@ -202,7 +207,7 @@ func (r *Recorder) ownedSocket(p *procEntry, fd procfs.FD) bool {
 		return false
 	}
 	if c := r.tcp.byInode[ino]; c != nil {
-		return c.row.PID == p.key.pid && c.row.FD == fd.Num
+		return int(c.row.PID) == p.key.pid && int(c.row.FD) == fd.Num
 	}
 	if r.tcp.udpInodes[ino] {
 		h, ok := r.tcp.holders[ino]

@@ -2,7 +2,6 @@ package recorder
 
 import (
 	"errors"
-	"net/netip"
 	"os"
 	"slices"
 	"strconv"
@@ -22,11 +21,14 @@ import (
 // dump and socket-owner walk at every sample.
 
 type tuple struct {
-	family       int
-	laddr, raddr netip.Addr
-	lport, rport int
+	laddr, raddr store.Addr
+	lport, rport uint16
+	family       uint8
 }
 
+// tconn is a tracked connection. It holds no pointers (row is compact, see
+// store.TCPConn), so the tens of thousands of them are not scanned by the
+// garbage collector.
 type tconn struct {
 	row         store.TCPConn
 	sk          uint64 // 0: known only from a keyframe so far
@@ -40,9 +42,22 @@ type tconn struct {
 }
 
 func (c *tconn) tuple() tuple {
-	l, _ := netip.ParseAddr(c.row.LAddr)
-	r, _ := netip.ParseAddr(c.row.RAddr)
-	return tuple{c.row.Family, l, r, c.row.LPort, c.row.RPort}
+	return tuple{c.row.LAddr, c.row.RAddr, c.row.LPort, c.row.RPort, c.row.Family}
+}
+
+func eventTuple(e *bpftcp.Event) tuple {
+	return tuple{store.AddrOf(e.SAddr), store.AddrOf(e.DAddr), uint16(e.SPort), uint16(e.DPort), family(e.Family)}
+}
+
+// text is the connection's addresses for guard event details.
+func (c *tconn) text() string {
+	f := int(c.row.Family)
+	return c.row.LAddr.String(f) + ":" + strconv.Itoa(int(c.row.LPort)) + " -> " + c.row.RAddr.String(f) + ":" + strconv.Itoa(int(c.row.RPort))
+}
+
+// add16 adds to a counter that stops at its maximum.
+func add16(c *uint16, n uint32) {
+	*c = uint16(min(uint32(*c)+n, 0xffff))
 }
 
 // holder is a process holding a socket fd, from the last full fd walk.
@@ -68,10 +83,10 @@ type tcpTracker struct {
 	closedNow    []*tconn          // all closed in this sample: a pointer can be reused within one
 	// connRows backs the batch's connection rows, reused at every sample:
 	// the backends copy the rows in Write, before the next sample.
-	connRows []store.TCPConn
-	byInode      map[uint64]*tconn
-	udpInodes    map[uint64]bool // from the last keyframe
-	holders      map[uint64]holder
+	connRows  []store.TCPConn
+	byInode   map[uint64]*tconn
+	udpInodes map[uint64]bool // from the last keyframe
+	holders   map[uint64]holder
 	// fdActive: processes that opened, accepted or closed a connection since
 	// the last fd walk; their fds changed even if their fd count did not.
 	fdActive map[int]bool
@@ -161,7 +176,7 @@ func (t *tcpTracker) markQueued() {
 		if e.Owner.PID != 0 {
 			t.fdActive[e.Owner.PID] = true
 		} else if c := t.conns[e.SK]; c != nil && c.row.PID != 0 {
-			t.fdActive[c.row.PID] = true
+			t.fdActive[int(c.row.PID)] = true
 		}
 	}
 }
@@ -209,7 +224,7 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	return out
 }
 
-func family(f int) int {
+func family(f int) uint8 {
 	if f == 10 {
 		return 6
 	}
@@ -222,8 +237,8 @@ func (r *Recorder) procKeyOf(o bpftcp.Owner) procKey {
 	return procKey{pid: o.PID, start: r.boot + int64(ticks)*1000/procfs.ClockTicks}
 }
 
-func (t *tcpTracker) newConn(r *Recorder, ts int64, source string) *tconn {
-	c := &tconn{row: store.TCPConn{ID: r.nextID("tcp_conns"), FD: -1, OpenTS: ts, Direction: "unknown", Source: source}}
+func (t *tcpTracker) newConn(r *Recorder, ts int64, source store.ConnSource) *tconn {
+	c := &tconn{row: store.TCPConn{ID: r.nextID("tcp_conns"), FD: -1, OpenTS: ts, Direction: store.DirUnknown, Source: source}}
 	return c
 }
 
@@ -232,12 +247,12 @@ func (c *tconn) setOwner(r *Recorder, o bpftcp.Owner) {
 		return
 	}
 	k := r.procKeyOf(o)
-	if c.row.PID != k.pid || c.row.StartTime != k.start {
-		c.row.PID, c.row.StartTime, c.row.FD = k.pid, k.start, -1
+	if int(c.row.PID) != k.pid || c.row.StartTime != k.start {
+		c.row.PID, c.row.StartTime, c.row.FD = int32(k.pid), k.start, -1
 		c.dirty = true
 	}
-	if o.FD >= 0 && c.row.FD != o.FD {
-		c.row.FD, c.dirty = o.FD, true
+	if o.FD >= 0 && int(c.row.FD) != o.FD {
+		c.row.FD, c.dirty = int32(o.FD), true
 	}
 	if o.Inode != 0 && c.row.Inode != o.Inode {
 		c.row.Inode, c.dirty = o.Inode, true
@@ -251,9 +266,9 @@ func (c *tconn) setTuple(e bpftcp.Event) bool {
 	if e.SPort == 0 || e.DPort == 0 && e.New != bpftcp.Listen {
 		return false
 	}
-	l, rr := e.SAddr.String(), e.DAddr.String()
-	if c.row.LAddr != l || c.row.LPort != e.SPort || c.row.RAddr != rr || c.row.RPort != e.DPort {
-		c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = family(e.Family), l, e.SPort, rr, e.DPort
+	tp := eventTuple(&e)
+	if c.tuple() != tp {
+		c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = tp.family, tp.laddr, tp.lport, tp.raddr, tp.rport
 		c.dirty = true
 		return true
 	}
@@ -290,7 +305,7 @@ func (r *Recorder) drainTCP() {
 			t.fdActive[e.Owner.PID] = true
 		}
 		if e.Kind == bpftcp.AppClose && c != nil && c.row.PID != 0 {
-			t.fdActive[c.row.PID] = true
+			t.fdActive[int(c.row.PID)] = true
 		}
 		switch e.Kind {
 		case bpftcp.State:
@@ -305,7 +320,7 @@ func (r *Recorder) drainTCP() {
 				}
 				t.finish(c, e.SK, end, c.state)
 				b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "tcp_close_missed",
-					Detail: "close not reported, found when its socket address was reused: " + c.row.LAddr + ":" + strconv.Itoa(c.row.LPort) + " -> " + c.row.RAddr + ":" + strconv.Itoa(c.row.RPort)})
+					Detail: "close not reported, found when its socket address was reused: " + c.text()})
 				c = nil
 			}
 			if c == nil {
@@ -315,7 +330,7 @@ func (r *Recorder) drainTCP() {
 				// Addresses still lingering in time-wait were reused (the
 				// kernel's tw_reuse): that ended the time-wait socket.
 				if old := t.lingering[c.tuple()]; old != nil && old != c && !old.lingerDone {
-					old.row.LingerUntil, old.dirty, old.lingerDone = &ts, true, true
+					old.row.LingerUntil, old.dirty, old.lingerDone = ts, true, true
 				}
 			}
 			c.setOwner(r, e.Owner)
@@ -329,16 +344,16 @@ func (r *Recorder) drainTCP() {
 			b.TCPTrans = append(b.TCPTrans, store.TCPTransition{ConnID: c.row.ID, TS: ts, Seq: c.seq, Old: e.Old, New: e.New})
 			c.state, c.lastEvent, c.dirty = e.New, ts, true
 			if e.New == bpftcp.Close {
-				c.row.Retransmits += int(e.Retransmits)
-				c.row.ResetsSent += int(e.ResetsSent)
-				c.row.ResetsReceived += int(e.ResetsReceived)
+				c.row.Retransmits += uint32(e.Retransmits)
+				add16(&c.row.ResetsSent, uint32(e.ResetsSent))
+				add16(&c.row.ResetsReceived, uint32(e.ResetsReceived))
 				t.finish(c, e.SK, ts, e.Old)
 			}
 		case bpftcp.Accept, bpftcp.AcceptFD:
 			if c == nil {
 				continue // its state changes were not seen (dropped); the next keyframe adopts it
 			}
-			c.row.Direction = "passive"
+			c.row.Direction = store.DirPassive
 			c.setOwner(r, e.Owner)
 			if c.row.Inode != 0 {
 				t.byInode[c.row.Inode] = c
@@ -347,24 +362,23 @@ func (r *Recorder) drainTCP() {
 			if c == nil {
 				c = t.recentClosed[e.SK]
 			}
-			if c != nil && c.row.OwnerUntil == nil {
-				c.row.OwnerUntil, c.dirty = &ts, true
+			if c != nil && c.row.OwnerUntil == 0 {
+				c.row.OwnerUntil, c.dirty = ts, true
 			}
 		case bpftcp.TimeWaitStart:
 			if c != nil {
 				c.lingerState, c.lingerTS = e.New, ts
 			}
 		case bpftcp.TimeWaitEnd:
-			tp := tuple{family(e.Family), e.SAddr, e.DAddr, e.SPort, e.DPort}
-			if c := t.lingering[tp]; c != nil && !c.lingerDone {
-				c.row.LingerUntil, c.dirty, c.lingerDone = &ts, true, true // exact
+			if c := t.lingering[eventTuple(&e)]; c != nil && !c.lingerDone {
+				c.row.LingerUntil, c.dirty, c.lingerDone = ts, true, true // exact
 			}
 		case bpftcp.ActiveReset:
 			if c == nil {
 				c = t.recentClosed[e.SK]
 			}
 			if c != nil {
-				c.row.ResetsSent++
+				add16(&c.row.ResetsSent, 1)
 				c.dirty = true
 			}
 		}
@@ -373,13 +387,13 @@ func (r *Recorder) drainTCP() {
 
 // finish closes a connection at ts; final is its last state before TCP_CLOSE.
 func (t *tcpTracker) finish(c *tconn, sk uint64, ts int64, final int) {
-	c.row.CloseTS, c.row.FinalState, c.dirty = &ts, final, true
+	c.row.CloseTS, c.row.FinalState, c.dirty = ts, uint8(final), true
 	if c.lingerState != 0 {
 		until := ts + timeWaitMS
 		if c.lingerState == bpftcp.FinWait2 {
 			until = ts + t.finTimeout
 		}
-		c.row.LingerState, c.row.LingerUntil = c.lingerState, &until
+		c.row.LingerState, c.row.LingerUntil = uint8(c.lingerState), until
 		t.lingering[c.tuple()] = c
 	}
 	delete(t.conns, sk)
@@ -393,30 +407,30 @@ func (t *tcpTracker) finish(c *tconn, sk uint64, ts int64, final int) {
 // adopt starts tracking a connection at its first event: a new connection,
 // or one first seen in a keyframe (matched by its addresses).
 func (t *tcpTracker) adopt(r *Recorder, e bpftcp.Event, ts int64) *tconn {
-	tp := tuple{family(e.Family), e.SAddr, e.DAddr, e.SPort, e.DPort}
+	tp := eventTuple(&e)
 	if c := t.unattached[tp]; c != nil && e.Old != bpftcp.Close && e.Old != bpftcp.Listen {
 		delete(t.unattached, tp)
 		c.sk = e.SK
 		t.conns[e.SK] = c
 		return c
 	}
-	c := t.newConn(r, ts, "ebpf")
+	c := t.newConn(r, ts, store.SrcEBPF)
 	c.sk = e.SK
-	c.row.FirstState = e.New
+	c.row.FirstState = uint8(e.New)
 	switch {
 	case e.Old == bpftcp.Close && e.New == bpftcp.SynSent:
-		c.row.Direction = "active"
+		c.row.Direction = store.DirActive
 	case e.Old == bpftcp.Close && e.New == bpftcp.Listen:
-		c.row.Direction = "listen"
+		c.row.Direction = store.DirListen
 	case e.Old == bpftcp.Listen: // a child of a listening socket (SYN_RECV)
-		c.row.Direction = "passive"
+		c.row.Direction = store.DirPassive
 	default:
-		c.row.FirstState = e.Old // already open before its first event
+		c.row.FirstState = uint8(e.Old) // already open before its first event
 	}
 	t.conns[e.SK] = c
 	// The same addresses lingering in time-wait were reused: that ended it.
 	if old := t.lingering[tp]; old != nil && !old.lingerDone {
-		old.row.LingerUntil, old.dirty, old.lingerDone = &ts, true, true
+		old.row.LingerUntil, old.dirty, old.lingerDone = ts, true, true
 	}
 	return c
 }
@@ -485,11 +499,11 @@ func (r *Recorder) keyframe(b *store.Batch) {
 	t.udpInodes = map[uint64]bool{}
 	rec := store.ReconcileRow{TS: start, Kind: "tcp", Initial: initial}
 	for _, s := range list {
-		kf := store.KeyframeRow{TS: start, Proto: s.Proto, Family: s.Family, LAddr: s.LAddr.String(), LPort: s.LPort,
-			RAddr: s.RAddr.String(), RPort: s.RPort, Inode: s.Inode, State: s.State, RecvQ: int64(s.RxQ),
-			SendQ: int64(s.TxQ), UID: int(s.UID), FD: -1, V6Only: s.V6Only}
+		kf := store.KeyframeRow{TS: start, Proto: store.ProtoOf(s.Proto), Family: uint8(s.Family), LAddr: store.AddrOf(s.LAddr),
+			LPort: uint16(s.LPort), RAddr: store.AddrOf(s.RAddr), RPort: uint16(s.RPort), Inode: s.Inode, State: uint8(s.State),
+			RecvQ: int64(s.RxQ), SendQ: int64(s.TxQ), UID: int32(s.UID), FD: -1, V6Only: s.V6Only}
 		if h, ok := t.holders[s.Inode]; ok && s.Inode != 0 {
-			kf.PID, kf.StartTime, kf.FD = h.key.pid, h.key.start, h.fd
+			kf.PID, kf.StartTime, kf.FD = int32(h.key.pid), h.key.start, int32(h.fd)
 		}
 		if s.Proto != "tcp" {
 			t.udpInodes[s.Inode] = true
@@ -497,11 +511,11 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			continue
 		}
 		rec.DumpRows++
-		tp := tuple{s.Family, s.LAddr, s.RAddr, s.LPort, s.RPort}
+		tp := tuple{kf.LAddr, kf.RAddr, kf.LPort, kf.RPort, kf.Family}
 		inDump[tp] = true
 		c := known[tp]
-		if c != nil && c.row.OpenTS > start && c.row.FirstState != bpftcp.SynSent && c.row.Direction != "listen" &&
-			c.row.Direction != "passive" {
+		if c != nil && c.row.OpenTS > start && int(c.row.FirstState) != bpftcp.SynSent && c.row.Direction != store.DirListen &&
+			c.row.Direction != store.DirPassive {
 			// First seen through an event after the dump, but it was already open.
 			c.row.OpenTS, c.dirty = start, true
 		}
@@ -509,19 +523,19 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			if !initial {
 				rec.MissingFromEvents++
 			}
-			c = t.newConn(r, start, "keyframe")
-			c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = s.Family, kf.LAddr, s.LPort, kf.RAddr, s.RPort
-			c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, s.State, s.State, ifName(s.IfIndex)
+			c = t.newConn(r, start, store.SrcKeyframe)
+			c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = kf.Family, kf.LAddr, kf.LPort, kf.RAddr, kf.RPort
+			c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, kf.State, s.State, store.NameOf(ifName(s.IfIndex))
 			c.row.V6Only = s.V6Only
 			if s.State == bpftcp.Listen {
-				c.row.Direction = "listen"
+				c.row.Direction = store.DirListen
 			}
 			if s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2 && s.Inode == 0 {
 				// A time-wait socket: its connection closed before this run
 				// (or its close was missed).
 				// sock_diag reports how long it still has (idiag_expires).
 				until := start + int64(s.Expires)
-				c.row.CloseTS, c.row.FinalState, c.row.LingerState, c.row.LingerUntil = &start, s.State, s.State, &until
+				c.row.CloseTS, c.row.FinalState, c.row.LingerState, c.row.LingerUntil = start, kf.State, kf.State, until
 				t.lingering[tp] = c
 			} else {
 				t.unattached[tp] = c
@@ -531,12 +545,12 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			}
 			c.dirty = true
 		}
-		if c.row.CloseTS != nil && !c.lingerDone && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
+		if c.row.CloseTS != 0 && !c.lingerDone && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
 			// Still a time-wait socket: the kernel says how long it has left
 			// (a FIN_WAIT2 one restarts as TIME_WAIT when the peer's FIN comes).
 			until := start + int64(s.Expires)
-			if c.row.LingerUntil == nil || until > *c.row.LingerUntil || c.row.LingerState != s.State {
-				c.row.LingerState, c.row.LingerUntil, c.dirty = s.State, &until, true
+			if c.row.LingerUntil == 0 || until > c.row.LingerUntil || c.row.LingerState != kf.State {
+				c.row.LingerState, c.row.LingerUntil, c.dirty = kf.State, until, true
 				t.lingering[tp] = c
 			}
 		}
@@ -544,7 +558,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			c.row.PID, c.row.StartTime, c.row.FD, c.dirty = kf.PID, kf.StartTime, kf.FD, true
 		}
 		kf.ConnID = c.row.ID
-		if kf.PID == 0 && c.row.PID != 0 && c.row.OwnerUntil == nil {
+		if kf.PID == 0 && c.row.PID != 0 && c.row.OwnerUntil == 0 {
 			kf.PID, kf.StartTime, kf.FD = c.row.PID, c.row.StartTime, c.row.FD
 		}
 		b.Keyframes = append(b.Keyframes, kf)
@@ -557,14 +571,15 @@ func (r *Recorder) keyframe(b *store.Batch) {
 		if !initial {
 			rec.ExtraInEvents++
 		}
-		c.row.CloseTS, c.row.FinalState, c.dirty = &start, c.state, true
+		c.row.CloseTS, c.row.FinalState, c.dirty = start, uint8(c.state), true
+		t.closedNow = append(t.closedNow, c) // written by flushTCP
 		delete(t.conns, c.sk)
 		delete(t.unattached, tp)
 		if t.byInode[c.row.Inode] == c {
 			delete(t.byInode, c.row.Inode)
 		}
 		b.Guard = append(b.Guard, store.GuardEvent{TS: start, Kind: "tcp_reconciled",
-			Detail: "connection open in events but not in the keyframe: " + c.row.LAddr + ":" + strconv.Itoa(c.row.LPort) + " -> " + c.row.RAddr + ":" + strconv.Itoa(c.row.RPort)})
+			Detail: "connection open in events but not in the keyframe: " + c.text()})
 	}
 	b.Reconcile = append(b.Reconcile, rec)
 }
@@ -625,7 +640,7 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 	}
 	for tp, c := range t.lingering {
 		emit(c)
-		if c.lingerDone || c.row.LingerUntil != nil && *c.row.LingerUntil+grace < ts {
+		if c.lingerDone || c.row.LingerUntil != 0 && c.row.LingerUntil+grace < ts {
 			delete(t.lingering, tp)
 		}
 	}

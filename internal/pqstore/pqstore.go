@@ -134,6 +134,38 @@ func (e *entity[T]) reset() {
 	clear(e.closedIdx) // keeps its size for the next window
 }
 
+// valBuf holds an entity table the recorder keeps by the ten thousand (TCP
+// connections, held fds): like entity, but rows are kept in a compact form
+// (no pointers for TCP connections, none per time for held fds) and
+// converted to file rows a chunk at a time when written. Open rows are
+// separate objects: a map with the rows inline was larger, as the table
+// grows in powers of two and stays partly empty.
+type valBuf[S any] struct {
+	open      map[int64]*S
+	closed    rowBuf[S]
+	closedIdx map[int64]int
+}
+
+func newValBuf[S any]() valBuf[S] {
+	return valBuf[S]{open: map[int64]*S{}, closedIdx: map[int64]int{}}
+}
+
+func (e *valBuf[S]) addClosed(id int64, row S) {
+	e.closedIdx[id] = e.closed.len()
+	e.closed.add(row)
+}
+
+func (e *valBuf[S]) reset() {
+	e.closed = rowBuf[S]{}
+	clear(e.closedIdx)
+}
+
+// heldRec is a held fd in memory: the recorder's row and its end.
+type heldRec struct {
+	store.HeldFD
+	LastSeen int64 // 0 while open
+}
+
 // keyed is an append-only table where a second row for the same key in the
 // same flush window replaces the first (v1: INSERT OR REPLACE).
 type keyed[T any] struct {
@@ -167,14 +199,15 @@ type Store struct {
 	sockSamples keyed[sockSampleRow]
 	owners      *entity[ownerRow]
 	files       *entity[fileRow]
-	conns       *entity[tcpConnRow]
-	held        *entity[heldRow]
+	conns       valBuf[store.TCPConn]
+	held        valBuf[heldRec]
 	mounts      []mountRow
 	sys         []sysRow
 	cpus        []cpuRow
 	disks       []diskRow
 	trans       []tcpTransRow
-	keyframes   rowBuf[keyframeRow]
+	keyframes   rowBuf[store.KeyframeRow]
+	addrs       addrCache
 	reconcile   []reconcileRow
 	guard       []guardRow
 	oom         []oomRow
@@ -214,7 +247,7 @@ func Open(dir string, opt Options) (*Store, error) {
 	}
 	s := &Store{dir: dir, opt: opt, run: time.Now().Unix(), lastFlush: time.Now(),
 		procs: newEntity[processRow](), socks: newEntity[socketRow](),
-		owners: newEntity[ownerRow](), files: newEntity[fileRow](), conns: newEntity[tcpConnRow](), held: newEntity[heldRow]()}
+		owners: newEntity[ownerRow](), files: newEntity[fileRow](), held: newValBuf[heldRec](), conns: newValBuf[store.TCPConn]()}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	if err := s.recover(); err != nil {
 		return nil, err
@@ -253,16 +286,13 @@ func (s *Store) Write(b *store.Batch) error {
 	for _, u := range b.ProcUpdates {
 		if r := s.procs.get(u.ID); r != nil {
 			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source, r.Exe = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source, u.Exe
-			r.ExecTS = nil
-			if u.ExecTS != 0 {
-				r.ExecTS = ptr(u.ExecTS)
-			}
+			r.ExecTS = u.ExecTS
 		} else {
 			s.unknown++
 		}
 	}
 	for _, c := range b.ProcCloses {
-		if !s.procs.close(c.ID, func(r *processRow) { r.LastSeen, r.Ended = ptr(c.LastSeen), c.Ended }) {
+		if !s.procs.close(c.ID, func(r *processRow) { r.LastSeen, r.Ended = c.LastSeen, val(c.Ended) }) {
 			s.unknown++
 		}
 	}
@@ -273,7 +303,7 @@ func (s *Store) Write(b *store.Batch) error {
 			continue
 		}
 		if x.ExitTS != nil {
-			r.ExitTS = x.ExitTS
+			r.ExitTS = *x.ExitTS
 		}
 		if x.ExitCode != nil {
 			r.ExitCode = i32p(x.ExitCode)
@@ -286,11 +316,16 @@ func (s *Store) Write(b *store.Batch) error {
 		}
 	}
 	for _, f := range b.HeldInserts {
-		s.held.insert(f.ID, heldRow{ID: f.ID, PID: int32(f.PID), StartTime: f.StartTime, FD: int32(f.FD), Target: f.Target,
-			Deleted: b2i(f.Deleted), FType: f.FType, Mode: f.Mode, Name: f.Name, Node: f.Node, FirstSeen: f.FirstSeen}, false)
+		s.held.open[f.ID] = &heldRec{HeldFD: f}
 	}
 	for _, c := range b.HeldCloses {
-		if !s.held.close(c.ID, func(r *heldRow) { r.LastSeen = ptr(c.LastSeen) }) {
+		if r := s.held.open[c.ID]; r != nil {
+			r.LastSeen = c.LastSeen
+			delete(s.held.open, c.ID)
+			s.held.addClosed(c.ID, *r)
+		} else if i, ok := s.held.closedIdx[c.ID]; ok {
+			s.held.closed.at(i).LastSeen = c.LastSeen
+		} else {
 			s.unknown++
 		}
 	}
@@ -307,25 +342,23 @@ func (s *Store) Write(b *store.Batch) error {
 	for _, d := range b.Disks {
 		s.disks = append(s.disks, diskOf(d))
 	}
-	for _, c := range b.TCPConns {
+	for i := range b.TCPConns {
 		// Whole rows: the newest version replaces the open or buffered one.
-		// An open row is updated in place: a new row per version was the
-		// largest allocation of the store at the busy load.
-		row := tcpConnOf(c)
-		if c.CloseTS == nil {
+		c := &b.TCPConns[i]
+		if c.CloseTS == 0 {
 			if p := s.conns.open[c.ID]; p != nil {
-				*p = row
+				*p = *c
 			} else {
-				p = new(tcpConnRow)
-				*p = row
+				p = new(store.TCPConn)
+				*p = *c
 				s.conns.open[c.ID] = p
 			}
 		} else {
 			delete(s.conns.open, c.ID)
 			if i, ok := s.conns.closedIdx[c.ID]; ok {
-				*s.conns.closed.at(i) = row
+				*s.conns.closed.at(i) = *c
 			} else {
-				s.conns.insert(c.ID, row, true)
+				s.conns.addClosed(c.ID, *c)
 			}
 		}
 	}
@@ -333,7 +366,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.trans = append(s.trans, tcpTransRow{ConnID: t.ConnID, TS: t.TS, Seq: int32(t.Seq), Old: int32(t.Old), New: int32(t.New)})
 	}
 	for _, k := range b.Keyframes {
-		s.keyframes.add(keyframeOf(k))
+		s.keyframes.add(k)
 	}
 	for _, r := range b.Reconcile {
 		s.reconcile = append(s.reconcile, reconcileRow{TS: r.TS, Kind: r.Kind, DumpRows: int32(r.DumpRows),
@@ -352,7 +385,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.socks.insert(k.ID, socketOf(k), false)
 	}
 	for _, c := range b.SockCloses {
-		if !s.socks.close(c.ID, func(r *socketRow) { r.LastSeen = ptr(c.LastSeen) }) {
+		if !s.socks.close(c.ID, func(r *socketRow) { r.LastSeen = c.LastSeen }) {
 			s.unknown++
 		}
 	}
@@ -363,7 +396,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.owners.insert(o.ID, ownerRow{ID: o.ID, SockID: o.SockID, ProcID: o.ProcID, FD: int32(o.FD), FirstSeen: o.FirstSeen}, false)
 	}
 	for _, c := range b.OwnCloses {
-		if !s.owners.close(c.ID, func(r *ownerRow) { r.LastSeen = ptr(c.LastSeen) }) {
+		if !s.owners.close(c.ID, func(r *ownerRow) { r.LastSeen = c.LastSeen }) {
 			s.unknown++
 		}
 	}
@@ -371,7 +404,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.files.insert(f.ID, fileOf(f), false)
 	}
 	for _, c := range b.FileCloses {
-		if !s.files.close(c.ID, func(r *fileRow) { r.LastSeen = ptr(c.LastSeen) }) {
+		if !s.files.close(c.ID, func(r *fileRow) { r.LastSeen = c.LastSeen }) {
 			s.unknown++
 		}
 	}
@@ -418,11 +451,15 @@ func (s *Store) Flush() error {
 	part("sock_samples", len(s.sockSamples.rows), func(p string) error { return writeFile(p, s.sockSamples.rows) })
 	part("sock_owners", s.owners.closed.len(), func(p string) error { return writeFile(p, s.owners.closed.chunks...) })
 	part("open_files", s.files.closed.len(), func(p string) error { return writeFile(p, s.files.closed.chunks...) })
-	part("fds_held", s.held.closed.len(), func(p string) error { return writeFile(p, s.held.closed.chunks...) })
+	part("fds_held", s.held.closed.len(), func(p string) error { return writeConv(p, heldOf, s.held.closed.chunks...) })
 	part("mounts", len(s.mounts), func(p string) error { return writeFile(p, s.mounts) })
-	part("tcp_conns", s.conns.closed.len(), func(p string) error { return writeFile(p, s.conns.closed.chunks...) })
+	part("tcp_conns", s.conns.closed.len(), func(p string) error {
+		return writeConv(p, func(r *tcpConnRow, c *store.TCPConn) { tcpConnOf(r, c, &s.addrs) }, s.conns.closed.chunks...)
+	})
 	part("tcp_transitions", len(s.trans), func(p string) error { return writeFile(p, s.trans) })
-	part("tcp_keyframes", s.keyframes.len(), func(p string) error { return writeFile(p, s.keyframes.chunks...) })
+	part("tcp_keyframes", s.keyframes.len(), func(p string) error {
+		return writeConv(p, func(r *keyframeRow, k *store.KeyframeRow) { keyframeOf(r, k, &s.addrs) }, s.keyframes.chunks...)
+	})
 	part("reconcile", len(s.reconcile), func(p string) error { return writeFile(p, s.reconcile) })
 	part("oom_events", len(s.oom), func(p string) error { return writeFile(p, s.oom) })
 	part("recorder_stats", len(s.stats), func(p string) error { return writeFile(p, s.stats) })
@@ -437,15 +474,21 @@ func (s *Store) Flush() error {
 	}
 	// Open rows, seen until the last sample (open files: the last fd walk).
 	errs = append(errs,
-		writeOpen(s, "processes", s.procs, s.lastAny, func(r *processRow) *int64 { return &r.FirstSeen }, func(r *processRow, v *int64) { r.LastSeen = v }),
-		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) *int64 { return &r.FirstSeen }, func(r *socketRow, v *int64) { r.LastSeen = v }),
-		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) *int64 { return &r.FirstSeen }, func(r *ownerRow, v *int64) { r.LastSeen = v }),
-		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) *int64 { return &r.FirstSeen }, func(r *fileRow, v *int64) { r.LastSeen = v }),
-		writeOpen(s, "fds_held", s.held, s.lastFD, func(r *heldRow) *int64 { return &r.FirstSeen }, func(r *heldRow, v *int64) { r.LastSeen = v }),
-		writeOpen(s, "tcp_conns", s.conns, s.lastAny, func(r *tcpConnRow) *int64 { return &r.OpenTS }, func(r *tcpConnRow, v *int64) { r.LastSeen = v }))
+		writeOpen(s, "processes", s.procs, s.lastAny, func(r *processRow) int64 { return r.FirstSeen }, func(r *processRow, v int64) { r.LastSeen = v }),
+		writeOpen(s, "sockets", s.socks, s.lastAny, func(r *socketRow) int64 { return r.FirstSeen }, func(r *socketRow, v int64) { r.LastSeen = v }),
+		writeOpen(s, "sock_owners", s.owners, s.lastAny, func(r *ownerRow) int64 { return r.FirstSeen }, func(r *ownerRow, v int64) { r.LastSeen = v }),
+		writeOpen(s, "open_files", s.files, s.lastFD, func(r *fileRow) int64 { return r.FirstSeen }, func(r *fileRow, v int64) { r.LastSeen = v }),
+		writeOpenConv(s, "fds_held", s.held.open, func(r *heldRow, h *heldRec) {
+			h.LastSeen = max(h.FirstSeen, s.lastFD)
+			heldOf(r, h)
+		}),
+		writeOpenConv(s, "tcp_conns", s.conns.open, func(r *tcpConnRow, c *store.TCPConn) {
+			c.LastSeen = max(c.OpenTS, s.lastAny)
+			tcpConnOf(r, c, &s.addrs)
+		}))
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
-	s.keyframes, s.reconcile, s.mounts = rowBuf[keyframeRow]{}, nil, nil
+	s.keyframes, s.reconcile, s.mounts = rowBuf[store.KeyframeRow]{}, nil, nil
 	s.sys, s.cpus, s.disks = s.sys[:0], s.cpus[:0], s.disks[:0]
 	s.conns.reset()
 	s.held.reset()
@@ -464,8 +507,9 @@ func (s *Store) Flush() error {
 	return errors.Join(errs...)
 }
 
-// writeOpen rewrites the run's open file for an entity table.
-func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) *int64, setLast func(*T, *int64)) error {
+// writeOpen rewrites the run's open file for an entity table: each row seen
+// until last (or its first sighting, if later).
+func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) int64, setLast func(*T, int64)) error {
 	p := filepath.Join(s.dir, table, "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(e.open) == 0 {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -473,27 +517,44 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 		}
 		return nil
 	}
-	// One last_seen value shared by every row that started before it.
-	lastp := new(int64)
-	*lastp = last
 	rows := slices.Grow(e.scratch[:0], len(e.open))
 	for _, r := range e.open {
 		rows = append(rows, *r)
 		x := &rows[len(rows)-1]
-		if f := *first(x); f > last {
-			v := new(int64)
-			*v = f
-			setLast(x, v)
-		} else {
-			setLast(x, lastp)
-		}
+		setLast(x, max(first(x), last))
 	}
-	clear(rows[len(rows):cap(rows)]) // no stale strings from a larger flush
+	err := writeFile(p, rows)
+	clear(rows[:cap(rows)]) // keep the array, not the strings
 	e.scratch = rows
-	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-		return err
+	return err
+}
+
+// writeOpenConv rewrites the run's open file of a valBuf table; conv
+// converts a row (a copy: it may set its last_seen).
+func writeOpenConv[S, T any](s *Store, table string, open map[int64]*S, conv func(*T, *S)) error {
+	p := filepath.Join(s.dir, table, "open", fmt.Sprintf("%d.parquet", s.run))
+	if len(open) == 0 {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
 	}
-	return writeFile(p, rows)
+	return writeRows(p, func(w *parquet.GenericWriter[T]) error {
+		buf := make([]T, 0, min(len(open), chunkRows))
+		for _, p := range open {
+			row := *p
+			buf = buf[:len(buf)+1]
+			conv(&buf[len(buf)-1], &row)
+			if len(buf) == cap(buf) {
+				if _, err := w.Write(buf); err != nil {
+					return err
+				}
+				buf = buf[:0]
+			}
+		}
+		_, err := w.Write(buf)
+		return err
+	})
 }
 
 func (s *Store) Close() error {
@@ -520,9 +581,46 @@ var writerOptions = []parquet.WriterOption{
 	parquet.SkipPageBounds("target"), parquet.SkipPageBounds("detail"),
 }
 
-// writeFile writes rows to path atomically (temporary file, fsync, rename).
 // writeFile writes the rows, given as one or more slices, to a new file.
 func writeFile[T any](path string, rows ...[]T) error {
+	return writeRows(path, func(w *parquet.GenericWriter[T]) error {
+		for _, r := range rows {
+			if _, err := w.Write(r); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// writeConv writes rows kept in a compact form, converted to the file's row
+// type a chunk at a time.
+func writeConv[S, T any](path string, conv func(*T, *S), rows ...[]S) error {
+	return writeRows(path, func(w *parquet.GenericWriter[T]) error {
+		var buf []T
+		for _, r := range rows {
+			for len(r) > 0 {
+				n := min(len(r), chunkRows)
+				if cap(buf) < n {
+					buf = make([]T, n)
+				}
+				buf = buf[:n]
+				for i := range buf {
+					conv(&buf[i], &r[i])
+				}
+				if _, err := w.Write(buf); err != nil {
+					return err
+				}
+				r = r[n:]
+			}
+		}
+		return nil
+	})
+}
+
+// writeRows writes a new file atomically (temporary file, fsync, rename);
+// fill writes its rows.
+func writeRows[T any](path string, fill func(*parquet.GenericWriter[T]) error) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
@@ -532,12 +630,7 @@ func writeFile[T any](path string, rows ...[]T) error {
 		return err
 	}
 	w := parquet.NewGenericWriter[T](f, writerOptions...)
-	for _, r := range rows {
-		if err == nil {
-			_, err = w.Write(r)
-		}
-	}
-	err = errors.Join(err, w.Close(), f.Sync(), f.Close())
+	err = errors.Join(fill(w), w.Close(), f.Sync(), f.Close())
 	if err != nil {
 		os.Remove(tmp)
 		return err

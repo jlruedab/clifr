@@ -30,7 +30,7 @@ func TestKeyframeThenClose(t *testing.T) {
 	r.applyTCP(&b)
 	r.keyframe(&b)
 	r.flushTCP(1000, &b)
-	if len(b.TCPConns) != 1 || b.TCPConns[0].Source != "keyframe" {
+	if len(b.TCPConns) != 1 || b.TCPConns[0].Source != store.SrcKeyframe {
 		t.Fatalf("keyframe adoption: %+v", b.TCPConns)
 	}
 	id := b.TCPConns[0].ID
@@ -45,7 +45,7 @@ func TestKeyframeThenClose(t *testing.T) {
 	r.flushTCP(2000, &b)
 	closed := false
 	for _, c := range b.TCPConns {
-		if c.ID == id && c.CloseTS != nil {
+		if c.ID == id && c.CloseTS != 0 {
 			closed = true
 		}
 	}
@@ -78,7 +78,7 @@ func TestSockPointerReuse(t *testing.T) {
 	r.flushTCP(1000, &b)
 	closed := 0
 	for _, c := range b.TCPConns {
-		if c.CloseTS != nil {
+		if c.CloseTS != 0 {
 			closed++
 		}
 	}
@@ -126,7 +126,7 @@ func TestTimeWaitEnd(t *testing.T) {
 	b = store.Batch{}
 	r.applyTCP(&b)
 	r.flushTCP(2000, &b)
-	if len(b.TCPConns) != 1 || b.TCPConns[0].LingerUntil == nil || *b.TCPConns[0].LingerUntil-*b.TCPConns[0].CloseTS >= 60_000 {
+	if len(b.TCPConns) != 1 || b.TCPConns[0].LingerUntil == 0 || b.TCPConns[0].LingerUntil-b.TCPConns[0].CloseTS >= 60_000 {
 		t.Fatalf("exact end not applied: %+v", b.TCPConns)
 	}
 }
@@ -154,15 +154,46 @@ func TestMissedClose(t *testing.T) {
 	for _, c := range b.TCPConns {
 		switch c.LPort {
 		case 40000:
-			if c.CloseTS == nil || c.Direction != "active" || c.FinalState != 4 {
+			if c.CloseTS == 0 || c.Direction != store.DirActive || c.FinalState != 4 {
 				t.Errorf("first connection not closed: %+v", c)
 			}
 		case 80:
-			if c.CloseTS != nil || c.Direction != "passive" || c.RPort != 40001 {
+			if c.CloseTS != 0 || c.Direction != store.DirPassive || c.RPort != 40001 {
 				t.Errorf("second connection: %+v", c)
 			}
 		default:
 			t.Errorf("unexpected connection %+v", c)
 		}
+	}
+}
+
+// A connection open in events but gone from a keyframe (its close was
+// missed) must be written closed.
+func TestReconciledClose(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	r.tcp.queue = []bpftcp.Event{
+		tcpEvent(7, 7, 2, "127.0.0.1", 0, "127.0.0.2", 80),
+		tcpEvent(7, 2, 1, "127.0.0.1", 40000, "127.0.0.2", 80),
+	}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	if len(b.TCPConns) != 1 || b.TCPConns[0].CloseTS != 0 {
+		t.Fatalf("want 1 open connection, got %+v", b.TCPConns)
+	}
+	start := b.TCPConns[0].OpenTS + 60_000
+	r.tcp.keyframes = 1 // not the initial keyframe
+	r.tcp.pendingDump, r.tcp.dumpStart = []sockdiag.Socket{}, start
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.keyframe(&b)
+	r.flushTCP(start, &b)
+	if len(b.Guard) != 1 || b.Guard[0].Kind != "tcp_reconciled" {
+		t.Fatalf("want a tcp_reconciled event, got %+v", b.Guard)
+	}
+	if len(b.TCPConns) != 1 || b.TCPConns[0].CloseTS != start {
+		t.Errorf("reconciled connection not written closed: %+v", b.TCPConns)
 	}
 }

@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/parquet-go/parquet-go"
+
+	"sosv/internal/store"
 )
 
 func rowsIn(t *testing.T, path string) int64 {
@@ -183,5 +186,15 @@ func TestRowBufChunks(t *testing.T) {
 		if r.TS != int64(i) || r.Kind != want {
 			t.Fatalf("row %d: %+v, want ts %d kind %s", i, r, i, want)
 		}
+	}
+}
+
+// valBuf rows stay within the 128-byte allocation size class.
+func TestValBufRowSize(t *testing.T) {
+	if n := unsafe.Sizeof(heldRec{}); n > 128 {
+		t.Errorf("heldRec is %d bytes", n)
+	}
+	if n := unsafe.Sizeof(store.TCPConn{}); n > 128 {
+		t.Errorf("TCPConn is %d bytes", n)
 	}
 }

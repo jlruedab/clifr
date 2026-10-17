@@ -3,6 +3,7 @@ package duck
 import (
 	"database/sql"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,13 +44,13 @@ func batches() []*store.Batch {
 			OOMEvents:   []store.OOMEvent{{TS: 1950, PID: 10, StartTime: 900, Comm: "srv", RSSKB: 4000, Snapshot: true}},
 			Stats:       []store.StatRow{{TS: 2000, Source: "ebpf_exec", Events: 7, Dropped: 1}},
 			TCPConns: []store.TCPConn{
-				{ID: 501, PID: 10, StartTime: 900, FD: 5, Inode: 777, Family: 4, LAddr: "127.0.0.1", LPort: 4000, RAddr: "127.0.0.2",
-					RPort: 80, Direction: "active", OpenTS: 1500, FirstState: 2, Source: "ebpf", LastSeen: 1500},
-				{ID: 502, PID: 10, StartTime: 900, FD: -1, Family: 4, LAddr: "127.0.0.1", LPort: 4001, RAddr: "127.0.0.2",
-					RPort: 80, Direction: "active", OpenTS: 1600, CloseTS: p64(1650), FinalState: 2, ResetsReceived: 1, Source: "ebpf", LastSeen: 1650},
+				{ID: 501, PID: 10, StartTime: 900, FD: 5, Inode: 777, Family: 4, LAddr: ip("127.0.0.1"), LPort: 4000, RAddr: ip("127.0.0.2"),
+					RPort: 80, Direction: store.DirActive, OpenTS: 1500, FirstState: 2, Source: store.SrcEBPF, LastSeen: 1500},
+				{ID: 502, PID: 10, StartTime: 900, FD: -1, Family: 4, LAddr: ip("127.0.0.1"), LPort: 4001, RAddr: ip("127.0.0.2"),
+					RPort: 80, Direction: store.DirActive, OpenTS: 1600, CloseTS: 1650, FinalState: 2, ResetsReceived: 1, Source: store.SrcEBPF, LastSeen: 1650},
 			},
 			TCPTrans:    []store.TCPTransition{{ConnID: 501, TS: 1500, Old: 7, New: 2}, {ConnID: 501, TS: 1501, Old: 2, New: 1}},
-			Keyframes:   []store.KeyframeRow{{TS: 2000, Proto: "tcp", Family: 4, LAddr: "127.0.0.1", LPort: 4000, RAddr: "127.0.0.2", RPort: 80, Inode: 777, State: 1, RecvQ: 3, ConnID: 501, PID: 10, StartTime: 900, FD: 5}},
+			Keyframes:   []store.KeyframeRow{{TS: 2000, Proto: store.ProtoTCP, Family: 4, LAddr: ip("127.0.0.1"), LPort: 4000, RAddr: ip("127.0.0.2"), RPort: 80, Inode: 777, State: 1, RecvQ: 3, ConnID: 501, PID: 10, StartTime: 900, FD: 5}},
 			HeldInserts: []store.HeldFD{{ID: 601, PID: 10, StartTime: 900, FD: 4, Target: "/var/log/x (deleted)", Deleted: true, FType: "REG", Mode: "w", Node: 77, FirstSeen: 1000}},
 			Mounts:      []store.MountEvent{{TS: 1000, Action: "present", MountID: 22, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw"}, {TS: 1700, Action: "mount", MountID: 95, Point: "/mnt", Source: "tmpfs", FSType: "tmpfs", Options: "rw"}},
 			Reconcile:   []store.ReconcileRow{{TS: 2000, Kind: "tcp", DumpRows: 1, MissingFromEvents: 0, ExtraInEvents: 0}},
@@ -59,13 +60,15 @@ func batches() []*store.Batch {
 	}
 }
 
+func ip(s string) store.Addr { return store.AddrOf(netip.MustParseAddr(s)) }
+
 func shutdown() *store.Batch {
 	return &store.Batch{
 		ProcCloses: []store.Close{{ID: 101, LastSeen: 2000, Ended: p64(2500)}},
 		ProcExits:  []store.ProcExit{{ID: 101, ExitTS: p64(2500), Signal: pint(9)}},
-		TCPConns: []store.TCPConn{{ID: 501, PID: 10, StartTime: 900, FD: 5, OwnerUntil: p64(2400), Inode: 777, Family: 4, LAddr: "127.0.0.1",
-			LPort: 4000, RAddr: "127.0.0.2", RPort: 80, Direction: "active", OpenTS: 1500, CloseTS: p64(2450), FirstState: 2,
-			FinalState: 5, LingerState: 6, LingerUntil: p64(62450), Retransmits: 2, Source: "ebpf", LastSeen: 2450}},
+		TCPConns: []store.TCPConn{{ID: 501, PID: 10, StartTime: 900, FD: 5, OwnerUntil: 2400, Inode: 777, Family: 4, LAddr: ip("127.0.0.1"),
+			LPort: 4000, RAddr: ip("127.0.0.2"), RPort: 80, Direction: store.DirActive, OpenTS: 1500, CloseTS: 2450, FirstState: 2,
+			FinalState: 5, LingerState: 6, LingerUntil: 62450, Retransmits: 2, Source: store.SrcEBPF, LastSeen: 2450}},
 		SockCloses: []store.Close{{ID: 201, LastSeen: 2000}},
 		OwnCloses:  []store.Close{{ID: 301, LastSeen: 2000}},
 		FileCloses: []store.Close{{ID: 401, LastSeen: 1000}},
