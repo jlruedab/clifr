@@ -133,11 +133,12 @@ v2:
 5. [x] Long-held fd snapshots, mount events
 6. [x] Ground-truth tests (`test/truth`; full scale 41/41 checks, results: truth-full-20261010-1602)
 7. [x] Benchmark: bpf_stats, new matrix, scaling, report (results: busy-20261012-1050,
-   scaling-20261012-1050, report-20261012-1050). Open: CPU above the 2% budget at 14 of
-   15 scaling points (so the guard rail stretches the fd interval), memory about twice
-   v1's, a small measurable rise of pgbench average and p99.9 latency.
+   scaling-20261012-1050, report-20261012-1050). Rerun after the CPU plan on 2026-10-17
+   (busy-, scaling-, report-20261017-1133): 2.14% of one core at the busy load, all 15
+   scaling points within the 2% budget, no measurable pgbench impact. Open: memory
+   almost three times v1's (429 MiB average at the busy load).
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `sosv uptime|vmstat|
-   mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. Not in the
-   M7 benchmark numbers: about 0.2 ms of reads per sample.
+   mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. About 0.2 ms of
+   reads per sample (in the 1133 numbers, not in the 1050 ones).
 9. [x] README (v2: build, recording, querying, tests, benchmark, results of M6–M8, limitations)

@@ -180,10 +180,10 @@ base (`agent/kb`).
 
 ## 8. Cost on the servers
 
-Recording (measured 2026-10-16, busy load, one run): 2.07% of one core,
-about 400 MiB anonymous memory, about 485 MB/h written, 175 MB/h kept. On a
-quiet server: about 2% of one core (measured before the latest changes;
-lower now), about 170 MiB, about 22 MB/h kept. Integration adds nothing
+Recording (measured 2026-10-17, busy load, three runs): 2.14% of one core,
+about 430 MiB anonymous memory, about 565 MB/h written, 178 MB/h kept. At
+the quieter scaling baseline: about 0.5% of one core, up to about 250 MiB,
+about 23 MB/h kept. Integration adds nothing
 while recording; a bundle copies files once at capture.
 
 ## 9. Work items
