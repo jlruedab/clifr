@@ -1,4 +1,4 @@
-# sosv — a Linux flight recorder (proof of concept)
+# sosv — a Linux flight recorder (working prototype)
 
 `sosv-record` continuously records which processes existed, which TCP
 connections and open files each one held, when short-lived processes started
@@ -8,8 +8,8 @@ then reconstructs `ps aux`, `ss -tanp`, `lsof -n -P`, `uptime`, `vmstat`,
 lifetimes, OOM kills and mount changes.
 
 Tools like sar, atop and PCP record metrics and process statistics, but not
-the *links* between a process and its sockets and files over time. This PoC
-exists to answer two questions with evidence:
+the *links* between a process and its sockets and files over time. sosv
+began as a proof of concept to answer two questions with evidence:
 
 1. **Accuracy**: does the recording contain what really happened, and is the
    reconstructed output close to what the real commands showed?
@@ -23,6 +23,35 @@ Version 1 (tag `v1-snapshot`) sampled everything every 30 s into one SQLite
 file. Version 2, described here, takes process and TCP changes from eBPF
 events and samples only what has no event. v1 stays buildable for
 side-by-side benchmarks.
+
+## Status
+
+A working prototype: both questions above have answers backed by evidence,
+and the recorder has what unattended use needs (systemd unit with limits,
+CPU guard rail, retention and size caps, hourly compaction, crash recovery,
+drop and missed-event counters, reconciliation with kernel dumps). It is
+not yet shown to be viable for production:
+
+1. **No long run.** The longest recordings are 15-minute benchmark runs
+   and the 14-minute ground-truth test; days of memory use, retention,
+   compaction and restarts have not been observed.
+2. **One machine, one kernel** (Ubuntu 26.04, kernel 7.0, bare metal). The
+   targets RHEL 8.2+/9 and Ubuntu 22.04+ and their fallback paths (perf
+   buffer, classic tracepoints, proc connector) are untested there; the
+   arm64 objects have never run.
+3. **Synthetic load only**: pgbench and a load generator over loopback; no
+   real server with many peers and containers.
+4. **Known open issues**: see [Limitations](#limitations).
+5. **Memory** (about 330–430 MiB at the busy load) may be too much for a
+   fleet agent; that is a product decision.
+6. **No packaging or delivery** (.deb/.rpm, the planned rename to clifr,
+   the bundle and sos plugin of `docs/sos-vault-integration.md`).
+
+To call it viable: a soak test of 3–7 days with a realistic mixed load
+(memory, disk and data checked daily); `--test-ebpf`, the e2e test and the
+small ground truth on RHEL 9, RHEL 8.x and Ubuntu 22.04 (VMs are enough);
+and a short recording on a real server checked with `sosv verify`. About a
+week, mostly unattended.
 
 ## Build
 
@@ -342,7 +371,19 @@ batch (`scaling-20261012-1050`) is in brackets.
 | 100 new connections/s | 1.04% (3.23%) | 0.23% | 367 MiB |
 | 500 new connections/s | 1.67% (4.48%) | 0.89% | 463 MiB |
 
-All 15 points fit the 2% budget (1 of 15 in the previous batch). The eBPF programs run inside the
+All 15 points fit the 2% budget (1 of 15 in the previous batch).
+
+The connection points were rerun on 2026-10-18 after the pointer-free rows
+(see Limitations; `scaling-20261018-1157`, `report-20261018-1157`):
+
+| Connections | Recorder CPU | Memory max |
+|---:|---:|---:|
+| 1,000 | 0.42% (0.42%) | 95 MiB (144) |
+| 20,000 | 0.46% (0.49%) | 156 MiB (226) |
+| 100,000 | 0.76% (1.01%) | 434 MiB (561) |
+
+Brackets: the 2026-10-17 batch. Sample durations and disk use are
+unchanged; the other points were not rerun. The eBPF programs run inside the
 observed processes' own kernel paths, so their time is charged to those
 processes and is not part of the recorder's CPU figure.
 
@@ -400,8 +441,13 @@ continuous eBPF tracer, not a metrics exporter.
   it. The guard rail lengthens the fd interval only when the fd walks are
   at least a quarter of the recorder's CPU (9–14% at the busy load), so it
   kept the interval at 2 minutes in every default run.
-- **Memory is almost three times v1's**: 429 MiB on average at the busy
-  load and up to 561 MiB with 100,000 connections. Rows are buffered until
+- **Memory is two to three times v1's**: 429 MiB on average at the busy
+  load and up to 561 MiB with 100,000 connections in the 2026-10-17 batch.
+  Rows held in memory have since been made pointer-free (fixed-size
+  addresses, enums and interned names instead of strings and pointers), so
+  the garbage collector does not scan them: in single runs 326 / 379 MiB
+  average / max at the busy load and 434 MiB with 100,000 connections,
+  with slightly less CPU. The full matrix has not been rerun with it. Rows are buffered until
   the 5-minute flush. The shipped unit allows 768 MiB; above that the
   recorder is killed and restarted, losing the rows since the last flush.
   Since 2026-10-14 the recorder trades some memory for CPU: garbage is
