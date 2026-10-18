@@ -389,23 +389,30 @@ processes and is not part of the recorder's CPU figure.
 
 ### Compared with Prometheus Node Exporter
 
-At the busy load: sosv from the matrix above (`report-20261017-1133`, three
-runs) and Node Exporter 1.10.2 with the Debian package's default
-collectors, scraped every 15 s (one run, `nodeexp-busy-20261016-1405`).
+At the busy load: sosv with the current code (pointer-free rows, default
+heap target 256M; one run, `profile-busy-20261017-2037-compact3b-heap256`,
+with the CPU profiler on) and from the matrix above (batch 1133, three
+runs); Node Exporter 1.10.2 with the Debian package's default collectors,
+scraped every 15 s (one run, `nodeexp-busy-20261016-1405`). Prometheus
+itself was not run: its column is an estimate.
 
-| | sosv (B) | Node Exporter |
-|---|---:|---:|
-| CPU, % of one core | 2.14 | 1.36 |
-| Memory (anonymous), average / max | 429 / 488 MiB | 9.0 / 9.7 MiB |
-| Data kept on the host | about 178 MB/h | none |
-| Written to disk | about 565 MB/h | none |
-| Network | none | 274 KB per scrape (uncompressed) |
+| | sosv now | sosv, batch 1133 | Node Exporter | Prometheus server (estimate) |
+|---|---:|---:|---:|---:|
+| CPU, % of one core | 1.84 | 2.14 | 1.36 | well under 1 |
+| Memory (anonymous), average / max | 292 / 330 MiB | 429 / 488 MiB | 9.0 / 9.7 MiB | about 50–150 MiB |
+| Data kept on the host | about 179 MB/h | about 178 MB/h | none | about 1–1.5 MB/h |
+| Data kept at the default retention | about 13 GB (72 h) | the same | none | about 0.35–0.5 GB (15 days) |
+| Written to disk | about 519 MB/h | about 565 MB/h | none | about 5–10 MB/h |
+| Network | none | none | 274 KB per scrape (about 66 MB/h uncompressed) | receives the scrapes |
 
 Node Exporter's CPU comes mostly from slow collectors on this laptop-class
 machine (`systemd`, `hwmon`, `powersupplyclass`, `thermal_zone`: about
 200 ms per scrape); on a server it would likely be well under 1%. Its data
-is kept by a Prometheus server elsewhere: about 3,100 series, roughly
-23 MB per day at 15 s.
+is kept by a Prometheus server, usually on another machine: about 3,100
+series, so about 18 million samples per day at 15 s, at the 1–2 bytes per
+sample Prometheus documents; its disk writes (write-ahead log, head chunks,
+compaction) are a few times that. Its memory is a few KB per series plus
+the server's own base.
 
 The two do different jobs. Node Exporter reports system counters at each
 scrape and keeps nothing between scrapes. sosv records every process,
@@ -421,15 +428,15 @@ made (not measured):
 
 | | Now | Best case in Go | Best case in Rust | Node Exporter |
 |---|---:|---:|---:|---:|
-| Memory (anonymous) | 429 MiB | about 60–100 MiB | about 30–50 MiB | 9 MiB |
-| Data kept | 178 MB/h | about 55–90 MB/h | the same | none (Prometheus: about 1 MB/h) |
-| Written to disk | 565 MB/h | close to the data kept | the same | none |
+| Memory (anonymous) | 292 MiB | about 60–100 MiB | about 30–50 MiB | 9 MiB |
+| Data kept | 179 MB/h | about 55–90 MB/h | the same | none (Prometheus: about 1–1.5 MB/h) |
+| Written to disk | 519 MB/h | close to the data kept | the same | none (Prometheus: about 5–10 MB/h) |
 
 The tracked state alone is some 20–30 MB in compact form, and each
 connection needs some 15–25 bytes on disk even with a tight encoding
 (about 48 now, transitions included). Only recording less closes the gap:
 at this load all connections are loopback from the load generator, and
-without them sosv is near its idle figures (about 22 MB/h and 171 MiB now).
+without them sosv is near its idle figures (about 22 MB/h and 171 MiB in batch 1133).
 The fair comparison for sosv is atop with process accounting or a
 continuous eBPF tracer, not a metrics exporter.
 
