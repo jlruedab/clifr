@@ -86,7 +86,7 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
 | `--retention` / `--max-size` | 72h / none | delete old data; the oldest hours go first above the size cap |
-| `--gc-heap-target` | 384M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
+| `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
 | `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
@@ -454,7 +454,10 @@ continuous eBPF tracer, not a metrics exporter.
   collected at Go's default rate while the heap is small
   (`--gc-heap-target`). In single runs this cost about 85–90 MiB more
   anonymous memory and saved about 0.5% of one core at the busy
-  load. A fixed Go memory limit (`GOMEMLIMIT`) is not a safe alternative:
+  load. With the pointer-free rows the default target was lowered from
+  384M to 256M (2026-10-18): in single runs about 45 MiB less at the busy
+  load and 86 MiB less with 100,000 connections (348 MiB max), for under
+  0.1% of one core; below 256 MiB of heap it makes no difference. A fixed Go memory limit (`GOMEMLIMIT`) is not a safe alternative:
   at 384 MiB it took the recorder to 11% of one core with 100,000
   connections, mostly collecting.
 - **The shipped unit's CPUQuota=5%** is above the average cost at the busy
