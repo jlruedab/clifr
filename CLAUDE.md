@@ -1,4 +1,4 @@
-# sosv — Linux flight recorder (proof of concept)
+# sosv — Linux flight recorder (working prototype)
 
 `sosv-record` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
@@ -6,9 +6,12 @@ counters, as Parquet files (or, for v1 comparisons, one SQLite file).
 Query subcommands (`ps`, `lsof`, `ss`, `life`, `uptime`, `vmstat`, `mpstat`, `iostat`,
 `stats`, `verify`) reconstruct the output of the real tools for a past moment or time range.
 
-The PoC exists to prove two things with evidence: **accuracy** (reconstruction vs. the
-real tools) and **cost** (CPU / memory / disk of recording and its impact on a busy
-workload). The benchmark results under `bench/` are the main deliverable, not CLI polish.
+It began as a proof of concept to prove two things with evidence: **accuracy**
+(reconstruction vs. the real tools) and **cost** (CPU / memory / disk of recording and
+its impact on a busy workload). Both are shown; since 2026-10-17 the user calls it a
+working prototype, not yet viable (no soak test, one machine, synthetic load only,
+no packaging: README "Status"). The benchmark results under `bench/` remain the main
+evidence, not CLI polish.
 
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
 1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
@@ -135,8 +138,10 @@ v2:
 7. [x] Benchmark: bpf_stats, new matrix, scaling, report (results: busy-20261012-1050,
    scaling-20261012-1050, report-20261012-1050). Rerun after the CPU plan on 2026-10-17
    (busy-, scaling-, report-20261017-1133): 2.14% of one core at the busy load, all 15
-   scaling points within the 2% budget, no measurable pgbench impact. Open: memory
-   almost three times v1's (429 MiB average at the busy load).
+   scaling points within the 2% budget, no measurable pgbench impact. Then for memory
+   (2026-10-17/18): pointer-free rows in memory and `--gc-heap-target` 256M (was 384M):
+   single runs at the busy load 282 / 330 MiB avg / max with 256M, 326 / 379 with 384M
+   (429 / 488 in batch 1133); 348 MiB max with 100,000 connections (561). The full matrix has not been rerun since 1133.
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `sosv uptime|vmstat|
    mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. About 0.2 ms of
