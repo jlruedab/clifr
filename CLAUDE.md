@@ -3,8 +3,9 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files (or, for v1 comparisons, one SQLite file).
-Query subcommands (`ps`, `lsof`, `ss`, `life`, `uptime`, `vmstat`, `mpstat`, `iostat`,
-`stats`, `verify`) reconstruct the output of the real tools for a past moment or time range.
+`clifr` reconstructs the output of the real tools (`ps`, `lsof`, `ss`, `uptime`, `vmstat`,
+`mpstat`, `iostat`; clifr-only `life`, `oom`, `mounts`) for a past moment or time range;
+`clifr info` and `clifr verify` describe and check the recording.
 
 It began as a proof of concept to prove two things with evidence: **accuracy**
 (reconstruction vs. the real tools) and **cost** (CPU / memory / disk of recording and
@@ -44,7 +45,9 @@ wait for the user's go-ahead.
 
 ## Layout
 - `cmd/clifrd/` — the recorder binary (static, no cgo).
-- `cmd/clifr/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
+- `cmd/clifr/` — the query CLI (DuckDB via cgo): `clifr [--at T | --since A --until B] [OPTIONS] "COMMAND [ARGS]"`;
+  per-command option tables in `tools.go`/`systools.go` (unsupported options are rejected);
+  `--data-dir` Parquet or hidden `--db` SQLite.
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
   system-wide stat, loadavg, meminfo, vmstat, diskstats).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
@@ -113,7 +116,7 @@ wait for the user's go-ahead.
 - Ground truth (root; small ≈ 4 min, full ≈ 14 min with the recorder's defaults; results in `bench/results/truth-<scale>-<time>/`):
   `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`
 - Quick manual run: `sudo ./clifrd --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
-  then `./clifr ps aux --data-dir /tmp/d --at "..."`
+  then `./clifr --data-dir /tmp/d --at "..." "ps aux"`
 - Machine notes: v2 milestones 6–9 ran on the current machine (bare metal,
   Intel Core Ultra 7 155H): 22 logical CPUs, 61 GB RAM,
   Ubuntu 26.04, kernel 7.0, Go 1.27, PostgreSQL 18 (uutils coreutils: do not

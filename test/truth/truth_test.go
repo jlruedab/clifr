@@ -439,15 +439,15 @@ func (e *env) checkTCP(tr tcpTruth) {
 		PID   int `json:"pid"`
 		Conns int `json:"conns"`
 	}
-	e.query(&groups, "ss", "-tanp", "dport", "=", ":"+strconv.Itoa(tr.port), "--start_from", e.recStart.Format(timeLayout),
-		"--end_at", e.recEnd.Format(timeLayout))
+	e.query(&groups, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout),
+		"ss", "-tanp", "dport", "=", ":"+strconv.Itoa(tr.port))
 	got := 0
 	for _, g := range groups {
 		if g.PID == tr.clientPID {
 			got = g.Conns
 		}
 	}
-	e.res.add(sc, "clifr ss (range): connections of the client", got, n, "clifr ss -tanp dport = :%d --start_from .. --end_at ..", tr.port)
+	e.res.add(sc, "clifr ss (range): connections of the client", got, n, "clifr --since .. --until .. \"ss -tanp dport = :%d\"", tr.port)
 }
 
 // --- short-lived processes ---
@@ -518,8 +518,8 @@ func (e *env) checkProcs(procs []shortProc, from, to time.Time) {
 		Source   string `json:"source"`
 		ExitCode *int   `json:"exit_code"`
 	}
-	e.query(&life, "life", "--name", "^"+regexp.QuoteMeta(e.proc)+" --id=",
-		"--start_from", from.Add(-2*time.Second).Format(timeLayout), "--end_at", to.Add(2*time.Second).Format(timeLayout))
+	e.query(&life, "--since", from.Add(-2*time.Second).Format(timeLayout), "--until", to.Add(2*time.Second).Format(timeLayout),
+		"life", "--name", "^"+regexp.QuoteMeta(e.proc)+" --id=")
 	idRE := regexp.MustCompile(`--id=(\d+)`)
 	byID := map[int]int{}
 	dup := 0
@@ -672,7 +672,7 @@ func (e *env) checkResets(tr rstTruth) {
 		PID    int `json:"pid"`
 		Resets int `json:"resets"`
 	}
-	e.query(&groups, "ss", "-tanp", "--start_from", e.recStart.Format(timeLayout), "--end_at", e.recEnd.Format(timeLayout))
+	e.query(&groups, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout), "ss", "-tanp")
 	byPID := map[int]int{}
 	for _, g := range groups {
 		byPID[g.PID] += g.Resets
@@ -724,7 +724,7 @@ func (e *env) checkOOM(tr oomTruth) {
 		RSSKB   int64  `json:"rss_kb"`
 		Command string `json:"command"`
 	}
-	e.query(&kills, "oom", "--start_from", e.recStart.Format(timeLayout), "--end_at", e.recEnd.Format(timeLayout))
+	e.query(&kills, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout), "oom")
 	var found, rss, when, cmd int
 	note := ""
 	for _, k := range kills {
@@ -807,7 +807,7 @@ func (e *env) checkMounts(tr mountTruth) {
 		FSType  string `json:"fstype"`
 		Options string `json:"options"`
 	}
-	e.query(&rows, "mounts", "--start_from", e.recStart.Format(timeLayout), "--end_at", e.recEnd.Format(timeLayout))
+	e.query(&rows, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout), "mounts")
 	var got []int
 	for i, r := range rows {
 		if r.Point == tr.point && r.Action != "present" {
@@ -844,7 +844,7 @@ func (e *env) checkMounts(tr mountTruth) {
 		var table []struct {
 			Point string `json:"mount_point"`
 		}
-		e.query(&table, "mounts", "--at", t.Format(timeLayout))
+		e.query(&table, "--at", t.Format(timeLayout), "mounts")
 		n := 0
 		for _, r := range table {
 			if r.Point == tr.point {
@@ -868,7 +868,7 @@ func (e *env) checkDeleted(pid int, path string, start, end time.Time) {
 	}
 	has := func(t time.Time) int {
 		var rows []row
-		e.query(&rows, "lsof", "-p", strconv.Itoa(pid), "--at", t.Format(timeLayout))
+		e.query(&rows, "--at", t.Format(timeLayout), "lsof", "-p", strconv.Itoa(pid))
 		n := 0
 		for _, r := range rows {
 			if r.Deleted && strings.HasPrefix(r.Name, path) {
@@ -896,7 +896,7 @@ func (e *env) checkDeleted(pid int, path string, start, end time.Time) {
 		FirstSeen int64  `json:"first_seen_ms"`
 		LastSeen  int64  `json:"last_seen_ms"`
 	}
-	e.query(&held, "lsof", "-p", strconv.Itoa(pid), "--start_from", e.recStart.Format(timeLayout), "--end_at", e.recEnd.Format(timeLayout))
+	e.query(&held, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout), "lsof", "-p", strconv.Itoa(pid))
 	n := 0
 	note := ""
 	for _, h := range held {
@@ -938,7 +938,7 @@ func (e *env) checkDrops() {
 
 func (e *env) query(v any, args ...string) {
 	e.t.Helper()
-	args = append(args, "--data-dir", e.data, "--json")
+	args = append([]string{"--data-dir", e.data, "--json"}, args...)
 	cmd := exec.Command(e.clifr, args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -981,7 +981,7 @@ func (e *env) report(root, recLog string) {
 	os.WriteFile(filepath.Join(out, "truth.md"), []byte(b.String()), 0o644)
 	js, _ := json.MarshalIndent(e.res, "", "  ")
 	os.WriteFile(filepath.Join(out, "truth.json"), js, 0o644)
-	if stats, err := exec.Command(e.clifr, "stats", "--data-dir", e.data).CombinedOutput(); err == nil {
+	if stats, err := exec.Command(e.clifr, "info", "--data-dir", e.data).CombinedOutput(); err == nil {
 		os.WriteFile(filepath.Join(out, "stats.txt"), stats, 0o644)
 	}
 	exec.Command("cp", recLog, filepath.Join(out, "recorder.log")).Run()

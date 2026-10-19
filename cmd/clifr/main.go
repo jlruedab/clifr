@@ -1,628 +1,350 @@
-// Command clifr queries what clifrd recorded: it reconstructs ps/lsof/ss
-// output and process lifetimes for a past moment or range. It reads a Parquet
-// data directory through DuckDB (--data-dir, the default) or a v1 SQLite
-// database (--db).
+// Command clifr shows what a Linux diagnostic command would have printed at a
+// past moment, from data recorded by clifrd. It never runs the command: it
+// rebuilds the output from the recording, a Parquet data directory read
+// through DuckDB (or, hidden, a v1 SQLite database with --db).
 package main
 
 import (
-	"database/sql"
-	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
-	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
+	_ "time/tzdata" // --tz works where the system has no zoneinfo
 
 	"clifr/internal/duck"
 	"clifr/internal/query"
 	"clifr/internal/store"
-	"clifr/internal/verify"
 )
 
 const defaultDataDir = "/var/lib/clifr"
 
-const usage = `usage: clifr <command> [flags]
+// globals are clifr's own options, given before or after the quoted command.
+type globals struct {
+	at, since, until, tz      string
+	summary, changes, samples bool
+	every                     string
+	everyMS                   int64
+	number                    int
+	json, interactive, plain  bool
+	dataDir, db               string
+	host, token, tlsCA, lic   string
+	version, help, verbose    bool
+}
 
-commands (record with clifrd):
-  ps       clifr ps aux --at T | --start_from A --end_at B
-  lsof     clifr lsof [-p PID] [-i] --at T | --start_from A --end_at B
-  ss       clifr ss -tanp [filter] --at T | --start_from A --end_at B
-           filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
-  life     clifr life [--name REGEX] [--start_from A --end_at B]
-  oom      clifr oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
-  mounts   clifr mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
-  uptime   clifr uptime --at T | --start_from A --end_at B: uptime and load averages (no user count)
-  vmstat   clifr vmstat --at T (averages since boot) | --start_from A --end_at B [--step D] (one line per interval)
-  mpstat   clifr mpstat [-P ALL|N,M] --at T | --start_from A --end_at B [--step D]
-  iostat   clifr iostat [-x] [-d] [-p] --at T | --start_from A --end_at B [--step D]
-  verify   compare saved real ps/ss/lsof and uptime/vmstat/mpstat/iostat output (record --verify-every) with reconstructions
-  stats    recorder cost and database summary
-  export   clifr export TABLE: one recorded table as CSV (e.g. samples, guard_events)
-
-data: --data-dir DIR (Parquet, default ` + defaultDataDir + `) or --db FILE (v1 SQLite).
-times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
-`
+func newFlags(g *globals, out io.Writer) *flag.FlagSet {
+	fs := flag.NewFlagSet("clifr", flag.ContinueOnError)
+	fs.SetOutput(out)
+	fs.Usage = func() {}
+	str := func(p *string, short, long, def string) {
+		if short != "" {
+			fs.StringVar(p, short, def, "")
+		}
+		fs.StringVar(p, long, def, "")
+	}
+	boolean := func(p *bool, short, long string) {
+		if short != "" {
+			fs.BoolVar(p, short, false, "")
+		}
+		fs.BoolVar(p, long, false, "")
+	}
+	str(&g.at, "a", "at", "")
+	str(&g.since, "S", "since", os.Getenv("CLIFR_SINCE"))
+	str(&g.until, "U", "until", os.Getenv("CLIFR_UNTIL"))
+	str(&g.tz, "T", "tz", os.Getenv("CLIFR_TZ"))
+	boolean(&g.summary, "", "summary")
+	boolean(&g.changes, "", "changes")
+	boolean(&g.samples, "", "samples")
+	str(&g.every, "e", "every", "")
+	fs.IntVar(&g.number, "n", 0, "")
+	fs.IntVar(&g.number, "number", 0, "")
+	boolean(&g.json, "j", "json")
+	boolean(&g.interactive, "I", "interactive")
+	boolean(&g.plain, "", "plain")
+	dd := os.Getenv("CLIFR_DATA_DIR")
+	if dd == "" {
+		dd = defaultDataDir
+	}
+	str(&g.dataDir, "D", "data-dir", dd)
+	str(&g.db, "", "db", "")
+	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
+	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
+	str(&g.tlsCA, "", "tls-ca", "")
+	str(&g.lic, "l", "license", os.Getenv("CLIFR_LICENSE"))
+	boolean(&g.version, "v", "version")
+	boolean(&g.help, "h", "help")
+	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
+	return fs
+}
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
-	var err error
-	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
-	case "record":
-		err = errors.New("recording moved to the clifrd command")
-	case "ps":
-		err = cmdPS(args)
-	case "ss":
-		err = cmdSS(args)
-	case "lsof":
-		err = cmdLsof(args)
-	case "life":
-		err = cmdLife(args)
-	case "oom":
-		err = cmdOOM(args)
-	case "mounts":
-		err = cmdMounts(args)
-	case "uptime", "vmstat", "mpstat", "iostat":
-		err = cmdSystem(cmd, args)
-	case "verify":
-		err = cmdVerify(args)
-	case "stats":
-		err = cmdStats(args)
-	case "export":
-		err = cmdExport(args)
-	case "-h", "--help", "help":
-		fmt.Print(usage)
-	default:
-		err = fmt.Errorf("unknown command %q\n%s", cmd, usage)
-	}
-	if err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "clifr:", err)
+		var u usageError
+		if errors.As(err, &u) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
 
-// parse parses flags that may appear before, between or after positional
-// arguments, and returns the positional ones.
-func parse(fs *flag.FlagSet, args []string) ([]string, error) {
-	var pos []string
+type usageError struct{ error }
+
+// subcommands are clifr's own commands; everything else names a recorded tool.
+var subcommands = map[string]bool{"help": true, "info": true, "stats": true, "verify": true, "export": true,
+	"diff": true, "list": true, "license": true}
+
+func run(args []string) error {
+	var g globals
+	fs := newFlags(&g, io.Discard)
+	var words []string // the recorded command and its arguments
+	sub := ""
+	var subArgs []string
 	for {
 		if err := fs.Parse(args); err != nil {
-			return nil, err
+			return usageError{fmt.Errorf("%v (see: clifr --help)", err)}
 		}
 		if fs.NArg() == 0 {
-			return pos, nil
+			break
 		}
-		pos = append(pos, fs.Arg(0))
-		args = fs.Args()[1:]
+		first, rest := fs.Arg(0), fs.Args()[1:]
+		switch {
+		case sub != "":
+			subArgs = append(subArgs, first)
+			args = rest
+			continue
+		case words != nil:
+			return usageError{fmt.Errorf("unexpected %q after the command; quote the whole command: \"ps aux\"", first)}
+		case subcommands[first]:
+			sub, args = first, rest
+			continue
+		case strings.ContainsAny(first, " \t"):
+			w, err := splitWords(first)
+			if err != nil {
+				return usageError{err}
+			}
+			words, args = w, rest
+			continue
+		}
+		// Unquoted: the command and everything after it, verbatim.
+		words = append([]string{first}, rest...)
+		break
 	}
+	switch {
+	case g.version:
+		fmt.Println("clifr", version())
+		return nil
+	case g.help && sub == "" && words == nil:
+		fmt.Print(mainHelp)
+		return nil
+	case g.help && words != nil:
+		return helpTool(words[0])
+	case sub == "" && words == nil:
+		fmt.Fprint(os.Stderr, mainHelp)
+		return usageError{errors.New("no command given")}
+	}
+	if err := checkLater(&g); err != nil {
+		return err
+	}
+	if sub != "" {
+		return runSub(&g, sub, subArgs)
+	}
+	return runTool(&g, words)
 }
 
-// queryFlags are shared by all query commands.
-type queryFlags struct {
-	db, dataDir  string
-	at, from, to string
-	json         bool
+// checkLater rejects options of features that are not in this release.
+func checkLater(g *globals) error {
+	switch {
+	case g.host != "" || g.token != "" || g.tlsCA != "":
+		return errors.New("--host, --token and --tls-ca (remote hosts) are not available in this release; use --data-dir")
+	case g.lic != "":
+		return errors.New("--license is not needed: this release reads local data only")
+	case g.interactive:
+		return errors.New("--interactive is not available yet; output is printed (--plain)")
+	}
+	return nil
 }
 
-func (q *queryFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&q.dataDir, "data-dir", defaultDataDir, "Parquet data directory written by clifrd")
-	fs.StringVar(&q.db, "db", "", "read this v1 SQLite database instead of --data-dir")
-	fs.StringVar(&q.at, "at", "", `point in time "YYYY-MM-DD HH:MM:SS"`)
-	fs.StringVar(&q.from, "start_from", "", "range start")
-	fs.StringVar(&q.to, "end_at", "", "range end (default: now)")
-	fs.BoolVar(&q.json, "json", false, "JSON output")
+func version() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 12 {
+				return s.Value[:12]
+			}
+		}
+		return bi.Main.Version
+	}
+	return "unknown"
 }
 
-func (q *queryFlags) window(required bool) (query.Window, error) {
+// resolve turns --at/--since/--until into a window and prints it on stderr.
+func resolve(g *globals, need bool) (query.Window, error) {
+	if g.tz != "" {
+		loc, err := time.LoadLocation(g.tz)
+		if err != nil {
+			return query.Window{}, usageError{fmt.Errorf("--tz: %v", err)}
+		}
+		time.Local = loc
+	}
+	now := time.Now()
+	parse := func(name, s string) (int64, error) {
+		t, err := query.ParseWhen(s, now)
+		if err != nil {
+			return 0, usageError{fmt.Errorf("--%s: %v", name, err)}
+		}
+		return t.UnixMilli(), nil
+	}
 	var w query.Window
 	var err error
 	switch {
-	case q.at != "" && q.from != "":
-		return w, errors.New("use either --at or --start_from/--end_at")
-	case q.at != "":
-		w.At, err = query.ParseTime(q.at)
-	case q.from != "":
-		if w.From, err = query.ParseTime(q.from); err != nil {
+	case g.at != "" && g.since != "":
+		return w, usageError{errors.New("use either --at or --since/--until")}
+	case g.until != "" && g.since == "":
+		return w, usageError{errors.New("--until needs --since")}
+	case g.at != "":
+		if w.At, err = parse("at", g.at); err != nil {
 			return w, err
 		}
-		w.To = time.Now().UnixMilli()
-		if q.to != "" {
-			w.To, err = query.ParseTime(q.to)
+		query.Header("time: at %s %s", query.FormatMS(w.At), query.ZoneLabel(time.UnixMilli(w.At)))
+	case g.since != "":
+		if w.From, err = parse("since", g.since); err != nil {
+			return w, err
 		}
-	case required:
-		return w, errors.New("--at or --start_from is required")
-	default:
-		w.From, w.To = 0, time.Now().UnixMilli()
-	}
-	return w, err
-}
-
-func (q *queryFlags) open() (*store.DB, error) {
-	if q.db != "" {
-		return store.Open(q.db, true)
-	}
-	return duck.Open(q.dataDir)
-}
-
-func cmdPS(args []string) error {
-	fs := flag.NewFlagSet("ps", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 || pos[0] != "aux" {
-		return errors.New("only `clifr ps aux` is supported")
-	}
-	w, err := q.window(true)
-	if err != nil {
-		return err
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	if w.IsRange() {
-		rows, err := query.PSRange(db, w.From, w.To)
-		if err != nil {
-			return err
-		}
-		query.Header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
-			query.FormatMS(w.From), query.FormatMS(w.To))
-		if q.json {
-			return query.PrintJSON(os.Stdout, rows)
-		}
-		query.PrintPSRange(os.Stdout, rows)
-		return nil
-	}
-	rows, s, err := query.PSAt(db, w.At)
-	if err != nil {
-		return err
-	}
-	query.Header("ps aux at %s, reconstructed from sample at %s (%d processes)",
-		query.FormatMS(w.At), query.FormatMS(s), len(rows))
-	// OOM kills soon after T are not in the sample; point them out.
-	if kills, err := query.OOMKills(db, s, w.At+query.IntervalMS(db), 0); err == nil {
-		for _, k := range kills {
-			query.Header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see clifr oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
-		}
-	}
-	if q.json {
-		return query.PrintPSJSON(os.Stdout, rows)
-	}
-	query.PrintPS(os.Stdout, rows)
-	return nil
-}
-
-func cmdStats(args []string) error {
-	fs := flag.NewFlagSet("stats", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	if _, err := parse(fs, args); err != nil {
-		return err
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	s, err := query.ComputeStats(db)
-	if err != nil {
-		return err
-	}
-	if q.json {
-		return query.PrintStatsJSON(os.Stdout, s)
-	}
-	query.PrintStats(os.Stdout, s)
-	return nil
-}
-
-func cmdSS(args []string) error {
-	// Pull out ss-style short options (-tanp, -uanp); t/u choose the protocol,
-	// the others are always on.
-	proto := "tcp"
-	var rest []string
-	for _, a := range args {
-		if len(a) > 1 && a[0] == '-' && a[1] != '-' && strings.Trim(a[1:], "tuanpl46") == "" {
-			if strings.Contains(a, "u") {
-				proto = "udp"
+		w.To = now.UnixMilli()
+		if g.until != "" {
+			if w.To, err = parse("until", g.until); err != nil {
+				return w, err
 			}
-			continue
 		}
-		rest = append(rest, a)
-	}
-	fs := flag.NewFlagSet("ss", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	pos, err := parse(fs, rest)
-	if err != nil {
-		return err
-	}
-	filter, err := query.ParseSockFilter(pos)
-	if err != nil {
-		return err
-	}
-	w, err := q.window(true)
-	if err != nil {
-		return err
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	if query.TCPFromEvents(db) {
-		return ssEvents(db, q, w, proto, filter)
-	}
-	if w.IsRange() {
-		groups, err := query.SocketsInRange(db, w.From, w.To, proto, filter)
-		if err != nil {
-			return err
+		if w.To <= w.From {
+			return w, usageError{fmt.Errorf("--until (%s) is not after --since (%s)", query.FormatMS(w.To), query.FormatMS(w.From))}
 		}
-		query.Header("%s sockets by process, %s .. %s", proto, query.FormatMS(w.From), query.FormatMS(w.To))
-		if q.json {
-			return query.PrintJSON(os.Stdout, groups)
+		query.Header("time: %s .. %s %s", query.FormatMS(w.From), query.FormatMS(w.To), query.ZoneLabel(time.UnixMilli(w.From)))
+	case need:
+		return w, usageError{errors.New("--at or --since is required")}
+	default:
+		w.From, w.To = 0, now.UnixMilli() // the whole recording
+	}
+	if !w.IsRange() && (g.summary || g.changes || g.samples || g.every != "" || g.number != 0) {
+		return w, usageError{errors.New("--summary, --changes, --samples, --every and --number need a range (--since)")}
+	}
+	if btoi(g.summary)+btoi(g.changes)+btoi(g.samples) > 1 {
+		return w, usageError{errors.New("use one of --summary, --changes, --samples")}
+	}
+	if g.every != "" {
+		d, err := query.ParseDuration(g.every)
+		if err != nil || d <= 0 {
+			return w, usageError{fmt.Errorf("--every: bad duration %q", g.every)}
 		}
-		query.PrintSSGroups(os.Stdout, groups)
-		return nil
+		g.everyMS = d.Milliseconds()
 	}
-	s, err := query.SnapshotAt(db, w.At, false)
-	if err != nil {
-		return err
-	}
-	rows, err := query.SocketsAt(db, s, proto, filter)
-	if err != nil {
-		return err
-	}
-	query.Header("ss at %s, reconstructed from sample at %s (%d sockets)",
-		query.FormatMS(w.At), query.FormatMS(s), len(rows))
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	query.PrintSS(os.Stdout, rows)
-	return nil
+	return w, nil
 }
 
-func cmdLsof(args []string) error {
-	fs := flag.NewFlagSet("lsof", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	var o query.LsofOptions
-	fs.IntVar(&o.PID, "p", 0, "only this PID")
-	fs.BoolVar(&o.InetOnly, "i", false, "only internet sockets")
-	fs.Bool("n", true, "accepted for compatibility (addresses are never resolved)")
-	fs.Bool("P", true, "accepted for compatibility (ports are never resolved)")
-	if _, err := parse(fs, args); err != nil {
-		return err
+func btoi(b bool) int {
+	if b {
+		return 1
 	}
-	w, err := q.window(true)
-	if err != nil {
-		return err
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	if w.IsRange() {
-		rows, err := query.LsofRange(db, w.From, w.To, o)
-		if err != nil {
-			return err
-		}
-		query.Header("files held between %s and %s (%d)", query.FormatMS(w.From), query.FormatMS(w.To), len(rows))
-		if q.json {
-			return query.PrintJSON(os.Stdout, rows)
-		}
-		query.PrintLsof(os.Stdout, rows, true)
-		return nil
-	}
-	rows, s, sfd, err := query.LsofAt(db, w.At, o)
-	if err != nil {
-		return err
-	}
-	if query.TCPFromEvents(db) {
-		query.Header("lsof at %s: files from the full fd walk at %s (sampled); TCP sockets exact (events); UDP from the keyframe (%d rows)",
-			query.FormatMS(w.At), query.FormatMS(sfd), len(rows))
-	} else {
-		query.Header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
-			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
-	}
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	query.PrintLsof(os.Stdout, rows, false)
-	return nil
+	return 0
 }
 
-func cmdLife(args []string) error {
-	fs := flag.NewFlagSet("life", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	name := fs.String("name", "", "regular expression matched against the command line")
-	if _, err := parse(fs, args); err != nil {
-		return err
+func openDB(g *globals) (*store.DB, error) {
+	if g.db != "" {
+		return store.Open(g.db, true)
 	}
-	if q.at != "" {
-		q.from, q.to, q.at = q.at, q.at, ""
-	}
-	w, err := q.window(false)
-	if err != nil {
-		return err
-	}
-	var re *regexp.Regexp
-	if *name != "" {
-		if re, err = regexp.Compile(*name); err != nil {
-			return err
-		}
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	rows, err := query.Life(db, w.From, w.To, re)
-	if err != nil {
-		return err
-	}
-	query.Header("%d processes; END \">t\" means it exited after t and before the next sample", len(rows))
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	query.PrintLife(os.Stdout, rows)
-	return nil
+	return duck.Open(g.dataDir)
 }
 
-func cmdVerify(args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	verbose := fs.Bool("v", false, "show examples for every checkpoint")
-	if _, err := parse(fs, args); err != nil {
-		return err
+func runTool(g *globals, words []string) error {
+	t, ok := tools[words[0]]
+	if !ok {
+		if later[words[0]] != "" {
+			return fmt.Errorf("%s: %s", words[0], later[words[0]])
+		}
+		return usageError{fmt.Errorf("%q is not a supported command; supported: %s (see: clifr help)", words[0], strings.Join(toolOrder, ", "))}
 	}
-	db, err := q.open()
+	p, err := parseOpts(t.name, t.opts, words[1:])
+	if err != nil {
+		for _, a := range words[1:] {
+			if misplaced(a) {
+				return usageError{fmt.Errorf("%v\n(clifr's own options such as %s go before the command, or quote the command: clifr --at T \"ps aux\")", err, a)}
+			}
+		}
+		return usageError{err}
+	}
+	w, err := resolve(g, t.window)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	rep, err := verify.Run(db)
+	c := &runCtx{g: g, w: w}
+	exec, err := t.prepare(p, c)
 	if err != nil {
+		return usageError{err}
+	}
+	if c.db, err = openDB(g); err != nil {
 		return err
 	}
-	if q.json {
-		return query.PrintJSON(os.Stdout, rep)
-	}
-	verify.Print(os.Stdout, rep, *verbose)
-	return nil
+	defer c.db.Close()
+	return exec()
 }
 
-func cmdOOM(args []string) error {
-	fs := flag.NewFlagSet("oom", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	top := fs.Int("top", 10, "processes to list by RSS for each kill")
-	if _, err := parse(fs, args); err != nil {
-		return err
+// misplaced reports a clifr option given after an unquoted command.
+func misplaced(a string) bool {
+	name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+	if !strings.HasPrefix(a, "--") {
+		return false
 	}
-	w, err := q.window(false)
-	if err != nil {
-		return err
-	}
-	if !w.IsRange() {
-		w.From, w.To = w.At-60_000, w.At+60_000
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	kills, err := query.OOMKills(db, w.From, w.To, *top)
-	if err != nil {
-		return err
-	}
-	query.Header("OOM kills %s .. %s; RSS of the others: their last sample at or before the kill (sampled, not exact)",
-		query.FormatMS(w.From), query.FormatMS(w.To))
-	if q.json {
-		return query.PrintJSON(os.Stdout, kills)
-	}
-	query.PrintOOM(os.Stdout, kills)
-	return nil
-}
-
-var tableRe = regexp.MustCompile(`^[a-z_]+$`)
-
-// cmdExport writes one table as CSV (NULL as an empty field).
-func cmdExport(args []string) error {
-	fs := flag.NewFlagSet("export", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 || !tableRe.MatchString(pos[0]) {
-		return errors.New("usage: clifr export TABLE [--data-dir DIR | --db FILE]")
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	rows, err := db.DB.Query("SELECT * FROM " + pos[0])
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	cols, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-	w := csv.NewWriter(os.Stdout)
-	w.Write(cols)
-	vals := make([]sql.NullString, len(cols))
-	ptrs := make([]any, len(cols))
-	for i := range vals {
-		ptrs[i] = &vals[i]
-	}
-	rec := make([]string, len(cols))
-	for rows.Next() {
-		if err := rows.Scan(ptrs...); err != nil {
-			return err
-		}
-		for i, v := range vals {
-			rec[i] = v.String
-		}
-		w.Write(rec)
-	}
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return err
-	}
-	return rows.Err()
-}
-
-// ssEvents: ss from TCP events (v2 recordings).
-func ssEvents(db *store.DB, q queryFlags, w query.Window, proto string, filter query.SockFilter) error {
-	if w.IsRange() {
-		if proto != "tcp" {
-			return errors.New("range mode is for TCP (UDP is recorded at keyframes only)")
-		}
-		groups, err := query.ConnsInRange(db, w.From, w.To, filter)
-		if err != nil {
-			return err
-		}
-		query.Header("TCP connections by process, %s .. %s, from events (every connection, however short)",
-			query.FormatMS(w.From), query.FormatMS(w.To))
-		if q.json {
-			return query.PrintJSON(os.Stdout, groups)
-		}
-		query.PrintSSGroups(os.Stdout, groups)
-		return nil
-	}
-	rows, kf, err := query.ConnsAt(db, w.At, proto, filter)
-	if err != nil {
-		return err
-	}
-	if proto == "tcp" {
-		tw := "time-wait end exact"
-		if !query.TimeWaitExact(db) {
-			tw = "time-wait shown until 60 s after the close (the kernel ends it 0-5 s later)"
-		}
-		query.Header("ss at %s (%d sockets): connections, states and owners exact (events); Recv-Q/Send-Q sampled, from the keyframe at %s; %s",
-			query.FormatMS(w.At), len(rows), query.FormatMS(kf), tw)
-	} else {
-		query.Header("%s sockets at %s from the keyframe at %s (UDP is recorded at keyframes only)", proto, query.FormatMS(w.At), query.FormatMS(kf))
-	}
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	query.PrintSS(os.Stdout, rows)
-	return nil
-}
-
-func cmdMounts(args []string) error {
-	fs := flag.NewFlagSet("mounts", flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	if _, err := parse(fs, args); err != nil {
-		return err
-	}
-	w, err := q.window(false)
-	if err != nil {
-		return err
-	}
-	db, err := q.open()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	var rows []query.MountRow
-	if w.IsRange() {
-		rows, err = query.MountChanges(db, w.From, w.To)
-		query.Header("mount table changes %s .. %s (the recorder's mount namespace; exact, from events)", query.FormatMS(w.From), query.FormatMS(w.To))
-	} else {
-		rows, err = query.MountsAt(db, w.At)
-		query.Header("mounts at %s (%d)", query.FormatMS(w.At), len(rows))
-	}
-	if err != nil {
-		return err
-	}
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	query.PrintMounts(os.Stdout, rows, w.IsRange())
-	return nil
-}
-
-// cmdSystem runs uptime, vmstat, mpstat or iostat on the recorded system-wide
-// counters: at a point in time the averages since boot (what the real tool
-// prints without an interval), over a range one report per sample interval.
-func cmdSystem(name string, args []string) error {
-	fs := flag.NewFlagSet(name, flag.ExitOnError)
-	var q queryFlags
-	q.register(fs)
-	step := fs.Duration("step", 0, "with a range: report intervals at least this long (default: every sample)")
-	var cpus *string
-	var extended, devOnly, parts *bool
 	switch name {
-	case "mpstat":
-		cpus = fs.String("P", "", "CPUs: ALL, or numbers separated by commas (default: only the total)")
-	case "iostat":
-		extended = fs.Bool("x", false, "extended device statistics")
-		devOnly = fs.Bool("d", false, "device report only (no avg-cpu)")
-		parts = fs.Bool("p", false, "also list partitions")
+	case "at", "since", "until", "tz", "data-dir", "json", "summary", "changes", "samples", "every", "number", "db":
+		return true
 	}
-	if _, err := parse(fs, args); err != nil {
-		return err
+	return false
+}
+
+// later names the commands of the spec that are not built yet.
+var later = map[string]string{
+	"netstat": "not available yet",
+	"free":    "not available yet",
+	"df":      "not available yet (needs filesystem usage, which clifrd does not record yet)",
+	"mount":   `not available yet; "mounts" shows the recorded mount table`,
+}
+
+func runSub(g *globals, sub string, args []string) error {
+	switch sub {
+	case "help":
+		if len(args) == 0 {
+			fmt.Print(mainHelp)
+			return nil
+		}
+		return helpTool(args[0])
+	case "list":
+		return usageError{errors.New(`"clifr list" is not available; "clifr help" lists the commands and "clifr help COMMAND" their options`)}
+	case "diff":
+		return errors.New("diff is not available yet")
+	case "license":
+		return errors.New("licences are not needed: this release reads local data only")
 	}
-	w, err := q.window(true)
-	if err != nil {
-		return err
+	if len(args) > 0 && sub != "export" {
+		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
 	}
-	db, err := q.open()
+	db, err := openDB(g)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	spans, err := query.SysSpans(db, w, step.Milliseconds())
-	if err != nil {
-		return err
+	switch sub {
+	case "info", "stats":
+		return cmdInfo(g, db)
+	case "verify":
+		return cmdVerify(g, db)
+	case "export":
+		if len(args) != 1 {
+			return usageError{errors.New("usage: clifr export TABLE")}
+		}
+		return cmdExport(db, args[0])
 	}
-	if w.IsRange() {
-		query.Header("%s: %d intervals between samples, %s .. %s", name, len(spans), query.FormatMS(spans[0].From), query.FormatMS(spans[len(spans)-1].To))
-	} else if name == "uptime" {
-		query.Header("uptime at the sample of %s (logged-in users are not recorded)", query.FormatMS(spans[0].To))
-	} else {
-		query.Header("%s: averages since boot at the sample of %s", name, query.FormatMS(spans[0].To))
-	}
-	var rows any
-	var print func()
-	switch name {
-	case "uptime":
-		r, e := query.Uptime(db, spans)
-		rows, err, print = r, e, func() { query.PrintUptime(os.Stdout, r) }
-	case "vmstat":
-		r, e := query.VMStat(db, spans)
-		rows, err, print = r, e, func() { query.PrintVMStat(os.Stdout, r) }
-	case "mpstat":
-		r, e := query.MPStat(db, spans, *cpus)
-		rows, err, print = r, e, func() { query.PrintMPStat(os.Stdout, r) }
-	case "iostat":
-		r, e := query.IOStat(db, spans, *parts)
-		rows, err, print = r, e, func() { query.PrintIOStat(os.Stdout, r, *extended, *devOnly) }
-	}
-	if err != nil {
-		return err
-	}
-	if q.json {
-		return query.PrintJSON(os.Stdout, rows)
-	}
-	print()
 	return nil
 }

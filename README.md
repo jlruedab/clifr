@@ -98,7 +98,7 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
 | `--db FILE` | off | also (or with `--data-dir ""` only) write the v1 SQLite schema |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
-| `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr stats`) |
+| `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
 
 What is recorded:
@@ -149,39 +149,58 @@ throttled there.
 
 ## Querying
 
-Every query command takes `--at "YYYY-MM-DD HH:MM:SS"` (local time) or
-`--start_from A --end_at B`, `--data-dir DIR` (or `--db FILE` for a v1
-SQLite file) and `--json`. Informational headers go to stderr.
+`clifr` takes its own options and then the command to reconstruct, quoted,
+in the real tool's syntax. `clifr help` lists the commands, `clifr help
+COMMAND` the options each supports; any other option is rejected. The
+resolved time and time zone and other informational lines go to stderr.
 
-    clifr ps aux --at "2026-10-12 13:28:34"
-    clifr ps aux --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
-    clifr ss -tanp dport = :5432 and dst 10.0.0.0/24 --at "2026-10-12 13:28:34"
-    clifr ss -tanp --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
-    clifr lsof -p 4242 --at "2026-10-12 13:28:34"
-    clifr life --name 'backup|rsync' --start_from "2026-10-12 00:00:00" --end_at "2026-10-12 06:00:00"
-    clifr oom --start_from "2026-10-12 00:00:00"
-    clifr mounts --at "2026-10-12 13:28:34"
-    clifr vmstat --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00" --step 1m
-    clifr mpstat -P ALL --at "2026-10-12 13:28:34"
-    clifr iostat -x --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00"
-    clifr uptime --at "2026-10-12 13:28:34"
-    clifr stats
+    clifr --at "02:45" "ps aux"
+    clifr --since yesterday --until today "ps aux"
+    clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
+    clifr --at "13:28" "ss -ltn"
+    clifr --since "2026-10-12 13:00" --until "2026-10-12 14:00" "ss -tanp"
+    clifr --at "13:28" "lsof -p 4242"
+    clifr --since "2026-10-12" --until "2026-10-12 06:00" "life --name 'backup|rsync'"
+    clifr --since "2 hours ago" oom
+    clifr --at "13:28" mounts
+    clifr --since "13:00" --until "13:10" "vmstat 60"
+    clifr --since "13:00" --until "13:10" --samples -e 1m "iostat -x"
+    clifr --at "13:28" "mpstat -P ALL"
+    clifr --at "13:28" uptime
+    clifr info
     clifr verify                 # needs a recording made with --verify-every
     clifr export tcp_conns       # one table as CSV
 
-- `ps aux --at` prints the columns of `ps aux`; a range prints one row per
-  command with first and last seen, runs, peak %CPU and RSS.
-- `ss -tanp` filters: `dst IP[/len][:port]`, `src ...`, `dport = :N`,
-  `sport = :N`, joined with `and`. With events, connections, states and
-  owners at a moment are exact, not taken from the nearest sample (queues
-  come from the last keyframe); a range lists the connections with duration,
-  resets and retransmits.
-- `life` lists start, end, duration, pid, ppid, command, exit code or signal.
-- `uptime`, `vmstat`, `mpstat`, `iostat`: `--at` prints the averages since
-  boot, which is what the real tool prints without an interval; a range
-  prints one report per sample interval, or per `--step`. `mpstat -P ALL` or
-  `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p` (partitions).
-- `stats` shows the recording range, samples and skips, rows per table, data
+Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
+(default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
+`/var/lib/clifr`; hidden: `--db FILE` for a v1 SQLite file); `-j/--json`;
+for ranges `--summary` (default), `--samples`, `-e/--every DUR`,
+`-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
+(today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).
+`CLIFR_SINCE`, `CLIFR_UNTIL`, `CLIFR_TZ` and `CLIFR_DATA_DIR` set defaults.
+A command can also be given unquoted after clifr's options
+(`clifr --at 13:28 ps aux`).
+
+- `ps aux` at a moment prints the columns of `ps aux`; over a range one row
+  per command with first and last seen, runs, peak %CPU and RSS.
+- `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
+  connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
+  it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
+  Filters: `dst IP[/len][:port]`, `src ...`, `dport = :N`, `sport = :N`,
+  joined with `and`. With events, connections, states and owners at a moment
+  are exact (queues come from the last keyframe); a range lists TCP
+  connections by process with duration, resets and retransmits.
+- `lsof [-p PID] [-i]` (`-n`, `-P` accepted).
+- `life` (clifr only) lists start, end, duration, pid, ppid, command, exit
+  code or signal; `oom` the OOM kills with the largest processes; `mounts`
+  the mount table at a moment or its changes over a range.
+- `uptime`, `vmstat`, `mpstat`, `iostat`: at a moment the averages since
+  boot, which is what the real tool prints without an interval; over a
+  range one report for the range, or one per interval with `--samples` or
+  an interval argument (`"vmstat 60"`, `"iostat -x 60 10"`). `mpstat -P
+  ALL` or `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p`
+  (partitions).
+- `info` shows the recording range, samples and skips, rows per table, data
   size, recorder CPU and RSS, sample durations by phase, events and drops per
   source, guard-rail changes and estimated disk per day.
 

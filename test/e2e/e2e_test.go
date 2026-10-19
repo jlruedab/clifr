@@ -192,14 +192,14 @@ func TestIncident(t *testing.T) {
 			PID int `json:"pid"`
 		} `json:"owners"`
 	}
-	query(t, clifr, &ss, "ss", "-tanp", "dport", "=", ":"+port, "--at", at, "--data-dir", data, "--json")
+	query(t, clifr, &ss, "--at", at, "--data-dir", data, "--json", "ss", "-tanp", "dport", "=", ":"+port)
 	clientConns := 0
 	for _, s := range ss {
 		if s.State == "ESTAB" && len(s.Owners) > 0 && s.Owners[0].PID == cli.cmd.Process.Pid {
 			clientConns++
 		}
 	}
-	query(t, clifr, &ss, "ss", "-tanp", "sport", "=", ":"+port, "--at", at, "--data-dir", data, "--json")
+	query(t, clifr, &ss, "--at", at, "--data-dir", data, "--json", "ss", "-tanp", "sport", "=", ":"+port)
 	serverConns := 0
 	for _, s := range ss {
 		if s.State == "ESTAB" && len(s.Owners) > 0 && s.Owners[0].PID == srv.cmd.Process.Pid {
@@ -217,7 +217,7 @@ func TestIncident(t *testing.T) {
 		Name    string `json:"name"`
 		Deleted bool   `json:"deleted"`
 	}
-	query(t, clifr, &lsof, "lsof", "-p", strconv.Itoa(del.cmd.Process.Pid), "--at", at, "--data-dir", data, "--json")
+	query(t, clifr, &lsof, "--at", at, "--data-dir", data, "--json", "lsof", "-p", strconv.Itoa(del.cmd.Process.Pid))
 	found := false
 	for _, f := range lsof {
 		if f.Deleted && strings.HasPrefix(f.Name, delPath) {
@@ -238,9 +238,9 @@ func TestIncident(t *testing.T) {
 		EndKind  string `json:"end_kind"`
 	}
 	// Anchored: other command lines may mention the name (e.g. a shell running this test).
-	query(t, clifr, &life, "life", "--name", `^\S*/e2eburst$`,
-		"--start_from", burstStart.Add(-2*time.Second).Format("2006-01-02 15:04:05"),
-		"--end_at", burstEnd.Add(2*time.Second).Format("2006-01-02 15:04:05"), "--data-dir", data, "--json")
+	query(t, clifr, &life, "--since", burstStart.Add(-2*time.Second).Format("2006-01-02 15:04:05"),
+		"--until", burstEnd.Add(2*time.Second).Format("2006-01-02 15:04:05"), "--data-dir", data, "--json",
+		"life", "--name", `^\S*/e2eburst$`)
 	short := 0
 	for _, l := range life {
 		if l.Duration > 0 && l.Duration < 1000 {
@@ -263,7 +263,7 @@ func TestIncident(t *testing.T) {
 			Source   string `json:"source"`
 			EndKind  string `json:"end_kind"`
 		}
-		query(t, clifr, &all, "life", "--name", "e2eburst", "--data-dir", data, "--json")
+		query(t, clifr, &all, "--data-dir", data, "--json", "life", "--name", "e2eburst")
 		for _, l := range all {
 			if !strings.Contains(l.Command, "TestIncident") || strings.HasSuffix(l.Command, "/e2eburst") {
 				t.Logf("  any: pid %d %d ms %s %s: %.80s", l.PID, l.Duration, l.Source, l.EndKind, l.Command)
@@ -272,7 +272,7 @@ func TestIncident(t *testing.T) {
 		if b, err := os.ReadFile(recLog.Name()); err == nil {
 			t.Logf("recorder log:\n%s", b)
 		}
-		if out, err := exec.Command(clifr, "stats", "--data-dir", data).CombinedOutput(); err == nil {
+		if out, err := exec.Command(clifr, "info", "--data-dir", data).CombinedOutput(); err == nil {
 			t.Logf("stats:\n%s", out)
 		}
 		if keep := os.Getenv("CLIFR_E2E_KEEP"); keep != "" { // keep the data for a look

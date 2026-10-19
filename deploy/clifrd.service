@@ -5,7 +5,7 @@
 #   install -m 0644 deploy/clifrd.service /etc/systemd/system/clifrd.service
 #   systemctl daemon-reload && systemctl enable --now clifrd
 # Stop:    systemctl stop clifrd  (SIGTERM: open rows are closed cleanly)
-# Query:   clifr ps aux --data-dir /var/lib/clifr --at "YYYY-MM-DD HH:MM:SS"
+# Query:   clifr --at "YYYY-MM-DD HH:MM:SS" "ps aux"
 # Disk:    Parquet files rotate every 5 minutes; data older than --retention
 #          (72h) is deleted, and the oldest hours go first above --max-size.
 
