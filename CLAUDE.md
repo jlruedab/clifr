@@ -3,8 +3,9 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files (or, for v1 comparisons, one SQLite file).
-`clifr` reconstructs the output of the real tools (`ps`, `lsof`, `ss`, `uptime`, `vmstat`,
-`mpstat`, `iostat`; clifr-only `life`, `oom`, `mounts`) for a past moment or time range;
+`clifr` reconstructs the output of the real tools (`ps`, `lsof`, `ss`, `netstat`, `free`,
+`uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
+past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
 
 It began as a proof of concept to prove two things with evidence: **accuracy**
@@ -46,7 +47,8 @@ wait for the user's go-ahead.
 ## Layout
 - `cmd/clifrd/` — the recorder binary (static, no cgo).
 - `cmd/clifr/` — the query CLI (DuckDB via cgo): `clifr [--at T | --since A --until B] [OPTIONS] "COMMAND [ARGS]"`;
-  per-command option tables in `tools.go`/`systools.go` (unsupported options are rejected);
+  per-command option tables in `tools.go`, `tools2.go`, `systools.go` (unsupported options
+  are rejected);
   `--data-dir` Parquet or hidden `--db` SQLite.
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
   system-wide stat, loadavg, meminfo, vmstat, diskstats).

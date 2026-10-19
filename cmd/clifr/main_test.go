@@ -64,7 +64,7 @@ func TestRunErrors(t *testing.T) {
 		want string
 	}{
 		{[]string{}, "no command given"},
-		{[]string{"--at", "now", "ps -ef"}, "option -e is not supported"},
+		{[]string{"--at", "now", "ps -efx"}, "option -x is not supported"},
 		{[]string{"--at", "now", "top"}, `"top" is not a supported command`},
 		{[]string{"ps", "aux", "--at", "now"}, "go before the command"},
 		{[]string{"--at", "now", "ps aux", "extra"}, "unexpected \"extra\""},
@@ -78,7 +78,13 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"--at", "now", "ss -an"}, "add -t and/or -u"},
 		{[]string{"--host", "x", "--at", "now", "ps aux"}, "not available in this release"},
 		{[]string{"--at", "now", "-T", "Nowhere/City", "ps aux"}, "--tz"},
-		{[]string{"--at", "now", "netstat -tan"}, "not available yet"},
+		{[]string{"--at", "now", "mount"}, "not available yet"},
+		{[]string{"--at", "now", "netstat -ta"}, "add -n"},
+		{[]string{"--at", "now", "ps"}, "add -e, -p, -u or -C"},
+		{[]string{"--at", "now", "ps -o pid,wchan -e"}, "unsupported output column"},
+		{[]string{"--at", "now", "free -s 5"}, "need a range"},
+		{[]string{"--since", "-1h", "free"}, "add --samples"},
+		{[]string{"--at", "now", "events"}, "needs a range"},
 		{[]string{"list", "ps"}, "clifr help"},
 	} {
 		err := run(c.args)

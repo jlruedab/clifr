@@ -28,6 +28,14 @@ type PSRow struct {
 	StartMS int64   `json:"start_time_ms"`
 	Source  string  `json:"source"`
 	cpuPct  float64 // unrounded, for tests
+	// For the other ps formats (psfmt.go).
+	uid, nice, threads int
+	comm, args         string
+	ticks              int64  // CPU time in clock ticks; -1 when not sampled
+	permille           uint64 // %CPU in tenths
+	nowMS              int64  // the sample's time
+	startDisp          int64  // start time as ps computes it (btime in whole seconds)
+	atMS               int64  // the moment asked for: elapsed times are exact there
 }
 
 type procAt struct {
@@ -95,6 +103,7 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	for _, p := range procs {
 		r := psRow(p, s, memKB)
 		r.Start = psStart(p.startMS-skew, s)
+		r.startDisp, r.atMS = p.startMS-skew, t
 		out = append(out, r)
 	}
 	return out, s, nil
@@ -102,17 +111,21 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 
 func psRow(p procAt, now, memKB int64) PSRow {
 	r := PSRow{User: UserName(p.uid, true), PID: p.pid, PPID: p.ppid, TTY: procfs.TTYName(p.tty),
-		StartMS: p.startMS, Source: p.source, VSZ: p.vszKB.Int64, RSS: p.rssKB.Int64}
+		StartMS: p.startMS, Source: p.source, VSZ: p.vszKB.Int64, RSS: p.rssKB.Int64,
+		uid: p.uid, comm: p.comm, nice: int(p.nice.Int64), threads: int(p.threads.Int64), ticks: -1, nowMS: now}
 	r.Start = psStart(p.startMS, now)
 	if !p.state.Valid { // event-only: no per-sample values were captured
 		r.CPU, r.Mem, r.Stat, r.Time = "-", "-", "-", "-"
 		r.Command = commandOf(p.cmdline, p.comm, "")
+		r.args = r.Command
 		return r
 	}
 	ticks := p.cpuTicks.Int64
+	r.ticks = ticks
 	// procps: pcpu = (cputime_ms) / elapsed_seconds, in tenths of a percent, truncated.
 	if secs := (now - p.startMS) / 1000; secs > 0 {
-		r.CPU = tenths(uint64(ticks*1000/procfs.ClockTicks) / uint64(secs))
+		r.permille = uint64(ticks*1000/procfs.ClockTicks) / uint64(secs)
+		r.CPU = tenths(r.permille)
 		r.cpuPct = float64(ticks*1000/procfs.ClockTicks) / float64(secs) / 10
 	} else {
 		r.CPU = tenths(0)
@@ -126,6 +139,7 @@ func psRow(p procAt, now, memKB int64) PSRow {
 	cpuSecs := ticks / procfs.ClockTicks
 	r.Time = fmt.Sprintf("%d:%02d", cpuSecs/60, cpuSecs%60)
 	r.Command = commandOf(p.cmdline, p.comm, p.state.String)
+	r.args = r.Command
 	return r
 }
 

@@ -23,8 +23,14 @@ func (o opt) key() string {
 
 // parsed is a command line split by a tool's options.
 type parsed struct {
-	set map[string]string // by opt.key(); "" for switches
+	set map[string]string   // by opt.key(); "" for switches; the last value
+	all map[string][]string // every value, in order (options given more than once)
 	pos []string
+}
+
+func (p parsed) add(k, v string) {
+	p.set[k] = v
+	p.all[k] = append(p.all[k], v)
 }
 
 func (p parsed) has(k string) bool { _, ok := p.set[k]; return ok }
@@ -33,7 +39,7 @@ func (p parsed) has(k string) bool { _, ok := p.set[k]; return ok }
 // argument attached or separate ("-p1" or "-p 1"), "--long" and
 // "--long=value", "--" ends options. Anything not in opts is rejected.
 func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
-	p := parsed{set: map[string]string{}}
+	p := parsed{set: map[string]string{}, all: map[string][]string{}}
 	unsupported := func(o string) error {
 		return fmt.Errorf("%s: option %s is not supported for recorded data (see: clifr help %s)", tool, o, tool)
 	}
@@ -59,7 +65,7 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 				i++
 				val = args[i]
 			}
-			p.set[o.key()] = val
+			p.add(o.key(), val)
 		case len(a) > 1 && a[0] == '-':
 			for j := 1; j < len(a); j++ {
 				o, ok := findShort(opts, a[j])
@@ -67,7 +73,7 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 					return p, unsupported("-" + string(a[j]))
 				}
 				if o.arg == "" {
-					p.set[o.key()] = ""
+					p.add(o.key(), "")
 					continue
 				}
 				val := a[j+1:]
@@ -78,7 +84,7 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 					i++
 					val = args[i]
 				}
-				p.set[o.key()] = val
+				p.add(o.key(), val)
 				break
 			}
 		default:

@@ -17,8 +17,9 @@ Usage:
   clifr help COMMAND
 
 Supported commands:
-  ps, lsof, ss, vmstat, mpstat, iostat, uptime
-  life, oom, mounts (clifr only: process lifetimes, OOM kills, mount table)
+  ps, lsof, ss, netstat, vmstat, mpstat, iostat, free, uptime
+  events, life, oom, mounts (clifr only: timeline, process lifetimes, OOM
+  kills, mount table)
   Run "clifr help COMMAND" to see which options are supported for recorded
   data. Unsupported options are rejected with an error.
 
@@ -72,6 +73,9 @@ Examples:
 
   # Disk activity every minute between 02:00 and 02:30
   clifr --since "02:00" --until "02:30" --samples -e 1m "iostat -x"
+
+  # What happened in the last hour: starts, exits, OOM kills, mounts, gaps
+  clifr --since "1 hour ago" events
 
   # What the recording covers
   clifr info

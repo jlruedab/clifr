@@ -1,0 +1,419 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"clifr/internal/query"
+)
+
+var bsdPS = regexp.MustCompile(`^[auxw]+$`)
+
+// splitList splits ps/lsof lists: "1,2 3" and repeated options.
+func splitList(vals []string) []string {
+	var out []string
+	for _, v := range vals {
+		out = append(out, strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })...)
+	}
+	return out
+}
+
+func psTool() *tool {
+	return &tool{
+		name: "ps", synopsis: "aux | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
+		about: "processes and their CPU, memory, state and command line",
+		opts: []opt{
+			{short: 'e', help: "every process"},
+			{short: 'A', help: "every process (the same as -e)"},
+			{short: 'p', arg: "PIDS", help: "these processes (comma separated, or repeat -p)"},
+			{short: 'u', arg: "USERS", help: "processes of these users (names or numbers)"},
+			{short: 'C', arg: "NAMES", help: "processes with these command names"},
+			{short: 'f', help: "full format: UID PID PPID C STIME TTY TIME CMD"},
+			{short: 'o', arg: "FORMAT", help: "these columns: pid ppid uid user comm args cmd rss vsz %cpu %mem c ni nlwp s stat lstart start stime etime etimes time tty (KEY:WIDTH, KEY=HEADING)"},
+		},
+		window: true,
+		notes: []string{
+			"BSD form: aux (w, ww accepted: lines are never cut). Without -f or -o: PID TTY TIME CMD.",
+			"--at: the processes alive at T with their values from the sample at or before T (sampled);",
+			"processes only seen through exec/exit events show \"-\" for sampled values.",
+			"--since: every process seen in the range, identical commands collapsed, with first/last",
+			"seen and peaks (ps aux or ps -e).",
+		},
+		examples: []string{`clifr --at "02:45" "ps aux"`, `clifr --at "02:45" "ps -ef"`,
+			`clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"`, `clifr --since yesterday --until today "ps aux"`},
+		prepare: preparePS,
+	}
+}
+
+func preparePS(p parsed, c *runCtx) (func() error, error) {
+	dash := len(p.set) > 0
+	if len(p.pos) > 0 {
+		if dash || len(p.pos) != 1 || !bsdPS.MatchString(p.pos[0]) || !strings.Contains(p.pos[0], "a") ||
+			!strings.Contains(p.pos[0], "u") || !strings.Contains(p.pos[0], "x") {
+			return nil, errors.New(`ps: the BSD form supported is "ps aux"; other forms use -e, -p, -u or -C (see: clifr help ps)`)
+		}
+		if err := summaryOnly("ps", c); err != nil {
+			return nil, err
+		}
+		return func() error { return runPS(c, nil, nil) }, nil
+	}
+	all := p.has("e") || p.has("A")
+	pids, users, names := splitList(p.all["p"]), splitList(p.all["u"]), splitList(p.all["C"])
+	if !all && len(pids) == 0 && len(users) == 0 && len(names) == 0 {
+		return nil, errors.New("ps: add -e, -p, -u or -C: without them ps lists the processes of the current terminal")
+	}
+	f := query.PSDefault
+	switch {
+	case p.has("f") && p.has("o"):
+		return nil, errors.New("ps: use -f or -o, not both")
+	case p.has("f"):
+		f = query.PSFull
+	case p.has("o"):
+		var err error
+		if f, err = query.ParsePSFormat(strings.Join(p.all["o"], ",")); err != nil {
+			return nil, err
+		}
+	}
+	if c.w.IsRange() && !all {
+		return nil, errors.New("ps: a range lists every process (-e or aux); -p, -u and -C are for --at")
+	}
+	if err := summaryOnly("ps", c); err != nil {
+		return nil, err
+	}
+	var sel func(r *query.PSRow) bool
+	if !all {
+		pidSet := map[int]bool{}
+		for _, v := range pids {
+			n, err := strconv.Atoi(v)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("ps: bad PID %q", v)
+			}
+			pidSet[n] = true
+		}
+		sel = func(r *query.PSRow) bool {
+			if pidSet[r.PID] {
+				return true
+			}
+			for _, u := range users {
+				if u == strconv.Itoa(r.UID()) || u == query.UserName(r.UID(), false) {
+					return true
+				}
+			}
+			for _, n := range names {
+				if n == r.Comm() {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return func() error { return runPS(c, sel, f) }, nil
+}
+
+// runPS prints ps at a moment (aux when f is nil) or the range summary.
+func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
+	db, w := c.db, c.w
+	if w.IsRange() {
+		rows, err := query.PSRange(db, w.From, w.To)
+		if err != nil {
+			return err
+		}
+		c.header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
+			query.FormatMS(w.From), query.FormatMS(w.To))
+		return c.out(rows, func() { query.PrintPSRange(os.Stdout, rows) })
+	}
+	rows, s, err := query.PSAt(db, w.At)
+	if err != nil {
+		return err
+	}
+	if sel != nil {
+		kept := rows[:0]
+		for i := range rows {
+			if sel(&rows[i]) {
+				kept = append(kept, rows[i])
+			}
+		}
+		rows = kept
+	}
+	c.header("ps at %s, reconstructed from sample at %s (%d processes)", query.FormatMS(w.At), query.FormatMS(s), len(rows))
+	// OOM kills soon after T are not in the sample; point them out.
+	if kills, err := query.OOMKills(db, s, w.At+query.IntervalMS(db), 0); err == nil {
+		for _, k := range kills {
+			c.header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see: clifr ... oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
+		}
+	}
+	if c.g.json {
+		return query.PrintPSJSON(os.Stdout, rows)
+	}
+	if f == nil {
+		query.PrintPS(os.Stdout, rows)
+	} else {
+		query.PrintPSFormat(os.Stdout, rows, f)
+	}
+	return nil
+}
+
+func lsofTool() *tool {
+	return &tool{
+		name: "lsof", synopsis: "[-n] [-P] [-a] [-i] [-p PIDS] [-u USERS] [-c NAME]",
+		about: "open files and sockets of every process",
+		opts: []opt{
+			{short: 'p', arg: "PIDS", help: "these processes (comma separated)"},
+			{short: 'u', arg: "USERS", help: "processes of these users (names or numbers)"},
+			{short: 'c', arg: "NAME", help: "processes whose command begins with NAME (repeatable)"},
+			{short: 'i', help: "internet sockets"},
+			{short: 'a', help: "AND the selections (by default, like lsof, any one selects)"},
+			{short: 'n', help: "accepted: addresses are never resolved"},
+			{short: 'P', help: "accepted: ports are never resolved"},
+		},
+		window: true,
+		notes: []string{
+			"Files: those held across two fd walks (2 minutes by default) and deleted files (sampled).",
+			"TCP sockets exact (events); UDP sockets from the keyframe.",
+		},
+		examples: []string{`clifr --at "02:45" "lsof -p 58841"`, `clifr --at "02:45" "lsof -a -i -u postgres"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			var s query.LsofSelect
+			for _, v := range splitList(p.all["p"]) {
+				pid, err := strconv.Atoi(v)
+				if err != nil || pid <= 0 {
+					return nil, fmt.Errorf("lsof: bad PID %q", v)
+				}
+				s.PIDs = append(s.PIDs, pid)
+			}
+			s.Users, s.Commands = splitList(p.all["u"]), p.all["c"]
+			s.Inet, s.And = p.has("i"), p.has("a")
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("lsof: file arguments are not supported (%q)", p.pos[0])
+			}
+			if err := summaryOnly("lsof", c); err != nil {
+				return nil, err
+			}
+			return func() error { return runLsof(c, s) }, nil
+		},
+	}
+}
+
+func runLsof(c *runCtx, sel query.LsofSelect) error {
+	db, w := c.db, c.w
+	o := sel.Options()
+	if w.IsRange() {
+		rows, err := query.LsofRange(db, w.From, w.To, o)
+		if err != nil {
+			return err
+		}
+		rows = sel.Filter(rows)
+		c.header("files held between %s and %s (%d)", query.FormatMS(w.From), query.FormatMS(w.To), len(rows))
+		return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, true) })
+	}
+	rows, s, sfd, err := query.LsofAt(db, w.At, o)
+	if err != nil {
+		return err
+	}
+	rows = sel.Filter(rows)
+	if query.TCPFromEvents(db) {
+		c.header("lsof at %s: files from the full fd walk at %s (sampled); TCP sockets exact (events); UDP from the keyframe (%d rows)",
+			query.FormatMS(w.At), query.FormatMS(sfd), len(rows))
+	} else {
+		c.header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
+			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
+	}
+	return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, false) })
+}
+
+func freeTool() *tool {
+	return &tool{
+		name: "free", synopsis: "[-b|-k|-m|-g|-h] [-w] [-t] [-s SECONDS] [-c COUNT]",
+		about: "memory and swap use",
+		opts: []opt{
+			{short: 'b', long: "bytes", help: "bytes"},
+			{short: 'k', long: "kibi", help: "KiB (the default)"},
+			{short: 'm', long: "mebi", help: "MiB"},
+			{short: 'g', long: "gibi", help: "GiB"},
+			{short: 'h', long: "human", help: "the shortest unit that fits (Ki, Mi, Gi)"},
+			{short: 'w', long: "wide", help: "buffers and cache in separate columns"},
+			{short: 't', long: "total", help: "a Total line (memory plus swap)"},
+			{short: 's', long: "seconds", arg: "SECONDS", help: "with --since: one report every SECONDS"},
+			{short: 'c', long: "count", arg: "COUNT", help: "with --since: stop after COUNT reports"},
+		},
+		window: true,
+		notes: []string{
+			"--at: the counters of the sample at or before T (sampled).",
+			"--since: one report per sample with --samples or -s (spacing -e or -s, count -n or -c).",
+		},
+		examples: []string{`clifr --at "02:45" "free -h"`, `clifr --since "02:00" --until "02:30" "free -m -s 60"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			f := query.FreeFormat{Unit: "k", Wide: p.has("wide"), Total: p.has("total")}
+			for _, u := range []string{"bytes", "kibi", "mebi", "gibi", "human"} {
+				if p.has(u) {
+					f.Unit = map[string]string{"bytes": "b", "kibi": "k", "mebi": "m", "gibi": "g", "human": "h"}[u]
+				}
+			}
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("free: unexpected argument %q", p.pos[0])
+			}
+			every, number := c.g.everyMS, c.g.number
+			if v, ok := p.set["seconds"]; ok {
+				n, err := strconv.ParseFloat(v, 64)
+				if err != nil || n <= 0 {
+					return nil, fmt.Errorf("free: bad -s %q", v)
+				}
+				every = int64(n * 1000)
+			}
+			if v, ok := p.set["count"]; ok {
+				n, err := strconv.Atoi(v)
+				if err != nil || n <= 0 {
+					return nil, fmt.Errorf("free: bad -c %q", v)
+				}
+				number = n
+			}
+			samples := c.g.samples || p.has("seconds") || p.has("count")
+			switch {
+			case !c.w.IsRange() && samples:
+				return nil, errors.New("free: -s and -c need a range (--since)")
+			case c.w.IsRange() && !samples:
+				return nil, errors.New("free: over a range, add --samples or -s SECONDS (one report per sample)")
+			case c.g.changes:
+				return nil, errors.New("free: --changes is not available for free; use --samples")
+			}
+			return func() error {
+				spans, err := query.SysSpans(c.db, c.w, every)
+				if err != nil {
+					return err
+				}
+				if c.w.IsRange() {
+					if number > 0 && len(spans) > number {
+						spans = spans[:number]
+					}
+					c.header("free: %d samples, %s .. %s", len(spans), query.FormatMS(spans[0].To), query.FormatMS(spans[len(spans)-1].To))
+				} else {
+					c.header("free at the sample of %s", query.FormatMS(spans[0].To))
+				}
+				rows, err := query.Free(c.db, spans)
+				if err != nil {
+					return err
+				}
+				return c.out(rows, func() { query.PrintFree(os.Stdout, rows, f) })
+			}, nil
+		},
+	}
+}
+
+func netstatTool() *tool {
+	return &tool{
+		name: "netstat", synopsis: "-n -t|-u [-a|-l] [-p] [-W] [-4|-6]",
+		about: "TCP and UDP sockets (net-tools)",
+		opts: []opt{
+			{short: 't', long: "tcp", help: "TCP sockets"},
+			{short: 'u', long: "udp", help: "UDP sockets (recorded at keyframes)"},
+			{short: 'a', long: "all", help: "listening and non-listening sockets"},
+			{short: 'l', long: "listening", help: "only listening sockets"},
+			{short: 'n', long: "numeric", help: "numeric addresses and ports (required: clifr cannot resolve past host names)"},
+			{short: 'p', long: "programs", help: "PID/Program name"},
+			{short: 'W', long: "wide", help: "do not cut addresses"},
+			{short: '4', help: "only IPv4 sockets"},
+			{short: '6', help: "only IPv6 sockets"},
+		},
+		window: true,
+		notes: []string{
+			"Same data as ss. Without -a or -l: TCP in every state but LISTEN, connected UDP only.",
+			"Program names come from the recorded command line: the base name of argv[0], or the title a",
+			"process set. A process that rewrote its whole command line (Chrome) may show another name.",
+			"--since: TCP connections by process over the range, as ss shows them.",
+		},
+		examples: []string{`clifr --at "02:45" "netstat -tulpn"`, `clifr --at "02:45" "netstat -tanp"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			tcp, udp := p.has("tcp"), p.has("udp")
+			switch {
+			case !p.has("numeric"):
+				return nil, errors.New("netstat: add -n: without it netstat looks up host names, which cannot be done for the past")
+			case !tcp && !udp:
+				return nil, errors.New("netstat: add -t and/or -u: clifr records TCP and UDP only")
+			case p.has("all") && p.has("listening"):
+				return nil, errors.New("netstat: use -a or -l, not both")
+			case len(p.pos) > 0:
+				return nil, fmt.Errorf("netstat: unexpected argument %q", p.pos[0])
+			}
+			v := query.NetstatView{All: p.has("all"), Listening: p.has("listening"), Program: p.has("programs"),
+				Wide: p.has("wide"), V4: p.has("4"), V6: p.has("6")}
+			if err := summaryOnly("netstat", c); err != nil {
+				return nil, err
+			}
+			return func() error {
+				if c.w.IsRange() {
+					return socketsRange(c, "netstat", udp, query.SockFilter{})
+				}
+				rows, err := socketsAt(c, tcp, udp, query.SockFilter{})
+				if err != nil {
+					return err
+				}
+				kept := rows[:0]
+				for i := range rows {
+					if v.Keep(&rows[i]) {
+						kept = append(kept, rows[i])
+					}
+				}
+				var progs map[int]string
+				if v.Program {
+					if progs, err = query.ProgramNames(c.db, c.w.At); err != nil {
+						return err
+					}
+				}
+				return c.out(kept, func() { query.PrintNetstat(os.Stdout, kept, v, progs) })
+			}, nil
+		},
+	}
+}
+
+func eventsTool() *tool {
+	return &tool{
+		name: "events", synopsis: "[--name REGEX] [--type KINDS]",
+		about: "clifr only: a timeline of process starts and exits, OOM kills, mounts and recorder gaps",
+		opts: []opt{
+			{long: "name", arg: "REGEX", help: "only process events whose command line matches"},
+			{long: "type", arg: "KINDS", help: "comma separated: " + strings.Join(query.EventKinds, ",")},
+		},
+		notes: []string{
+			"Without --since: the whole recording. Times are exact (events) except exits marked ~:",
+			"those happened between the sample shown and the next.",
+		},
+		examples: []string{`clifr --since "1 hour ago" events`, `clifr --since today "events --type oom,gap"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if !c.w.IsRange() {
+				return nil, errors.New("events: needs a range (--since), or no time for the whole recording")
+			}
+			var re *regexp.Regexp
+			if v, ok := p.set["name"]; ok {
+				var err error
+				if re, err = regexp.Compile(v); err != nil {
+					return nil, fmt.Errorf("events: --name: %w", err)
+				}
+			}
+			var kinds map[string]bool
+			if v, ok := p.set["type"]; ok {
+				kinds = map[string]bool{}
+				for _, k := range splitList([]string{v}) {
+					if !strings.Contains(","+strings.Join(query.EventKinds, ",")+",", ","+k+",") {
+						return nil, fmt.Errorf("events: unknown type %q (%s)", k, strings.Join(query.EventKinds, ","))
+					}
+					kinds[k] = true
+				}
+			}
+			return func() error {
+				if c.w.From == 0 { // the whole recording: from its first sample
+					c.w.From = query.RecordingStart(c.db)
+				}
+				evs, err := query.Events(c.db, c.w.From, c.w.To, re, kinds)
+				if err != nil {
+					return err
+				}
+				c.header("%d events %s .. %s", len(evs), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+				return c.out(evs, func() { query.PrintEvents(os.Stdout, evs) })
+			}, nil
+		},
+	}
+}

@@ -155,11 +155,17 @@ COMMAND` the options each supports; any other option is rejected. The
 resolved time and time zone and other informational lines go to stderr.
 
     clifr --at "02:45" "ps aux"
+    clifr --at "02:45" "ps -ef"
+    clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"
     clifr --since yesterday --until today "ps aux"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
     clifr --at "13:28" "ss -ltn"
     clifr --since "2026-10-12 13:00" --until "2026-10-12 14:00" "ss -tanp"
+    clifr --at "13:28" "netstat -tulpn"
     clifr --at "13:28" "lsof -p 4242"
+    clifr --at "13:28" "lsof -a -i -u postgres"
+    clifr --at "13:28" "free -h"
+    clifr --since "1 hour ago" events
     clifr --since "2026-10-12" --until "2026-10-12 06:00" "life --name 'backup|rsync'"
     clifr --since "2 hours ago" oom
     clifr --at "13:28" mounts
@@ -181,8 +187,12 @@ for ranges `--summary` (default), `--samples`, `-e/--every DUR`,
 A command can also be given unquoted after clifr's options
 (`clifr --at 13:28 ps aux`).
 
-- `ps aux` at a moment prints the columns of `ps aux`; over a range one row
-  per command with first and last seen, runs, peak %CPU and RSS.
+- `ps aux`, or `-e`/`-p`/`-u`/`-C` with the default format, `-f` or
+  `-o COLUMNS` (pid, ppid, uid, user, comm, args, cmd, rss, vsz, %cpu, %mem,
+  c, ni, nlwp, s, stat, lstart, start, stime, etime, etimes, time, tty;
+  `KEY:WIDTH`, `KEY=HEADING`), with procps's headings, widths and overflow.
+  Over a range (aux or -e): one row per command with first and last seen,
+  runs, peak %CPU and RSS.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
@@ -190,7 +200,19 @@ A command can also be given unquoted after clifr's options
   joined with `and`. With events, connections, states and owners at a moment
   are exact (queues come from the last keyframe); a range lists TCP
   connections by process with duration, resets and retransmits.
-- `lsof [-p PID] [-i]` (`-n`, `-P` accepted).
+- `netstat -n -t|-u [-a|-l] [-p] [-W] [-4|-6]`: the same data as `ss` in
+  net-tools' layout (`-n` is required: past host names cannot be looked up).
+  Program names come from the recorded command line; a process that rewrote
+  its whole command line (Chrome) may show another name than netstat would.
+- `lsof [-p PIDS] [-u USERS] [-c NAME] [-i] [-a]`: selections ORed, or
+  ANDed with `-a`, as lsof does (`-n`, `-P` accepted).
+- `free [-b|-k|-m|-g|-h] [-w] [-t]` at a moment; over a range with
+  `--samples` or `-s SECONDS` (`-c COUNT`), one report per sample.
+- `events` (clifr only): a timeline of process starts and exits, OOM kills,
+  mounts, recorder gaps, skipped samples and guard events (`--name REGEX`,
+  `--type KINDS`); exits known only from samples are marked `~`.
+- `mount` and `df` are not available yet: they need file-system options and
+  usage, which clifrd does not record yet.
 - `life` (clifr only) lists start, end, duration, pid, ppid, command, exit
   code or signal; `oom` the OOM kills with the largest processes; `mounts`
   the mount table at a moment or its changes over a range.

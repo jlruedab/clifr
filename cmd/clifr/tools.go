@@ -6,7 +6,6 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"clifr/internal/query"
 	"clifr/internal/store"
@@ -61,30 +60,8 @@ func addTool(t *tool) {
 	toolOrder = append(toolOrder, t.name)
 }
 
-var bsdPS = regexp.MustCompile(`^[auxw]+$`)
-
 func init() {
-	addTool(&tool{
-		name: "ps", synopsis: "aux",
-		about:  "processes and their CPU, memory, state and command line",
-		window: true,
-		notes: []string{
-			"Only the BSD form aux is supported (w, ww are accepted: lines are never cut).",
-			"--at: the processes alive at T with their values from the sample at or before T (sampled).",
-			"--since: every process seen in the range, identical commands collapsed, with first/last seen and peaks.",
-		},
-		examples: []string{`clifr --at "02:45" "ps aux"`, `clifr --since yesterday --until today "ps aux"`},
-		prepare: func(p parsed, c *runCtx) (func() error, error) {
-			if len(p.pos) != 1 || !bsdPS.MatchString(p.pos[0]) || !strings.Contains(p.pos[0], "a") ||
-				!strings.Contains(p.pos[0], "u") || !strings.Contains(p.pos[0], "x") {
-				return nil, errors.New(`ps: only "ps aux" is supported (see: clifr help ps)`)
-			}
-			if err := summaryOnly("ps", c); err != nil {
-				return nil, err
-			}
-			return func() error { return runPS(c) }, nil
-		},
-	})
+	addTool(psTool())
 	addTool(&tool{
 		name: "ss", synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER]",
 		about: "TCP and UDP sockets",
@@ -110,41 +87,11 @@ func init() {
 			`clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" "ss -tanp dst 10.0.4.21 and dport = :5432"`},
 		prepare: prepareSS,
 	})
-	addTool(&tool{
-		name: "lsof", synopsis: "[-n] [-P] [-i] [-p PID]",
-		about: "open files and sockets of every process",
-		opts: []opt{
-			{short: 'p', arg: "PID", help: "only this process"},
-			{short: 'i', help: "only internet sockets"},
-			{short: 'n', help: "accepted: addresses are never resolved"},
-			{short: 'P', help: "accepted: ports are never resolved"},
-		},
-		window: true,
-		notes: []string{
-			"Files: those held across two fd walks (2 minutes by default) and deleted files (sampled).",
-			"TCP sockets exact (events); UDP sockets from the keyframe.",
-		},
-		examples: []string{`clifr --at "02:45" "lsof -p 58841"`},
-		prepare: func(p parsed, c *runCtx) (func() error, error) {
-			var o query.LsofOptions
-			if v, ok := p.set["p"]; ok {
-				pid, err := strconv.Atoi(v)
-				if err != nil || pid <= 0 {
-					return nil, fmt.Errorf("lsof: bad PID %q", v)
-				}
-				o.PID = pid
-			}
-			o.InetOnly = p.has("i")
-			if len(p.pos) > 0 {
-				return nil, fmt.Errorf("lsof: file arguments are not supported (%q)", p.pos[0])
-			}
-			if err := summaryOnly("lsof", c); err != nil {
-				return nil, err
-			}
-			return func() error { return runLsof(c, o) }, nil
-		},
-	})
+	addTool(lsofTool())
 	addSystemTools()
+	addTool(freeTool())
+	addTool(netstatTool())
+	addTool(eventsTool())
 	addTool(&tool{
 		name: "life", synopsis: "[--name REGEX]",
 		about: "clifr only: process starts and exits, including short-lived processes",
@@ -190,35 +137,6 @@ func init() {
 	})
 }
 
-func runPS(c *runCtx) error {
-	db, w := c.db, c.w
-	if w.IsRange() {
-		rows, err := query.PSRange(db, w.From, w.To)
-		if err != nil {
-			return err
-		}
-		c.header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
-			query.FormatMS(w.From), query.FormatMS(w.To))
-		return c.out(rows, func() { query.PrintPSRange(os.Stdout, rows) })
-	}
-	rows, s, err := query.PSAt(db, w.At)
-	if err != nil {
-		return err
-	}
-	c.header("ps aux at %s, reconstructed from sample at %s (%d processes)", query.FormatMS(w.At), query.FormatMS(s), len(rows))
-	// OOM kills soon after T are not in the sample; point them out.
-	if kills, err := query.OOMKills(db, s, w.At+query.IntervalMS(db), 0); err == nil {
-		for _, k := range kills {
-			c.header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see clifr ... \"oom\"", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
-		}
-	}
-	if c.g.json {
-		return query.PrintPSJSON(os.Stdout, rows)
-	}
-	query.PrintPS(os.Stdout, rows)
-	return nil
-}
-
 func prepareSS(p parsed, c *runCtx) (func() error, error) {
 	tcp, udp := p.has("tcp"), p.has("udp")
 	if !tcp && !udp {
@@ -240,31 +158,50 @@ func prepareSS(p parsed, c *runCtx) (func() error, error) {
 }
 
 func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) error {
+	if c.w.IsRange() {
+		return socketsRange(c, "ss", udp, filter)
+	}
+	rows, err := socketsAt(c, tcp, udp, filter)
+	if err != nil {
+		return err
+	}
+	rows = v.Filter(rows)
+	return c.out(rows, func() { query.PrintSSView(os.Stdout, rows, v, tcp && udp) })
+}
+
+// socketsRange prints the connections over a range by process (ss and
+// netstat): from events every TCP connection, however short.
+func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) error {
 	db, w := c.db, c.w
 	events := query.TCPFromEvents(db)
-	if w.IsRange() {
-		if udp && events {
-			return errors.New("ss: a range covers TCP only (UDP is recorded at keyframes)")
-		}
-		var groups []query.SSGroup
-		var err error
-		if events {
-			groups, err = query.ConnsInRange(db, w.From, w.To, filter)
-			c.header("TCP connections by process, %s .. %s, from events (every connection, however short, in any state)",
-				query.FormatMS(w.From), query.FormatMS(w.To))
-		} else {
-			proto := "tcp"
-			if udp {
-				proto = "udp"
-			}
-			groups, err = query.SocketsInRange(db, w.From, w.To, proto, filter)
-			c.header("%s sockets by process, %s .. %s", proto, query.FormatMS(w.From), query.FormatMS(w.To))
-		}
-		if err != nil {
-			return err
-		}
-		return c.out(groups, func() { query.PrintSSGroups(os.Stdout, groups) })
+	if udp && events {
+		return errors.New(name + ": a range covers TCP only (UDP is recorded at keyframes); use -t")
 	}
+	var groups []query.SSGroup
+	var err error
+	if events {
+		groups, err = query.ConnsInRange(db, w.From, w.To, filter)
+		c.header("TCP connections by process, %s .. %s, from events (every connection, however short, in any state)",
+			query.FormatMS(w.From), query.FormatMS(w.To))
+	} else {
+		proto := "tcp"
+		if udp {
+			proto = "udp"
+		}
+		groups, err = query.SocketsInRange(db, w.From, w.To, proto, filter)
+		c.header("%s sockets by process, %s .. %s", proto, query.FormatMS(w.From), query.FormatMS(w.To))
+	}
+	if err != nil {
+		return err
+	}
+	return c.out(groups, func() { query.PrintSSGroups(os.Stdout, groups) })
+}
+
+// socketsAt returns the TCP and/or UDP sockets at c.w.At (UDP first, as ss
+// lists them) and prints where they come from.
+func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow, error) {
+	db, w := c.db, c.w
+	events := query.TCPFromEvents(db)
 	var rows []query.SSRow
 	for _, proto := range []string{"udp", "tcp"} { // ss's order
 		if (proto == "tcp" && !tcp) || (proto == "udp" && !udp) {
@@ -275,7 +212,7 @@ func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) er
 			var kf int64
 			var err error
 			if r, kf, err = query.ConnsAt(db, w.At, proto, filter); err != nil {
-				return err
+				return nil, err
 			}
 			if proto == "tcp" {
 				tw := "time-wait end exact"
@@ -290,40 +227,16 @@ func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) er
 		} else {
 			s, err := query.SnapshotAt(db, w.At, false)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if r, err = query.SocketsAt(db, s, proto, filter); err != nil {
-				return err
+				return nil, err
 			}
 			c.header("%s at %s, reconstructed from sample at %s", proto, query.FormatMS(w.At), query.FormatMS(s))
 		}
-		rows = append(rows, v.Filter(r)...)
+		rows = append(rows, r...)
 	}
-	return c.out(rows, func() { query.PrintSSView(os.Stdout, rows, v, tcp && udp) })
-}
-
-func runLsof(c *runCtx, o query.LsofOptions) error {
-	db, w := c.db, c.w
-	if w.IsRange() {
-		rows, err := query.LsofRange(db, w.From, w.To, o)
-		if err != nil {
-			return err
-		}
-		c.header("files held between %s and %s (%d)", query.FormatMS(w.From), query.FormatMS(w.To), len(rows))
-		return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, true) })
-	}
-	rows, s, sfd, err := query.LsofAt(db, w.At, o)
-	if err != nil {
-		return err
-	}
-	if query.TCPFromEvents(db) {
-		c.header("lsof at %s: files from the full fd walk at %s (sampled); TCP sockets exact (events); UDP from the keyframe (%d rows)",
-			query.FormatMS(w.At), query.FormatMS(sfd), len(rows))
-	} else {
-		c.header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
-			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
-	}
-	return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, false) })
+	return rows, nil
 }
 
 func runLife(c *runCtx, re *regexp.Regexp) error {
