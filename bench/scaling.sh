@@ -110,7 +110,7 @@ point() {
 
     rec_start=$(now_ms)
     log "$PID_: record ${RECORD}s"
-    scope rec nice -n 10 ionice -c 3 "$BIN/clifrd" --data-dir "$DIR/data" --bpf-stats \
+    scope rec nice -n 10 ionice -c 3 "$BIN/clifrd" --config /dev/null --data-dir "$DIR/data" --bpf-stats \
         --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" --cpu-budget 100% \
         --duration "${RECORD}s" >"$DIR/recorder.log" 2>&1 || status=recorder_failed
     rec_end=$(now_ms)

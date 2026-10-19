@@ -179,7 +179,7 @@ recorder_cmd() {
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     N1) echo "nice -n 10 ionice -c 3 prometheus-node-exporter --web.listen-address=127.0.0.1:9100"; return ;;
     esac
-    echo "nice -n 10 ionice -c 3 $BIN/clifrd --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
+    echo "nice -n 10 ionice -c 3 $BIN/clifrd --config /dev/null --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
 }
 
 stop_all() {

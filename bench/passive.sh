@@ -99,7 +99,7 @@ start() {
         -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
         -p ProtectControlGroups=yes -p "RestrictAddressFamilies=AF_NETLINK AF_UNIX" \
         -p StandardOutput=append:"$OUT/recorder.log" -p StandardError=append:"$OUT/recorder.log" \
-        "$BIN/clifrd" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+        "$BIN/clifrd" --config /dev/null --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
         --duration "$DURATION"
     local reccg
     reccg=$(systemctl show -p ControlGroup --value $REC)

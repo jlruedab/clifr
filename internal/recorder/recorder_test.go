@@ -49,7 +49,7 @@ func (f *fakeProc) remove(pid int) { os.RemoveAll(filepath.Join(f.root, fmt.Spri
 func newTestRecorder(t *testing.T, root string) (*Recorder, string) {
 	dbPath := filepath.Join(t.TempDir(), "t.db")
 	r, err := New(Config{DB: dbPath, Interval: time.Second, FDInterval: time.Minute, ProcRoot: root},
-		log.New(io.Discard, "", 0))
+		NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestRecoverAfterCrash(t *testing.T) {
 	r.db.Close() // no shutdown: simulates a crash
 
 	r2, _ := New(Config{DB: dbPath, Interval: time.Second, FDInterval: time.Minute, ProcRoot: fp.root},
-		log.New(io.Discard, "", 0))
+		NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	defer r2.db.Close()
 	var last int64
 	r2.db.(*store.DB).QueryRow(`SELECT last_seen FROM processes WHERE pid = 10`).Scan(&last)
@@ -484,7 +484,7 @@ func TestSkipOnOverrun(t *testing.T) {
 	fp.set(10, "a", 100, 0)
 	dbPath := filepath.Join(t.TempDir(), "t.db")
 	r, err := New(Config{DB: dbPath, Interval: 200 * time.Millisecond, FDInterval: time.Second,
-		Duration: 1500 * time.Millisecond, ProcRoot: fp.root}, log.New(io.Discard, "", 0))
+		Duration: 1500 * time.Millisecond, ProcRoot: fp.root}, NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	must(t, err)
 	n := 0
 	r.afterSample = func() {

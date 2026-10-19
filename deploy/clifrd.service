@@ -2,12 +2,13 @@
 #
 # Install:
 #   install -m 0755 clifrd clifr /usr/local/sbin/
+#   install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml   (the settings)
 #   install -m 0644 deploy/clifrd.service /etc/systemd/system/clifrd.service
 #   systemctl daemon-reload && systemctl enable --now clifrd
 # Stop:    systemctl stop clifrd  (SIGTERM: open rows are closed cleanly)
 # Query:   clifr --at "YYYY-MM-DD HH:MM:SS" "ps aux"
-# Disk:    Parquet files rotate every 5 minutes; data older than --retention
-#          (72h) is deleted, and the oldest hours go first above --max-size.
+# Disk:    Parquet files rotate every 5 minutes; data older than retention
+#          (72h) is deleted, and the oldest hours go first above max_size (2G).
 
 [Unit]
 Description=clifr flight recorder (processes, sockets, open files, system counters)
@@ -16,7 +17,8 @@ After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/clifrd --data-dir /var/lib/clifr --interval 30s --fd-interval 120s --cpu-budget 2% --retention 72h --max-size 2G
+# Settings in /etc/clifr/clifrd.yml; a flag here would override the file.
+ExecStart=/usr/local/sbin/clifrd
 Restart=on-failure
 RestartSec=30s
 StateDirectory=clifr

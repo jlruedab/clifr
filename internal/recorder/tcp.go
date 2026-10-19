@@ -150,7 +150,7 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 			var err error
 			batch, err = src.ReadBatch(batch[:0], time.Second, tcpReadPause)
 			if err != nil && !errors.Is(err, bpftcp.ErrTimeout) {
-				r.log.Printf("eBPF TCP read: %v", err)
+				r.log.Errorf("eBPF TCP read: %v", err)
 				return
 			}
 			if len(batch) == 0 {
@@ -444,7 +444,7 @@ func (r *Recorder) prepareKeyframe(ts int64) bool {
 	}
 	list, err := r.listSockets()
 	if err != nil {
-		r.log.Printf("keyframe: list sockets: %v", err)
+		r.log.Errorf("keyframe: list sockets: %v", err)
 		return false
 	}
 	t.pendingDump, t.dumpStart, t.lastKeyframe = list, ts, time.Now()

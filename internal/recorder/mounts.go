@@ -65,7 +65,7 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 	}
 	fd, err := unix.Open("/proc/self/mountinfo", unix.O_RDONLY|unix.O_CLOEXEC, 0)
 	if err != nil {
-		r.log.Printf("warning: mount changes not recorded: %v", err)
+		r.log.Warnf("mount changes not recorded: %v", err)
 		return nil
 	}
 	w := &mountWatch{known: map[int]procfs.MountInfo{}}
@@ -87,7 +87,7 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 	now, ok := read()
 	if !ok {
 		unix.Close(fd)
-		r.log.Printf("warning: mount changes not recorded: cannot read mountinfo")
+		r.log.Warnf("mount changes not recorded: cannot read mountinfo")
 		return nil
 	}
 	w.diff(now, time.Now().UnixMilli(), "present")
@@ -105,7 +105,7 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 			}
 			n, err := unix.Poll(fds, 1000)
 			if err != nil && err != unix.EINTR {
-				r.log.Printf("mount watch: %v", err)
+				r.log.Errorf("mount watch: %v", err)
 				return
 			}
 			if n > 0 && fds[0].Revents&(unix.POLLPRI|unix.POLLERR) != 0 {

@@ -117,6 +117,8 @@ wait for the user's go-ahead.
 - Test: `go test ./...` (eBPF tests skip without root; `go test -c` + sudo to run them); e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
 - Ground truth (root; small ≈ 4 min, full ≈ 14 min with the recorder's defaults; results in `bench/results/truth-<scale>-<time>/`):
   `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`
+- clifrd reads `/etc/clifr/clifrd.yml` (example: `deploy/clifrd.yml`; flags override it). The bench
+  scripts and tests pass `--config /dev/null` so a machine's file cannot change results.
 - Quick manual run: `sudo ./clifrd --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
   then `./clifr --data-dir /tmp/d --at "..." "ps aux"`
 - Machine notes: v2 milestones 6–9 ran on the current machine (bare metal,

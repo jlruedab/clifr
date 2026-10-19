@@ -38,7 +38,7 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 	for _, argv := range verifyCommands {
 		path, err := exec.LookPath(argv[0])
 		if err != nil {
-			r.log.Printf("verify: %s not found, skipping", argv[0])
+			r.log.Warnf("verify: %s not found, skipping", argv[0])
 			continue
 		}
 		cmd := exec.Command(path, argv[1:]...)
@@ -47,14 +47,14 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		cmd.Stdout = &out
 		start := time.Now()
 		if err := cmd.Start(); err != nil {
-			r.log.Printf("verify: %s: %v", argv[0], err)
+			r.log.Errorf("verify: %s: %v", argv[0], err)
 			continue
 		}
 		pid := cmd.Process.Pid
 		err = cmd.Wait()
 		end := time.Now()
 		if err != nil && out.Len() == 0 { // lsof exits 1 on harmless warnings
-			r.log.Printf("verify: %s: %v", argv[0], err)
+			r.log.Errorf("verify: %s: %v", argv[0], err)
 			continue
 		}
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{

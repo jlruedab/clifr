@@ -128,7 +128,7 @@ func TestIncident(t *testing.T) {
 	// Background load and the recorder.
 	load := start(t, exec.Command(filepath.Join(dir, "load"), "--profile", "light"), "READY")
 	defer stop(load)
-	rec := exec.Command(filepath.Join(dir, "clifrd"), "--data-dir", data, "--interval", "2s", "--fd-interval", "10s")
+	rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data, "--interval", "2s", "--fd-interval", "10s")
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {

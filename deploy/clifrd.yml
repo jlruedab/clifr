@@ -1,0 +1,25 @@
+# clifrd settings. Every value here is the default; flags given to clifrd
+# override them. Sizes: K, M, G (powers of 1024); durations: s, m, h.
+
+data_dir: /var/lib/clifr
+retention: 72h         # delete data older than this (0 = keep)
+max_size: 2G           # the oldest hours are deleted above this (0 = no cap)
+log_level: info        # error, warn, info, debug
+
+intervals:
+  process: 30s         # per-process CPU, memory and state; sockets (v1); system counters
+  files: 120s          # open-file walks (long-held files only); at least process
+  keyframe: 300s       # full socket dump: queues, UDP, check of the TCP events
+  flush: 5m            # write buffered rows (a crash loses at most this much)
+
+collectors:
+  process_events: auto # auto (eBPF, else the proc connector), ebpf, proc_connector, none
+  tcp: auto            # auto (eBPF events and keyframes, else sampling), ebpf, sample
+  files: held          # held (fds held across two walks, and deleted files) or all
+
+cpu_budget: 2%         # of one core over 5 minutes; above it the fd interval is
+                       # lengthened when fd walks are a quarter of the cost or more
+gc_heap_target: 256M   # heap up to which garbage is collected at Go's default rate
+
+# CPU and memory hard limits, file-system protection and capabilities are
+# set in the systemd unit (clifrd.service) or a drop-in file.

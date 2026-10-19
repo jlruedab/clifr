@@ -65,7 +65,7 @@ until grep -q READY "$OUT/load.out" 2>/dev/null; do
 done
 
 log "record $DURATION, verify every $VERIFY_EVERY"
-"$BIN/clifrd" --data-dir "$OUT/data" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+"$BIN/clifrd" --config /dev/null --data-dir "$OUT/data" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
     --verify-every "$VERIFY_EVERY" --duration "$DURATION" >"$OUT/recorder.log" 2>&1
 stop_all
 wait $load_pid 2>/dev/null || true

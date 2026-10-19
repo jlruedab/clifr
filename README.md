@@ -85,12 +85,14 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `-C`, `--config` | /etc/clifr/clifrd.yml | settings file; a missing default file is not an error |
+| `-D`, `--data-dir` | /var/lib/clifr | the Parquet data directory |
 | `--interval` | 30s | sample processes and the system-wide counters |
 | `--fd-interval` | 120s | walk the processes' open files |
 | `--keyframe-interval` | 5m | full socket dump: queues, UDP, check of the event stream |
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
-| `--retention` / `--max-size` | 72h / none | delete old data; the oldest hours go first above the size cap |
+| `--retention` / `--max-size` | 72h / 2G | delete old data; the oldest hours go first above the size cap (`0` = none) |
 | `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
 | `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
@@ -99,7 +101,19 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--db FILE` | off | also (or with `--data-dir ""` only) write the v1 SQLite schema |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
+| `--log-level` | info | error, warn, info or debug |
+| `-v`, `--version` | | print the version and exit |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
+
+Settings can also be given in the configuration file; `deploy/clifrd.yml`
+lists them with their defaults (`data_dir`, `retention`, `max_size`,
+`log_level`, `intervals: process, files, keyframe, flush`, `collectors:
+process_events, tcp, files`, `cpu_budget`, `gc_heap_target`). A flag on the
+command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
+Unknown settings are rejected. `memory_limit` of the product spec is not
+accepted: a Go memory limit makes the collector run continuously when the
+live heap reaches it (11% of one core at 100,000 connections), so the soft
+setting is `gc_heap_target` and the hard limit the unit's `MemoryMax`.
 
 What is recorded:
 
@@ -138,14 +152,16 @@ directory and only the capabilities it needs (listed in the unit; kernels
 before 5.8 need CAP_SYS_ADMIN for eBPF):
 
     sudo install -m 0755 clifrd clifr /usr/local/sbin/
+    sudo install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml
     sudo install -m 0644 deploy/clifrd.service /etc/systemd/system/
     sudo systemctl daemon-reload && sudo systemctl enable --now clifrd
 
 MemoryMax is about 1.5 times the highest memory measured in the benchmark
 (502 MiB with 100,000 connections). Read [Limitations](#limitations) before
-relying on the CPU limit on a busy server: the measured CPU at the busy
-benchmark load (5.2% of one core) is at CPUQuota, so the recorder would be
-throttled there.
+relying on the CPU limit on a busy server: at the busy benchmark load the
+recorder averages about 2% of one core, but its 5-second peaks (p95 7.7%)
+and the hourly compaction exceed CPUQuota=5%, and it has not been run
+throttled at that load.
 
 ## Querying
 

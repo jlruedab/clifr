@@ -153,7 +153,7 @@ func TestGroundTruth(t *testing.T) {
 		}
 	}()
 
-	rec := exec.Command(filepath.Join(dir, "clifrd"), append([]string{"--data-dir", e.data}, sc.recorder...)...)
+	rec := exec.Command(filepath.Join(dir, "clifrd"), append([]string{"--config", "/dev/null", "--data-dir", e.data}, sc.recorder...)...)
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {

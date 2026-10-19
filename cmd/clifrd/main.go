@@ -42,7 +42,13 @@ func run(args []string) error {
 	}
 	fs := flag.NewFlagSet("clifrd", flag.ExitOnError)
 	var c recorder.Config
+	configPath := fs.String("config", defaultConfig, "configuration file (settings in it apply unless given as flags)")
+	fs.StringVar(configPath, "C", defaultConfig, "short for --config")
 	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, `Parquet data directory ("" for none)`)
+	fs.StringVar(&c.DataDir, "D", defaultDataDir, "short for --data-dir")
+	logLevel := fs.String("log-level", "info", "error, warn, info or debug")
+	showVersion := fs.Bool("version", false, "show the version and exit")
+	fs.BoolVar(showVersion, "v", false, "short for --version")
 	fs.StringVar(&c.DB, "db", "", "also (or, with --data-dir \"\", only) write this v1 SQLite database")
 	fs.DurationVar(&c.Interval, "interval", 30*time.Second, "process and socket sample interval")
 	fs.DurationVar(&c.FDInterval, "fd-interval", 120*time.Second, "full open-file walk interval")
@@ -66,8 +72,24 @@ func run(args []string) error {
 	pprofDir := fs.String("pprof-dir", "", "write the recorder's own CPU and heap profiles to this directory (for development)")
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	heapTarget := fs.String("gc-heap-target", "256M", "heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50 (0 = always 50; GOGC or GOMEMLIMIT in the environment turn this off)")
-	maxSize := fs.String("max-size", "0", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
+	maxSize := fs.String("max-size", "2G", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *showVersion {
+		fmt.Println("clifrd", version())
+		return nil
+	}
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if err := applyConfig(fs, *configPath, given["config"] || given["C"]); err != nil {
+		return err
+	}
+	if d := os.Getenv("CLIFR_DATA_DIR"); d != "" && !given["data-dir"] && !given["D"] {
+		c.DataDir = d
+	}
+	level, err := recorder.ParseLevel(*logLevel)
+	if err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
@@ -81,14 +103,13 @@ func run(args []string) error {
 		return fmt.Errorf("bad --cpu-budget %q", *budget)
 	}
 	c.CPUBudget /= 100
-	var err error
 	if c.Parquet.MaxBytes, err = parseSize(*maxSize); err != nil {
 		return err
 	}
 	if c.Interval < time.Second || c.FDInterval < c.Interval {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}
-	logger := log.New(os.Stderr, "clifrd: ", log.LstdFlags)
+	logger := recorder.NewLogger(log.New(os.Stderr, "clifrd: ", log.LstdFlags), level)
 	if os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" {
 		target, err := parseSize(*heapTarget)
 		if err != nil {
@@ -150,4 +171,16 @@ func parseSize(s string) (int64, error) {
 		return 0, fmt.Errorf("bad size %q", s)
 	}
 	return int64(n * float64(mult)), nil
+}
+
+func version() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 12 {
+				return s.Value[:12]
+			}
+		}
+		return bi.Main.Version
+	}
+	return "unknown"
 }

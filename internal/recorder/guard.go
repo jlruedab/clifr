@@ -61,7 +61,7 @@ func (r *Recorder) checkBudget(now time.Time, cpuUS, fdUS int64, b *store.Batch)
 		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "fd_interval_up",
 			Detail: fmt.Sprintf("recorder CPU %.2f%% of one core over the last %s exceeds the %.2f%% budget, fd walks are %.0f%% of it: fd-interval %s -> %s",
 				100*used, window, 100*r.cfg.CPUBudget, 100*fdShare, old, r.fdInterval)})
-		r.log.Printf("cpu budget: %.2f%% > %.2f%%, fd walks %.0f%% of it, fd-interval %s -> %s",
+		r.log.Warnf("cpu budget: %.2f%% > %.2f%%, fd walks %.0f%% of it, fd-interval %s -> %s",
 			100*used, 100*r.cfg.CPUBudget, 100*fdShare, old, r.fdInterval)
 		r.budgetExhausted = false
 	case r.budgetExhausted:
@@ -72,14 +72,14 @@ func (r *Recorder) checkBudget(now time.Time, cpuUS, fdUS int64, b *store.Batch)
 			Detail: fmt.Sprintf("recorder CPU %.2f%% of one core over the last %s exceeds the %.2f%% budget; fd walks are %.0f%% of it, "+
 				"so fd-interval stays at %s (events, process sampling and storage cost more than the budget)",
 				100*used, window, 100*r.cfg.CPUBudget, 100*fdShare, r.fdInterval)})
-		r.log.Printf("cpu budget exceeded: %.2f%% > %.2f%%, fd walks only %.0f%% of it, fd-interval stays at %s",
+		r.log.Warnf("cpu budget exceeded: %.2f%% > %.2f%%, fd walks only %.0f%% of it, fd-interval stays at %s",
 			100*used, 100*r.cfg.CPUBudget, 100*fdShare, r.fdInterval)
 	default:
 		r.budgetExhausted = true
 		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "budget_exceeded",
 			Detail: fmt.Sprintf("recorder CPU %.2f%% of one core exceeds the %.2f%% budget with fd-interval already at %s",
 				100*used, 100*r.cfg.CPUBudget, r.fdInterval)})
-		r.log.Printf("cpu budget exceeded with fd-interval at its maximum %s", r.fdInterval)
+		r.log.Warnf("cpu budget exceeded with fd-interval at its maximum %s", r.fdInterval)
 	}
 	r.cpuHist = []cpuPoint{{now, cpuUS, fdUS}}
 }

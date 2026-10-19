@@ -7,7 +7,6 @@ package recorder
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -78,7 +77,7 @@ type Recorder struct {
 	cfg   Config
 	fs    procfs.FS
 	db    store.Backend
-	log   *log.Logger
+	log   *Logger
 	boot  int64 // boot time, unix ms
 	sys   *sysSampler
 	gen   uint64
@@ -112,7 +111,7 @@ type Recorder struct {
 	afterSample     func() // test hook
 }
 
-func New(cfg Config, logger *log.Logger) (*Recorder, error) {
+func New(cfg Config, logger *Logger) (*Recorder, error) {
 	fs := procfs.New(cfg.ProcRoot)
 	btime, err := fs.BootTime()
 	if err != nil {
@@ -175,7 +174,7 @@ func (r *Recorder) startTCPMode(done <-chan struct{}) (stop func(), err error) {
 		if mode == "ebpf" {
 			return nil, fmt.Errorf("eBPF TCP events: %w", err)
 		}
-		r.log.Printf("warning: eBPF TCP events unavailable, sampling sockets every interval (v1): %v", err)
+		r.log.Warnf("eBPF TCP events unavailable, sampling sockets every interval (v1): %v", err)
 		r.db.SetMeta("tcp", "sample")
 		r.v1FDs("TCP is sampled")
 		return nil, nil
@@ -206,7 +205,7 @@ func (r *Recorder) v1FDs(why string) {
 }
 
 // openBackend opens the SQLite database, the Parquet directory, or both.
-func openBackend(cfg Config, logger *log.Logger) (store.Backend, error) {
+func openBackend(cfg Config, logger *Logger) (store.Backend, error) {
 	var lite store.Backend
 	if cfg.DB != "" {
 		db, err := store.Open(cfg.DB, false)
@@ -229,7 +228,7 @@ func openBackend(cfg Config, logger *log.Logger) (store.Backend, error) {
 	}
 	opt := cfg.Parquet
 	if opt.Logf == nil {
-		opt.Logf = logger.Printf
+		opt.Logf = logger.Warnf
 	}
 	pq, err := pqstore.Open(cfg.DataDir, opt)
 	if err != nil {
@@ -480,7 +479,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 	pids, err := r.fs.PIDs()
 	if err != nil {
-		r.log.Printf("list processes: %v", err)
+		r.log.Errorf("list processes: %v", err)
 		return 0
 	}
 	n := 0

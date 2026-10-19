@@ -190,14 +190,14 @@ func (r *Recorder) startEvents(ctx context.Context) (stop func(), err error) {
 		if mode == srcEBPF {
 			return nil, fmt.Errorf("eBPF events: %w", err)
 		}
-		r.log.Printf("warning: eBPF unavailable, falling back to the proc connector: %v", err)
+		r.log.Warnf("eBPF unavailable, falling back to the proc connector: %v", err)
 	}
 	l, err := cnproc.Listen()
 	if err != nil {
 		if mode == srcCNProc {
 			return nil, err
 		}
-		r.log.Printf("warning: proc connector unavailable (%v); short-lived processes between samples will be missed", err)
+		r.log.Warnf("proc connector unavailable (%v); short-lived processes between samples will be missed", err)
 		r.db.SetMeta("events", "unavailable: "+err.Error())
 		return func() {}, nil
 	}
@@ -224,7 +224,7 @@ func (r *Recorder) runCNProc(ctx context.Context, l *cnproc.Listener) (stop func
 			}
 			evs, err := l.Read(buf)
 			if err != nil {
-				r.log.Printf("proc connector read: %v; continuing with sampling only", err)
+				r.log.Errorf("proc connector read: %v; continuing with sampling only", err)
 				return
 			}
 			enriched := make([]procEvent, 0, len(evs))
@@ -277,7 +277,7 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 			var err error
 			batch, err = src.ReadBatch(batch[:0], time.Second)
 			if err != nil && !errors.Is(err, bpfproc.ErrTimeout) && !errors.Is(err, bpfproc.ErrFlushed) {
-				r.log.Printf("eBPF event read: %v; continuing with sampling only", err)
+				r.log.Errorf("eBPF event read: %v; continuing with sampling only", err)
 				return
 			}
 			for _, e := range batch {

@@ -52,7 +52,7 @@ func (r *Recorder) initSockets() {
 		return
 	}
 	if _, err := sockdiag.Dump(); err != nil {
-		r.log.Printf("sock_diag unavailable (%v), falling back to /proc/net (slower)", err)
+		r.log.Warnf("sock_diag unavailable (%v), falling back to /proc/net (slower)", err)
 		r.listSockets, r.sockSource = procNet, "proc_net"
 		return
 	}
@@ -62,7 +62,7 @@ func (r *Recorder) initSockets() {
 func (r *Recorder) sampleSockets(ts int64, b *store.Batch) int {
 	list, err := r.listSockets()
 	if err != nil {
-		r.log.Printf("list sockets: %v", err)
+		r.log.Errorf("list sockets: %v", err)
 		return 0
 	}
 	for _, s := range list {

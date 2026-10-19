@@ -42,7 +42,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	fail := func(what string, err error) bool {
 		if err != nil && !s.warned[what] {
 			s.warned[what] = true
-			r.log.Printf("system counters: %s: %v", what, err)
+			r.log.Errorf("system counters: %s: %v", what, err)
 		}
 		return err != nil
 	}
