@@ -123,8 +123,17 @@ CREATE TABLE IF NOT EXISTS fds_held (
 CREATE INDEX IF NOT EXISTS fds_held_proc ON fds_held(pid, start_time);
 
 CREATE TABLE IF NOT EXISTS mounts (
-	ts INTEGER NOT NULL, action TEXT NOT NULL, -- mount, unmount, present
-	mount_id INTEGER, mount_point TEXT, source TEXT, fstype TEXT, options TEXT
+	ts INTEGER NOT NULL, action TEXT NOT NULL, -- mount, unmount, remount, present
+	mount_id INTEGER, mount_point TEXT, source TEXT, fstype TEXT, options TEXT,
+	super_options TEXT, dev TEXT, root TEXT, -- mountinfo: file-system options, major:minor, root
+	seq INTEGER,                             -- position in mountinfo when recorded
+	loop_file TEXT, user_options TEXT        -- loop backing file; /run/mount/utab options
+);
+
+-- File-system usage (statfs) per mount, written when it changed; counts in frsize units.
+CREATE TABLE IF NOT EXISTS fs_samples (
+	ts INTEGER NOT NULL, mount_id INTEGER NOT NULL, frsize INTEGER,
+	blocks INTEGER, bfree INTEGER, bavail INTEGER, files INTEGER, ffree INTEGER
 );
 
 -- System-wide counters, one row per sample: the kernel's raw values, cumulative
@@ -356,7 +365,8 @@ func dirSize(dir string) int64 {
 func migrate(db *sql.DB) error {
 	add := map[string][]string{"processes": {"exe TEXT", "exec_ts INTEGER", "exit_ts INTEGER",
 		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0", "argv0_len INTEGER"},
-		"tcp_conns": {"v6only INTEGER"}, "tcp_keyframes": {"v6only INTEGER"}}
+		"tcp_conns": {"v6only INTEGER"}, "tcp_keyframes": {"v6only INTEGER"},
+		"mounts": {"super_options TEXT", "dev TEXT", "root TEXT", "seq INTEGER", "loop_file TEXT", "user_options TEXT"}}
 	for table, cols := range add {
 		have := map[string]bool{}
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)

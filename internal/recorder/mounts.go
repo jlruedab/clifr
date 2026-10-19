@@ -1,6 +1,8 @@
 package recorder
 
 import (
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,14 @@ type mountWatch struct {
 	mu      sync.Mutex
 	pending []store.MountEvent
 	known   map[int]procfs.MountInfo
+	order   []procfs.MountInfo // the table in mountinfo order
+}
+
+// table returns the current mount table in mountinfo order.
+func (w *mountWatch) table() []procfs.MountInfo {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.order
 }
 
 func (w *mountWatch) take() []store.MountEvent {
@@ -35,21 +45,27 @@ func (w *mountWatch) take() []store.MountEvent {
 // diff records the changes from the known table to now.
 func (w *mountWatch) diff(now []procfs.MountInfo, ts int64, action string) {
 	cur := map[int]procfs.MountInfo{}
+	seq := 0
 	ev := func(a string, m procfs.MountInfo) store.MountEvent {
-		return store.MountEvent{TS: ts, Action: a, MountID: m.ID, Point: m.Point, Source: m.Source, FSType: m.FSType, Options: m.Options}
+		return store.MountEvent{TS: ts, Action: a, MountID: m.ID, Point: m.Point, Source: m.Source, FSType: m.FSType,
+			Options: m.Options, SuperOptions: m.SuperOptions, Dev: m.Dev, Root: m.Root, Seq: seq,
+			LoopFile: m.LoopFile, UserOptions: m.UserOptions}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for _, m := range now {
+	for i, m := range now {
+		seq = i
 		cur[m.ID] = m
 		old, ok := w.known[m.ID]
 		switch {
 		case !ok:
 			w.pending = append(w.pending, ev(action, m))
-		case old.Options != m.Options:
+		case old.Options != m.Options || old.SuperOptions != m.SuperOptions:
 			w.pending = append(w.pending, ev("remount", m))
 		}
 	}
+	w.order = now
+	seq = -1
 	for id, m := range w.known {
 		if _, ok := cur[id]; !ok {
 			w.pending = append(w.pending, ev("unmount", m))
@@ -78,7 +94,7 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 				return nil, false
 			}
 			if n == 0 {
-				return procfs.ParseMountInfo(out), true
+				return withMountExtras(procfs.ParseMountInfo(out)), true
 			}
 			out = append(out, buf[:n]...)
 			off += int64(n)
@@ -116,4 +132,40 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 		}
 	}()
 	return func() { wg.Wait(); unix.Close(fd) }
+}
+
+// withMountExtras adds what util-linux mount shows beyond mountinfo: the
+// backing file of loop devices and the userspace options libmount keeps in
+// /run/mount/utab (matched by mount point and root, like libmount).
+func withMountExtras(ms []procfs.MountInfo) []procfs.MountInfo {
+	utab := map[string]string{}
+	if b, err := os.ReadFile("/run/mount/utab"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			var target, root, opts string
+			for _, f := range strings.Fields(line) {
+				k, v, _ := strings.Cut(f, "=")
+				switch k {
+				case "TARGET":
+					target = procfs.UnescapeOctal(v)
+				case "ROOT":
+					root = procfs.UnescapeOctal(v)
+				case "OPTS":
+					opts = v
+				}
+			}
+			if target != "" && opts != "" {
+				utab[target+"\x00"+root] = opts
+			}
+		}
+	}
+	for i := range ms {
+		m := &ms[i]
+		m.UserOptions = utab[m.Point+"\x00"+m.Root]
+		if dev, ok := strings.CutPrefix(m.Source, "/dev/loop"); ok {
+			if b, err := os.ReadFile("/sys/block/loop" + dev + "/loop/backing_file"); err == nil {
+				m.LoopFile = strings.TrimSpace(string(b))
+			}
+		}
+	}
+	return ms
 }

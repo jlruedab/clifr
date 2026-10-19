@@ -95,6 +95,7 @@ type Recorder struct {
 	tcp          *tcpTracker // nil: v1 socket sampling
 	fdWalks      uint64      // full fd walks so far
 	mounts       *mountWatch
+	fsUsage      fsUsage
 	lostReported int
 	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
 	evByPID      map[int]procKey
@@ -409,6 +410,8 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	nev := r.applyEvents(ts, &b)
 	if r.mounts != nil {
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
+		b.FSSamples = append(b.FSSamples, r.fsUsage.take()...)
+		r.fsUsage.start(ts, r.mounts.table(), r.log)
 	}
 	if r.events != nil {
 		b.Stats = append(b.Stats, r.events.stats(ts)...)

@@ -84,6 +84,8 @@ func init() {
 	addTool(freeTool())
 	addTool(netstatTool())
 	addTool(eventsTool())
+	addTool(mountTool())
+	addTool(dfTool())
 	addTool(&tool{
 		name: "life", synopsis: "[--name REGEX]",
 		about: "clifr only: process starts and exits, including short-lived processes",

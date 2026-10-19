@@ -81,13 +81,28 @@ type HeldFD struct {
 // MountEvent is a change of the mount table (or, with Action "present", a
 // mount that existed when recording started).
 type MountEvent struct {
-	TS      int64
-	Action  string // mount, unmount, present
-	MountID int
-	Point   string
-	Source  string
-	FSType  string
-	Options string
+	TS           int64
+	Action       string // mount, unmount, remount, present
+	MountID      int
+	Point        string
+	Source       string
+	FSType       string
+	Options      string
+	SuperOptions string
+	Dev, Root    string
+	Seq          int    // position in mountinfo when recorded (mount lists in that order)
+	LoopFile     string // backing file of a loop device source
+	UserOptions  string // libmount's userspace options (/run/mount/utab)
+}
+
+// FSSample is a file system's usage (statfs) at a sample, written when it
+// changed. Counts are in FrSize units, inodes in Files/FFree.
+type FSSample struct {
+	TS                    int64
+	MountID               int
+	FrSize                int64
+	Blocks, BFree, BAvail int64
+	Files, FFree          int64
 }
 
 // SysSample is the system-wide state at one sample: the kernel's raw values
@@ -291,6 +306,7 @@ type Batch struct {
 	HeldInserts []HeldFD
 	HeldCloses  []Close
 	Mounts      []MountEvent
+	FSSamples   []FSSample
 	TCPConns    []TCPConn
 	TCPTrans    []TCPTransition
 	Keyframes   []KeyframeRow
@@ -314,7 +330,7 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples)
 }
 
 func nullInt(p *int64) any {
@@ -561,10 +577,20 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error { return closes("fds_held", b.HeldCloses) },
 		func() error {
-			return each(`INSERT INTO mounts(ts, action, mount_id, mount_point, source, fstype, options) VALUES(?,?,?,?,?,?,?)`,
+			return each(`INSERT INTO mounts(ts, action, mount_id, mount_point, source, fstype, options, super_options, dev, root, seq,
+				loop_file, user_options) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.Mounts), func(st *sql.Stmt, i int) error {
 					m := b.Mounts[i]
-					_, err := st.Exec(m.TS, m.Action, m.MountID, m.Point, m.Source, m.FSType, m.Options)
+					_, err := st.Exec(m.TS, m.Action, m.MountID, m.Point, m.Source, m.FSType, m.Options, m.SuperOptions, m.Dev, m.Root, m.Seq,
+						m.LoopFile, m.UserOptions)
+					return err
+				})
+		},
+		func() error {
+			return each(`INSERT INTO fs_samples(ts, mount_id, frsize, blocks, bfree, bavail, files, ffree) VALUES(?,?,?,?,?,?,?,?)`,
+				len(b.FSSamples), func(st *sql.Stmt, i int) error {
+					f := b.FSSamples[i]
+					_, err := st.Exec(f.TS, f.MountID, f.FrSize, f.Blocks, f.BFree, f.BAvail, f.Files, f.FFree)
 					return err
 				})
 		},

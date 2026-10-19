@@ -166,3 +166,37 @@ func TestLsofSelect(t *testing.T) {
 		}
 	}
 }
+
+func TestMountAndDF(t *testing.T) {
+	for _, c := range []struct{ vfs, super, want string }{
+		{"rw,nosuid,nodev", "rw,size=12792808k,mode=755,inode64", "rw,nosuid,nodev,size=12792808k,mode=755,inode64"},
+		{"rw,relatime", "rw", "rw,relatime"},
+		{"rw,nosuid,relatime", "ro,size=1024k", "ro,nosuid,relatime,size=1024k"},
+		{"ro,nodev,relatime", "ro,errors=continue", "ro,nodev,relatime,errors=continue"},
+	} {
+		if got := MountOptions(c.vfs, c.super); got != c.want {
+			t.Errorf("%q + %q: %q, want %q", c.vfs, c.super, got, c.want)
+		}
+	}
+	types := MountTypes{"notmpfs", "nosquashfs"}
+	if types.Keep("tmpfs") || !types.Keep("ext4") || !(MountTypes{"ext4"}).Keep("ext4") || (MountTypes{"ext4"}).Keep("xfs") {
+		t.Error("mount -t")
+	}
+	// df -h of the test machine (GNU coreutils 9.7), in KiB.
+	for kb, want := range map[int64]string{12792808: "13G", 4392: "4.3M", 980227752: "935G", 0: "0", 1024: "1.0M",
+		438: "438K", 1992552: "2.0G", 6396400: "6.2G", 6392188: "6.1G", 1921722560: "1.8T", 476177872: "455G"} {
+		if got := dfHuman(kb * 1024); got != want {
+			t.Errorf("df -h %d K: %q, want %q", kb, got, want)
+		}
+	}
+	if pctUp(334363712, 334363712+595997496) != "36%" || pctUp(0, 0) != "-" || pctUp(333, 434) != "77%" {
+		t.Error("Use%")
+	}
+	rows := []DFRow{{Point: "/"}, {Point: "/boot"}, {Point: "/boot/efi"}}
+	if r, _ := DFFor(rows, "/boot/efi/EFI"); r.Point != "/boot/efi" {
+		t.Errorf("df PATH: %s", r.Point)
+	}
+	if r, _ := DFFor(rows, "/bootx"); r.Point != "/" {
+		t.Errorf("df PATH prefix: %s", r.Point)
+	}
+}

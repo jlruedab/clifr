@@ -1,6 +1,8 @@
 package verify
 
 import (
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -15,6 +17,8 @@ func init() {
 	ignoredFields["free"] = "none; numbers match within 2% (total exactly)"
 	ignoredFields["ps -ef"] = "C (derived from TIME, which is compared); the work-item suffix of kernel worker names"
 	ignoredFields["netstat -tanp"] = "none"
+	ignoredFields["df"] = "none; sizes match within 1% or 1 MiB, Use% within 1"
+	ignoredFields["mount"] = "none"
 }
 
 // ---- free ----
@@ -247,5 +251,173 @@ func compareNetstat(db *store.DB, snap snapshot) (Result, error) {
 			res.example("netstat extra %s %s", x.state, key)
 		}
 	}
+	return res, nil
+}
+
+// ---- df ----
+
+type dfLine struct {
+	fs, size, used, avail, pct string
+	pos                        int
+}
+
+// parseDF reads df's default output, keyed by mount point (the rest of the
+// line after Use%).
+func parseDF(out string) map[string]dfLine {
+	m := map[string]dfLine{}
+	for i, l := range strings.Split(out, "\n") {
+		f := strings.Fields(l)
+		if i == 0 || len(f) < 6 {
+			continue
+		}
+		point := strings.Join(f[5:], " ")
+		m[point] = dfLine{fs: f[0], size: f[1], used: f[2], avail: f[3], pct: strings.TrimSuffix(f[4], "%"), pos: len(m)}
+	}
+	return m
+}
+
+func compareDF(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, err := query.DF(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	real := parseDF(snap.output)
+	rec := parseDF(render(func(sb *strings.Builder) { query.PrintDF(sb, rows, query.DFFormat{}) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for point, r := range real {
+		x, ok := rec[point]
+		if !ok {
+			res.Missing++
+			res.example("df missing %s (%s)", point, r.fs)
+			continue
+		}
+		res.Matched++
+		exact := true
+		check := func(field, a, b string, ok bool) {
+			if !ok {
+				exact = false
+				res.FieldDiffs[field]++
+				if res.FieldDiffs[field] <= 3 {
+					res.example("df %s %s: real %q, clifr %q", point, field, a, b)
+				}
+			}
+		}
+		check("Filesystem", r.fs, x.fs, r.fs == x.fs)
+		for _, f := range []struct{ name, a, b string }{{"1K-blocks", r.size, x.size}, {"Used", r.used, x.used}, {"Available", r.avail, x.avail}} {
+			check(f.name, f.a, f.b, near(f.a, f.b, 0.01, 1024))
+		}
+		check("Use%", r.pct, x.pct, near(r.pct, x.pct, 0, 1))
+		if exact {
+			res.Exact++
+		}
+	}
+	for point := range rec {
+		if _, ok := real[point]; !ok {
+			res.Extra++
+			res.example("df extra %s", point)
+		}
+	}
+	res.compareOrder("df", rankOf(real), rankOf(rec))
+	return res, nil
+}
+
+func rankOf[T interface{ position() int }](m map[string]T) map[string]int {
+	r := make(map[string]int, len(m))
+	for k, v := range m {
+		r[k] = v.position()
+	}
+	return r
+}
+
+func (l dfLine) position() int    { return l.pos }
+func (l mountLine) position() int { return l.pos }
+
+// compareOrder counts the rows on both sides that are not in the same order:
+// among the keys present on both, those whose rank differs.
+func (r *Result) compareOrder(cmd string, real, rec map[string]int) {
+	var keys []string
+	for k := range real {
+		if _, ok := rec[k]; ok {
+			keys = append(keys, k)
+		}
+	}
+	rank := func(m map[string]int) map[string]int {
+		sorted := append([]string(nil), keys...)
+		sort.Slice(sorted, func(i, j int) bool { return m[sorted[i]] < m[sorted[j]] })
+		out := make(map[string]int, len(sorted))
+		for i, k := range sorted {
+			out[k] = i
+		}
+		return out
+	}
+	a, b := rank(real), rank(rec)
+	for _, k := range keys {
+		if a[k] != b[k] {
+			r.FieldDiffs["order"]++
+			if r.FieldDiffs["order"] <= 3 {
+				r.example("%s %s: line %d, clifr line %d", cmd, k, a[k]+1, b[k]+1)
+			}
+		}
+	}
+}
+
+// ---- mount ----
+
+type mountLine struct {
+	fstype, opts string
+	pos          int
+}
+
+var mountRe = regexp.MustCompile(`^(.*) on (.*) type (\S+) \((.*)\)$`)
+
+// parseMount reads mount's lines, keyed by source and mount point (and the
+// occurrence, for the same pair mounted twice).
+func parseMount(out string) map[string]mountLine {
+	m := map[string]mountLine{}
+	for _, l := range strings.Split(out, "\n") {
+		g := mountRe.FindStringSubmatch(l)
+		if g == nil {
+			continue
+		}
+		key := g[1] + " on " + g[2]
+		for n := 2; ; n++ {
+			if _, dup := m[key]; !dup {
+				break
+			}
+			key = g[1] + " on " + g[2] + " #" + strconv.Itoa(n)
+		}
+		m[key] = mountLine{fstype: g[3], opts: g[4], pos: len(m)}
+	}
+	return m
+}
+
+func compareMount(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, err := query.MountsAt(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	real := parseMount(snap.output)
+	rec := parseMount(render(func(sb *strings.Builder) { query.PrintMount(sb, rows) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for key, r := range real {
+		x, ok := rec[key]
+		if !ok {
+			res.Missing++
+			res.example("mount missing %s", key)
+			continue
+		}
+		res.Matched++
+		res.compare("mount "+key, []fieldPair{{"type", r.fstype, x.fstype}, {"options", r.opts, x.opts}},
+			func() bool { return false })
+	}
+	for key := range rec {
+		if _, ok := real[key]; !ok {
+			res.Extra++
+			res.example("mount extra %s", key)
+		}
+	}
+	res.compareOrder("mount", rankOf(real), rankOf(rec))
 	return res, nil
 }

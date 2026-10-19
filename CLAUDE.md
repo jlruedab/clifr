@@ -100,7 +100,11 @@ wait for the user's go-ahead.
   when its fd count (size of /proc/<pid>/fd, Linux 6.2+) is unchanged and it had no TCP
   activity, except every `--fd-full-every` walks. "all" = v1 `open_files` (with `--tcp sample`).
 - Mounts: `mounts` table (present/mount/unmount/remount) from POLLPRI on mountinfo, opened
-  with raw open(2): Go's own epoll would consume the kernel's change notification.
+  with raw open(2): Go's own epoll would consume the kernel's change notification. Since
+  schema 2 also `super_options`, `dev`, `root`, `seq` (position in mountinfo: `mount` and `df`
+  list in that order; later mounts are appended), `loop_file`, `user_options` (utab).
+- `fs_samples`: statfs per mount per sample (frsize, blocks, bfree, bavail, files, ffree), written
+  when changed, in a goroutine that skips rounds while one is still running (hung NFS).
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
 - System-wide counters: every sample writes one `sys_samples` row, one `cpu_samples` row per CPU
   (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,

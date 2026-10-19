@@ -450,3 +450,155 @@ func eventsTool() *tool {
 		},
 	}
 }
+
+func mountTool() *tool {
+	return &tool{
+		name: "mount", synopsis: "[-t TYPES]",
+		about:  "the mount table",
+		opts:   []opt{{short: 't', long: "types", arg: "TYPES", help: "only these file-system types (comma separated; prefix all with no to exclude)"}},
+		window: true,
+		notes: []string{
+			"The recorder's mount namespace, in mountinfo order; exact (mountinfo change events).",
+			"Recordings before schema 2 lack the file-system options and order: mount shows the mount",
+			"options only, sorted by mount point.",
+			"--since: the mounts, unmounts and remounts in the range.",
+		},
+		examples: []string{`clifr --at "02:45" "mount -t ext4,xfs"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("mount: only listing is possible for the past (%q)", p.pos[0])
+			}
+			var types query.MountTypes
+			if v, ok := p.set["types"]; ok {
+				types = splitList([]string{v})
+				for _, t := range types[1:] {
+					if strings.HasPrefix(t, "no") != strings.HasPrefix(types[0], "no") {
+						return nil, errors.New("mount: -t: prefix all types with no, or none")
+					}
+				}
+			}
+			if err := summaryOnly("mount", c); err != nil {
+				return nil, err
+			}
+			return func() error {
+				var rows []query.MountRow
+				var err error
+				if c.w.IsRange() {
+					rows, err = query.MountChanges(c.db, c.w.From, c.w.To)
+					c.header("mount table changes %s .. %s (exact, from events)", query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+				} else {
+					rows, err = query.MountsAt(c.db, c.w.At)
+					c.header("mount table at %s (exact, from events)", query.FormatMS(c.w.At))
+				}
+				if err != nil {
+					return err
+				}
+				kept := rows[:0]
+				for _, m := range rows {
+					if types.Keep(m.FSType) {
+						kept = append(kept, m)
+					}
+				}
+				return c.emit(kept, func(int) rowMeta {
+					if c.w.IsRange() {
+						return rowMeta{From: c.w.From, To: c.w.To}
+					}
+					return rowMeta{TS: c.w.At}
+				}, func() {
+					if c.w.IsRange() {
+						query.PrintMounts(os.Stdout, kept, true)
+					} else {
+						query.PrintMount(os.Stdout, kept)
+					}
+				})
+			}, nil
+		},
+	}
+}
+
+func dfTool() *tool {
+	return &tool{
+		name: "df", synopsis: "[-h] [-T] [-i] [PATH...]",
+		about: "file-system usage",
+		opts: []opt{
+			{short: 'h', long: "human-readable", help: "sizes in powers of 1024 (K, M, G), rounded up"},
+			{short: 'T', long: "print-type", help: "also the file-system type"},
+			{short: 'i', long: "inodes", help: "inodes instead of blocks"},
+			{short: 'k', help: "1K blocks (the default)"},
+		},
+		window: true,
+		notes: []string{
+			"Usage from the sample at or before T (sampled; recordings since schema 2). As GNU df: dummy",
+			"and empty file systems, devtmpfs and squashfs are left out, a device mounted more than once is",
+			"listed once, in mountinfo order. PATH: the file system whose mount point holds it.",
+			"--since: one report per sample with --samples (-e, -n).",
+		},
+		examples: []string{`clifr --at "02:45" "df -h"`, `clifr --at "02:45" "df -h /var/log"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			f := query.DFFormat{Human: p.has("human-readable"), Type: p.has("print-type"), Inodes: p.has("inodes")}
+			if f.Human && f.Inodes {
+				return nil, errors.New("df: -h with -i is not supported")
+			}
+			for _, a := range p.pos {
+				if !strings.HasPrefix(a, "/") {
+					return nil, fmt.Errorf("df: %q: give an absolute path (the recording has no working directory)", a)
+				}
+			}
+			if c.g.changes {
+				return nil, errors.New("df: --changes is not available for df; use --samples")
+			}
+			if c.w.IsRange() && !c.g.samples {
+				return nil, errors.New("df: over a range, add --samples (one report per sample)")
+			}
+			return func() error {
+				times := []int64{c.w.At}
+				if c.w.IsRange() {
+					spans, err := query.SysSpans(c.db, c.w, c.g.everyMS)
+					if err != nil {
+						return err
+					}
+					times = times[:0]
+					for _, sp := range spans {
+						times = append(times, sp.To)
+					}
+					if c.g.number > 0 && len(times) > c.g.number {
+						times = times[:c.g.number]
+					}
+				}
+				var all []query.DFRow
+				for i, t := range times {
+					rows, err := query.DF(c.db, t)
+					if err != nil {
+						return err
+					}
+					if len(p.pos) > 0 {
+						var sel []query.DFRow
+						for _, a := range p.pos {
+							if r, ok := query.DFFor(rows, a); ok {
+								sel = append(sel, r)
+							} else {
+								return fmt.Errorf("df: %s: no file system recorded for it", a)
+							}
+						}
+						rows = sel
+					}
+					if c.g.json {
+						all = append(all, rows...)
+						continue
+					}
+					if i > 0 {
+						fmt.Println()
+					}
+					c.header("df at %s, usage sampled", query.FormatMS(t))
+					query.PrintDF(os.Stdout, rows, f)
+				}
+				if !c.g.json {
+					return nil
+				}
+				return writeLines(all, func(i int) rowMeta {
+					return rowMeta{SampleTS: all[i].SampleTS, Sampled: []string{"size_bytes", "used_bytes", "avail_bytes", "inodes", "iused", "ifree"}}
+				})
+			}, nil
+		},
+	}
+}

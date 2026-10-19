@@ -53,7 +53,10 @@ func batches() []*store.Batch {
 			TCPTrans:    []store.TCPTransition{{ConnID: 501, TS: 1500, Old: 7, New: 2}, {ConnID: 501, TS: 1501, Old: 2, New: 1}},
 			Keyframes:   []store.KeyframeRow{{TS: 2000, Proto: store.ProtoTCP, Family: 4, LAddr: ip("127.0.0.1"), LPort: 4000, RAddr: ip("127.0.0.2"), RPort: 80, Inode: 777, State: 1, RecvQ: 3, ConnID: 501, PID: 10, StartTime: 900, FD: 5}},
 			HeldInserts: []store.HeldFD{{ID: 601, PID: 10, StartTime: 900, FD: 4, Target: "/var/log/x (deleted)", Deleted: true, FType: "REG", Mode: "w", Node: 77, FirstSeen: 1000}},
-			Mounts:      []store.MountEvent{{TS: 1000, Action: "present", MountID: 22, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw"}, {TS: 1700, Action: "mount", MountID: 95, Point: "/mnt", Source: "tmpfs", FSType: "tmpfs", Options: "rw"}},
+			Mounts: []store.MountEvent{{TS: 1000, Action: "present", MountID: 22, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw",
+				SuperOptions: "rw,errors=remount-ro", Dev: "8:1", Root: "/", Seq: 0},
+				{TS: 1700, Action: "mount", MountID: 95, Point: "/mnt", Source: "tmpfs", FSType: "tmpfs", Options: "rw", Seq: 1}},
+			FSSamples:   []store.FSSample{{TS: 1000, MountID: 22, FrSize: 4096, Blocks: 100, BFree: 40, BAvail: 30, Files: 64, FFree: 10}},
 			Reconcile:   []store.ReconcileRow{{TS: 2000, Kind: "tcp", DumpRows: 1, MissingFromEvents: 0, ExtraInEvents: 0}},
 			ProcSamples: []store.ProcSample{{ProcID: 101, TS: 2000, State: "R", CPUTicks: 9, RSSKB: 120, VSZKB: 200, Threads: 2}},
 			SockSamples: []store.SockSample{{SockID: 201, TS: 2000, State: 8, RxQ: 1}},
@@ -108,7 +111,7 @@ var compare = map[string]string{
 	"recorder_stats":   "ts, source, events, dropped",
 	"tcp_conns":        "id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source",
 	"fds_held":         "id, pid, start_time, fd, target, deleted, ftype, mode, name, node, first_seen, last_seen",
-	"mounts":           "ts, action, mount_id, mount_point, source, fstype, options",
+	"mounts":           "ts, action, mount_id, mount_point, source, fstype, options, super_options, dev, root, seq, loop_file, user_options",
 	"tcp_transitions":  "conn_id, ts, seq, old_state, new_state",
 	"tcp_keyframes":    "ts, proto, laddr, lport, inode, state, recv_q, conn_id, pid, fd",
 	"reconcile":        "ts, kind, dump_rows, missing_from_events, extra_in_events",
@@ -123,6 +126,7 @@ var compare = map[string]string{
 	"sys_samples":      "ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault",
 	"cpu_samples":      "ts, cpu, user, nice, system, idle, guest_nice",
 	"disk_samples":     "ts, major, minor, name, part, rd_ios, time_in_queue, fl_ticks",
+	"fs_samples":       "ts, mount_id, frsize, blocks, bfree, bavail, files, ffree",
 }
 
 // The same batches through Tee: every table reads back identically from

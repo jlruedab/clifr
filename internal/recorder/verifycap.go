@@ -22,6 +22,8 @@ var verifyCommands = [][]string{
 	{"mpstat", "-P", "ALL"},
 	{"iostat", "-dx"},
 	{"free"},
+	{"df"},
+	{"mount"},
 	{"ps", "aux"},
 	{"ps", "-ef"},
 	{"ss", "-tanp"},

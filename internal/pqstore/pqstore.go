@@ -205,6 +205,7 @@ type Store struct {
 	sys         []sysRow
 	cpus        []cpuRow
 	disks       []diskRow
+	fs          []fsRow
 	trans       []tcpTransRow
 	keyframes   rowBuf[store.KeyframeRow]
 	addrs       addrCache
@@ -230,7 +231,7 @@ type Store struct {
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
 	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
-	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "meta"}
+	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
 var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "fds_held", "tcp_conns"}
@@ -332,7 +333,12 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, m := range b.Mounts {
 		s.mounts = append(s.mounts, mountRow{TS: m.TS, Action: m.Action, MountID: int32(m.MountID), Point: m.Point,
-			Source: m.Source, FSType: m.FSType, Options: m.Options})
+			Source: m.Source, FSType: m.FSType, Options: m.Options, SuperOptions: m.SuperOptions, Dev: m.Dev, Root: m.Root,
+			Seq: int32(m.Seq), LoopFile: m.LoopFile, UserOptions: m.UserOptions})
+	}
+	for _, f := range b.FSSamples {
+		s.fs = append(s.fs, fsRow{TS: f.TS, MountID: int32(f.MountID), FrSize: f.FrSize, Blocks: f.Blocks,
+			BFree: f.BFree, BAvail: f.BAvail, Files: f.Files, FFree: f.FFree})
 	}
 	if b.Sys != nil {
 		s.sys = append(s.sys, sysOf(b.Sys))
@@ -469,6 +475,7 @@ func (s *Store) Flush() error {
 	part("sys_samples", len(s.sys), func(p string) error { return writeFile(p, s.sys) })
 	part("cpu_samples", len(s.cpus), func(p string) error { return writeFile(p, s.cpus) })
 	part("disk_samples", len(s.disks), func(p string) error { return writeFile(p, s.disks) })
+	part("fs_samples", len(s.fs), func(p string) error { return writeFile(p, s.fs) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
 	if err := errors.Join(errs...); err != nil {
 		return err // keep the buffers; the next flush retries
@@ -490,7 +497,7 @@ func (s *Store) Flush() error {
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
 	s.keyframes, s.reconcile, s.mounts = rowBuf[store.KeyframeRow]{}, nil, nil
-	s.sys, s.cpus, s.disks = s.sys[:0], s.cpus[:0], s.disks[:0]
+	s.sys, s.cpus, s.disks, s.fs = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0]
 	s.conns.reset()
 	s.held.reset()
 	s.procs.reset()
@@ -804,7 +811,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"tcp_conns": merge[tcpConnRow], "fds_held": merge[heldRow], "mounts": merge[mountRow], "tcp_transitions": merge[tcpTransRow], "tcp_keyframes": merge[keyframeRow],
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
-	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow],
+	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow], "fs_samples": merge[fsRow],
 	"meta": merge[metaRow],
 }
 
@@ -937,5 +944,6 @@ var emptyWriters = map[string]func(string) error{
 	"sys_samples":      func(p string) error { return writeFile[sysRow](p, nil) },
 	"cpu_samples":      func(p string) error { return writeFile[cpuRow](p, nil) },
 	"disk_samples":     func(p string) error { return writeFile[diskRow](p, nil) },
+	"fs_samples":       func(p string) error { return writeFile[fsRow](p, nil) },
 	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },
 }

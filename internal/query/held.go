@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -235,17 +236,25 @@ func sortOwners(o []Owner) {
 // ---- mounts ----
 
 type MountRow struct {
-	TS      int64  `json:"ts_ms"`
-	Action  string `json:"action"`
-	Point   string `json:"mount_point"`
-	Source  string `json:"source"`
-	FSType  string `json:"fstype"`
-	Options string `json:"options"`
-	mountID int
+	TS           int64  `json:"ts_ms"`
+	Action       string `json:"action"`
+	Point        string `json:"mount_point"`
+	Source       string `json:"source"`
+	FSType       string `json:"fstype"`
+	Options      string `json:"options"`
+	SuperOptions string `json:"super_options"`
+	Dev          string `json:"dev"`
+	Root         string `json:"root"`
+	LoopFile     string `json:"loop_file,omitempty"`
+	UserOptions  string `json:"user_options,omitempty"`
+	MountID      int    `json:"mount_id"`
+	seq          int
+	since        int64 // when it was mounted (or the run's snapshot)
 }
 
 func mountRows(db *store.DB, q string, args ...any) ([]MountRow, error) {
-	rows, err := db.Query(`SELECT ts, action, mount_id, mount_point, source, fstype, options FROM mounts `+q, args...)
+	rows, err := db.Query(`SELECT ts, action, mount_id, mount_point, source, fstype, options, COALESCE(super_options, ''),
+		COALESCE(dev, ''), COALESCE(root, ''), COALESCE(seq, 0), COALESCE(loop_file, ''), COALESCE(user_options, '') FROM mounts `+q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +262,8 @@ func mountRows(db *store.DB, q string, args ...any) ([]MountRow, error) {
 	var out []MountRow
 	for rows.Next() {
 		var m MountRow
-		if err := rows.Scan(&m.TS, &m.Action, &m.mountID, &m.Point, &m.Source, &m.FSType, &m.Options); err != nil {
+		if err := rows.Scan(&m.TS, &m.Action, &m.MountID, &m.Point, &m.Source, &m.FSType, &m.Options, &m.SuperOptions,
+			&m.Dev, &m.Root, &m.seq, &m.LoopFile, &m.UserOptions); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -275,24 +285,43 @@ func MountsAt(db *store.DB, t int64) ([]MountRow, error) {
 	}
 	cur := map[int]MountRow{}
 	var presentTS int64 = -1
+	ordered := false // recordings before schema 2 have no mountinfo order
 	for _, m := range all {
+		ordered = ordered || m.seq > 0
 		switch m.Action {
 		case "present":
 			if m.TS != presentTS { // a new run: its snapshot replaces the table
 				cur, presentTS = map[int]MountRow{}, m.TS
 			}
-			cur[m.mountID] = m
-		case "mount", "remount":
-			cur[m.mountID] = m
+			m.since = m.TS
+			cur[m.MountID] = m
+		case "mount":
+			m.since = m.TS
+			cur[m.MountID] = m
+		case "remount": // same place in the table
+			m.since, m.seq = cur[m.MountID].since, cur[m.MountID].seq
+			cur[m.MountID] = m
 		case "unmount":
-			delete(cur, m.mountID)
+			delete(cur, m.MountID)
 		}
 	}
 	out := make([]MountRow, 0, len(cur))
 	for _, m := range cur {
 		out = append(out, m)
 	}
-	sortMounts(out)
+	if !ordered {
+		sortMounts(out)
+		return out, nil
+	}
+	// mountinfo order: the run's snapshot as it was, then later mounts in
+	// the order they came (the kernel appends them).
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.since != b.since {
+			return a.since < b.since
+		}
+		return a.seq < b.seq
+	})
 	return out, nil
 }
 

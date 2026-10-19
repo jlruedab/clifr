@@ -129,7 +129,12 @@ What is recorded:
 - **Open files**: an fd is stored when two consecutive walks of its process
   see it; deleted files at once. A process whose fd count did not change is
   not read again, except on every fifth walk.
-- **Mounts**: mount, unmount and remount events of the recorder's namespace.
+- **Mounts**: mount, unmount and remount events of the recorder's namespace,
+  with mount and file-system options, device, root, position in mountinfo,
+  loop backing file and libmount's userspace options.
+- **File-system usage**: statfs of every mounted file system at each sample
+  (in a goroutine of its own, so a hung network file system cannot stall the
+  samples), written when it changed.
 - **System-wide counters**, every sample: `/proc/stat` (per CPU),
   `loadavg`, `meminfo`, the paging counters of `/proc/vmstat` and
   `/proc/diskstats`, as the kernel's raw cumulative values.
@@ -181,6 +186,8 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "13:28" "lsof -p 4242"
     clifr --at "13:28" "lsof -a -i -u postgres"
     clifr --at "13:28" "free -h"
+    clifr --at "13:28" "df -h"
+    clifr --at "13:28" "mount -t ext4,xfs"
     clifr --since "1 hour ago" events
     clifr --since "2026-10-12" --until "2026-10-12 06:00" "life --name 'backup|rsync'"
     clifr --since "2 hours ago" oom
@@ -227,8 +234,14 @@ A command can also be given unquoted after clifr's options
 - `events` (clifr only): a timeline of process starts and exits, OOM kills,
   mounts, recorder gaps, skipped samples and guard events (`--name REGEX`,
   `--type KINDS`); exits known only from samples are marked `~`.
-- `mount` and `df` are not available yet: they need file-system options and
-  usage, which clifrd does not record yet.
+- `mount [-t TYPES]`: the mount table as util-linux prints it (mount and
+  file-system options, loop devices by their backing file, `/run/mount/utab`
+  options), in mountinfo order; exact. Over a range: the changes.
+- `df [-h] [-T] [-i] [PATH...]`: usage from the sample at or before T, as
+  GNU df selects and prints it (dummy, empty, devtmpfs and squashfs file
+  systems left out, a device mounted twice listed once, df's rounding and
+  column widths). FUSE mounts without `allow_other` cannot be measured by
+  root and are left out. Over a range with `--samples`.
 - `life` (clifr only) lists start, end, duration, pid, ppid, command, exit
   code or signal; `oom` the OOM kills with the largest processes; `mounts`
   the mount table at a moment or its changes over a range.

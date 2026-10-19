@@ -162,13 +162,30 @@ func heldOf(r *heldRow, h *heldRec) {
 }
 
 type mountRow struct {
-	TS      int64  `parquet:"ts"`
-	Action  string `parquet:"action,dict"`
-	MountID int32  `parquet:"mount_id"`
-	Point   string `parquet:"mount_point"`
-	Source  string `parquet:"source,dict"`
-	FSType  string `parquet:"fstype,dict"`
-	Options string `parquet:"options"`
+	TS           int64  `parquet:"ts"`
+	Action       string `parquet:"action,dict"`
+	MountID      int32  `parquet:"mount_id"`
+	Point        string `parquet:"mount_point"`
+	Source       string `parquet:"source,dict"`
+	FSType       string `parquet:"fstype,dict"`
+	Options      string `parquet:"options"`
+	SuperOptions string `parquet:"super_options"`
+	Dev          string `parquet:"dev,dict"`
+	Root         string `parquet:"root,dict"`
+	Seq          int32  `parquet:"seq"`
+	LoopFile     string `parquet:"loop_file"`
+	UserOptions  string `parquet:"user_options,dict"`
+}
+
+type fsRow struct {
+	TS      int64 `parquet:"ts"`
+	MountID int32 `parquet:"mount_id"`
+	FrSize  int64 `parquet:"frsize"`
+	Blocks  int64 `parquet:"blocks"`
+	BFree   int64 `parquet:"bfree"`
+	BAvail  int64 `parquet:"bavail"`
+	Files   int64 `parquet:"files"`
+	FFree   int64 `parquet:"ffree"`
 }
 
 type tcpConnRow struct {

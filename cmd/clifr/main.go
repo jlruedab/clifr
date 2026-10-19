@@ -312,10 +312,7 @@ func misplaced(a string) bool {
 }
 
 // later names the commands of the spec that are not built yet.
-var later = map[string]string{
-	"df":    "not available yet (needs file-system usage, which clifrd does not record yet)",
-	"mount": `not available yet (needs the file-system options and mount order, which clifrd does not record yet); "mounts" shows the recorded mount table`,
-}
+var later = map[string]string{}
 
 func runSub(g *globals, sub string, args []string) error {
 	switch sub {

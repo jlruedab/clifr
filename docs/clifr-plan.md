@@ -93,8 +93,8 @@ Missing from the spec:
 | netstat | `-t -u -a -n -p -l` | same as ss |
 | free | `-b -k -m -g -h`, `-w` | sys_samples |
 | vmstat, mpstat (`-P`), iostat (`-x -d -p`), uptime | as today | sys/cpu/disk samples |
-| df | `-h -T -i`, path | new fs_samples |
-| mount | (none), `-t TYPE` | mounts (phase 3: needs fs options and order) |
+| df | `-h -T -i`, path | fs_samples (3c) |
+| mount | (none), `-t TYPE` | mounts (3c: fs options, order, loop files, utab) |
 
 ## Plan (one step at a time; report and wait after each)
 

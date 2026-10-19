@@ -538,11 +538,17 @@ func (f FS) FDCount(pid int) (n int, ok bool) {
 
 // MountInfo is one line of /proc/<pid>/mountinfo.
 type MountInfo struct {
-	ID      int
-	Point   string
-	Source  string
-	FSType  string
-	Options string
+	ID, ParentID int
+	Dev          string // major:minor of the file system
+	Root         string // the directory of the file system mounted here
+	Point        string
+	Source       string
+	FSType       string
+	Options      string // per mount (VFS)
+	SuperOptions string // per file system (super block)
+	// Not in mountinfo; what util-linux mount shows (set by the recorder).
+	LoopFile    string // backing file of a /dev/loopN source
+	UserOptions string // userspace options from /run/mount/utab (x-...)
 }
 
 // ReadMountInfo reads /proc/self/mountinfo (the recorder's mount namespace).
@@ -570,14 +576,18 @@ func ParseMountInfo(b []byte) []MountInfo {
 		if len(f) < 6 || sep < 0 || sep+2 >= len(f) {
 			continue
 		}
-		m := MountInfo{ID: atoi(f[0]), Point: unescapeOctal(f[4]), Options: f[5], FSType: f[sep+1], Source: unescapeOctal(f[sep+2])}
+		m := MountInfo{ID: atoi(f[0]), ParentID: atoi(f[1]), Dev: f[2], Root: UnescapeOctal(f[3]), Point: UnescapeOctal(f[4]),
+			Options: f[5], FSType: f[sep+1], Source: UnescapeOctal(f[sep+2])}
+		if sep+3 < len(f) {
+			m.SuperOptions = f[sep+3]
+		}
 		out = append(out, m)
 	}
 	return out
 }
 
-// unescapeOctal undoes the kernel's \040-style escaping of spaces etc.
-func unescapeOctal(s string) string {
+// UnescapeOctal undoes the kernel's \040-style escaping of spaces etc.
+func UnescapeOctal(s string) string {
 	if !strings.Contains(s, "\\") {
 		return s
 	}

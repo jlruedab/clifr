@@ -123,6 +123,10 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = compareSystem(db, s)
 		case "free":
 			res, err = compareFree(db, s)
+		case "df":
+			res, err = compareDF(db, s)
+		case "mount":
+			res, err = compareMount(db, s)
 		case "ps -ef":
 			res, err = comparePSEF(db, s)
 		case "netstat -tanp":
@@ -761,8 +765,8 @@ func printResult(w io.Writer, r Result, examples bool) {
 // compared lists the commands in report order; laterCommands are those added
 // after older recordings were made, listed only when present.
 var (
-	laterCommands = []string{"free", "ps -ef", "netstat -tanp"}
-	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free")
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount")
 )
 
 func Print(w io.Writer, rep *Report, verbose bool) {
