@@ -71,7 +71,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.PgpgIn, row.PgpgOut, row.PswpIn, row.PswpOut = int64(v.PgpgIn), int64(v.PgpgOut), int64(v.PswpIn), int64(v.PswpOut)
 		row.PgFault, row.PgMajFault = int64(v.PgFault), int64(v.PgMajFault)
 	}
-	b.Sys = row
+	b.Sys = append(b.Sys, *row)
 	disks, err := r.fs.ReadDiskStats()
 	if fail("diskstats", err) {
 		return

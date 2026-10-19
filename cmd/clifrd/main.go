@@ -51,7 +51,9 @@ func run(args []string) error {
 	fs.BoolVar(showVersion, "v", false, "short for --version")
 	fs.StringVar(&c.DB, "db", "", "also (or, with --data-dir \"\", only) write this v1 SQLite database")
 	fs.DurationVar(&c.Interval, "interval", 30*time.Second, "process and socket sample interval")
+	fs.DurationVar(&c.SysInterval, "sys-interval", 10*time.Second, "system-wide counters (vmstat, mpstat, iostat, free, uptime), at most --interval")
 	fs.DurationVar(&c.FDInterval, "fd-interval", 120*time.Second, "full open-file walk interval")
+	fs.BoolVar(&c.ProcIO, "proc-io", true, "read each process's I/O counters (/proc/<pid>/io) when it used CPU, and at fd walks")
 	fs.DurationVar(&c.Duration, "duration", 0, "stop after this long (0 = until SIGINT/SIGTERM)")
 	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
 	budget := fs.String("cpu-budget", "2%", "recorder CPU budget, percent of one core")
@@ -108,6 +110,9 @@ func run(args []string) error {
 	}
 	if c.Interval < time.Second || c.FDInterval < c.Interval {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
+	}
+	if c.SysInterval < time.Second || c.SysInterval > c.Interval && given["sys-interval"] {
+		return errors.New("need 1s <= --sys-interval <= --interval")
 	}
 	logger := recorder.NewLogger(log.New(os.Stderr, "clifrd: ", log.LstdFlags), level)
 	if os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" {

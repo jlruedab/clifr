@@ -7,7 +7,8 @@ max_size: 2G           # the oldest hours are deleted above this (0 = no cap)
 log_level: info        # error, warn, info, debug
 
 intervals:
-  process: 30s         # per-process CPU, memory and state; sockets (v1); system counters
+  process: 30s         # per-process CPU, memory, state and I/O; sockets (v1)
+  system: 10s          # system counters (vmstat, mpstat, iostat, free, uptime), at most process
   files: 120s          # open-file walks (long-held files only); at least process
   keyframe: 300s       # full socket dump: queues, UDP, check of the TCP events
   flush: 5m            # write buffered rows (a crash loses at most this much)
@@ -16,6 +17,7 @@ collectors:
   process_events: auto # auto (eBPF, else the proc connector), ebpf, proc_connector, none
   tcp: auto            # auto (eBPF events and keyframes, else sampling), ebpf, sample
   files: held          # held (fds held across two walks, and deleted files) or all
+  process_io: true     # per-process I/O counters, read when the process used CPU and at fd walks
 
 cpu_budget: 2%         # of one core over 5 minutes; above it the fd interval is
                        # lengthened when fd walks are a quarter of the cost or more

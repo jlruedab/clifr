@@ -19,7 +19,7 @@ func sysDB(t *testing.T) *store.DB {
 	base := int64(1_790_000_000_000)
 	batch := func(ts, up int64, sys store.SysSample, all, cpu0 [10]int64, disk [17]int64) *store.Batch {
 		sys.TS, sys.UptimeMS = ts, up
-		return &store.Batch{Sample: store.Sample{TS: ts}, Sys: &sys,
+		return &store.Batch{Sample: store.Sample{TS: ts}, Sys: []store.SysSample{sys},
 			CPUs: []store.CPUSample{{TS: ts, CPU: -1, T: all}, {TS: ts, CPU: 0, T: cpu0}},
 			Disks: []store.DiskSample{{TS: ts, Name: "sda", V: disk},
 				{TS: ts, Name: "sda1", Part: true, V: disk}}}

@@ -235,6 +235,8 @@ type ProcSample struct {
 	Nice, TPGID            int
 	CPUTicks, RSSKB, VSZKB int64
 	Threads                int
+	// Cumulative I/O (/proc/<pid>/io); all 0 when not read.
+	RChar, WChar, ReadBytes, WriteBytes, CancelledWrite int64
 }
 
 // Close ends a time range. Ended is only used for processes.
@@ -316,8 +318,8 @@ type Batch struct {
 	Stats       []StatRow
 	Guard       []GuardEvent
 	Verify      []VerifySnap
-	Skips       []int64 // timestamps of skipped sample slots
-	Sys         *SysSample
+	Skips       []int64     // timestamps of skipped sample slots
+	Sys         []SysSample // one per system sample (several when the system interval is shorter)
 	CPUs        []CPUSample
 	Disks       []DiskSample
 }
@@ -517,10 +519,11 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error {
 			return each(`INSERT OR REPLACE INTO proc_samples(proc_id, ts, state, nice, tpgid, cpu_ticks, rss_kb,
-				vsz_kb, threads) VALUES(?,?,?,?,?,?,?,?,?)`,
+				vsz_kb, threads, rchar, wchar, read_bytes, write_bytes, cancelled_write_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.ProcSamples), func(st *sql.Stmt, i int) error {
 					p := b.ProcSamples[i]
-					_, err := st.Exec(p.ProcID, p.TS, p.State, p.Nice, p.TPGID, p.CPUTicks, p.RSSKB, p.VSZKB, p.Threads)
+					_, err := st.Exec(p.ProcID, p.TS, p.State, p.Nice, p.TPGID, p.CPUTicks, p.RSSKB, p.VSZKB, p.Threads,
+						p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite)
 					return err
 				})
 		},
@@ -595,7 +598,8 @@ func (d *DB) Write(b *Batch) error {
 				})
 		},
 		func() error {
-			if s := b.Sys; s != nil {
+			for i := range b.Sys {
+				s := &b.Sys[i]
 				if _, err := tx.Exec(`INSERT INTO sys_samples VALUES(`+marks(34)+`)`, s.TS, s.UptimeMS, s.Load1, s.Load5, s.Load15,
 					s.Runnable, s.Threads, s.ProcsRunning, s.ProcsBlocked, s.Intr, s.Ctxt, s.Forks, s.SoftIRQ,
 					s.MemTotal, s.MemFree, s.MemAvailable, s.Buffers, s.Cached, s.SwapCached, s.Active, s.Inactive,

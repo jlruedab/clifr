@@ -161,7 +161,8 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 
 // psSampled are the ps fields read at each sample; the others (ids, user,
 // terminal, start, command, elapsed time) are exact for the process.
-var psSampled = []string{"pcpu", "pmem", "vsz_kb", "rss_kb", "stat", "time", "nice", "threads", "cpu_ticks"}
+var psSampled = []string{"pcpu", "pmem", "vsz_kb", "rss_kb", "stat", "time", "nice", "threads", "cpu_ticks",
+	"io_rchar", "io_wchar", "io_read_bytes", "io_write_bytes"}
 
 func lsofTool() *tool {
 	return &tool{

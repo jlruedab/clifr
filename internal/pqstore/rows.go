@@ -60,6 +60,12 @@ type procSampleRow struct {
 	RSSKB    int64  `parquet:"rss_kb"`
 	VSZKB    int64  `parquet:"vsz_kb"`
 	Threads  int32  `parquet:"threads"`
+	// /proc/<pid>/io (schema 2; 0 when not read)
+	RChar          int64 `parquet:"rchar"`
+	WChar          int64 `parquet:"wchar"`
+	ReadBytes      int64 `parquet:"read_bytes"`
+	WriteBytes     int64 `parquet:"write_bytes"`
+	CancelledWrite int64 `parquet:"cancelled_write_bytes"`
 }
 
 type socketRow struct {
@@ -347,7 +353,8 @@ func i32p(p *int) *int32 {
 
 func procSampleOf(p store.ProcSample) procSampleRow {
 	return procSampleRow{ProcID: p.ProcID, TS: p.TS, State: p.State, Nice: int32(p.Nice), TPGID: int32(p.TPGID),
-		CPUTicks: p.CPUTicks, RSSKB: p.RSSKB, VSZKB: p.VSZKB, Threads: int32(p.Threads)}
+		CPUTicks: p.CPUTicks, RSSKB: p.RSSKB, VSZKB: p.VSZKB, Threads: int32(p.Threads),
+		RChar: p.RChar, WChar: p.WChar, ReadBytes: p.ReadBytes, WriteBytes: p.WriteBytes, CancelledWrite: p.CancelledWrite}
 }
 
 func socketOf(s store.SockRow) socketRow {

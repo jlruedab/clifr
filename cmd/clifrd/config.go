@@ -44,6 +44,7 @@ type fileConfig struct {
 		ProcessEvents scalar `yaml:"process_events"`
 		TCP           scalar `yaml:"tcp"`
 		Files         scalar `yaml:"files"`
+		ProcessIO     scalar `yaml:"process_io"`
 	} `yaml:"collectors"`
 	CPUBudget    scalar `yaml:"cpu_budget"`
 	GCHeapTarget scalar `yaml:"gc_heap_target"`
@@ -82,9 +83,6 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) { // io.EOF: an empty file
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	if c.Intervals.System != "" && c.Intervals.System != c.Intervals.Process {
-		return fmt.Errorf("%s: intervals.system: a system interval apart from intervals.process is not available yet", path)
-	}
 	given := map[string]bool{}
 	fset.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	for _, s := range []struct {
@@ -92,9 +90,9 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		v    scalar
 	}{
 		{"data-dir", c.DataDir}, {"retention", c.Retention}, {"max-size", c.MaxSize}, {"log-level", c.LogLevel},
-		{"interval", c.Intervals.Process}, {"fd-interval", c.Intervals.Files},
+		{"interval", c.Intervals.Process}, {"sys-interval", c.Intervals.System}, {"fd-interval", c.Intervals.Files},
 		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
-		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files},
+		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
 		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
@@ -111,9 +109,10 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 var short = map[string]string{"data-dir": "D", "config": "C"}
 
 func yamlName(flagName string) string {
-	for y, f := range map[string]string{"intervals.process": "interval", "intervals.files": "fd-interval",
+	for y, f := range map[string]string{"intervals.process": "interval", "intervals.system": "sys-interval", "intervals.files": "fd-interval",
 		"intervals.keyframe": "keyframe-interval", "intervals.flush": "flush-interval",
-		"collectors.process_events": "events", "collectors.tcp": "tcp", "collectors.files": "fd-mode"} {
+		"collectors.process_events": "events", "collectors.tcp": "tcp", "collectors.files": "fd-mode",
+		"collectors.process_io": "proc-io"} {
 		if f == flagName {
 			return y
 		}

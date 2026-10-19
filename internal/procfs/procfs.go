@@ -358,6 +358,39 @@ func (f FS) BootTime() (int64, error) {
 	return 0, fmt.Errorf("btime not found in %s", f.path("stat"))
 }
 
+// IO is /proc/<pid>/io: bytes read and written through system calls (rchar,
+// wchar) and from/to storage (read_bytes, write_bytes, cancelled_write_bytes).
+type IO struct {
+	RChar, WChar, ReadBytes, WriteBytes, CancelledWrite int64
+}
+
+// ReadIO reads /proc/<pid>/io (root or the process's owner).
+func (f FS) ReadIO(pid int) (io IO, err error) {
+	err = f.readPID(pid, "io", func(b []byte) error {
+		for _, line := range strings.Split(string(b), "\n") {
+			k, v, ok := strings.Cut(line, ": ")
+			if !ok {
+				continue
+			}
+			n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			switch k {
+			case "rchar":
+				io.RChar = n
+			case "wchar":
+				io.WChar = n
+			case "read_bytes":
+				io.ReadBytes = n
+			case "write_bytes":
+				io.WriteBytes = n
+			case "cancelled_write_bytes":
+				io.CancelledWrite = n
+			}
+		}
+		return nil
+	})
+	return
+}
+
 // ReadBootID returns /proc/sys/kernel/random/boot_id, which changes at
 // every boot.
 func (f FS) ReadBootID() (string, error) {

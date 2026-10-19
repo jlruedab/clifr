@@ -34,6 +34,11 @@ type PSRow struct {
 	Threads  int     `json:"threads"`
 	CPUTicks int64   `json:"cpu_ticks"` // -1 when not sampled
 	ElapsedS int64   `json:"elapsed_s"` // at the moment asked for (exact)
+	// Cumulative I/O at the sample (schema 2; 0 when not recorded).
+	IORChar      int64 `json:"io_rchar"`
+	IOWChar      int64 `json:"io_wchar"`
+	IOReadBytes  int64 `json:"io_read_bytes"`
+	IOWriteBytes int64 `json:"io_write_bytes"`
 	// For the other ps formats (psfmt.go).
 	args      string
 	permille  uint64 // %CPU in tenths
@@ -50,6 +55,8 @@ type procAt struct {
 	state                  sql.NullString
 	nice, tpgid, threads   sql.NullInt64
 	cpuTicks, rssKB, vszKB sql.NullInt64
+	rchar, wchar, rbytes   sql.NullInt64
+	wbytes                 sql.NullInt64
 }
 
 // processesAt returns processes alive at t: those alive at sample s (with
@@ -58,7 +65,8 @@ type procAt struct {
 func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 	rows, err := db.Query(`
 		SELECT p.id, p.pid, p.ppid, p.uid, p.start_time, p.tty, p.sid, p.pgrp, p.locked, p.comm,
-		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb
+		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb,
+		       x.rchar, x.wchar, x.read_bytes, x.write_bytes
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
 		     AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
@@ -76,7 +84,7 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		var locked int
 		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.uid, &p.startMS, &p.tty, &p.sid, &p.pgrp, &locked,
 			&p.comm, &p.cmdline, &p.source, &p.state, &p.nice, &p.tpgid, &p.threads, &p.cpuTicks,
-			&p.rssKB, &p.vszKB); err != nil {
+			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes); err != nil {
 			return nil, err
 		}
 		p.locked = locked == 1
@@ -116,7 +124,8 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 func psRow(p procAt, now, memKB int64) PSRow {
 	r := PSRow{User: UserName(p.uid, true), PID: p.pid, PPID: p.ppid, TTY: procfs.TTYName(p.tty),
 		StartMS: p.startMS, Source: p.source, VSZ: p.vszKB.Int64, RSS: p.rssKB.Int64,
-		UIDNum: p.uid, CommName: p.comm, Nice: int(p.nice.Int64), Threads: int(p.threads.Int64), CPUTicks: -1, nowMS: now}
+		UIDNum: p.uid, CommName: p.comm, Nice: int(p.nice.Int64), Threads: int(p.threads.Int64), CPUTicks: -1, nowMS: now,
+		IORChar: p.rchar.Int64, IOWChar: p.wchar.Int64, IOReadBytes: p.rbytes.Int64, IOWriteBytes: p.wbytes.Int64}
 	r.Start = psStart(p.startMS, now)
 	if !p.state.Valid { // event-only: no per-sample values were captured
 		r.CPU, r.Mem, r.Stat, r.Time = "-", "-", "-", "-"

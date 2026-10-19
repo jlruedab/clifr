@@ -42,6 +42,8 @@ type Config struct {
 	TCPBPF           bpftcp.Options
 	KeyframeInterval time.Duration // full socket dump with events (default 5m)
 	Interval         time.Duration
+	SysInterval      time.Duration // system-wide counters; 0 or >= Interval: with every sample
+	ProcIO           bool          // read /proc/<pid>/io
 	FDInterval       time.Duration
 	Duration         time.Duration // 0 = until signalled
 	ProcRoot         string
@@ -152,6 +154,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
 		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks), "page_kb": strconv.Itoa(os.Getpagesize() / 1024),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
+		"sys_interval_s": fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
 			return nil, err
@@ -297,6 +300,13 @@ func (r *Recorder) Run(ctx context.Context) error {
 	start := time.Now()
 	next := start
 	var lastFD, lastVerify time.Time
+	// System counters between samples when their interval is shorter; each
+	// sample takes them too.
+	sysEvery := r.cfg.SysInterval
+	if sysEvery <= 0 || sysEvery >= r.cfg.Interval {
+		sysEvery = 0
+	}
+	var nextSys time.Time
 	for {
 		if r.cfg.Duration > 0 && time.Since(start) >= r.cfg.Duration {
 			break
@@ -309,6 +319,9 @@ func (r *Recorder) Run(ctx context.Context) error {
 			if r.tcp != nil {
 				d = min(d, tcpDrainEvery)
 			}
+			if sysEvery > 0 {
+				d = max(min(d, time.Until(nextSys)), 0)
+			}
 			select {
 			case <-ctx.Done():
 				return r.shutdown()
@@ -316,6 +329,12 @@ func (r *Recorder) Run(ctx context.Context) error {
 			}
 			if r.tcp != nil && time.Until(next) > 0 {
 				r.drainTCP()
+			}
+			// Not right before a sample, which reads them anyway.
+			if sysEvery > 0 && !time.Now().Before(nextSys) && time.Until(next) > sysEvery/2 {
+				r.sampleSystem(time.Now().UnixMilli(), &r.pending)
+				for nextSys = nextSys.Add(sysEvery); !time.Now().Before(nextSys); nextSys = nextSys.Add(sysEvery) {
+				}
 			}
 		}
 		if ctx.Err() != nil {
@@ -338,6 +357,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 		if err := r.sample(now, fdWalk); err != nil {
 			return fmt.Errorf("sample: %w", err)
 		}
+		nextSys = now.Add(sysEvery)
 		if verify {
 			r.captureVerify(now.UnixMilli())
 			// A full sample right after the real commands finish: anything
@@ -516,6 +536,7 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 		s := store.ProcSample{ProcID: e.id, TS: ts, State: string(st.State), Nice: st.Nice, TPGID: st.TPGID,
 			CPUTicks: int64(st.Utime + st.Stime), RSSKB: rss * int64(pageKB),
 			VSZKB: int64(st.VSize / 1024), Threads: st.NumThreads}
+		r.sampleIO(e, &s, refresh)
 		if !e.hasSamp || !sameProcSample(e.sample, s) {
 			b.ProcSamples = append(b.ProcSamples, s)
 			e.sample, e.hasSamp = s, true
@@ -608,6 +629,24 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
 	if u != e.upd {
 		e.upd = u
 		b.ProcUpdates = append(b.ProcUpdates, u)
+	}
+}
+
+// sampleIO fills the I/O counters: read from /proc/<pid>/io for a new
+// process, one that used CPU since its last sample, and on every fd-walk
+// sample; otherwise the previous values stand (they are cumulative, so a
+// skipped read only delays an update).
+func (r *Recorder) sampleIO(e *procEntry, s *store.ProcSample, refresh bool) {
+	if !r.cfg.ProcIO {
+		return
+	}
+	if e.hasSamp && !refresh && s.CPUTicks == e.sample.CPUTicks {
+		p := e.sample
+		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
+		return
+	}
+	if io, err := r.fs.ReadIO(e.key.pid); err == nil {
+		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = io.RChar, io.WChar, io.ReadBytes, io.WriteBytes, io.CancelledWrite
 	}
 }
 

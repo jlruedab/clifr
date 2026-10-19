@@ -340,8 +340,8 @@ func (s *Store) Write(b *store.Batch) error {
 		s.fs = append(s.fs, fsRow{TS: f.TS, MountID: int32(f.MountID), FrSize: f.FrSize, Blocks: f.Blocks,
 			BFree: f.BFree, BAvail: f.BAvail, Files: f.Files, FFree: f.FFree})
 	}
-	if b.Sys != nil {
-		s.sys = append(s.sys, sysOf(b.Sys))
+	for i := range b.Sys {
+		s.sys = append(s.sys, sysOf(&b.Sys[i]))
 	}
 	for _, c := range b.CPUs {
 		s.cpus = append(s.cpus, cpuOf(c))

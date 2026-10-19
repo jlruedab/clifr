@@ -106,12 +106,15 @@ wait for the user's go-ahead.
 - `fs_samples`: statfs per mount per sample (frsize, blocks, bfree, bavail, files, ffree), written
   when changed, in a goroutine that skips rounds while one is still running (hung NFS).
 - Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
-- System-wide counters: every sample writes one `sys_samples` row, one `cpu_samples` row per CPU
+- System-wide counters: every `--sys-interval` (10 s default; also at every sample) writes one `sys_samples` row, one `cpu_samples` row per CPU
   (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,
   from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:
   `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
-  are stored; resolution = `--interval`. `uptime` has no user count.
+  are stored; resolution = `--sys-interval`. `uptime` has no user count.
+- `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
+  cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
+  last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 2 since
   2026-10-19; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, plus boot time, intervals and

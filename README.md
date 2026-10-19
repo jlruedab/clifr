@@ -87,7 +87,9 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 |---|---|---|
 | `-C`, `--config` | /etc/clifr/clifrd.yml | settings file; a missing default file is not an error |
 | `-D`, `--data-dir` | /var/lib/clifr | the Parquet data directory |
-| `--interval` | 30s | sample processes and the system-wide counters |
+| `--interval` | 30s | sample processes (and, at least that often, the system-wide counters) |
+| `--sys-interval` | 10s | system-wide counters (uptime, vmstat, mpstat, iostat, free), at most `--interval` |
+| `--proc-io` | true | per-process I/O counters (`/proc/<pid>/io`), read when the process used CPU since its last sample and at every fd walk |
 | `--fd-interval` | 120s | walk the processes' open files |
 | `--keyframe-interval` | 5m | full socket dump: queues, UDP, check of the event stream |
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
@@ -107,8 +109,9 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 
 Settings can also be given in the configuration file; `deploy/clifrd.yml`
 lists them with their defaults (`data_dir`, `retention`, `max_size`,
-`log_level`, `intervals: process, files, keyframe, flush`, `collectors:
-process_events, tcp, files`, `cpu_budget`, `gc_heap_target`). A flag on the
+`log_level`, `intervals: process, system, files, keyframe, flush`,
+`collectors: process_events, tcp, files, process_io`, `cpu_budget`,
+`gc_heap_target`). A flag on the
 command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
 Unknown settings are rejected. `memory_limit` of the product spec is not
 accepted: a Go memory limit makes the collector run continuously when the
@@ -118,8 +121,8 @@ setting is `gc_heap_target` and the hard limit the unit's `MemoryMax`.
 What is recorded:
 
 - **Processes**: pid and start time, ppid, uid, comm, command line, tty,
-  executable; state, CPU time, RSS, VSZ and threads per sample, written only
-  when they change. fork, exec and exit come from eBPF, so a process shorter
+  executable; state, CPU time, RSS, VSZ, threads and I/O counters per
+  sample, written only when they change. fork, exec and exit come from eBPF, so a process shorter
   than the interval is recorded with exact start and end, exit code and
   signal. OOM kills are recorded with the victim's RSS.
 - **TCP connections**: every state change from eBPF, with the owning process
@@ -135,7 +138,7 @@ What is recorded:
 - **File-system usage**: statfs of every mounted file system at each sample
   (in a goroutine of its own, so a hung network file system cannot stall the
   samples), written when it changed.
-- **System-wide counters**, every sample: `/proc/stat` (per CPU),
+- **System-wide counters**, every `--sys-interval` (10 s): `/proc/stat` (per CPU),
   `loadavg`, `meminfo`, the paging counters of `/proc/vmstat` and
   `/proc/diskstats`, as the kernel's raw cumulative values.
 - **The recorder itself**: per sample its CPU, RSS, data size, phase

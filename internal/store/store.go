@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS proc_samples (
 	proc_id INTEGER NOT NULL, ts INTEGER NOT NULL,
 	state TEXT, nice INTEGER, tpgid INTEGER,
 	cpu_ticks INTEGER, rss_kb INTEGER, vsz_kb INTEGER, threads INTEGER,
+	rchar INTEGER, wchar INTEGER, read_bytes INTEGER, write_bytes INTEGER, cancelled_write_bytes INTEGER, -- /proc/<pid>/io
 	PRIMARY KEY (proc_id, ts)
 ) WITHOUT ROWID;
 
@@ -366,7 +367,8 @@ func migrate(db *sql.DB) error {
 	add := map[string][]string{"processes": {"exe TEXT", "exec_ts INTEGER", "exit_ts INTEGER",
 		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0", "argv0_len INTEGER"},
 		"tcp_conns": {"v6only INTEGER"}, "tcp_keyframes": {"v6only INTEGER"},
-		"mounts": {"super_options TEXT", "dev TEXT", "root TEXT", "seq INTEGER", "loop_file TEXT", "user_options TEXT"}}
+		"proc_samples": {"rchar INTEGER", "wchar INTEGER", "read_bytes INTEGER", "write_bytes INTEGER", "cancelled_write_bytes INTEGER"},
+		"mounts":       {"super_options TEXT", "dev TEXT", "root TEXT", "seq INTEGER", "loop_file TEXT", "user_options TEXT"}}
 	for table, cols := range add {
 		have := map[string]bool{}
 		rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
