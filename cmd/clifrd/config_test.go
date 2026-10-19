@@ -11,7 +11,7 @@ import (
 func testFlags() *flag.FlagSet {
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
 	for _, n := range []string{"data-dir", "D", "retention", "max-size", "log-level", "interval", "sys-interval", "fd-interval",
-		"keyframe-interval", "flush-interval", "events", "tcp", "fd-mode", "proc-io", "cpu-budget", "gc-heap-target", "config", "C"} {
+		"keyframe-interval", "flush-interval", "events", "tcp", "fd-mode", "proc-io", "redact", "cpu-budget", "gc-heap-target", "config", "C"} {
 		fs.String(n, "default", "")
 	}
 	return fs
@@ -46,7 +46,7 @@ func TestApplyConfig(t *testing.T) {
 		{"", "no such file"},
 		{"intervals:\n  proces: 30s\n", "field proces not found"},
 		{"memory_limit: 256M\n", "use gc_heap_target"},
-		{"redact:\n  - x\n", "not available yet"},
+		{"redact: x\n", "cannot unmarshal"},
 		{"intervals:\n  process: [1, 2]\n", "want a single value"},
 	} {
 		path := filepath.Join(dir, "none.yml")

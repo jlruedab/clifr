@@ -62,7 +62,7 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
 			TS: start.UnixMilli(), EndTS: end.UnixMilli(), SampleTS: sampleTS,
 			Cmd: strings.Join(argv, " "), IgnorePIDs: fmt.Sprintf("%d,%s", os.Getpid(), strconv.Itoa(pid)),
-			Output: out.String(),
+			Output: r.redact.Text(out.String()), // the real tools show the command lines as they are
 		})
 	}
 }

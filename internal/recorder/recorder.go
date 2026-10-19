@@ -44,6 +44,7 @@ type Config struct {
 	Interval         time.Duration
 	SysInterval      time.Duration // system-wide counters; 0 or >= Interval: with every sample
 	ProcIO           bool          // read /proc/<pid>/io
+	Redact           []string      // regular expressions masked in command lines before they are stored
 	FDInterval       time.Duration
 	Duration         time.Duration // 0 = until signalled
 	ProcRoot         string
@@ -96,6 +97,7 @@ type Recorder struct {
 	events       *eventQueue // nil if the proc connector is unavailable
 	tcp          *tcpTracker // nil: v1 socket sampling
 	fdWalks      uint64      // full fd walks so far
+	redact       Redactor
 	mounts       *mountWatch
 	fsUsage      fsUsage
 	lostReported int
@@ -116,6 +118,10 @@ type Recorder struct {
 }
 
 func New(cfg Config, logger *Logger) (*Recorder, error) {
+	redact, err := NewRedactor(cfg.Redact)
+	if err != nil {
+		return nil, err
+	}
 	fs := procfs.New(cfg.ProcRoot)
 	btime, err := fs.BootTime()
 	if err != nil {
@@ -125,7 +131,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
+	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
@@ -154,7 +160,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
 		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks), "page_kb": strconv.Itoa(os.Getpagesize() / 1024),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
-		"sys_interval_s": fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()),
+		"sys_interval_s": fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()), "redact_patterns": strconv.Itoa(len(redact)),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
 			return nil, err
@@ -574,7 +580,7 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 	if err != nil {
 		return nil
 	}
-	cmd, argv0, err := r.fs.ReadCmdline(key.pid)
+	cmd, argv0, err := r.readCmdline(key.pid)
 	if err != nil {
 		return nil
 	}
@@ -623,7 +629,7 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
 	}
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
-	if cmd, argv0, err := r.fs.ReadCmdline(e.key.pid); err == nil && cmd != "" {
+	if cmd, argv0, err := r.readCmdline(e.key.pid); err == nil && cmd != "" {
 		u.Cmdline, u.Argv0Len = cmd, argv0
 	}
 	if u != e.upd {

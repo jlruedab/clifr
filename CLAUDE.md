@@ -119,6 +119,10 @@ wait for the user's go-ahead.
   2026-10-19; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, plus boot time, intervals and
   modes. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).
+- Redaction (`--redact`, clifrd.yml `redact`): `recorder.Redactor` masks command lines before
+  they are stored; every /proc read goes through `r.readCmdline`, exec events through
+  `r.redact.Cmdline`; argv[0] and the arguments are masked apart (argv0_len stays right).
+  meta `redact_patterns` = their number (not the patterns).
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
 ## Commands

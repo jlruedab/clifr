@@ -103,6 +103,7 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--db FILE` | off | also (or with `--data-dir ""` only) write the v1 SQLite schema |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
+| `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
 | `--log-level` | info | error, warn, info or debug |
 | `-v`, `--version` | | print the version and exit |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
@@ -111,7 +112,8 @@ Settings can also be given in the configuration file; `deploy/clifrd.yml`
 lists them with their defaults (`data_dir`, `retention`, `max_size`,
 `log_level`, `intervals: process, system, files, keyframe, flush`,
 `collectors: process_events, tcp, files, process_io`, `cpu_budget`,
-`gc_heap_target`). A flag on the
+`gc_heap_target`, `redact`: a list of patterns; the example masks password
+and token options, URL credentials and `key=value` secrets). A flag on the
 command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
 Unknown settings are rejected. `memory_limit` of the product spec is not
 accepted: a Go memory limit makes the collector run continuously when the
@@ -145,7 +147,10 @@ What is recorded:
   durations and rows written; events and drops per source; guard-rail events.
 
 Entities are stored as time ranges (first seen, last seen), not snapshots.
-`/proc/*/environ` is never read. Nothing is sent over the network.
+`/proc/*/environ` is never read. Nothing is sent over the network. Command
+lines are masked with the `redact` patterns before they are stored (from
+/proc, exec events and inherited ones alike; also the real tools' output
+saved for `verify`); mount options and file names are not.
 
 Guard rails: a sample that overruns the interval makes the next one skip
 (recorded); a process vanishing mid-read is handled; SIGINT/SIGTERM close

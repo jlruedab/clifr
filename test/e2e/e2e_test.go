@@ -128,7 +128,8 @@ func TestIncident(t *testing.T) {
 	// Background load and the recorder.
 	load := start(t, exec.Command(filepath.Join(dir, "load"), "--profile", "light"), "READY")
 	defer stop(load)
-	rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data, "--interval", "2s", "--fd-interval", "10s")
+	rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data, "--interval", "2s", "--fd-interval", "10s",
+		"--redact", `e2e-secret=(\S+)`)
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {
@@ -169,6 +170,12 @@ func TestIncident(t *testing.T) {
 		c.Wait()
 	}
 	burstEnd := time.Now()
+	// Secrets in command lines: a process gone before any sample (exec event)
+	// and one that samples see.
+	exec.Command("/bin/sh", "-c", "exit 0", "sh", "e2e-secret=TOPSECRET1").Run()
+	longSecret := exec.Command("/bin/sh", "-c", "sleep 8", "sh", "e2e-secret=TOPSECRET2")
+	longSecret.Start()
+	defer longSecret.Wait()
 	time.Sleep(15 * time.Second)
 	checkAt := time.Now().Add(-5 * time.Second).Truncate(time.Second) // inside the incident, between samples
 	time.Sleep(30 * time.Second)
@@ -252,6 +259,17 @@ func TestIncident(t *testing.T) {
 	if len(life) > 0 {
 		t.Logf("life: %d e2eburst processes, %d shorter than 1 s; e.g. pid %d %d ms (%s, %s)",
 			len(life), short, life[0].PID, life[0].Duration, life[0].Source, life[0].EndKind)
+	}
+	// Neither secret reached the recording; both processes are there, masked.
+	procsCSV, err := exec.Command(clifr, "export", "processes", "--data-dir", data).Output()
+	if err != nil {
+		t.Fatalf("export processes: %v", err)
+	}
+	if bytes.Contains(procsCSV, []byte("TOPSECRET")) {
+		t.Error("a redacted secret is in the processes table")
+	}
+	if n := bytes.Count(procsCSV, []byte("e2e-secret=***")); n < 2 {
+		t.Errorf("want both secret-bearing processes recorded with the secret masked, found %d", n)
 	}
 	if len(life) != nBurst || short != nBurst {
 		t.Errorf("want %d sub-second e2eburst processes, got %d (%d sub-second)", nBurst, len(life), short)

@@ -53,6 +53,7 @@ func run(args []string) error {
 	fs.DurationVar(&c.Interval, "interval", 30*time.Second, "process and socket sample interval")
 	fs.DurationVar(&c.SysInterval, "sys-interval", 10*time.Second, "system-wide counters (vmstat, mpstat, iostat, free, uptime), at most --interval")
 	fs.DurationVar(&c.FDInterval, "fd-interval", 120*time.Second, "full open-file walk interval")
+	fs.Var((*stringList)(&c.Redact), "redact", "regular expression to mask in command lines before they are stored (repeatable; with capture groups only the groups are masked)")
 	fs.BoolVar(&c.ProcIO, "proc-io", true, "read each process's I/O counters (/proc/<pid>/io) when it used CPU, and at fd walks")
 	fs.DurationVar(&c.Duration, "duration", 0, "stop after this long (0 = until SIGINT/SIGTERM)")
 	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
@@ -195,4 +196,14 @@ func version() string {
 		return bi.Main.Version
 	}
 	return "unknown"
+}
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, " ") }
+
+func (l *stringList) Set(v string) error {
+	*l = append(*l, v)
+	return nil
 }

@@ -23,5 +23,13 @@ cpu_budget: 2%         # of one core over 5 minutes; above it the fd interval is
                        # lengthened when fd walks are a quarter of the cost or more
 gc_heap_target: 256M   # heap up to which garbage is collected at Go's default rate
 
+# Masked in command lines (as ***) before they are stored: Go regular
+# expressions; with capture groups only the groups are masked. (The built-in
+# default is none; these are suggestions.)
+redact:
+  - '(?i)--?(?:password|passwd|pass|pwd|secret|token|api[-_]?key|access[-_]?key)[= ](\S+)'
+  - '(?i)\b(?:password|passwd|pwd|secret|token)=(\S+)'
+  - '://[^/\s:@]+:([^@\s]+)@'   # user:password@ in URLs
+
 # CPU and memory hard limits, file-system protection and capabilities are
 # set in the systemd unit (clifrd.service) or a drop-in file.

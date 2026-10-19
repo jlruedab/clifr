@@ -350,9 +350,10 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 		r.eventTTY(&pe, e)
 	case bpfproc.Exec:
 		pe.kind = evExec
-		pe.attrs.Cmdline, pe.attrs.Argv0Len, pe.attrs.Exe, pe.attrs.ExecTS = e.Cmdline, e.Argv0Len, e.Filename, pe.ts
+		pe.attrs.Cmdline, pe.attrs.Argv0Len = r.redact.Cmdline(e.Cmdline, e.Argv0Len)
+		pe.attrs.Exe, pe.attrs.ExecTS = e.Filename, pe.ts
 		if e.ArgsTruncated {
-			if full, argv0, err := r.fs.ReadCmdline(e.PID); err == nil && full != "" {
+			if full, argv0, err := r.readCmdline(e.PID); err == nil && full != "" {
 				pe.attrs.Cmdline, pe.attrs.Argv0Len = full, argv0
 			}
 		}
@@ -376,7 +377,7 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 			pe.key = procKey{pid: e.PID, start: r.boot + int64(st.StartTime)*1000/procfs.ClockTicks}
 			pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: srcEBPF}
 			pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
-			pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.fs.ReadCmdline(e.PID)
+			pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.readCmdline(e.PID)
 			if _, res, err := r.fs.ReadStatm(e.PID); err == nil {
 				pe.rssKB = res * int64(pageKB)
 			}
@@ -403,7 +404,7 @@ func (r *Recorder) parentCmdline(ppid int) (string, int) {
 			return ep.ev.attrs.Cmdline, ep.ev.attrs.Argv0Len
 		}
 	}
-	cmd, argv0, _ := r.fs.ReadCmdline(ppid)
+	cmd, argv0, _ := r.readCmdline(ppid)
 	return cmd, argv0
 }
 
@@ -439,7 +440,7 @@ func (r *Recorder) enrich(e cnproc.Event) procEvent {
 	if status, err := r.fs.ReadStatus(e.PID); err == nil {
 		pe.attrs.UID = status.UID
 	}
-	pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.fs.ReadCmdline(e.PID)
+	pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.readCmdline(e.PID)
 	if kind == evExec {
 		pe.attrs.ExecTS = pe.ts
 	}

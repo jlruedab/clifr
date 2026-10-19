@@ -46,14 +46,14 @@ type fileConfig struct {
 		Files         scalar `yaml:"files"`
 		ProcessIO     scalar `yaml:"process_io"`
 	} `yaml:"collectors"`
-	CPUBudget    scalar `yaml:"cpu_budget"`
-	GCHeapTarget scalar `yaml:"gc_heap_target"`
+	CPUBudget    scalar   `yaml:"cpu_budget"`
+	GCHeapTarget scalar   `yaml:"gc_heap_target"`
+	Redact       []string `yaml:"redact"`
 }
 
 // notYet names settings of the clifrd.yml spec that this release rejects.
 var notYet = map[string]string{
 	"memory_limit": "use gc_heap_target: a hard memory limit makes the garbage collector run continuously (CPU); the systemd unit's MemoryMax is the hard limit",
-	"redact":       "command-line redaction is not available yet",
 	"encryption":   "encryption is not available in this release",
 }
 
@@ -100,6 +100,13 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		}
 		if err := fset.Set(s.flag, string(s.v)); err != nil {
 			return fmt.Errorf("%s: %s: %w", path, yamlName(s.flag), err)
+		}
+	}
+	if !given["redact"] {
+		for _, p := range c.Redact {
+			if err := fset.Set("redact", p); err != nil {
+				return fmt.Errorf("%s: redact: %w", path, err)
+			}
 		}
 	}
 	return nil
