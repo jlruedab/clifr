@@ -169,7 +169,9 @@ v2:
    scaling points within the 2% budget, no measurable pgbench impact. Then for memory
    (2026-10-17/18): pointer-free rows in memory and `--gc-heap-target` 256M (was 384M):
    single runs at the busy load 282 / 330 MiB avg / max with 256M, 326 / 379 with 384M
-   (429 / 488 in batch 1133); 348 MiB max with 100,000 connections (561). The full matrix has not been rerun since 1133.
+   (429 / 488 in batch 1133); 348 MiB max with 100,000 connections (561). Rerun after phase 3
+   (2026-10-19, busy-, scaling-, report-20261019-1620): 1.84% of one core, 285 / 332 MiB at the
+   busy load, all 15 scaling points within budget, no measurable pgbench impact.
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
    mpstat|iostat`; `clifr verify` compares them. No user count for `uptime`. About 0.2 ms of

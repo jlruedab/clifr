@@ -47,7 +47,7 @@ not yet shown to be viable for production:
 3. **Synthetic load only**: pgbench and a load generator over loopback; no
    real server with many peers and containers.
 4. **Known open issues**: see [Limitations](#limitations).
-5. **Memory** (about 330–430 MiB at the busy load) may be too much for a
+5. **Memory** (about 285 MiB on average at the busy load) may be too much for a
    fleet agent; that is a product decision.
 6. **No packaging or delivery** (.deb/.rpm, the planned rename to clifr,
    the bundle and sos plugin of `docs/sos-vault-integration.md`).
@@ -430,93 +430,84 @@ before, which also took the recorder to 947 MiB).
 
 ### Cost at the busy load
 
-Three runs of 15 minutes each (2026-10-17, `report-20261017-1133`, commit
-`2c18c74`). The previous batch (2026-10-12, `report-20261012-1050`) is in
-brackets.
+Three runs of 15 minutes each (2026-10-19, `report-20261019-1620`, commit
+`abc43af`: phase 3 of the product plan, with system counters every 10 s,
+per-process I/O and file-system usage). The 2026-10-17 batch
+(`report-20261017-1133`) is in brackets.
 
 | Metric | clifr, default (B) | v1 | atop 30 s |
 |---|---:|---:|---:|
-| CPU, % of one core | 2.14 ± 0.71 (5.19) | 11.3 ± 0.77 | 0.60 ± 0.05 |
-| CPU, % of the machine | 0.10 (0.24) | 0.51 | 0.03 |
-| Memory (anonymous), average | 429 MiB (327) | 152 MiB | 29 MiB |
-| Memory (anonymous), max | 488 MiB (397) | 192 MiB | 35 MiB |
-| Data kept per day | 3.99 GiB (4.00) | 18.03 GiB | 0.35 GiB |
-| Written to disk per day | 12.6 GiB (12.3) | 298 GiB | 0.82 GiB |
+| CPU, % of one core | 1.84 ± 0.57 (2.14) | 10.9 ± 0.41 | 0.54 ± 0.01 |
+| CPU, % of the machine | 0.08 (0.10) | 0.49 | 0.02 |
+| Memory (anonymous), average | 285 MiB (429) | 151 MiB | 27 MiB |
+| Memory (anonymous), max | 332 MiB (488) | 182 MiB | 34 MiB |
+| Data kept per day | 3.98 GiB (3.99) | 18.03 GiB | 0.32 GiB |
+| Written to disk per day | 12.0 GiB (12.6) | 301 GiB | 0.75 GiB |
 
-The three B runs used 1.97%, 2.49% and 2.08% of one core; the second
-included an hourly compaction. The aggressive configuration (10 s / 60 s)
-used 2.62%, the conservative one (60 s / 300 s) 1.87%. The guard rail
-recorded 2–3 `budget_exceeded` events per default run (2.02–2.15% over
-5 minutes) and kept the fd interval at 2 minutes. Memory is higher than in
-the previous batch because of the GC setting described under Limitations.
+The three B runs used about 2.1%, 1.7% and 1.7% of one core. The aggressive
+configuration (10 s / 60 s) used 2.23% (2.62), the conservative one
+(60 s / 300 s) 1.55% (1.87). The guard rail recorded 3 `budget_exceeded`
+events over the three default runs and kept the fd interval at 2 minutes.
+Memory is about a third lower than in the 2026-10-17 batch: rows held in
+memory are pointer-free and the heap target is 256M (see Limitations). What
+phase 3 added (three times as many system-counter samples, `/proc/<pid>/io`
+reads, statfs per mount) did not change the CPU measurably: a single run on
+2026-10-17 without it also used 1.84%.
 
 Impact on pgbench at 80,000 transactions per second, default configuration
 against no recorder:
 
 | Metric | No recorder | Difference | 95% interval |
 |---|---:|---:|---|
-| Transactions per second | 79,998 | −3 | −30 to +25, within noise |
-| Latency average | 0.073 ms | +0.000 ms | −0.003 to +0.004, within noise |
-| Latency p99 | 0.122 ms | +0.002 ms | −0.008 to +0.012, within noise |
-| Latency p99.9 | 0.201 ms | +0.022 ms | −0.120 to +0.164, within noise |
+| Transactions per second | 80,004 | −3 | −27 to +22, within noise |
+| Latency average | 0.072 ms | +0.002 ms | −0.008 to +0.013, within noise |
+| Latency p99 | 0.124 ms | +0.010 ms | −0.057 to +0.077, within noise |
+| Latency p99.9 | 0.252 ms | +0.014 ms | −0.400 to +0.428, within noise |
 
 No configuration (clifr at any interval, v1, atop) showed a measurable
-latency change. In the previous batch the default configuration raised the
-average by 0.002 ms and p99.9 by 0.121 ms, both measurable; the baseline's
-p99.9 was also higher then (0.320 ms), so part of the difference may be the
-machine.
+latency change, as in the 2026-10-17 batch. In the 2026-10-12 batch the
+default configuration raised the average by 0.002 ms and p99.9 by
+0.121 ms, both measurable.
 
 ### Scaling
 
 One dimension varied at a time, no workload, guard rail off, 7 minutes per
 point. The budget is 2% of one core.
 
-2026-10-17 (`scaling-20261017-1133`); the recorder CPU of the previous
-batch (`scaling-20261012-1050`) is in brackets.
+2026-10-19 (`scaling-20261019-1620`); the 2026-10-17 batch
+(`scaling-20261017-1133`) is in brackets.
 
 | Point | Recorder CPU | eBPF programs | Memory max |
 |---|---:|---:|---:|
-| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.48–0.51% (2.4–2.5%) | 0.04% | 221–257 MiB |
-| 10,000 processes | 0.96% (3.63%) | 0.04% | 304 MiB |
-| 200,000 open files | 0.78% (3.10%) | 0.04% | 395 MiB |
-| 100,000 connections | 1.01% (2.95%) | 0.07% | 561 MiB |
-| 10 spawns/s | 0.47% (1.32%) | 0.04% | 275 MiB |
-| 200 spawns/s | 0.62% (4.55%) | 0.13% | 272 MiB |
-| 100 new connections/s | 1.04% (3.23%) | 0.23% | 367 MiB |
-| 500 new connections/s | 1.67% (4.48%) | 0.89% | 463 MiB |
+| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.47–0.50% (0.48–0.51%) | 0.04% | 165–195 MiB (221–257) |
+| 10,000 processes | 0.95% (0.96%) | 0.05% | 246 MiB (304) |
+| 200,000 open files | 0.79% (0.78%) | 0.04% | 263 MiB (395) |
+| 100,000 connections | 0.92% (1.01%) | 0.06% | 377 MiB (561) |
+| 10 spawns/s | 0.42% (0.47%) | 0.05% | 213 MiB (275) |
+| 200 spawns/s | 0.60% (0.62%) | 0.15% | 190 MiB (272) |
+| 100 new connections/s | 1.11% (1.04%) | 0.25% | 258 MiB (367) |
+| 500 new connections/s | 1.62% (1.67%) | 0.95% | 309 MiB (463) |
 
-All 15 points fit the 2% budget (1 of 15 in the previous batch).
-
-The connection points were rerun on 2026-10-18 after the pointer-free rows
-(see Limitations; `scaling-20261018-1157`, `report-20261018-1157`):
-
-| Connections | Recorder CPU | Memory max |
-|---:|---:|---:|
-| 1,000 | 0.42% (0.42%) | 95 MiB (144) |
-| 20,000 | 0.46% (0.49%) | 156 MiB (226) |
-| 100,000 | 0.76% (1.01%) | 434 MiB (561) |
-
-Brackets: the 2026-10-17 batch. Sample durations and disk use are
-unchanged; the other points were not rerun. The eBPF programs run inside the
-observed processes' own kernel paths, so their time is charged to those
-processes and is not part of the recorder's CPU figure.
+All 15 points fit the 2% budget, as in the 2026-10-17 batch (1 of 15 on
+2026-10-12). CPU is the same within noise; peak memory is 20–35% lower.
+The eBPF programs run inside the observed processes' own kernel paths, so
+their time is charged to those processes and is not part of the recorder's
+CPU figure.
 
 ### Compared with Prometheus Node Exporter
 
-At the busy load: clifr with the current code (pointer-free rows, default
-heap target 256M; one run, `profile-busy-20261017-2037-compact3b-heap256`,
-with the CPU profiler on) and from the matrix above (batch 1133, three
-runs); Node Exporter 1.10.2 with the Debian package's default collectors,
+At the busy load: clifr from the matrix above (batch 1620, three runs) and
+the 2026-10-17 batch (1133); Node Exporter 1.10.2 with the Debian package's default collectors,
 scraped every 15 s (one run, `nodeexp-busy-20261016-1405`). Prometheus
 itself was not run: its column is an estimate.
 
-| | clifr now | clifr, batch 1133 | Node Exporter | Prometheus server (estimate) |
+| | clifr, batch 1620 | clifr, batch 1133 | Node Exporter | Prometheus server (estimate) |
 |---|---:|---:|---:|---:|
 | CPU, % of one core | 1.84 | 2.14 | 1.36 | well under 1 |
-| Memory (anonymous), average / max | 292 / 330 MiB | 429 / 488 MiB | 9.0 / 9.7 MiB | about 50–150 MiB |
-| Data kept on the host | about 179 MB/h | about 178 MB/h | none | about 1–1.5 MB/h |
-| Data kept at the default retention | about 13 GB (72 h) | the same | none | about 0.35–0.5 GB (15 days) |
-| Written to disk | about 519 MB/h | about 565 MB/h | none | about 5–10 MB/h |
+| Memory (anonymous), average / max | 285 / 332 MiB | 429 / 488 MiB | 9.0 / 9.7 MiB | about 50–150 MiB |
+| Data kept on the host | about 178 MB/h | about 178 MB/h | none | about 1–1.5 MB/h |
+| Data kept at the default retention | about 2 GB (the 2G size cap; 72 h would be 13 GB) | about 13 GB (72 h) | none | about 0.35–0.5 GB (15 days) |
+| Written to disk | about 538 MB/h | about 565 MB/h | none | about 5–10 MB/h |
 | Network | none | none | 274 KB per scrape (about 66 MB/h uncompressed) | receives the scrapes |
 
 Node Exporter's CPU comes mostly from slow collectors on this laptop-class
@@ -542,9 +533,9 @@ made (not measured):
 
 | | Now | Best case in Go | Best case in Rust | Node Exporter |
 |---|---:|---:|---:|---:|
-| Memory (anonymous) | 292 MiB | about 60–100 MiB | about 30–50 MiB | 9 MiB |
-| Data kept | 179 MB/h | about 55–90 MB/h | the same | none (Prometheus: about 1–1.5 MB/h) |
-| Written to disk | 519 MB/h | close to the data kept | the same | none (Prometheus: about 5–10 MB/h) |
+| Memory (anonymous) | 285 MiB | about 60–100 MiB | about 30–50 MiB | 9 MiB |
+| Data kept | 178 MB/h | about 55–90 MB/h | the same | none (Prometheus: about 1–1.5 MB/h) |
+| Written to disk | 538 MB/h | close to the data kept | the same | none (Prometheus: about 5–10 MB/h) |
 
 The tracked state alone is some 20–30 MB in compact form, and each
 connection needs some 15–25 bytes on disk even with a tight encoding
@@ -556,19 +547,18 @@ continuous eBPF tracer, not a metrics exporter.
 
 ## Limitations
 
-- **CPU is at the 2% budget at the busy load**: 2.14% of one core on
-  average, with 2–3 `budget_exceeded` events per 15-minute run; an hourly
+- **CPU is just under the 2% budget at the busy load**: 1.84% of one core
+  on average (runs of 1.7–2.1%), with a few `budget_exceeded` events; an hourly
   compaction adds a burst of a few seconds. Every scaling point is within
   it. The guard rail lengthens the fd interval only when the fd walks are
   at least a quarter of the recorder's CPU (9–14% at the busy load), so it
   kept the interval at 2 minutes in every default run.
-- **Memory is two to three times v1's**: 429 MiB on average at the busy
-  load and up to 561 MiB with 100,000 connections in the 2026-10-17 batch.
-  Rows held in memory have since been made pointer-free (fixed-size
-  addresses, enums and interned names instead of strings and pointers), so
-  the garbage collector does not scan them: in single runs 326 / 379 MiB
-  average / max at the busy load and 434 MiB with 100,000 connections,
-  with slightly less CPU. The full matrix has not been rerun with it. Rows are buffered until
+- **Memory is about twice v1's**: 285 MiB on average (332 at most) at the
+  busy load and up to 377 MiB with 100,000 connections (2026-10-19), down
+  from 429 / 488 and 561 MiB: rows held in memory are pointer-free
+  (fixed-size addresses, enums and interned names instead of strings and
+  pointers), so the garbage collector does not scan them, and the heap
+  target is 256M. Rows are buffered until
   the 5-minute flush. The shipped unit allows 768 MiB; above that the
   recorder is killed and restarted, losing the rows since the last flush.
   Since 2026-10-14 the recorder trades some memory for CPU: garbage is
