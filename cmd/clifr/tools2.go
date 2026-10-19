@@ -56,9 +56,6 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 			!strings.Contains(p.pos[0], "u") || !strings.Contains(p.pos[0], "x") {
 			return nil, errors.New(`ps: the BSD form supported is "ps aux"; other forms use -e, -p, -u or -C (see: clifr help ps)`)
 		}
-		if err := summaryOnly("ps", c); err != nil {
-			return nil, err
-		}
 		return func() error { return runPS(c, nil, nil) }, nil
 	}
 	all := p.has("e") || p.has("A")
@@ -78,11 +75,8 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 			return nil, err
 		}
 	}
-	if c.w.IsRange() && !all {
-		return nil, errors.New("ps: a range lists every process (-e or aux); -p, -u and -C are for --at")
-	}
-	if err := summaryOnly("ps", c); err != nil {
-		return nil, err
+	if c.w.IsRange() && !all && !c.g.samples && !c.g.changes {
+		return nil, errors.New("ps: the range summary lists every process (-e or aux); -p, -u and -C need --at, --samples or --changes")
 	}
 	var sel func(r *query.PSRow) bool
 	if !all {
@@ -116,6 +110,9 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 
 // runPS prints ps at a moment (aux when f is nil) or the range summary.
 func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
+	if ok, err := rangeView(c, psView(c, sel, f)); ok {
+		return err
+	}
 	db, w := c.db, c.w
 	if w.IsRange() {
 		rows, err := query.PSRange(db, w.From, w.To)
@@ -197,15 +194,15 @@ func lsofTool() *tool {
 			if len(p.pos) > 0 {
 				return nil, fmt.Errorf("lsof: file arguments are not supported (%q)", p.pos[0])
 			}
-			if err := summaryOnly("lsof", c); err != nil {
-				return nil, err
-			}
 			return func() error { return runLsof(c, s) }, nil
 		},
 	}
 }
 
 func runLsof(c *runCtx, sel query.LsofSelect) error {
+	if ok, err := rangeView(c, lsofView(c, sel)); ok {
+		return err
+	}
 	db, w := c.db, c.w
 	o := sel.Options()
 	if w.IsRange() {
@@ -368,14 +365,14 @@ func netstatTool() *tool {
 			}
 			v := query.NetstatView{All: p.has("all"), Listening: p.has("listening"), Program: p.has("programs"),
 				Wide: p.has("wide"), V4: p.has("4"), V6: p.has("6")}
-			if err := summaryOnly("netstat", c); err != nil {
-				return nil, err
-			}
 			return func() error {
+				if ok, err := rangeView(c, netstatView(c, tcp, udp, v)); ok {
+					return err
+				}
 				if c.w.IsRange() {
 					return socketsRange(c, "netstat", udp, query.SockFilter{})
 				}
-				rows, meta, err := socketsAt(c, tcp, udp, query.SockFilter{})
+				rows, meta, err := socketsAt(c, c.w.At, tcp, udp, query.SockFilter{})
 				if err != nil {
 					return err
 				}
@@ -478,10 +475,10 @@ func mountTool() *tool {
 					}
 				}
 			}
-			if err := summaryOnly("mount", c); err != nil {
-				return nil, err
-			}
 			return func() error {
+				if ok, err := rangeView(c, mountView(c, types)); ok {
+					return err
+				}
 				var rows []query.MountRow
 				var err error
 				if c.w.IsRange() {
@@ -545,60 +542,23 @@ func dfTool() *tool {
 					return nil, fmt.Errorf("df: %q: give an absolute path (the recording has no working directory)", a)
 				}
 			}
-			if c.g.changes {
-				return nil, errors.New("df: --changes is not available for df; use --samples")
-			}
-			if c.w.IsRange() && !c.g.samples {
-				return nil, errors.New("df: over a range, add --samples (one report per sample)")
+			if c.w.IsRange() && !c.g.samples && !c.g.changes {
+				return nil, errors.New("df: over a range, add --samples (one report per sample) or --changes")
 			}
 			return func() error {
-				times := []int64{c.w.At}
-				if c.w.IsRange() {
-					spans, err := query.SysSpans(c.db, c.w, c.g.everyMS)
-					if err != nil {
-						return err
-					}
-					times = times[:0]
-					for _, sp := range spans {
-						times = append(times, sp.To)
-					}
-					if c.g.number > 0 && len(times) > c.g.number {
-						times = times[:c.g.number]
-					}
+				v := dfView(c, f, p.pos)
+				if ok, err := rangeView(c, v); ok {
+					return err
 				}
-				var all []query.DFRow
-				for i, t := range times {
-					rows, err := query.DF(c.db, t)
-					if err != nil {
-						return err
-					}
-					if len(p.pos) > 0 {
-						var sel []query.DFRow
-						for _, a := range p.pos {
-							if r, ok := query.DFFor(rows, a); ok {
-								sel = append(sel, r)
-							} else {
-								return fmt.Errorf("df: %s: no file system recorded for it", a)
-							}
-						}
-						rows = sel
-					}
-					if c.g.json {
-						all = append(all, rows...)
-						continue
-					}
-					if i > 0 {
-						fmt.Println()
-					}
-					c.header("df at %s, usage sampled", query.FormatMS(t))
-					query.PrintDF(os.Stdout, rows, f)
+				rows, meta, err := v.at(c.w.At)
+				if err != nil {
+					return err
 				}
-				if !c.g.json {
-					return nil
+				if len(p.pos) > 0 && len(rows) < len(p.pos) {
+					return fmt.Errorf("df: no file system recorded for some of %s", strings.Join(p.pos, ", "))
 				}
-				return writeLines(all, func(i int) rowMeta {
-					return rowMeta{SampleTS: all[i].SampleTS, Sampled: []string{"size_bytes", "used_bytes", "avail_bytes", "inodes", "iused", "ifree"}}
-				})
+				c.header("df at %s, usage sampled", query.FormatMS(c.w.At))
+				return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) }, func() { v.print(rows) })
 			}, nil
 		},
 	}

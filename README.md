@@ -220,8 +220,8 @@ resolved time and time zone and other informational lines go to stderr.
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
 `/var/lib/clifr`; hidden: `--db FILE` for a v1 SQLite file); `-j/--json`;
-for ranges `--summary` (default), `--samples`, `-e/--every DUR`,
-`-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
+for ranges `--summary` (default), `--changes`, `--samples`,
+`-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).
 `CLIFR_SINCE`, `CLIFR_UNTIL`, `CLIFR_TZ` and `CLIFR_DATA_DIR` set defaults.
 A command can also be given unquoted after clifr's options
@@ -268,6 +268,14 @@ A command can also be given unquoted after clifr's options
   an interval argument (`"vmstat 60"`, `"iostat -x 60 10"`). `mpstat -P
   ALL` or `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p`
   (partitions).
+- Range views: `--summary` (default) is one report for the range (ps, ss,
+  netstat, lsof: one row per object with first/last seen and peaks; the
+  counters: one report). `--samples` prints the full output at every sample
+  (spacing `-e`, at most `-n`). `--changes` (ps, ss, netstat, lsof, df,
+  mount) prints, between consecutive samples, the rows that appeared,
+  disappeared or changed (ps: command, user, parent or terminal; sockets:
+  state or owners; df: Use% or the file system), as tables in the command's
+  own format; anything shorter than a sample interval is in `events`.
 - `--json` writes JSON Lines, one object per row. Each starts with the times
   it describes, in Unix milliseconds: `ts_ms` (the moment, or the row's own
   time), `sample_ts_ms` (the sample its sampled values come from),

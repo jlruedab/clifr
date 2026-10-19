@@ -142,6 +142,27 @@ func sampledAfter(db *store.DB, from, to int64) (func(t int64) bool, error) {
 	}, rows.Err()
 }
 
+// SampleTimes lists the samples in [from, to] at least every apart (all
+// when every is 0), skipped ones left out.
+func SampleTimes(db *store.DB, from, to, every int64) ([]int64, error) {
+	rows, err := db.Query(`SELECT ts FROM samples WHERE skipped = 0 AND ts >= ? AND ts <= ? ORDER BY ts`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var ts int64
+		if err := rows.Scan(&ts); err != nil {
+			return nil, err
+		}
+		if len(out) == 0 || ts-out[len(out)-1] >= every {
+			out = append(out, ts)
+		}
+	}
+	return out, rows.Err()
+}
+
 // recorderGaps: time without samples (more than 2.5 intervals between two
 // samples: the recorder was stopped or stalled) and skipped samples.
 func recorderGaps(db *store.DB, from, to int64, gaps, skipped bool) ([]Event, error) {

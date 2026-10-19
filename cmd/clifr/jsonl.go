@@ -18,11 +18,14 @@ import (
 //	ts_ms         the moment the row describes (--at, or the row's own time)
 //	sample_ts_ms  the sample the sampled values come from
 //	from_ms/to_ms the range (or, for counters, the interval) it covers
+//	change        with --changes and diff: + appeared, - gone, ~ changed
+//	              (from_ms is the earlier moment, ts_ms the later)
 //
 // Keys a row already has are not repeated. Times are Unix milliseconds.
 
 type rowMeta struct {
 	TS, SampleTS, From, To int64
+	Change                 string // --changes and diff: + appeared, - gone, ~ changed
 	Sampled                []string
 }
 
@@ -73,6 +76,10 @@ func jsonLine(row any, m rowMeta, withSampled bool) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteByte('{')
 	n := 0
+	if m.Change != "" {
+		out.WriteString(`"change":"` + m.Change + `",`)
+		n++
+	}
 	for _, f := range []struct {
 		key string
 		v   int64

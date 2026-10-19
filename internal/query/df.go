@@ -261,3 +261,6 @@ func DFFor(rows []DFRow, path string) (DFRow, bool) {
 	}
 	return best, ok
 }
+
+// UsePct is the Use% df prints.
+func (r *DFRow) UsePct() string { return pctUp(r.used, r.nonroot) }

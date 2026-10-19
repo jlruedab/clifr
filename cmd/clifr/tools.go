@@ -27,20 +27,16 @@ type tool struct {
 
 // runCtx is what a tool needs at run time.
 type runCtx struct {
-	g  *globals
-	w  query.Window
-	db *store.DB
+	g     *globals
+	w     query.Window
+	db    *store.DB
+	quiet bool // range views: no per-snapshot headers
 }
 
-func (c *runCtx) header(format string, args ...any) { query.Header(format, args...) }
-
-// summaryOnly rejects --changes and --samples for tools whose range output
-// is a summary.
-func summaryOnly(name string, c *runCtx) error {
-	if c.w.IsRange() && (c.g.changes || c.g.samples) {
-		return fmt.Errorf("%s: --changes and --samples are not available yet; a range shows the summary (one row per object)", name)
+func (c *runCtx) header(format string, args ...any) {
+	if !c.quiet {
+		query.Header(format, args...)
 	}
-	return nil
 }
 
 var tools = map[string]*tool{}
@@ -145,17 +141,17 @@ func prepareSS(p parsed, c *runCtx) (func() error, error) {
 	}
 	v := query.SSView{All: p.has("all"), Listening: p.has("listening"), Process: p.has("processes"),
 		Numeric: p.has("numeric"), V4: p.has("ipv4"), V6: p.has("ipv6")}
-	if err := summaryOnly("ss", c); err != nil {
-		return nil, err
-	}
 	return func() error { return runSS(c, tcp, udp, filter, v) }, nil
 }
 
 func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) error {
+	if ok, err := rangeView(c, ssView(c, tcp, udp, filter, v)); ok {
+		return err
+	}
 	if c.w.IsRange() {
 		return socketsRange(c, "ss", udp, filter)
 	}
-	rows, meta, err := socketsAt(c, tcp, udp, filter)
+	rows, meta, err := socketsAt(c, c.w.At, tcp, udp, filter)
 	if err != nil {
 		return err
 	}
@@ -202,8 +198,8 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 // lists them) with each row's provenance, and prints where they come from.
 // TCP from events: all exact but the queues (keyframe) and holders found by
 // fd walks; UDP and v1 recordings: everything from a dump.
-func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow, func(*query.SSRow) rowMeta, error) {
-	db, w := c.db, c.w
+func socketsAt(c *runCtx, t int64, tcp, udp bool, filter query.SockFilter) ([]query.SSRow, func(*query.SSRow) rowMeta, error) {
+	db, w := c.db, query.Window{At: t}
 	events := query.TCPFromEvents(db)
 	var rows []query.SSRow
 	sampleTS := map[string]int64{}

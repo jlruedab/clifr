@@ -36,7 +36,9 @@ Time:
 Range views (with --since):
       --summary        one report for the range; for ps, ss, lsof one row per
                        object with first/last seen and peaks (default)
-      --samples        vmstat, mpstat, iostat, uptime: one report per interval
+      --changes        ps, ss, netstat, lsof, df, mount: only what appeared,
+                       disappeared or changed between consecutive samples
+      --samples        full command output for every sample
   -e, --every DUR      spacing between samples for --samples
                        (rounded up to a multiple of the recording interval)
   -n, --number N       stop after N samples

@@ -73,7 +73,7 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"--at", "soon", "ps aux"}, "bad time"},
 		{[]string{"--since", "today", "--until", "yesterday", "ps aux"}, "is not after"},
 		{[]string{"--at", "now", "--samples", "vmstat"}, "need a range"},
-		{[]string{"--since", "-1h", "--changes", "ps aux"}, "not available yet"},
+		{[]string{"--since", "-1h", "--changes", "vmstat"}, "--changes is not available for vmstat"},
 		{[]string{"--at", "now", "vmstat 5"}, "an interval needs a range"},
 		{[]string{"--at", "now", "ss -an"}, "add -t and/or -u"},
 		{[]string{"--host", "x", "--at", "now", "ps aux"}, "not available in this release"},
