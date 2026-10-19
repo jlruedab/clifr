@@ -23,6 +23,10 @@ type view[R any] struct {
 // rangeView runs v over c's range if --samples or --changes asks for it; ok
 // is false when the summary applies instead.
 func rangeView[R any](c *runCtx, v view[R]) (ok bool, err error) {
+	if c.diffAt != nil {
+		c.quiet = true
+		return true, diffView(c, v, c.diffAt[0], c.diffAt[1])
+	}
 	if !c.w.IsRange() || !c.g.samples && !c.g.changes {
 		return false, nil
 	}

@@ -25,6 +25,7 @@ const defaultDataDir = "/var/lib/clifr"
 // globals are clifr's own options, given before or after the quoted command.
 type globals struct {
 	at, since, until, tz      string
+	ats                       atList // every --at: diff takes two
 	summary, changes, samples bool
 	every                     string
 	everyMS                   int64
@@ -51,7 +52,8 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 		}
 		fs.BoolVar(p, long, false, "")
 	}
-	str(&g.at, "a", "at", "")
+	fs.Var(&g.ats, "a", "")
+	fs.Var(&g.ats, "at", "")
 	str(&g.since, "S", "since", os.Getenv("CLIFR_SINCE"))
 	str(&g.until, "U", "until", os.Getenv("CLIFR_UNTIL"))
 	str(&g.tz, "T", "tz", os.Getenv("CLIFR_TZ"))
@@ -189,6 +191,13 @@ func version() string {
 
 // resolve turns --at/--since/--until into a window and prints it on stderr.
 func resolve(g *globals, need bool) (query.Window, error) {
+	switch len(g.ats) {
+	case 0:
+	case 1:
+		g.at = g.ats[0]
+	default:
+		return query.Window{}, usageError{errors.New("--at given more than once; to compare two moments: clifr diff --at A --at B \"COMMAND\"")}
+	}
 	if g.tz != "" {
 		loc, err := time.LoadLocation(g.tz)
 		if err != nil {
@@ -265,7 +274,11 @@ func openDB(g *globals) (*store.DB, error) {
 	return duck.Open(g.dataDir)
 }
 
-func runTool(g *globals, words []string) error {
+func runTool(g *globals, words []string) error { return runToolAt(g, words, nil) }
+
+// runToolAt runs a command; with diff set (two --at values) it compares the
+// two moments instead (clifr diff).
+func runToolAt(g *globals, words []string, diff []string) error {
 	t, ok := tools[words[0]]
 	if !ok {
 		if later[words[0]] != "" {
@@ -282,11 +295,30 @@ func runTool(g *globals, words []string) error {
 		}
 		return usageError{err}
 	}
-	w, err := resolve(g, t.window)
-	if err != nil {
-		return err
+	c := &runCtx{g: g}
+	if diff != nil {
+		if !t.diff {
+			return usageError{fmt.Errorf("diff: %s has no rows to compare (it is for ps, ss, netstat, lsof, df, mount)", t.name)}
+		}
+		for _, a := range diff {
+			g.ats = atList{a}
+			w, err := resolve(g, true)
+			if err != nil {
+				return err
+			}
+			c.diffAt = append(c.diffAt, w.At)
+		}
+		if c.diffAt[1] <= c.diffAt[0] {
+			return usageError{errors.New("diff: the second --at must be after the first")}
+		}
+		c.w = query.Window{At: c.diffAt[1]}
+	} else {
+		w, err := resolve(g, t.window)
+		if err != nil {
+			return err
+		}
+		c.w = w
 	}
-	c := &runCtx{g: g, w: w}
 	exec, err := t.prepare(p, c)
 	if err != nil {
 		return usageError{err}
@@ -325,7 +357,20 @@ func runSub(g *globals, sub string, args []string) error {
 	case "list":
 		return usageError{errors.New(`"clifr list" is not available; "clifr help" lists the commands and "clifr help COMMAND" their options`)}
 	case "diff":
-		return errors.New("diff is not available yet")
+		if len(g.ats) != 2 || g.since != "" {
+			return usageError{errors.New(`usage: clifr diff --at A --at B "COMMAND [ARGS]"`)}
+		}
+		words := args
+		if len(args) == 1 && strings.ContainsAny(args[0], " \t") {
+			var err error
+			if words, err = splitWords(args[0]); err != nil {
+				return usageError{err}
+			}
+		}
+		if len(words) == 0 {
+			return usageError{errors.New(`usage: clifr diff --at A --at B "COMMAND [ARGS]"`)}
+		}
+		return runToolAt(g, words, append([]string(nil), g.ats...))
 	case "license":
 		return errors.New("licences are not needed: this release reads local data only")
 	}
@@ -348,5 +393,15 @@ func runSub(g *globals, sub string, args []string) error {
 		}
 		return cmdExport(db, args[0])
 	}
+	return nil
+}
+
+// atList collects --at, which diff takes twice.
+type atList []string
+
+func (l *atList) String() string { return strings.Join(*l, ", ") }
+
+func (l *atList) Set(v string) error {
+	*l = append(*l, v)
 	return nil
 }

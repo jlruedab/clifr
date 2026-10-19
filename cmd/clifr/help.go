@@ -13,6 +13,7 @@ it rebuilds the output from the recording.
 Usage:
   clifr --at TIME [OPTIONS] "COMMAND [ARGS]"
   clifr --since TIME [--until TIME] [OPTIONS] "COMMAND [ARGS]"
+  clifr diff --at TIME_A --at TIME_B [OPTIONS] "COMMAND [ARGS]"
   clifr info [OPTIONS]
   clifr help COMMAND
 
@@ -74,6 +75,9 @@ Examples:
   # Who talked to the database between 02:00 and 03:00
   clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" \
         "ss -tanp dst 10.0.4.21 and dport = :5432"
+
+  # Compare listening ports before and after a deployment
+  clifr diff --at "14:00" --at "14:20" "ss -ltnp"
 
   # Disk activity every minute between 02:00 and 02:30
   clifr --since "02:00" --until "02:30" --samples -e 1m "iostat -x"

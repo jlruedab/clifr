@@ -22,15 +22,17 @@ type tool struct {
 	notes    []string
 	examples []string
 	window   bool // needs --at or --since
+	diff     bool // has a view: --changes, --samples and diff work
 	prepare  func(p parsed, c *runCtx) (func() error, error)
 }
 
 // runCtx is what a tool needs at run time.
 type runCtx struct {
-	g     *globals
-	w     query.Window
-	db    *store.DB
-	quiet bool // range views: no per-snapshot headers
+	g      *globals
+	w      query.Window
+	db     *store.DB
+	quiet  bool    // range views: no per-snapshot headers
+	diffAt []int64 // clifr diff: the two moments
 }
 
 func (c *runCtx) header(format string, args ...any) {
@@ -51,7 +53,7 @@ func addTool(t *tool) {
 func init() {
 	addTool(psTool())
 	addTool(&tool{
-		name: "ss", synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER]",
+		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER]",
 		about: "TCP and UDP sockets",
 		opts: []opt{
 			{short: 't', long: "tcp", help: "TCP sockets"},

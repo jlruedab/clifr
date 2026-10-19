@@ -206,6 +206,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "13:28" "df -h"
     clifr --at "13:28" "mount -t ext4,xfs"
     clifr --since "1 hour ago" events
+    clifr diff --at "14:00" --at "14:20" "ss -ltnp"
     clifr --since "2026-10-12" --until "2026-10-12 06:00" "life --name 'backup|rsync'"
     clifr --since "2 hours ago" oom
     clifr --at "13:28" mounts
@@ -276,6 +277,8 @@ A command can also be given unquoted after clifr's options
   disappeared or changed (ps: command, user, parent or terminal; sockets:
   state or owners; df: Use% or the file system), as tables in the command's
   own format; anything shorter than a sample interval is in `events`.
+- `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount)
+  compares the two moments the same way: appeared, gone, changed.
 - `--json` writes JSON Lines, one object per row. Each starts with the times
   it describes, in Unix milliseconds: `ts_ms` (the moment, or the row's own
   time), `sample_ts_ms` (the sample its sampled values come from),

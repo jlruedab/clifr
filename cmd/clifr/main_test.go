@@ -88,6 +88,10 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"--since", "-1h", "free"}, "add --samples"},
 		{[]string{"--at", "now", "events"}, "needs a range"},
 		{[]string{"list", "ps"}, "clifr help"},
+		{[]string{"diff", "--at", "10:00", "--at", "11:00", "vmstat"}, "no rows to compare"},
+		{[]string{"diff", "--at", "11:00", "--at", "10:00", "ps -e"}, "must be after"},
+		{[]string{"diff", "--at", "10:00", "ps -e"}, "usage: clifr diff"},
+		{[]string{"--at", "10:00", "--at", "11:00", "ps -e"}, "more than once"},
 	} {
 		err := run(c.args)
 		if err == nil || !strings.Contains(err.Error(), c.want) {

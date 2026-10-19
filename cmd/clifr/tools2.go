@@ -24,7 +24,7 @@ func splitList(vals []string) []string {
 
 func psTool() *tool {
 	return &tool{
-		name: "ps", synopsis: "aux | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
+		name: "ps", diff: true, synopsis: "aux | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
 		about: "processes and their CPU, memory, state and command line",
 		opts: []opt{
 			{short: 'e', help: "every process"},
@@ -163,7 +163,7 @@ var psSampled = []string{"pcpu", "pmem", "vsz_kb", "rss_kb", "stat", "time", "ni
 
 func lsofTool() *tool {
 	return &tool{
-		name: "lsof", synopsis: "[-n] [-P] [-a] [-i] [-p PIDS] [-u USERS] [-c NAME]",
+		name: "lsof", diff: true, synopsis: "[-n] [-P] [-a] [-i] [-p PIDS] [-u USERS] [-c NAME]",
 		about: "open files and sockets of every process",
 		opts: []opt{
 			{short: 'p', arg: "PIDS", help: "these processes (comma separated)"},
@@ -330,7 +330,7 @@ func freeTool() *tool {
 
 func netstatTool() *tool {
 	return &tool{
-		name: "netstat", synopsis: "-n -t|-u [-a|-l] [-p] [-W] [-4|-6]",
+		name: "netstat", diff: true, synopsis: "-n -t|-u [-a|-l] [-p] [-W] [-4|-6]",
 		about: "TCP and UDP sockets (net-tools)",
 		opts: []opt{
 			{short: 't', long: "tcp", help: "TCP sockets"},
@@ -451,7 +451,7 @@ func eventsTool() *tool {
 
 func mountTool() *tool {
 	return &tool{
-		name: "mount", synopsis: "[-t TYPES]",
+		name: "mount", diff: true, synopsis: "[-t TYPES]",
 		about:  "the mount table",
 		opts:   []opt{{short: 't', long: "types", arg: "TYPES", help: "only these file-system types (comma separated; prefix all with no to exclude)"}},
 		window: true,
@@ -516,7 +516,7 @@ func mountTool() *tool {
 
 func dfTool() *tool {
 	return &tool{
-		name: "df", synopsis: "[-h] [-T] [-i] [PATH...]",
+		name: "df", diff: true, synopsis: "[-h] [-T] [-i] [PATH...]",
 		about: "file-system usage",
 		opts: []opt{
 			{short: 'h', long: "human-readable", help: "sizes in powers of 1024 (K, M, G), rounded up"},
