@@ -41,7 +41,7 @@ func run(args []string) error {
 		threadExit()
 	}
 	fs := flag.NewFlagSet("clifrd", flag.ExitOnError)
-	var c recorder.Config
+	c := recorder.Config{Version: version()}
 	configPath := fs.String("config", defaultConfig, "configuration file (settings in it apply unless given as flags)")
 	fs.StringVar(configPath, "C", defaultConfig, "short for --config")
 	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, `Parquet data directory ("" for none)`)
@@ -175,10 +175,17 @@ func parseSize(s string) (int64, error) {
 
 func version() string {
 	if bi, ok := debug.ReadBuildInfo(); ok {
+		rev, dirty := "", ""
 		for _, s := range bi.Settings {
-			if s.Key == "vcs.revision" && len(s.Value) >= 12 {
-				return s.Value[:12]
+			switch {
+			case s.Key == "vcs.revision" && len(s.Value) >= 12:
+				rev = s.Value[:12]
+			case s.Key == "vcs.modified" && s.Value == "true":
+				dirty = "-dirty"
 			}
+		}
+		if rev != "" {
+			return rev + dirty
 		}
 		return bi.Main.Version
 	}

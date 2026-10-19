@@ -58,10 +58,10 @@ func netstatAddr(a netip.Addr, inet6 bool, port int, wide bool) string {
 }
 
 // ProgramNames returns netstat's PID/Program name for the processes alive at
-// t: the base name of argv[0] when it is a path, else argv[0] itself. The
-// recording keeps the command line joined with spaces, so argv[0] is taken
-// as its first word unless that ends with ':' (a title set by the process,
-// such as "sshd: /usr/sbin/sshd -D").
+// t: argv[0], cut after its last '/' when it starts with one (net-tools).
+// Recordings since schema 2 keep where argv[0] ends; for older ones it is
+// taken as the first word of the command line unless that ends with ':' (a
+// title set by the process, such as "sshd: /usr/sbin/sshd -D").
 func ProgramNames(db *store.DB, t int64) (map[int]string, error) {
 	s, err := SnapshotAt(db, t, false)
 	if err != nil {
@@ -71,16 +71,50 @@ func ProgramNames(db *store.DB, t int64) (map[int]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	argv0 := argv0Lens(db, procs)
 	out := make(map[int]string, len(procs))
 	for _, p := range procs {
-		out[p.pid] = programName(p.cmdline, p.comm)
+		out[p.pid] = programName(p.cmdline, p.comm, argv0[p.id])
 	}
 	return out, nil
 }
 
-func programName(cmdline, comm string) string {
+// argv0Lens reads argv0_len of these processes (none where the column does
+// not exist: v1 databases).
+func argv0Lens(db *store.DB, procs []procAt) map[int64]int {
+	out := map[int64]int{}
+	if len(procs) == 0 {
+		return out
+	}
+	ids := make([]string, len(procs))
+	for i, p := range procs {
+		ids[i] = strconv.FormatInt(p.id, 10)
+	}
+	rows, err := db.Query(`SELECT id, COALESCE(argv0_len, 0) FROM processes WHERE id IN (` + strings.Join(ids, ",") + `)`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var n int
+		if rows.Scan(&id, &n) == nil && n > 0 {
+			out[id] = n
+		}
+	}
+	return out
+}
+
+func programName(cmdline, comm string, argv0 int) string {
 	if cmdline == "" {
 		return comm
+	}
+	if argv0 > 0 && argv0 <= len(cmdline) {
+		a := cmdline[:argv0]
+		if strings.HasPrefix(a, "/") {
+			return a[strings.LastIndexByte(a, '/')+1:]
+		}
+		return a
 	}
 	if strings.HasPrefix(cmdline, "/") {
 		first, _, _ := strings.Cut(cmdline, " ")

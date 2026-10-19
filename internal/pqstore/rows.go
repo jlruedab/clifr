@@ -33,6 +33,7 @@ type processRow struct {
 	UID       int32  `parquet:"uid"`
 	Comm      string `parquet:"comm,dict"`
 	Cmdline   string `parquet:"cmdline,dict"`
+	Argv0Len  int32  `parquet:"argv0_len"` // 0: unknown (recordings before schema 2 have no column: NULL)
 	TTY       int32  `parquet:"tty"`
 	SID       int32  `parquet:"sid"`
 	PGRP      int32  `parquet:"pgrp"`
@@ -314,7 +315,7 @@ func sampleOf(s store.Sample) sampleRow {
 
 func processOf(p store.ProcRow) processRow {
 	return processRow{ID: p.ID, PID: int32(p.PID), StartTime: p.StartTime, PPID: int32(p.PPID), UID: int32(p.UID),
-		Comm: p.Comm, Cmdline: p.Cmdline, TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
+		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
 		OOMKilled: b2i(p.OOMKilled)}

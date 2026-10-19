@@ -24,6 +24,7 @@ import (
 )
 
 type Config struct {
+	Version string // clifrd's version, stored in meta
 	DB      string // SQLite database (v1 schema); "" = none
 	DataDir string // Parquet data directory; "" = none. Both set: write both.
 	Parquet pqstore.Options
@@ -142,7 +143,11 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	}
 	memKB, _ := fs.MemTotalKB()
 	host, _ := os.Hostname()
+	bootID, _ := fs.ReadBootID()
+	_, offset := time.Now().Zone()
 	for k, v := range map[string]string{
+		"schema_version": strconv.Itoa(store.SchemaVersion), "clifrd_version": cfg.Version,
+		"machine_id": machineID(), "boot_id": bootID, "timezone": timeZone(), "tz_offset_s": strconv.Itoa(offset),
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
 		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks), "page_kb": strconv.Itoa(os.Getpagesize() / 1024),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
@@ -545,23 +550,24 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 	if err != nil {
 		return nil
 	}
-	cmd, err := r.fs.ReadCmdline(key.pid)
+	cmd, argv0, err := r.fs.ReadCmdline(key.pid)
 	if err != nil {
 		return nil
 	}
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
-		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Source: "sample"}}
+		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample"}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
-		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, TTY: st.TTY, SID: st.Session,
+		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample"}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
 			// Seen first as a zombie: its exec event has the command line.
-			cmd = ep.ev.attrs.Cmdline
+			cmd, argv0 = ep.ev.attrs.Cmdline, ep.ev.attrs.Argv0Len
 			e.upd.Cmdline, row.Cmdline = cmd, cmd
+			e.upd.Argv0Len, row.Argv0Len = argv0, argv0
 		}
 		e.first, e.exit = key.start, ep.exit
 		e.upd.Exe, e.upd.ExecTS = ep.ev.attrs.Exe, ep.ev.attrs.ExecTS
@@ -593,8 +599,8 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
 	}
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
-	if cmd, err := r.fs.ReadCmdline(e.key.pid); err == nil && cmd != "" {
-		u.Cmdline = cmd
+	if cmd, argv0, err := r.fs.ReadCmdline(e.key.pid); err == nil && cmd != "" {
+		u.Cmdline, u.Argv0Len = cmd, argv0
 	}
 	if u != e.upd {
 		e.upd = u
@@ -620,4 +626,34 @@ func selfRSSKB() int64 {
 	}
 	n, _ := strconv.ParseInt(f[1], 10, 64)
 	return n * int64(pageKB)
+}
+
+// machineID is the host's systemd machine id (the same one sosreports carry),
+// or "".
+func machineID() string {
+	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
+		if b, err := os.ReadFile(p); err == nil {
+			if id := strings.TrimSpace(string(b)); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+// timeZone is the host's time zone name (e.g. Australia/Adelaide): $TZ, the
+// target of /etc/localtime, or /etc/timezone; "" if none says.
+func timeZone() string {
+	if tz := strings.TrimPrefix(os.Getenv("TZ"), ":"); tz != "" && !strings.HasPrefix(tz, "/") {
+		return tz
+	}
+	if l, err := os.Readlink("/etc/localtime"); err == nil {
+		if _, name, ok := strings.Cut(l, "zoneinfo/"); ok {
+			return name
+		}
+	}
+	if b, err := os.ReadFile("/etc/timezone"); err == nil {
+		return strings.TrimSpace(string(b))
+	}
+	return ""
 }

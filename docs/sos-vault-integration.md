@@ -191,7 +191,7 @@ while recording; a bundle copies files once at capture.
 | # | Item | Where | Rough effort |
 |---|---|---|---|
 | 1 | Rename to clifr (binaries, unit, paths, docs) | clifr | 1–2 days |
-| 2 | `meta`: machine-id, boot ids, time zone, schema version | clifr | 1 day |
+| 2 | `meta`: machine-id, boot ids, time zone, schema version (done 2026-10-19, schema 2) | clifr | 1 day |
 | 3 | `clifrd bundle` | clifr | 2–3 days |
 | 4 | sos plugin | clifr | 1–3 days |
 | 5 | Uniform JSON output; snapshot at T; diff T1..T2 | clifr CLI | 3–5 days |

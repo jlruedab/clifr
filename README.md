@@ -218,8 +218,8 @@ A command can also be given unquoted after clifr's options
   connections by process with duration, resets and retransmits.
 - `netstat -n -t|-u [-a|-l] [-p] [-W] [-4|-6]`: the same data as `ss` in
   net-tools' layout (`-n` is required: past host names cannot be looked up).
-  Program names come from the recorded command line; a process that rewrote
-  its whole command line (Chrome) may show another name than netstat would.
+  Program names come from the recorded argv[0], by net-tools' rule
+  (recordings before schema 2 approximate it from the command line).
 - `lsof [-p PIDS] [-u USERS] [-c NAME] [-i] [-a]`: selections ORed, or
   ANDed with `-a`, as lsof does (`-n`, `-P` accepted).
 - `free [-b|-k|-m|-g|-h] [-w] [-t]` at a moment; over a range with
@@ -358,9 +358,11 @@ idle machine): `uptime`, `vmstat`, `mpstat -P ALL` (92 rows) and `iostat -dx`
 `free`, `ps -ef` and `netstat -tanp` (2026-10-19, a 150 s recording with 5
 checkpoints on the test machine with a desktop session): `free` 10 of 10
 rows within 2%, `ps -ef` 2,644 of 2,644 rows exact, `netstat -tanp` all 218
-rows matched; 84 differ in PID/Program, all of Chrome processes, which
-rewrite their whole command line (the recording does not keep where argv[0]
-ends; planned for clifrd), and 3 in State, as `ss` shows.
+rows matched; 84 differed in PID/Program, all of Chrome processes, which
+rewrite their whole command line, and 3 in State, as `ss` shows. Since
+schema 2 the recording keeps where argv[0] ends: in a 70 s recording with 3
+checkpoints `netstat -tanp` matched 154 of 154 rows, 99.35% exact (one
+sampled Send-Q).
 
 Against the real tools at the busy load (2026-10-13,
 `accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10

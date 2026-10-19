@@ -49,6 +49,12 @@ func Open(dataDir string) (*store.DB, error) {
 			return nil, err
 		}
 		files, _ := filepath.Glob(filepath.Join(dataDir, t, "*", "*.parquet"))
+		if t == "meta" {
+			if err := checkSchema(db, files); err != nil {
+				db.Close()
+				return nil, err
+			}
+		}
 		if err := load(db, t, append([]string{empty}, files...)); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("load %s: %w", t, err)
@@ -76,4 +82,26 @@ func load(db *sql.DB, table string, files []string) error {
 	}
 	_, err := db.Exec(q)
 	return err
+}
+
+// checkSchema refuses recordings written by a newer clifrd than this reader
+// knows (any run's schema_version, not just the latest).
+func checkSchema(db *sql.DB, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(files))
+	for i, f := range files {
+		quoted[i] = "'" + strings.ReplaceAll(f, "'", "''") + "'"
+	}
+	var v sql.NullInt64
+	q := fmt.Sprintf(`SELECT max(TRY_CAST(value AS INTEGER)) FROM read_parquet([%s], union_by_name = true) WHERE key = 'schema_version'`,
+		strings.Join(quoted, ", "))
+	if err := db.QueryRow(q).Scan(&v); err != nil {
+		return fmt.Errorf("meta: %w", err)
+	}
+	if v.Valid && v.Int64 > store.SchemaVersion {
+		return fmt.Errorf("recorded by a newer clifrd (schema %d); this clifr reads schemas up to %d: update clifr", v.Int64, store.SchemaVersion)
+	}
+	return nil
 }

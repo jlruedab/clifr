@@ -108,6 +108,10 @@ wait for the user's go-ahead.
   `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--interval`. `uptime` has no user count.
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 2 since
+  2026-10-19; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, plus boot time, intervals and
+  modes. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
 ## Commands

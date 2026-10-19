@@ -18,6 +18,7 @@ type Percentiles struct {
 }
 
 type Stats struct {
+	Host            HostInfo               `json:"host"`
 	From, To        string                 `json:"-"`
 	FromMS          int64                  `json:"from_ms"`
 	ToMS            int64                  `json:"to_ms"`
@@ -43,6 +44,16 @@ type Stats struct {
 	// The eBPF programs' own run time (recorded with --bpf-stats).
 	BPF           map[string]BPFProgStat `json:"bpf_programs,omitempty"`
 	BPFPctOneCore float64                `json:"bpf_cpu_pct_one_core"`
+}
+
+// HostInfo identifies the recorded host (from the latest run's meta).
+type HostInfo struct {
+	Hostname  string `json:"hostname"`
+	MachineID string `json:"machine_id"`
+	BootID    string `json:"boot_id"`
+	TimeZone  string `json:"timezone"`
+	Schema    string `json:"schema_version"` // "" = 1
+	Recorder  string `json:"clifrd_version"`
 }
 
 // BPFProgStat is how often one eBPF program ran and for how long.
@@ -89,6 +100,8 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 		}
 		st.TableRows[t] = n
 	}
+	st.Host = HostInfo{Hostname: db.Meta("hostname"), MachineID: db.Meta("machine_id"), BootID: db.Meta("boot_id"),
+		TimeZone: db.Meta("timezone"), Schema: db.Meta("schema_version"), Recorder: db.Meta("clifrd_version")}
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'events'`).Scan(&st.EventMode)
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'tcp'`).Scan(&st.TCPMode)
 	db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(missing_from_events), 0), COALESCE(SUM(extra_in_events), 0)
@@ -243,6 +256,12 @@ func humanBytes(n int64) string {
 
 func PrintStats(w io.Writer, s *Stats) {
 	span := time.Duration(s.ToMS-s.FromMS) * time.Millisecond
+	h := s.Host
+	if h.Schema == "" {
+		h.Schema = "1"
+	}
+	fmt.Fprintf(w, "Host:             %s, machine-id %s, boot %s, time zone %s\n", orDash(h.Hostname), orDash(h.MachineID), orDash(h.BootID), orDash(h.TimeZone))
+	fmt.Fprintf(w, "Recorded by:      clifrd %s, schema %s\n", orDash(h.Recorder), h.Schema)
 	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS(s.FromMS), FormatMS(s.ToMS), span.Round(time.Second))
 	fmt.Fprintf(w, "Samples:          %d (%d with full fd walk), skipped: %d\n", s.Samples, s.FDWalks, s.Skipped)
 	fmt.Fprintf(w, "Seen per sample:  %.0f processes, %.0f sockets, %.0f fds per walk\n", s.AvgProcs, s.AvgSockets, s.AvgFDs)

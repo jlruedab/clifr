@@ -54,11 +54,14 @@ func TestStatusCmdlineStatm(t *testing.T) {
 	if st.UID != 1001 || st.VmLckK != 16 {
 		t.Errorf("status = %+v, want euid 1001 and VmLck 16", st)
 	}
-	cmd, _ := fixture.ReadCmdline(4242)
-	if cmd != "./prog --flag a b" {
-		t.Errorf("cmdline = %q", cmd)
+	cmd, argv0, _ := fixture.ReadCmdline(4242)
+	if cmd != "./prog --flag a b" || argv0 != len("./prog") {
+		t.Errorf("cmdline = %q, argv[0] length %d", cmd, argv0)
 	}
-	if cmd, _ := fixture.ReadCmdline(77); cmd != "" {
+	if n := Argv0Len([]byte("/opt/chrome --type=renderer\x00")); n != len("/opt/chrome --type=renderer") {
+		t.Errorf("one-string command line: argv[0] length %d", n)
+	}
+	if cmd, _, _ := fixture.ReadCmdline(77); cmd != "" {
 		t.Errorf("kernel thread cmdline = %q", cmd)
 	}
 	size, res, err := fixture.ReadStatm(4242)
@@ -171,13 +174,13 @@ func TestReadPIDLargeFile(t *testing.T) {
 		}
 	}
 	f := New(root)
-	if cmd, err := f.ReadCmdline(1); err != nil || cmd != "prog "+long {
+	if cmd, _, err := f.ReadCmdline(1); err != nil || cmd != "prog "+long {
 		t.Fatalf("long cmdline: %d bytes, %v", len(cmd), err)
 	}
-	if cmd, err := f.ReadCmdline(2); err != nil || cmd != "short arg" {
+	if cmd, _, err := f.ReadCmdline(2); err != nil || cmd != "short arg" {
 		t.Fatalf("short cmdline after a long one: %q, %v", cmd, err)
 	}
-	if _, err := f.ReadCmdline(3); !IsGone(err) {
+	if _, _, err := f.ReadCmdline(3); !IsGone(err) {
 		t.Fatalf("missing process: %v, want gone", err)
 	}
 }

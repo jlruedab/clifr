@@ -17,6 +17,7 @@ type ProcRow struct {
 	ID, StartTime   int64
 	PID, PPID, UID  int
 	Comm, Cmdline   string
+	Argv0Len        int // length of argv[0] in Cmdline (0: unknown)
 	TTY, SID, PGRP  int
 	Locked          bool
 	FirstSeen       int64
@@ -34,6 +35,7 @@ type ProcUpdate struct {
 	ID            int64
 	UID, PPID     int
 	Comm, Cmdline string
+	Argv0Len      int
 	Source        string
 	Exe           string
 	ExecTS        int64 // 0: no exec seen
@@ -401,25 +403,25 @@ func (d *DB) Write(b *Batch) error {
 		},
 		func() error {
 			return each(`INSERT INTO processes(id, pid, start_time, ppid, uid, comm, cmdline, tty, sid, pgrp,
-				locked, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed)
-				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				locked, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, argv0_len)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				len(b.ProcInserts), func(st *sql.Stmt, i int) error {
 					p := b.ProcInserts[i]
 					_, err := st.Exec(p.ID, p.PID, p.StartTime, p.PPID, p.UID, p.Comm, p.Cmdline, p.TTY,
 						p.SID, p.PGRP, b2i(p.Locked), p.FirstSeen, nullInt(p.LastSeen), nullInt(p.Ended), p.Source,
-						p.Exe, nullInt(p.ExecTS), nullInt(p.ExitTS), nullIntp(p.ExitCode), nullIntp(p.Signal), b2i(p.OOMKilled))
+						p.Exe, nullInt(p.ExecTS), nullInt(p.ExitTS), nullIntp(p.ExitCode), nullIntp(p.Signal), b2i(p.OOMKilled), p.Argv0Len)
 					return err
 				})
 		},
 		func() error {
-			return each(`UPDATE processes SET uid = ?, ppid = ?, comm = ?, cmdline = ?, source = ?, exe = ?, exec_ts = ? WHERE id = ?`,
+			return each(`UPDATE processes SET uid = ?, ppid = ?, comm = ?, cmdline = ?, argv0_len = ?, source = ?, exe = ?, exec_ts = ? WHERE id = ?`,
 				len(b.ProcUpdates), func(st *sql.Stmt, i int) error {
 					u := b.ProcUpdates[i]
 					var execTS any
 					if u.ExecTS != 0 {
 						execTS = u.ExecTS
 					}
-					_, err := st.Exec(u.UID, u.PPID, u.Comm, u.Cmdline, u.Source, u.Exe, execTS, u.ID)
+					_, err := st.Exec(u.UID, u.PPID, u.Comm, u.Cmdline, u.Argv0Len, u.Source, u.Exe, execTS, u.ID)
 					return err
 				})
 		},

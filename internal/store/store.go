@@ -17,6 +17,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// SchemaVersion is the version of the recorded data, stored in meta as
+// schema_version. 1: recordings before 2026-10-19 (no key); 2: argv0_len,
+// host identity and time zone. Readers refuse versions newer than theirs.
+const SchemaVersion = 2
+
 const schema = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
@@ -39,6 +44,7 @@ CREATE TABLE IF NOT EXISTS processes (
 	pid INTEGER NOT NULL,
 	start_time INTEGER NOT NULL,   -- unix ms, from stat field 22
 	ppid INTEGER, uid INTEGER, comm TEXT, cmdline TEXT,
+	argv0_len INTEGER,             -- length of argv[0] in cmdline (NULL/0: unknown)
 	tty INTEGER, sid INTEGER, pgrp INTEGER, locked INTEGER,
 	first_seen INTEGER NOT NULL,
 	last_seen INTEGER,             -- NULL while open
@@ -349,7 +355,7 @@ func dirSize(dir string) int64 {
 // database (CREATE TABLE IF NOT EXISTS leaves old tables as they are).
 func migrate(db *sql.DB) error {
 	add := map[string][]string{"processes": {"exe TEXT", "exec_ts INTEGER", "exit_ts INTEGER",
-		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0"},
+		"exit_code INTEGER", "signal INTEGER", "oom_killed INTEGER NOT NULL DEFAULT 0", "argv0_len INTEGER"},
 		"tcp_conns": {"v6only INTEGER"}, "tcp_keyframes": {"v6only INTEGER"}}
 	for table, cols := range add {
 		have := map[string]bool{}

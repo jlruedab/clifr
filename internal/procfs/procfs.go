@@ -251,9 +251,22 @@ func ParseStatus(b []byte) (Status, error) {
 
 // ReadCmdline returns argv joined by spaces, or "" for kernel threads and
 // zombies.
-func (f FS) ReadCmdline(pid int) (cmd string, err error) {
-	err = f.readPID(pid, "cmdline", func(b []byte) error { cmd = ParseCmdline(b); return nil })
+// ReadCmdline returns the command line with its arguments joined by spaces,
+// and the length of argv[0] in it (where the first NUL was).
+func (f FS) ReadCmdline(pid int) (cmd string, argv0 int, err error) {
+	err = f.readPID(pid, "cmdline", func(b []byte) error { cmd, argv0 = ParseCmdline(b), Argv0Len(b); return nil })
 	return
+}
+
+// Argv0Len is the length of argv[0] in a raw command line: up to the first
+// NUL, or all of it for a process that rewrote its command line as one
+// string (net-tools takes the program name from argv[0]).
+func Argv0Len(b []byte) int {
+	b = bytes.TrimRight(b, "\x00")
+	if i := bytes.IndexByte(b, 0); i >= 0 {
+		return i
+	}
+	return len(b)
 }
 
 func ParseCmdline(b []byte) string {
@@ -343,6 +356,13 @@ func (f FS) BootTime() (int64, error) {
 		}
 	}
 	return 0, fmt.Errorf("btime not found in %s", f.path("stat"))
+}
+
+// ReadBootID returns /proc/sys/kernel/random/boot_id, which changes at
+// every boot.
+func (f FS) ReadBootID() (string, error) {
+	b, err := os.ReadFile(f.path("sys", "kernel", "random", "boot_id"))
+	return strings.TrimSpace(string(b)), err
 }
 
 // MemTotalKB returns MemTotal from /proc/meminfo.

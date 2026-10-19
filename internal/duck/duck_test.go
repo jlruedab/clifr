@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -201,6 +202,32 @@ func TestCrashKeepsOpenRows(t *testing.T) {
 		var v int64
 		if err := dk.QueryRow(c.q).Scan(&v); err != nil || v != c.want {
 			t.Errorf("%s = %d (%v), want %d", c.q, v, err, c.want)
+		}
+	}
+}
+
+// A recording from a newer clifrd is refused; the current schema opens.
+func TestSchemaVersion(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		ok      bool
+	}{{strconv.Itoa(store.SchemaVersion), true}, {strconv.Itoa(store.SchemaVersion + 1), false}} {
+		dir := t.TempDir()
+		pq, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pq.SetMeta("schema_version", c.version)
+		pq.Write(&store.Batch{Sample: store.Sample{TS: 1000}})
+		if err := pq.Close(); err != nil {
+			t.Fatal(err)
+		}
+		dk, err := Open(dir)
+		if err == nil {
+			dk.Close()
+		}
+		if (err == nil) != c.ok || err != nil && !strings.Contains(err.Error(), "newer clifrd") {
+			t.Errorf("schema %s: %v", c.version, err)
 		}
 	}
 }

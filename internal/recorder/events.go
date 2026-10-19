@@ -350,10 +350,10 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 		r.eventTTY(&pe, e)
 	case bpfproc.Exec:
 		pe.kind = evExec
-		pe.attrs.Cmdline, pe.attrs.Exe, pe.attrs.ExecTS = e.Cmdline, e.Filename, pe.ts
+		pe.attrs.Cmdline, pe.attrs.Argv0Len, pe.attrs.Exe, pe.attrs.ExecTS = e.Cmdline, e.Argv0Len, e.Filename, pe.ts
 		if e.ArgsTruncated {
-			if full, err := r.fs.ReadCmdline(e.PID); err == nil && full != "" {
-				pe.attrs.Cmdline = full
+			if full, argv0, err := r.fs.ReadCmdline(e.PID); err == nil && full != "" {
+				pe.attrs.Cmdline, pe.attrs.Argv0Len = full, argv0
 			}
 		}
 		r.eventTTY(&pe, e)
@@ -376,7 +376,7 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 			pe.key = procKey{pid: e.PID, start: r.boot + int64(st.StartTime)*1000/procfs.ClockTicks}
 			pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: srcEBPF}
 			pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
-			pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID)
+			pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.fs.ReadCmdline(e.PID)
 			if _, res, err := r.fs.ReadStatm(e.PID); err == nil {
 				pe.rssKB = res * int64(pageKB)
 			}
@@ -394,17 +394,17 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 // applied so far leave it: the one a child sees right after its fork, since
 // events are applied in order. A parent the recorder does not know yet is
 // read from /proc.
-func (r *Recorder) parentCmdline(ppid int) string {
+func (r *Recorder) parentCmdline(ppid int) (string, int) {
 	if e := r.byPID[ppid]; e != nil && e.exit == 0 {
-		return e.upd.Cmdline
+		return e.upd.Cmdline, e.upd.Argv0Len
 	}
 	if k, ok := r.evByPID[ppid]; ok {
 		if ep := r.evProcs[k]; ep != nil && ep.exit == 0 {
-			return ep.ev.attrs.Cmdline
+			return ep.ev.attrs.Cmdline, ep.ev.attrs.Argv0Len
 		}
 	}
-	cmd, _ := r.fs.ReadCmdline(ppid)
-	return cmd
+	cmd, argv0, _ := r.fs.ReadCmdline(ppid)
+	return cmd, argv0
 }
 
 // eventTTY sets terminal, session and process group from the event, or
@@ -439,7 +439,7 @@ func (r *Recorder) enrich(e cnproc.Event) procEvent {
 	if status, err := r.fs.ReadStatus(e.PID); err == nil {
 		pe.attrs.UID = status.UID
 	}
-	pe.attrs.Cmdline, _ = r.fs.ReadCmdline(e.PID)
+	pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.fs.ReadCmdline(e.PID)
 	if kind == evExec {
 		pe.attrs.ExecTS = pe.ts
 	}
@@ -466,12 +466,13 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 				continue // gone before we could read it: nothing reliable to store
 			}
 			if ev.parentCmd {
-				ev.attrs.Cmdline = r.parentCmdline(ev.attrs.PPID)
+				ev.attrs.Cmdline, ev.attrs.Argv0Len = r.parentCmdline(ev.attrs.PPID)
 			}
 			if e := r.procs[ev.key]; e != nil {
 				if ev.kind == evExec { // a sampled process exec'd: new command line
 					u := e.upd
-					u.Comm, u.Cmdline, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
+					u.Comm, u.Cmdline, u.Argv0Len, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.Argv0Len,
+						ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
 					if u != e.upd {
 						e.upd = u
 						b.ProcUpdates = append(b.ProcUpdates, u)
@@ -579,7 +580,7 @@ func (r *Recorder) flushEventProcs(ts int64, b *store.Batch) {
 			continue
 		}
 		row := store.ProcRow{ID: r.nextID("processes"), PID: key.pid, StartTime: key.start,
-			PPID: ev.attrs.PPID, UID: ev.attrs.UID, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline,
+			PPID: ev.attrs.PPID, UID: ev.attrs.UID, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline, Argv0Len: ev.attrs.Argv0Len,
 			TTY: ev.tty, SID: ev.sid, PGRP: ev.pgrp, FirstSeen: key.start, Source: ev.attrs.Source,
 			Exe: ev.attrs.Exe, ExitCode: ep.exitCode, Signal: ep.signal, OOMKilled: ep.oom}
 		if ev.attrs.ExecTS != 0 {

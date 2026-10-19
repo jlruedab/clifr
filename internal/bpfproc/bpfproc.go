@@ -57,6 +57,7 @@ type Event struct {
 	// Exec only.
 	Filename      string
 	Cmdline       string // arguments joined by spaces, like /proc/<pid>/cmdline
+	Argv0Len      int    // length of argv[0] in Cmdline
 	ArgsTruncated bool   // the command line was longer than ArgsMax
 	// Exit only: the raw wait status (see ExitStatus).
 	Status int32
@@ -364,7 +365,8 @@ func decode(raw []byte) (Event, error) {
 	if e.Kind == Exec {
 		e.Filename = cstr(r.Filename[:])
 		n := min(int(r.ArgsLen), ArgsMax)
-		e.Cmdline = procfs.ParseCmdline(unsafe.Slice((*byte)(unsafe.Pointer(&r.Args[0])), n))
+		args := unsafe.Slice((*byte)(unsafe.Pointer(&r.Args[0])), n)
+		e.Cmdline, e.Argv0Len = procfs.ParseCmdline(args), procfs.Argv0Len(args)
 		e.ArgsTruncated = int(r.ArgsLen) > ArgsMax
 	}
 	return e, nil

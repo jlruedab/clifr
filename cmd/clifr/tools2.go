@@ -348,8 +348,8 @@ func netstatTool() *tool {
 		window: true,
 		notes: []string{
 			"Same data as ss. Without -a or -l: TCP in every state but LISTEN, connected UDP only.",
-			"Program names come from the recorded command line: the base name of argv[0], or the title a",
-			"process set. A process that rewrote its whole command line (Chrome) may show another name.",
+			"Program names: argv[0] from the recording, by net-tools' rule (recordings before schema 2:",
+			"approximated from the command line).",
 			"--since: TCP connections by process over the range, as ss shows them.",
 		},
 		examples: []string{`clifr --at "02:45" "netstat -tulpn"`, `clifr --at "02:45" "netstat -tanp"`},

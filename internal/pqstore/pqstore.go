@@ -286,6 +286,7 @@ func (s *Store) Write(b *store.Batch) error {
 	for _, u := range b.ProcUpdates {
 		if r := s.procs.get(u.ID); r != nil {
 			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source, r.Exe = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source, u.Exe
+			r.Argv0Len = int32(u.Argv0Len)
 			r.ExecTS = u.ExecTS
 		} else {
 			s.unknown++

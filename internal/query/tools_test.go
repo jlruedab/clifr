@@ -66,8 +66,22 @@ func TestProgramName(t *testing.T) {
 		{"python3 x.py", "python3", "python3"},
 		{"", "kthreadd", "kthreadd"},
 	} {
-		if got := programName(c.cmdline, c.comm); got != c.want {
+		if got := programName(c.cmdline, c.comm, 0); got != c.want {
 			t.Errorf("%q: %q, want %q", c.cmdline, got, c.want)
+		}
+	}
+	// With argv[0]'s length recorded: net-tools' rule exactly.
+	for _, c := range []struct {
+		cmdline string
+		argv0   int
+		want    string
+	}{
+		{"/opt/google/chrome/chrome --type=renderer --x=/dev/dri/renderD129 --y", 70, "renderD129 --y"},
+		{"python3 x.py", 7, "python3"},
+		{"/usr/bin/python3 /srv/a b.py", 16, "python3"},
+	} {
+		if got := programName(c.cmdline, "c", min(c.argv0, len(c.cmdline))); got != c.want {
+			t.Errorf("%q argv0 %d: %q, want %q", c.cmdline, c.argv0, got, c.want)
 		}
 	}
 }

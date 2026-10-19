@@ -170,10 +170,17 @@ func checkLater(g *globals) error {
 
 func version() string {
 	if bi, ok := debug.ReadBuildInfo(); ok {
+		rev, dirty := "", ""
 		for _, s := range bi.Settings {
-			if s.Key == "vcs.revision" && len(s.Value) >= 12 {
-				return s.Value[:12]
+			switch {
+			case s.Key == "vcs.revision" && len(s.Value) >= 12:
+				rev = s.Value[:12]
+			case s.Key == "vcs.modified" && s.Value == "true":
+				dirty = "-dirty"
 			}
+		}
+		if rev != "" {
+			return rev + dirty
 		}
 		return bi.Main.Version
 	}
