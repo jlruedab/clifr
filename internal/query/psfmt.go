@@ -50,19 +50,19 @@ func psElapsed(secs int64) string {
 var psCols map[string]psCol
 
 func init() {
-	sampled := func(r *PSRow) bool { return r.ticks >= 0 }
+	sampled := func(r *PSRow) bool { return r.CPUTicks >= 0 }
 	num := func(f func(r *PSRow) int64) func(r *PSRow) string {
 		return func(r *PSRow) string { return strconv.FormatInt(f(r), 10) }
 	}
-	elapsed := func(r *PSRow) int64 { return max(r.atMS-r.StartMS, 0) / 1000 } // ps: uptime minus start, both exact
-	user := psCol{"USER", 8, false, "+", func(r *PSRow) string { return UserName(r.uid, false) }}
-	comm := psCol{"COMMAND", 15, false, "-", func(r *PSRow) string { return r.comm }}
+	elapsed := func(r *PSRow) int64 { return r.ElapsedS }
+	user := psCol{"USER", 8, false, "+", func(r *PSRow) string { return UserName(r.UIDNum, false) }}
+	comm := psCol{"COMMAND", 15, false, "-", func(r *PSRow) string { return r.CommName }}
 	args := psCol{"COMMAND", 27, false, "-", func(r *PSRow) string { return r.args }}
 	tty := psCol{"TT", 8, false, "", func(r *PSRow) string { return r.TTY }}
 	psCols = map[string]psCol{
 		"pid":  {"PID", 7, true, "", num(func(r *PSRow) int64 { return int64(r.PID) })},
 		"ppid": {"PPID", 7, true, "", num(func(r *PSRow) int64 { return int64(r.PPID) })},
-		"uid":  {"UID", 5, true, "", num(func(r *PSRow) int64 { return int64(r.uid) })},
+		"uid":  {"UID", 5, true, "", num(func(r *PSRow) int64 { return int64(r.UIDNum) })},
 		"user": user, "euser": user, "uname": user,
 		"comm": comm, "ucomm": comm,
 		"args": args, "command": args,
@@ -79,10 +79,10 @@ func init() {
 			return dash(sampled(r), func() string { return strconv.FormatUint(min(r.permille/10, 99), 10) })
 		}},
 		"ni": {"NI", 3, true, "", func(r *PSRow) string {
-			return dash(sampled(r), func() string { return strconv.Itoa(r.nice) })
+			return dash(sampled(r), func() string { return strconv.Itoa(r.Nice) })
 		}},
 		"nlwp": {"NLWP", 4, true, "", func(r *PSRow) string {
-			return dash(sampled(r), func() string { return strconv.Itoa(r.threads) })
+			return dash(sampled(r), func() string { return strconv.Itoa(r.Threads) })
 		}},
 		"s": {"S", 1, false, "", func(r *PSRow) string {
 			return dash(sampled(r), func() string { return r.Stat[:1] })
@@ -101,7 +101,7 @@ func init() {
 		"etime":  {"ELAPSED", 11, true, "", func(r *PSRow) string { return psElapsed(elapsed(r)) }},
 		"etimes": {"ELAPSED", 7, true, "", num(elapsed)},
 		"time": {"TIME", 8, true, "", func(r *PSRow) string {
-			return dash(sampled(r), func() string { return psCPUTime(r.ticks / procfs.ClockTicks) })
+			return dash(sampled(r), func() string { return psCPUTime(r.CPUTicks / procfs.ClockTicks) })
 		}},
 		"tty": tty, "tt": tty, "tname": tty,
 	}
@@ -193,7 +193,3 @@ func PrintPSFormat(w io.Writer, rows []PSRow, f PSFormat) {
 	}
 }
 
-// UID is the process's user id; Comm its command name (for ps -u and -C).
-func (r *PSRow) UID() int { return r.uid }
-
-func (r *PSRow) Comm() string { return r.comm }

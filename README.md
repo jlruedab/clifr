@@ -222,6 +222,19 @@ A command can also be given unquoted after clifr's options
   an interval argument (`"vmstat 60"`, `"iostat -x 60 10"`). `mpstat -P
   ALL` or `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p`
   (partitions).
+- `--json` writes JSON Lines, one object per row. Each starts with the times
+  it describes, in Unix milliseconds: `ts_ms` (the moment, or the row's own
+  time), `sample_ts_ms` (the sample its sampled values come from),
+  `from_ms`/`to_ms` (the range, or a counter interval). Each ends with
+  `sampled`, the names of its fields whose values come from a periodic
+  sample (fd walk, keyframe, per-process or counter sample); the others are
+  exact (events) or fixed for the object's life. `info` and `verify` write
+  one object.
+
+      {"ts_ms":1792380606000,"sample_ts_ms":1792380585319,"state":"ESTAB","recv_q":0,"send_q":0,
+       "local":"192.168.1.12","lport":32800,"peer":"40.99.129.18","rport":443,"proto":"tcp",
+       "inode":305975,"owners":[{"comm":"firefox","pid":12348,"fd":147}],"sampled":["recv_q","send_q"]}
+
 - `info` shows the recording range, samples and skips, rows per table, data
   size, recorder CPU and RSS, sample durations by phase, events and drops per
   source, guard-rail changes and estimated disk per day.

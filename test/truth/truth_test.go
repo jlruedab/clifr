@@ -21,6 +21,7 @@ package truth
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -946,7 +948,7 @@ func (e *env) query(v any, args ...string) {
 	if err != nil {
 		e.t.Fatalf("clifr %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
-	if err := json.Unmarshal(out, v); err != nil {
+	if err := decodeLines(out, v); err != nil {
 		e.t.Fatalf("clifr %s: bad JSON: %v\n%.300s", strings.Join(args, " "), err, out)
 	}
 }
@@ -993,4 +995,19 @@ func (e *env) report(root, recLog string) {
 		exec.Command("chown", "-R", uid+":"+gid, out).Run()
 	}
 	e.t.Logf("results in %s", out)
+}
+
+// decodeLines reads clifr's JSON Lines into v: a pointer to a slice gets
+// every line, anything else the single line.
+func decodeLines(out []byte, v any) error {
+	out = bytes.TrimSpace(out)
+	if reflect.TypeOf(v).Elem().Kind() != reflect.Slice {
+		return json.Unmarshal(out, v)
+	}
+	if len(out) == 0 {
+		out = []byte("[]")
+	} else {
+		out = append(append([]byte("["), bytes.ReplaceAll(out, []byte("\n"), []byte(","))...), ']')
+	}
+	return json.Unmarshal(out, v)
 }

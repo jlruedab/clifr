@@ -42,7 +42,9 @@ Range views (with --since):
   -n, --number N       stop after N samples
 
 Output:
-  -j, --json           JSON output
+  -j, --json           JSON Lines: one object per row, with its times (ts_ms,
+                       sample_ts_ms, from_ms, to_ms) and "sampled", the
+                       fields whose values come from a sample (others exact)
       --plain          just print (the default)
 
 Sources:

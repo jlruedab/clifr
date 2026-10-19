@@ -19,7 +19,7 @@ func cmdInfo(g *globals, db *store.DB) error {
 		return err
 	}
 	if g.json {
-		return query.PrintStatsJSON(os.Stdout, s)
+		return writeLines(s, nil)
 	}
 	query.PrintStats(os.Stdout, s)
 	return nil
@@ -33,7 +33,7 @@ func cmdVerify(g *globals, db *store.DB) error {
 		return err
 	}
 	if g.json {
-		return query.PrintJSON(os.Stdout, rep)
+		return writeLines(rep, nil)
 	}
 	verify.Print(os.Stdout, rep, g.verbose)
 	return nil

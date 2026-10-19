@@ -13,29 +13,32 @@ import (
 
 // PSRow is one process as `ps aux` would show it at a point in time.
 type PSRow struct {
-	User    string  `json:"user"`
-	PID     int     `json:"pid"`
-	PPID    int     `json:"ppid"`
-	CPU     string  `json:"pcpu"`
-	Mem     string  `json:"pmem"`
-	VSZ     int64   `json:"vsz_kb"`
-	RSS     int64   `json:"rss_kb"`
-	TTY     string  `json:"tty"`
-	Stat    string  `json:"stat"`
-	Start   string  `json:"start"`
-	Time    string  `json:"time"`
-	Command string  `json:"command"`
-	StartMS int64   `json:"start_time_ms"`
-	Source  string  `json:"source"`
-	cpuPct  float64 // unrounded, for tests
+	User     string  `json:"user"`
+	PID      int     `json:"pid"`
+	PPID     int     `json:"ppid"`
+	CPU      string  `json:"pcpu"`
+	Mem      string  `json:"pmem"`
+	VSZ      int64   `json:"vsz_kb"`
+	RSS      int64   `json:"rss_kb"`
+	TTY      string  `json:"tty"`
+	Stat     string  `json:"stat"`
+	Start    string  `json:"start"`
+	Time     string  `json:"time"`
+	Command  string  `json:"command"`
+	StartMS  int64   `json:"start_time_ms"`
+	Source   string  `json:"source"`
+	cpuPct   float64 // unrounded, for tests
+	UIDNum   int     `json:"uid"`
+	CommName string  `json:"comm"`
+	Nice     int     `json:"nice"`
+	Threads  int     `json:"threads"`
+	CPUTicks int64   `json:"cpu_ticks"` // -1 when not sampled
+	ElapsedS int64   `json:"elapsed_s"` // at the moment asked for (exact)
 	// For the other ps formats (psfmt.go).
-	uid, nice, threads int
-	comm, args         string
-	ticks              int64  // CPU time in clock ticks; -1 when not sampled
-	permille           uint64 // %CPU in tenths
-	nowMS              int64  // the sample's time
-	startDisp          int64  // start time as ps computes it (btime in whole seconds)
-	atMS               int64  // the moment asked for: elapsed times are exact there
+	args      string
+	permille  uint64 // %CPU in tenths
+	nowMS     int64  // the sample's time
+	startDisp int64  // start time as ps computes it (btime in whole seconds)
 }
 
 type procAt struct {
@@ -103,7 +106,8 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	for _, p := range procs {
 		r := psRow(p, s, memKB)
 		r.Start = psStart(p.startMS-skew, s)
-		r.startDisp, r.atMS = p.startMS-skew, t
+		r.startDisp = p.startMS - skew
+		r.ElapsedS = max(t-p.startMS, 0) / 1000
 		out = append(out, r)
 	}
 	return out, s, nil
@@ -112,7 +116,7 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 func psRow(p procAt, now, memKB int64) PSRow {
 	r := PSRow{User: UserName(p.uid, true), PID: p.pid, PPID: p.ppid, TTY: procfs.TTYName(p.tty),
 		StartMS: p.startMS, Source: p.source, VSZ: p.vszKB.Int64, RSS: p.rssKB.Int64,
-		uid: p.uid, comm: p.comm, nice: int(p.nice.Int64), threads: int(p.threads.Int64), ticks: -1, nowMS: now}
+		UIDNum: p.uid, CommName: p.comm, Nice: int(p.nice.Int64), Threads: int(p.threads.Int64), CPUTicks: -1, nowMS: now}
 	r.Start = psStart(p.startMS, now)
 	if !p.state.Valid { // event-only: no per-sample values were captured
 		r.CPU, r.Mem, r.Stat, r.Time = "-", "-", "-", "-"
@@ -121,7 +125,7 @@ func psRow(p procAt, now, memKB int64) PSRow {
 		return r
 	}
 	ticks := p.cpuTicks.Int64
-	r.ticks = ticks
+	r.CPUTicks = ticks
 	// procps: pcpu = (cputime_ms) / elapsed_seconds, in tenths of a percent, truncated.
 	if secs := (now - p.startMS) / 1000; secs > 0 {
 		r.permille = uint64(ticks*1000/procfs.ClockTicks) / uint64(secs)

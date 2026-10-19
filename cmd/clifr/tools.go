@@ -34,14 +34,6 @@ type runCtx struct {
 
 func (c *runCtx) header(format string, args ...any) { query.Header(format, args...) }
 
-func (c *runCtx) out(v any, text func()) error {
-	if c.g.json {
-		return query.PrintJSON(os.Stdout, v)
-	}
-	text()
-	return nil
-}
-
 // summaryOnly rejects --changes and --samples for tools whose range output
 // is a summary.
 func summaryOnly(name string, c *runCtx) error {
@@ -161,12 +153,13 @@ func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) er
 	if c.w.IsRange() {
 		return socketsRange(c, "ss", udp, filter)
 	}
-	rows, err := socketsAt(c, tcp, udp, filter)
+	rows, meta, err := socketsAt(c, tcp, udp, filter)
 	if err != nil {
 		return err
 	}
 	rows = v.Filter(rows)
-	return c.out(rows, func() { query.PrintSSView(os.Stdout, rows, v, tcp && udp) })
+	return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) },
+		func() { query.PrintSSView(os.Stdout, rows, v, tcp && udp) })
 }
 
 // socketsRange prints the connections over a range by process (ss and
@@ -194,15 +187,36 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 	if err != nil {
 		return err
 	}
-	return c.out(groups, func() { query.PrintSSGroups(os.Stdout, groups) })
+	return c.emit(groups, func(int) rowMeta {
+		m := rowMeta{From: w.From, To: w.To}
+		if !events { // v1 recordings: sockets seen at samples
+			m.Sampled = jsonKeys(query.SSGroup{})
+		}
+		return m
+	}, func() { query.PrintSSGroups(os.Stdout, groups) })
 }
 
 // socketsAt returns the TCP and/or UDP sockets at c.w.At (UDP first, as ss
-// lists them) and prints where they come from.
-func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow, error) {
+// lists them) with each row's provenance, and prints where they come from.
+// TCP from events: all exact but the queues (keyframe) and holders found by
+// fd walks; UDP and v1 recordings: everything from a dump.
+func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow, func(*query.SSRow) rowMeta, error) {
 	db, w := c.db, c.w
 	events := query.TCPFromEvents(db)
 	var rows []query.SSRow
+	sampleTS := map[string]int64{}
+	meta := func(r *query.SSRow) rowMeta {
+		m := rowMeta{TS: w.At, SampleTS: sampleTS[r.Proto]}
+		switch {
+		case !events || r.Proto == "udp":
+			m.Sampled = jsonKeys(*r)
+		case len(r.Owners) > 1:
+			m.Sampled = []string{"recv_q", "send_q", "owners"}
+		default:
+			m.Sampled = []string{"recv_q", "send_q"}
+		}
+		return m
+	}
 	for _, proto := range []string{"udp", "tcp"} { // ss's order
 		if (proto == "tcp" && !tcp) || (proto == "udp" && !udp) {
 			continue
@@ -212,8 +226,9 @@ func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow
 			var kf int64
 			var err error
 			if r, kf, err = query.ConnsAt(db, w.At, proto, filter); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+			sampleTS[proto] = kf
 			if proto == "tcp" {
 				tw := "time-wait end exact"
 				if !query.TimeWaitExact(db) {
@@ -227,16 +242,17 @@ func socketsAt(c *runCtx, tcp, udp bool, filter query.SockFilter) ([]query.SSRow
 		} else {
 			s, err := query.SnapshotAt(db, w.At, false)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if r, err = query.SocketsAt(db, s, proto, filter); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+			sampleTS[proto] = s
 			c.header("%s at %s, reconstructed from sample at %s", proto, query.FormatMS(w.At), query.FormatMS(s))
 		}
 		rows = append(rows, r...)
 	}
-	return rows, nil
+	return rows, meta, nil
 }
 
 func runLife(c *runCtx, re *regexp.Regexp) error {
@@ -249,7 +265,13 @@ func runLife(c *runCtx, re *regexp.Regexp) error {
 		return err
 	}
 	c.header("%d processes; END \">t\" means it exited after t and before the next sample", len(rows))
-	return c.out(rows, func() { query.PrintLife(os.Stdout, rows) })
+	return c.emit(rows, func(i int) rowMeta {
+		m := rowMeta{From: w.From, To: w.To}
+		if rows[i].EndKind != "exact" {
+			m.Sampled = []string{"end_ms", "duration_ms"} // bounded by samples, or still running
+		}
+		return m
+	}, func() { query.PrintLife(os.Stdout, rows) })
 }
 
 func runOOM(c *runCtx, top int) error {
@@ -263,7 +285,9 @@ func runOOM(c *runCtx, top int) error {
 	}
 	c.header("OOM kills %s .. %s; RSS of the others: their last sample at or before the kill (sampled, not exact)",
 		query.FormatMS(w.From), query.FormatMS(w.To))
-	return c.out(kills, func() { query.PrintOOM(os.Stdout, kills) })
+	return c.emit(kills, func(int) rowMeta {
+		return rowMeta{From: w.From, To: w.To, Sampled: []string{"top_rss"}} // the others' RSS from their last sample
+	}, func() { query.PrintOOM(os.Stdout, kills) })
 }
 
 func runMounts(c *runCtx) error {
@@ -279,5 +303,10 @@ func runMounts(c *runCtx) error {
 	if err != nil {
 		return err
 	}
-	return c.out(rows, func() { query.PrintMounts(os.Stdout, rows, c.w.IsRange()) })
+	return c.emit(rows, func(int) rowMeta {
+		if c.w.IsRange() {
+			return rowMeta{From: c.w.From, To: c.w.To}
+		}
+		return rowMeta{TS: c.w.At}
+	}, func() { query.PrintMounts(os.Stdout, rows, c.w.IsRange()) })
 }

@@ -30,7 +30,8 @@ func addSystemTools() {
 				if err != nil {
 					return err
 				}
-				return c.out(rows, func() { query.PrintVMStat(os.Stdout, rows) })
+				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
+					func() { query.PrintVMStat(os.Stdout, rows) })
 			})
 		},
 	})
@@ -47,7 +48,8 @@ func addSystemTools() {
 				if err != nil {
 					return err
 				}
-				return c.out(rows, func() { query.PrintMPStat(os.Stdout, rows) })
+				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i], "cpu") },
+					func() { query.PrintMPStat(os.Stdout, rows) })
 			})
 		},
 	})
@@ -70,7 +72,8 @@ func addSystemTools() {
 				if err != nil {
 					return err
 				}
-				return c.out(reps, func() { query.PrintIOStat(os.Stdout, reps, p.has("x"), p.has("d")) })
+				return c.emit(reps, func(i int) rowMeta { return spanMeta(spans, reps[i].TS, reps[i]) },
+					func() { query.PrintIOStat(os.Stdout, reps, p.has("x"), p.has("d")) })
 			})
 		},
 	})
@@ -86,7 +89,8 @@ func addSystemTools() {
 				if err != nil {
 					return err
 				}
-				return c.out(rows, func() { query.PrintUptime(os.Stdout, rows) })
+				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
+					func() { query.PrintUptime(os.Stdout, rows) })
 			})
 		},
 	})
@@ -147,4 +151,16 @@ func prepareSys(name string, p parsed, c *runCtx, print func([]query.Span) error
 		}
 		return print(spans)
 	}, nil
+}
+
+// spanMeta: a counter row ends at a sample (its ts_ms); over a range it
+// covers the interval from the previous one. Every value is sampled.
+func spanMeta(spans []query.Span, ts int64, row any, exact ...string) rowMeta {
+	m := rowMeta{Sampled: jsonKeys(row, append(exact, "ts_ms", "time", "since_boot")...)}
+	for _, sp := range spans {
+		if sp.To == ts && sp.From != 0 {
+			m.From, m.To = sp.From, sp.To
+		}
+	}
+	return m
 }

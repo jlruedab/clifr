@@ -38,8 +38,8 @@ func TestPSFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := []PSRow{{PID: 3974, RSS: 94156, VSZ: 2906796, Stat: "Ssl", uid: 0, args: "dockerd", ticks: 1},
-		{PID: 765, RSS: 1, VSZ: 2, Stat: "S", uid: 0, args: "x ", ticks: 1}}
+	rows := []PSRow{{PID: 3974, RSS: 94156, VSZ: 2906796, Stat: "Ssl", args: "dockerd", CPUTicks: 1},
+		{PID: 765, RSS: 1, VSZ: 2, Stat: "S", args: "x ", CPUTicks: 1}}
 	var b strings.Builder
 	PrintPSFormat(&b, rows, f)
 	// A VSZ wider than its column pushes STAT right; the next padding takes it
@@ -50,7 +50,7 @@ func TestPSFormat(t *testing.T) {
 	if b.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
 	}
-	long := []PSRow{{PID: 1, uid: 0, args: strings.Repeat("a", 40), comm: "c"}}
+	long := []PSRow{{PID: 1, args: strings.Repeat("a", 40), CommName: "c"}}
 	f, _ = ParsePSFormat("args,comm")
 	b.Reset()
 	PrintPSFormat(&b, long, f)

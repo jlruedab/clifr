@@ -20,6 +20,7 @@ package e2e
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -360,7 +362,7 @@ func query(t *testing.T, clifr string, v any, args ...string) {
 	if err != nil {
 		t.Fatalf("clifr %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
-	if err := json.Unmarshal(out, v); err != nil {
+	if err := decodeLines(out, v); err != nil {
 		t.Fatalf("clifr %s: bad JSON: %v\n%.300s", strings.Join(args, " "), err, out)
 	}
 }
@@ -374,4 +376,19 @@ func copyFile(t *testing.T, from, to string) {
 	if err := os.WriteFile(to, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// decodeLines reads clifr's JSON Lines into v: a pointer to a slice gets
+// every line, anything else the single line.
+func decodeLines(out []byte, v any) error {
+	out = bytes.TrimSpace(out)
+	if reflect.TypeOf(v).Elem().Kind() != reflect.Slice {
+		return json.Unmarshal(out, v)
+	}
+	if len(out) == 0 {
+		out = []byte("[]")
+	} else {
+		out = append(append([]byte("["), bytes.ReplaceAll(out, []byte("\n"), []byte(","))...), ']')
+	}
+	return json.Unmarshal(out, v)
 }

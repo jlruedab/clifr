@@ -99,12 +99,12 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 				return true
 			}
 			for _, u := range users {
-				if u == strconv.Itoa(r.UID()) || u == query.UserName(r.UID(), false) {
+				if u == strconv.Itoa(r.UIDNum) || u == query.UserName(r.UIDNum, false) {
 					return true
 				}
 			}
 			for _, n := range names {
-				if n == r.Comm() {
+				if n == r.CommName {
 					return true
 				}
 			}
@@ -124,7 +124,9 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 		}
 		c.header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
 			query.FormatMS(w.From), query.FormatMS(w.To))
-		return c.out(rows, func() { query.PrintPSRange(os.Stdout, rows) })
+		return c.emit(rows, func(int) rowMeta {
+			return rowMeta{From: w.From, To: w.To, Sampled: []string{"last_seen_ms", "peak_pcpu", "peak_rss_kb"}}
+		}, func() { query.PrintPSRange(os.Stdout, rows) })
 	}
 	rows, s, err := query.PSAt(db, w.At)
 	if err != nil {
@@ -146,16 +148,20 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 			c.header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see: clifr ... oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
 		}
 	}
-	if c.g.json {
-		return query.PrintPSJSON(os.Stdout, rows)
-	}
-	if f == nil {
-		query.PrintPS(os.Stdout, rows)
-	} else {
-		query.PrintPSFormat(os.Stdout, rows, f)
-	}
-	return nil
+	return c.emit(rows, func(int) rowMeta {
+		return rowMeta{TS: w.At, SampleTS: s, Sampled: psSampled}
+	}, func() {
+		if f == nil {
+			query.PrintPS(os.Stdout, rows)
+		} else {
+			query.PrintPSFormat(os.Stdout, rows, f)
+		}
+	})
 }
+
+// psSampled are the ps fields read at each sample; the others (ids, user,
+// terminal, start, command, elapsed time) are exact for the process.
+var psSampled = []string{"pcpu", "pmem", "vsz_kb", "rss_kb", "stat", "time", "nice", "threads", "cpu_ticks"}
 
 func lsofTool() *tool {
 	return &tool{
@@ -208,7 +214,14 @@ func runLsof(c *runCtx, sel query.LsofSelect) error {
 		}
 		rows = sel.Filter(rows)
 		c.header("files held between %s and %s (%d)", query.FormatMS(w.From), query.FormatMS(w.To), len(rows))
-		return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, true) })
+		events := query.TCPFromEvents(db)
+		return c.emit(rows, func(i int) rowMeta {
+			m := rowMeta{From: w.From, To: w.To}
+			if !(events && rows[i].Node == "TCP") {
+				m.Sampled = []string{"first_seen_ms", "last_seen_ms"} // bounded by fd walks
+			}
+			return m
+		}, func() { query.PrintLsof(os.Stdout, rows, true) })
 	}
 	rows, s, sfd, err := query.LsofAt(db, w.At, o)
 	if err != nil {
@@ -222,7 +235,19 @@ func runLsof(c *runCtx, sel query.LsofSelect) error {
 		c.header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
 			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
 	}
-	return c.out(rows, func() { query.PrintLsof(os.Stdout, rows, false) })
+	events, kf := query.TCPFromEvents(db), query.KeyframeAt(db, w.At)
+	return c.emit(rows, func(i int) rowMeta {
+		r := rows[i]
+		switch {
+		case events && r.Node == "TCP":
+			return rowMeta{TS: w.At}
+		case events && r.Node == "UDP":
+			return rowMeta{TS: w.At, SampleTS: kf, Sampled: jsonKeys(r)}
+		case !events && strings.HasPrefix(r.Type, "IPv"):
+			return rowMeta{TS: w.At, SampleTS: s, Sampled: jsonKeys(r)}
+		}
+		return rowMeta{TS: w.At, SampleTS: sfd, Sampled: jsonKeys(r)} // from the fd walk
+	}, func() { query.PrintLsof(os.Stdout, rows, false) })
 }
 
 func freeTool() *tool {
@@ -297,7 +322,9 @@ func freeTool() *tool {
 				if err != nil {
 					return err
 				}
-				return c.out(rows, func() { query.PrintFree(os.Stdout, rows, f) })
+				return c.emit(rows, func(i int) rowMeta {
+					return rowMeta{Sampled: jsonKeys(rows[i], "ts_ms")}
+				}, func() { query.PrintFree(os.Stdout, rows, f) })
 			}, nil
 		},
 	}
@@ -347,7 +374,7 @@ func netstatTool() *tool {
 				if c.w.IsRange() {
 					return socketsRange(c, "netstat", udp, query.SockFilter{})
 				}
-				rows, err := socketsAt(c, tcp, udp, query.SockFilter{})
+				rows, meta, err := socketsAt(c, tcp, udp, query.SockFilter{})
 				if err != nil {
 					return err
 				}
@@ -363,7 +390,8 @@ func netstatTool() *tool {
 						return err
 					}
 				}
-				return c.out(kept, func() { query.PrintNetstat(os.Stdout, kept, v, progs) })
+				return c.emit(kept, func(i int) rowMeta { return meta(&kept[i]) },
+					func() { query.PrintNetstat(os.Stdout, kept, v, progs) })
 			}, nil
 		},
 	}
@@ -412,7 +440,12 @@ func eventsTool() *tool {
 					return err
 				}
 				c.header("%d events %s .. %s", len(evs), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
-				return c.out(evs, func() { query.PrintEvents(os.Stdout, evs) })
+				return c.emit(evs, func(i int) rowMeta {
+					if !evs[i].Exact {
+						return rowMeta{Sampled: []string{"ts_ms"}}
+					}
+					return rowMeta{}
+				}, func() { query.PrintEvents(os.Stdout, evs) })
 			}, nil
 		},
 	}
