@@ -164,8 +164,6 @@ func checkLater(g *globals) error {
 		return errors.New("--host, --token and --tls-ca (remote hosts) are not available in this release; use --data-dir")
 	case g.lic != "":
 		return errors.New("--license is not needed: this release reads local data only")
-	case g.interactive:
-		return errors.New("--interactive is not available yet; output is printed (--plain)")
 	}
 	return nil
 }

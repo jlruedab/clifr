@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"clifr/internal/query"
@@ -17,7 +18,7 @@ type view[R any] struct {
 	at    func(t int64) ([]R, func(*R) rowMeta, error)
 	key   func(*R) string
 	same  func(a, b *R) bool // false: the row changed
-	print func([]R)
+	print func(io.Writer, []R)
 }
 
 // rangeView runs v over c's range if --samples or --changes asks for it; ok
@@ -45,24 +46,29 @@ func rangeView[R any](c *runCtx, v view[R]) (ok bool, err error) {
 	}
 	c.header("%s: %d samples, %s .. %s", v.name, len(times), query.FormatMS(times[0]), query.FormatMS(times[len(times)-1]))
 	c.quiet = true
-	for i, t := range times {
-		rows, meta, err := v.at(t)
-		if err != nil {
-			return true, err
-		}
-		if c.g.json {
+	if c.g.json {
+		for _, t := range times {
+			rows, meta, err := v.at(t)
+			if err != nil {
+				return true, err
+			}
 			if err := writeLines(rows, func(i int) rowMeta { m := meta(&rows[i]); m.TS = t; return m }); err != nil {
 				return true, err
 			}
-			continue
 		}
-		if i > 0 {
-			fmt.Println()
-		}
-		fmt.Printf("# %s at %s\n", v.name, query.FormatMS(t))
-		v.print(rows)
+		return true, nil
 	}
-	return true, nil
+	pages := make([]page, len(times))
+	for i, t := range times {
+		pages[i] = page{title: fmt.Sprintf("%s at %s", v.name, query.FormatMS(t)), ts: t, body: func(w io.Writer) error {
+			rows, _, err := v.at(t)
+			if err == nil {
+				v.print(w, rows)
+			}
+			return err
+		}}
+	}
+	return true, c.show(pages)
 }
 
 // change is one row of a comparison: "+" appeared, "-" gone, "~" changed
@@ -98,41 +104,43 @@ func compare[R any](v view[R], a, b []R) []change[R] {
 	return out
 }
 
-// printChanges prints one comparison: appeared, gone and changed rows as
-// three tables in the command's own format.
-func printChanges[R any](c *runCtx, v view[R], from, to int64, ch []change[R], meta func(*R) rowMeta) error {
-	if c.g.json {
-		return writeLines(func() []R {
-			rows := make([]R, len(ch))
-			for i := range ch {
-				rows[i] = ch[i].row
-			}
-			return rows
-		}(), func(i int) rowMeta {
-			m := meta(&ch[i].row)
-			m.TS, m.From, m.Change = to, from, ch[i].kind
-			return m
-		})
+// writeChanges writes one comparison as JSON Lines.
+func writeChanges[R any](from, to int64, ch []change[R], meta func(*R) rowMeta) error {
+	rows := make([]R, len(ch))
+	for i := range ch {
+		rows[i] = ch[i].row
 	}
+	return writeLines(rows, func(i int) rowMeta {
+		m := meta(&ch[i].row)
+		m.TS, m.From, m.Change = to, from, ch[i].kind
+		return m
+	})
+}
+
+// changesPage is one comparison: appeared, gone and changed rows as three
+// tables in the command's own format.
+func changesPage[R any](v view[R], from, to int64, ch []change[R]) page {
 	counts := map[string]int{}
 	for _, x := range ch {
 		counts[x.kind]++
 	}
-	fmt.Printf("# %s, %s -> %s: %d appeared, %d gone, %d changed\n", v.name, query.FormatMS(from), query.FormatMS(to),
+	title := fmt.Sprintf("%s, %s -> %s: %d appeared, %d gone, %d changed", v.name, query.FormatMS(from), query.FormatMS(to),
 		counts["+"], counts["-"], counts["~"])
-	for _, kind := range []struct{ k, title string }{{"+", "appeared"}, {"-", "gone"}, {"~", "changed (as at " + query.FormatMS(to) + ")"}} {
-		var rows []R
-		for _, x := range ch {
-			if x.kind == kind.k {
-				rows = append(rows, x.row)
+	return page{title: title, ts: to, body: func(w io.Writer) error {
+		for _, kind := range []struct{ k, title string }{{"+", "appeared"}, {"-", "gone"}, {"~", "changed (as at " + query.FormatMS(to) + ")"}} {
+			var rows []R
+			for _, x := range ch {
+				if x.kind == kind.k {
+					rows = append(rows, x.row)
+				}
+			}
+			if len(rows) > 0 {
+				fmt.Fprintf(w, "## %s\n", kind.title)
+				v.print(w, rows)
 			}
 		}
-		if len(rows) > 0 {
-			fmt.Printf("## %s\n", kind.title)
-			v.print(rows)
-		}
-	}
-	return nil
+		return nil
+	}}
 }
 
 func runChanges[R any](c *runCtx, v view[R], times []int64) error {
@@ -143,30 +151,33 @@ func runChanges[R any](c *runCtx, v view[R], times []int64) error {
 	if err != nil {
 		return err
 	}
-	n, printed := 0, false
+	var pages []page
 	for i := 1; i < len(times); i++ {
 		cur, meta, err := v.at(times[i])
 		if err != nil {
 			return err
 		}
 		if ch := compare(v, prev, cur); len(ch) > 0 {
-			if c.g.number > 0 && n == c.g.number {
+			if c.g.number > 0 && len(pages) == c.g.number {
 				break
 			}
-			if printed && !c.g.json {
-				fmt.Println()
+			if c.g.json {
+				if err := writeChanges(times[i-1], times[i], ch, meta); err != nil {
+					return err
+				}
 			}
-			if err := printChanges(c, v, times[i-1], times[i], ch, meta); err != nil {
-				return err
-			}
-			n, printed = n+1, true
+			pages = append(pages, changesPage(v, times[i-1], times[i], ch))
 		}
 		prev = cur
 	}
-	if !printed && !c.g.json {
+	switch {
+	case c.g.json:
+		return nil
+	case len(pages) == 0:
 		fmt.Fprintln(os.Stderr, "# no changes")
+		return nil
 	}
-	return nil
+	return c.show(pages)
 }
 
 // diffView compares two moments (clifr diff).
@@ -180,9 +191,12 @@ func diffView[R any](c *runCtx, v view[R], a, b int64) error {
 		return err
 	}
 	ch := compare(v, ra, rb)
-	if len(ch) == 0 && !c.g.json {
+	switch {
+	case c.g.json:
+		return writeChanges(a, b, ch, meta)
+	case len(ch) == 0:
 		fmt.Fprintf(os.Stderr, "# %s: no differences between %s and %s\n", v.name, query.FormatMS(a), query.FormatMS(b))
 		return nil
 	}
-	return printChanges(c, v, a, b, ch, meta)
+	return c.show([]page{changesPage(v, a, b, ch)})
 }

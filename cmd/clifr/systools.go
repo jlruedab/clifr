@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 
 	"clifr/internal/query"
@@ -31,7 +31,7 @@ func addSystemTools() {
 					return err
 				}
 				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
-					func() { query.PrintVMStat(os.Stdout, rows) })
+					func(w io.Writer) { query.PrintVMStat(w, rows) })
 			})
 		},
 	})
@@ -49,7 +49,7 @@ func addSystemTools() {
 					return err
 				}
 				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i], "cpu") },
-					func() { query.PrintMPStat(os.Stdout, rows) })
+					func(w io.Writer) { query.PrintMPStat(w, rows) })
 			})
 		},
 	})
@@ -73,7 +73,7 @@ func addSystemTools() {
 					return err
 				}
 				return c.emit(reps, func(i int) rowMeta { return spanMeta(spans, reps[i].TS, reps[i]) },
-					func() { query.PrintIOStat(os.Stdout, reps, p.has("x"), p.has("d")) })
+					func(w io.Writer) { query.PrintIOStat(w, reps, p.has("x"), p.has("d")) })
 			})
 		},
 	})
@@ -90,7 +90,7 @@ func addSystemTools() {
 					return err
 				}
 				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
-					func() { query.PrintUptime(os.Stdout, rows) })
+					func(w io.Writer) { query.PrintUptime(w, rows) })
 			})
 		},
 	})

@@ -277,6 +277,11 @@ A command can also be given unquoted after clifr's options
   disappeared or changed (ps: command, user, parent or terminal; sockets:
   state or owners; df: Use% or the file system), as tables in the command's
   own format; anything shorter than a sample interval is in `events`.
+- On a terminal, output goes through a pager (`-I`; `--plain` prints, as
+  when piped): one page per sample or comparison; PgDn/n and PgUp/p move
+  between samples, Home/End to the first and last, `g` jumps to a time,
+  arrows, space and `b` scroll, `q` quits. One page that fits on the
+  screen is just printed.
 - `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount)
   compares the two moments the same way: appeared, gone, changed.
 - `--json` writes JSON Lines, one object per row. Each starts with the times

@@ -48,7 +48,14 @@ Output:
   -j, --json           JSON Lines: one object per row, with its times (ts_ms,
                        sample_ts_ms, from_ms, to_ms) and "sampled", the
                        fields whose values come from a sample (others exact)
-      --plain          just print (the default)
+  -I, --interactive    page through samples (default when output is a terminal)
+      --plain          never page, just print (default when output is piped)
+
+Interactive keys:
+  PgDn / n    next sample          PgUp / p    previous sample
+  Home        first sample         End         last sample
+  g           jump to a time       q           quit
+  arrows, space, b: scroll within a sample
 
 Sources:
   -D, --data-dir DIR   local recording directory (default /var/lib/clifr)

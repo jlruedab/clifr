@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"reflect"
 	"strconv"
@@ -29,11 +30,11 @@ type rowMeta struct {
 	Sampled                []string
 }
 
-// emit prints rows (a slice, or one value) as JSON Lines, or calls text.
-func (c *runCtx) emit(rows any, meta func(i int) rowMeta, text func()) error {
+// emit prints rows (a slice, or one value) as JSON Lines, or their text
+// (through the pager when it applies).
+func (c *runCtx) emit(rows any, meta func(i int) rowMeta, text func(io.Writer)) error {
 	if !c.g.json {
-		text()
-		return nil
+		return c.show([]page{{body: func(w io.Writer) error { text(w); return nil }}})
 	}
 	return writeLines(rows, meta)
 }

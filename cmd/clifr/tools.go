@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strconv"
 
@@ -159,7 +159,7 @@ func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) er
 	}
 	rows = v.Filter(rows)
 	return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) },
-		func() { query.PrintSSView(os.Stdout, rows, v, tcp && udp) })
+		func(w io.Writer) { query.PrintSSView(w, rows, v, tcp && udp) })
 }
 
 // socketsRange prints the connections over a range by process (ss and
@@ -193,7 +193,7 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 			m.Sampled = jsonKeys(query.SSGroup{})
 		}
 		return m
-	}, func() { query.PrintSSGroups(os.Stdout, groups) })
+	}, func(w io.Writer) { query.PrintSSGroups(w, groups) })
 }
 
 // socketsAt returns the TCP and/or UDP sockets at c.w.At (UDP first, as ss
@@ -271,7 +271,7 @@ func runLife(c *runCtx, re *regexp.Regexp) error {
 			m.Sampled = []string{"end_ms", "duration_ms"} // bounded by samples, or still running
 		}
 		return m
-	}, func() { query.PrintLife(os.Stdout, rows) })
+	}, func(w io.Writer) { query.PrintLife(w, rows) })
 }
 
 func runOOM(c *runCtx, top int) error {
@@ -287,7 +287,7 @@ func runOOM(c *runCtx, top int) error {
 		query.FormatMS(w.From), query.FormatMS(w.To))
 	return c.emit(kills, func(int) rowMeta {
 		return rowMeta{From: w.From, To: w.To, Sampled: []string{"top_rss"}} // the others' RSS from their last sample
-	}, func() { query.PrintOOM(os.Stdout, kills) })
+	}, func(w io.Writer) { query.PrintOOM(w, kills) })
 }
 
 func runMounts(c *runCtx) error {
@@ -308,5 +308,5 @@ func runMounts(c *runCtx) error {
 			return rowMeta{From: c.w.From, To: c.w.To}
 		}
 		return rowMeta{TS: c.w.At}
-	}, func() { query.PrintMounts(os.Stdout, rows, c.w.IsRange()) })
+	}, func(w io.Writer) { query.PrintMounts(w, rows, c.w.IsRange()) })
 }

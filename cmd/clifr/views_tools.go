@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 	"strings"
 
@@ -37,11 +37,11 @@ func psView(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) view[query
 		same: func(a, b *query.PSRow) bool {
 			return a.Command == b.Command && a.User == b.User && a.PPID == b.PPID && a.TTY == b.TTY
 		},
-		print: func(rows []query.PSRow) {
+		print: func(w io.Writer, rows []query.PSRow) {
 			if f == nil {
-				query.PrintPS(os.Stdout, rows)
+				query.PrintPS(w, rows)
 			} else {
-				query.PrintPSFormat(os.Stdout, rows, f)
+				query.PrintPSFormat(w, rows, f)
 			}
 		},
 	}
@@ -68,7 +68,7 @@ func ssView(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) v
 		},
 		key:   sockKey,
 		same:  func(a, b *query.SSRow) bool { return a.State == b.State && ownersText(a) == ownersText(b) },
-		print: func(rows []query.SSRow) { query.PrintSSView(os.Stdout, rows, v, tcp && udp) },
+		print: func(w io.Writer, rows []query.SSRow) { query.PrintSSView(w, rows, v, tcp && udp) },
 	}
 }
 
@@ -96,7 +96,7 @@ func netstatView(c *runCtx, tcp, udp bool, v query.NetstatView) view[query.SSRow
 		},
 		key:   sockKey,
 		same:  func(a, b *query.SSRow) bool { return a.State == b.State && ownersText(a) == ownersText(b) },
-		print: func(rows []query.SSRow) { query.PrintNetstat(os.Stdout, rows, v, progs) },
+		print: func(w io.Writer, rows []query.SSRow) { query.PrintNetstat(w, rows, v, progs) },
 	}
 }
 
@@ -124,7 +124,7 @@ func lsofView(c *runCtx, sel query.LsofSelect) view[query.LsofRow] {
 			return strconv.Itoa(r.PID) + " " + r.FD + " " + name
 		},
 		same:  func(a, b *query.LsofRow) bool { return a.Type == b.Type && a.Node == b.Node && a.Name == b.Name },
-		print: func(rows []query.LsofRow) { query.PrintLsof(os.Stdout, rows, false) },
+		print: func(w io.Writer, rows []query.LsofRow) { query.PrintLsof(w, rows, false) },
 	}
 }
 
@@ -152,7 +152,7 @@ func dfView(c *runCtx, f query.DFFormat, paths []string) view[query.DFRow] {
 		key: func(r *query.DFRow) string { return r.Point },
 		// A change: another file system there, or Use% moved by a point.
 		same:  func(a, b *query.DFRow) bool { return a.Source == b.Source && a.UsePct() == b.UsePct() },
-		print: func(rows []query.DFRow) { query.PrintDF(os.Stdout, rows, f) },
+		print: func(w io.Writer, rows []query.DFRow) { query.PrintDF(w, rows, f) },
 	}
 }
 
@@ -176,6 +176,6 @@ func mountView(c *runCtx, types query.MountTypes) view[query.MountRow] {
 		same: func(a, b *query.MountRow) bool {
 			return a.FSType == b.FSType && a.Options == b.Options && a.SuperOptions == b.SuperOptions
 		},
-		print: func(rows []query.MountRow) { query.PrintMount(os.Stdout, rows) },
+		print: func(w io.Writer, rows []query.MountRow) { query.PrintMount(w, rows) },
 	}
 }

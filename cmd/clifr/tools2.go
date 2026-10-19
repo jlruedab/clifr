@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -123,7 +123,7 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 			query.FormatMS(w.From), query.FormatMS(w.To))
 		return c.emit(rows, func(int) rowMeta {
 			return rowMeta{From: w.From, To: w.To, Sampled: []string{"last_seen_ms", "peak_pcpu", "peak_rss_kb"}}
-		}, func() { query.PrintPSRange(os.Stdout, rows) })
+		}, func(w io.Writer) { query.PrintPSRange(w, rows) })
 	}
 	rows, s, err := query.PSAt(db, w.At)
 	if err != nil {
@@ -147,11 +147,11 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 	}
 	return c.emit(rows, func(int) rowMeta {
 		return rowMeta{TS: w.At, SampleTS: s, Sampled: psSampled}
-	}, func() {
+	}, func(out io.Writer) {
 		if f == nil {
-			query.PrintPS(os.Stdout, rows)
+			query.PrintPS(out, rows)
 		} else {
-			query.PrintPSFormat(os.Stdout, rows, f)
+			query.PrintPSFormat(out, rows, f)
 		}
 	})
 }
@@ -219,7 +219,7 @@ func runLsof(c *runCtx, sel query.LsofSelect) error {
 				m.Sampled = []string{"first_seen_ms", "last_seen_ms"} // bounded by fd walks
 			}
 			return m
-		}, func() { query.PrintLsof(os.Stdout, rows, true) })
+		}, func(w io.Writer) { query.PrintLsof(w, rows, true) })
 	}
 	rows, s, sfd, err := query.LsofAt(db, w.At, o)
 	if err != nil {
@@ -245,7 +245,7 @@ func runLsof(c *runCtx, sel query.LsofSelect) error {
 			return rowMeta{TS: w.At, SampleTS: s, Sampled: jsonKeys(r)}
 		}
 		return rowMeta{TS: w.At, SampleTS: sfd, Sampled: jsonKeys(r)} // from the fd walk
-	}, func() { query.PrintLsof(os.Stdout, rows, false) })
+	}, func(w io.Writer) { query.PrintLsof(w, rows, false) })
 }
 
 func freeTool() *tool {
@@ -322,7 +322,7 @@ func freeTool() *tool {
 				}
 				return c.emit(rows, func(i int) rowMeta {
 					return rowMeta{Sampled: jsonKeys(rows[i], "ts_ms")}
-				}, func() { query.PrintFree(os.Stdout, rows, f) })
+				}, func(w io.Writer) { query.PrintFree(w, rows, f) })
 			}, nil
 		},
 	}
@@ -389,7 +389,7 @@ func netstatTool() *tool {
 					}
 				}
 				return c.emit(kept, func(i int) rowMeta { return meta(&kept[i]) },
-					func() { query.PrintNetstat(os.Stdout, kept, v, progs) })
+					func(w io.Writer) { query.PrintNetstat(w, kept, v, progs) })
 			}, nil
 		},
 	}
@@ -443,7 +443,7 @@ func eventsTool() *tool {
 						return rowMeta{Sampled: []string{"ts_ms"}}
 					}
 					return rowMeta{}
-				}, func() { query.PrintEvents(os.Stdout, evs) })
+				}, func(w io.Writer) { query.PrintEvents(w, evs) })
 			}, nil
 		},
 	}
@@ -502,11 +502,11 @@ func mountTool() *tool {
 						return rowMeta{From: c.w.From, To: c.w.To}
 					}
 					return rowMeta{TS: c.w.At}
-				}, func() {
+				}, func(w io.Writer) {
 					if c.w.IsRange() {
-						query.PrintMounts(os.Stdout, kept, true)
+						query.PrintMounts(w, kept, true)
 					} else {
-						query.PrintMount(os.Stdout, kept)
+						query.PrintMount(w, kept)
 					}
 				})
 			}, nil
@@ -558,7 +558,7 @@ func dfTool() *tool {
 					return fmt.Errorf("df: no file system recorded for some of %s", strings.Join(p.pos, ", "))
 				}
 				c.header("df at %s, usage sampled", query.FormatMS(c.w.At))
-				return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) }, func() { v.print(rows) })
+				return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) }, func(w io.Writer) { v.print(w, rows) })
 			}, nil
 		},
 	}
