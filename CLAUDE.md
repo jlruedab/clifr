@@ -128,7 +128,8 @@ wait for the user's go-ahead.
 ## Commands
 - Build: `CGO_ENABLED=0 go build -o clifrd ./cmd/clifrd` and `go build -o clifr ./cmd/clifr` (cgo, needs g++).
   go.mod pins toolchain go1.26.8 (downloaded automatically by an older `go`).
-- eBPF self-test (root): `sudo ./clifrd --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`
+- eBPF self-test (root): `sudo ./clifrd --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`;
+  `sudo ./clifrd doctor`: what the system supports (loads and closes the programs), the recording level.
 - Test: `go test ./...` (eBPF tests skip without root; `go test -c` + sudo to run them); e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
 - Ground truth (root; small ≈ 4 min, full ≈ 14 min with the recorder's defaults; results in `bench/results/truth-<scale>-<time>/`):
   `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`

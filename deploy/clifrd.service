@@ -2,6 +2,8 @@
 #
 # Install:
 #   install -m 0755 clifrd clifr /usr/local/sbin/
+#   install -D -m 0644 deploy/clifr-sysusers.conf /usr/lib/sysusers.d/clifr.conf && systemd-sysusers
+#   (the clifr group: its members can read the recording with clifr, without root)
 #   install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml   (the settings)
 #   install -m 0644 deploy/clifrd.service /etc/systemd/system/clifrd.service
 #   systemctl daemon-reload && systemctl enable --now clifrd
@@ -21,8 +23,12 @@ Type=simple
 ExecStart=/usr/local/sbin/clifrd
 Restart=on-failure
 RestartSec=30s
+# The recording holds every user's command lines: root and the clifr group
+# only (files 0640, directories 0750).
+Group=clifr
 StateDirectory=clifr
-StateDirectoryMode=0700
+StateDirectoryMode=0750
+UMask=0027
 
 # Resource limits: the recorder must never compete with the real workload.
 MemoryAccounting=yes

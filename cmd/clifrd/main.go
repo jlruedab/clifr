@@ -40,7 +40,17 @@ func run(args []string) error {
 	if len(args) == 1 && args[0] == "--thread-exit" {
 		threadExit()
 	}
+	doDoctor := len(args) > 0 && args[0] == "doctor"
+	if doDoctor {
+		args = args[1:]
+	}
 	fs := flag.NewFlagSet("clifrd", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), "clifrd records processes, sockets, open files and system counters for clifr.\n\n"+
+			"Usage:\n  clifrd [OPTIONS]          record (normally run by systemd)\n"+
+			"  clifrd doctor [OPTIONS]   check what this system supports and show the recording level\n\nOptions:\n")
+		fs.PrintDefaults()
+	}
 	c := recorder.Config{Version: version()}
 	configPath := fs.String("config", defaultConfig, "configuration file (settings in it apply unless given as flags)")
 	fs.StringVar(configPath, "C", defaultConfig, "short for --config")
@@ -94,6 +104,9 @@ func run(args []string) error {
 	level, err := recorder.ParseLevel(*logLevel)
 	if err != nil {
 		return err
+	}
+	if doDoctor {
+		return doctor(c.DataDir, *configPath)
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))

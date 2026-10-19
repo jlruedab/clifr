@@ -166,8 +166,17 @@ before 5.8 need CAP_SYS_ADMIN for eBPF):
 
     sudo install -m 0755 clifrd clifr /usr/local/sbin/
     sudo install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml
+    sudo install -D -m 0644 deploy/clifr-sysusers.conf /usr/lib/sysusers.d/clifr.conf && sudo systemd-sysusers
     sudo install -m 0644 deploy/clifrd.service /etc/systemd/system/
+    sudo clifrd doctor            # what this system supports: the recording level
     sudo systemctl daemon-reload && sudo systemctl enable --now clifrd
+
+The recording holds every user's command lines: the unit keeps it readable
+by root and the `clifr` group only (directories 0750, files 0640); add an
+administrator with `usermod -aG clifr NAME` to use `clifr` without root.
+`clifrd doctor` loads the eBPF programs and closes them again, reads each
+source once and prints what works and the resulting recording level (full,
+reduced or sampling only); it records nothing.
 
 MemoryMax is about 1.5 times the highest memory measured in the benchmark
 (502 MiB with 100,000 connections). Read [Limitations](#limitations) before

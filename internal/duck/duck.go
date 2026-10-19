@@ -28,7 +28,7 @@ import (
 func Open(dataDir string) (*store.DB, error) {
 	if _, err := os.Stat(filepath.Join(dataDir, "samples")); err != nil {
 		if errors.Is(err, fs.ErrPermission) {
-			return nil, fmt.Errorf("%s: permission denied (the recording is readable by root only)", dataDir)
+			return nil, fmt.Errorf("%s: permission denied (the recording is readable by root and the clifr group)", dataDir)
 		}
 		return nil, fmt.Errorf("%s: not a clifr data directory (no samples/)", dataDir)
 	}
