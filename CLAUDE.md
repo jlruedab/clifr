@@ -1,6 +1,6 @@
-# sosv — Linux flight recorder (working prototype)
+# clifr — Linux flight recorder (working prototype)
 
-`sosv-record` continuously records which processes existed, which sockets and open
+`clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files (or, for v1 comparisons, one SQLite file).
 Query subcommands (`ps`, `lsof`, `ss`, `life`, `uptime`, `vmstat`, `mpstat`, `iostat`,
@@ -13,6 +13,11 @@ working prototype, not yet viable (no soak test, one machine, synthetic load onl
 no packaging: README "Status"). The benchmark results under `bench/` remain the main
 evidence, not CLI polish.
 
+Renamed from sosv on 2026-10-19 (module `clifr`, `cmd/clifrd`, `cmd/clifr`,
+`/var/lib/clifr`); the v1 tag, the bench database `sosvbench`, its slice and
+result file names (`sosv-stats.*`, `sosv.db`, `sosv_commit`) keep the old name.
+The product plan (phases 1–7) is in `docs/clifr-plan.md`.
+
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
 1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
 benchmarkable side by side. `HANDOFF.md` has the current results, the open
@@ -20,8 +25,8 @@ items and the history. Do one step at a time, run it, report results, and
 wait for the user's go-ahead.
 
 ## Hard constraints (v2)
-- Two binaries. `sosv-record`: pure Go, static, `CGO_ENABLED=0`, runs on the
-  recorded server. `sosv`: the CLI, DuckDB (`github.com/duckdb/duckdb-go`,
+- Two binaries. `clifrd`: pure Go, static, `CGO_ENABLED=0`, runs on the
+  recorded server. `clifr`: the CLI, DuckDB (`github.com/duckdb/duckdb-go`,
   cgo allowed), may run on another machine.
 - eBPF via `github.com/cilium/ebpf` (CO-RE, bpf2go; clang only at build time).
   Prefer tracepoints, then fentry/fexit if available, else kprobes; ring buffer
@@ -38,8 +43,8 @@ wait for the user's go-ahead.
 - No network, encryption, obfuscation or web UI.
 
 ## Layout
-- `cmd/sosv-record/` — the recorder binary (static, no cgo).
-- `cmd/sosv/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
+- `cmd/clifrd/` — the recorder binary (static, no cgo).
+- `cmd/clifr/` — the query CLI (DuckDB via cgo; `--data-dir` Parquet or `--db` SQLite).
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
   system-wide stat, loadavg, meminfo, vmstat, diskstats).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
@@ -96,19 +101,19 @@ wait for the user's go-ahead.
   (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,
   from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:
   `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
-  `sosv verify` compares, with a tolerance), a range = one report per sample interval. No rates
+  `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--interval`. `uptime` has no user count.
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 
 ## Commands
-- Build: `CGO_ENABLED=0 go build -o sosv-record ./cmd/sosv-record` and `go build -o sosv ./cmd/sosv` (cgo, needs g++).
+- Build: `CGO_ENABLED=0 go build -o clifrd ./cmd/clifrd` and `go build -o clifr ./cmd/clifr` (cgo, needs g++).
   go.mod pins toolchain go1.26.8 (downloaded automatically by an older `go`).
-- eBPF self-test (root): `sudo ./sosv-record --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`
+- eBPF self-test (root): `sudo ./clifrd --test-ebpf [--ebpf-force-perf --ebpf-classic-fork]`
 - Test: `go test ./...` (eBPF tests skip without root; `go test -c` + sudo to run them); e2e: `sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e`
 - Ground truth (root; small ≈ 4 min, full ≈ 14 min with the recorder's defaults; results in `bench/results/truth-<scale>-<time>/`):
   `sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full`
-- Quick manual run: `sudo ./sosv-record --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
-  then `./sosv ps aux --data-dir /tmp/d --at "..."`
+- Quick manual run: `sudo ./clifrd --data-dir /tmp/d --interval 2s --flush-interval 30s --duration 1m`,
+  then `./clifr ps aux --data-dir /tmp/d --at "..."`
 - Machine notes: v2 milestones 6–9 ran on the current machine (bare metal,
   Intel Core Ultra 7 155H): 22 logical CPUs, 61 GB RAM,
   Ubuntu 26.04, kernel 7.0, Go 1.27, PostgreSQL 18 (uutils coreutils: do not
@@ -130,7 +135,7 @@ benchmark were finished as v2 milestone 1 (results: busy 20261008-0721 batch).
 
 v2:
 1. [x] Tag v1; fix the report bugs; validation step (no v1 rerun: the 0721 data were repaired)
-2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `sosv verify`
+2. [x] Storage interface, Parquet writer (rotation, compaction, retention), DuckDB CLI; parity via `clifr verify`
 3. [x] eBPF process events (proc connector fallback), OOM events
 4. [x] eBPF TCP events, keyframes, reconciliation; `ss` at/range
 5. [x] Long-held fd snapshots, mount events
@@ -143,7 +148,7 @@ v2:
    single runs at the busy load 282 / 330 MiB avg / max with 256M, 326 / 379 with 384M
    (429 / 488 in batch 1133); 348 MiB max with 100,000 connections (561). The full matrix has not been rerun since 1133.
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
-   (raw cumulative counters; system, per-CPU and per-disk tables); `sosv uptime|vmstat|
-   mpstat|iostat`; `sosv verify` compares them. No user count for `uptime`. About 0.2 ms of
+   (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
+   mpstat|iostat`; `clifr verify` compares them. No user count for `uptime`. About 0.2 ms of
    reads per sample (in the 1133 numbers, not in the 1050 ones).
 9. [x] README (v2: build, recording, querying, tests, benchmark, results of M6–M8, limitations)

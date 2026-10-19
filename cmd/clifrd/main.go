@@ -1,7 +1,7 @@
-// Command sosv-record is the sosv recorder: it stores processes, sockets and
+// Command clifrd is the clifr recorder: it stores processes, sockets and
 // open files as time ranges, as Parquet files in a data directory (the
 // default) or in a v1 SQLite database, or both for side-by-side comparisons.
-// Query the result with the sosv command. Pure Go, statically linked.
+// Query the result with the clifr command. Pure Go, statically linked.
 package main
 
 import (
@@ -21,14 +21,14 @@ import (
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/recorder"
+	"clifr/internal/recorder"
 )
 
-const defaultDataDir = "/var/lib/sosv/data"
+const defaultDataDir = "/var/lib/clifr"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "sosv-record:", err)
+		fmt.Fprintln(os.Stderr, "clifrd:", err)
 		os.Exit(1)
 	}
 }
@@ -40,7 +40,7 @@ func run(args []string) error {
 	if len(args) == 1 && args[0] == "--thread-exit" {
 		threadExit()
 	}
-	fs := flag.NewFlagSet("sosv-record", flag.ExitOnError)
+	fs := flag.NewFlagSet("clifrd", flag.ExitOnError)
 	var c recorder.Config
 	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, `Parquet data directory ("" for none)`)
 	fs.StringVar(&c.DB, "db", "", "also (or, with --data-dir \"\", only) write this v1 SQLite database")
@@ -62,7 +62,7 @@ func run(args []string) error {
 	forcePerf := fs.Bool("ebpf-force-perf", false, "use perf event arrays even if the kernel has a BPF ring buffer (to test the fallback)")
 	fs.BoolVar(&c.EBPF.ForceClassicFork, "ebpf-classic-fork", false, "use the classic fork, exec and exit tracepoints even if tp_btf works (to test the fallback)")
 	fs.BoolVar(&c.TCPBPF.ForceKprobes, "ebpf-kprobes", false, "use kprobes and the classic state tracepoint even if fentry/fexit and tp_btf work (to test the fallback)")
-	bpfStats := fs.Bool("bpf-stats", false, "measure the eBPF programs' own run time (adds a little to every run); shown by sosv stats")
+	bpfStats := fs.Bool("bpf-stats", false, "measure the eBPF programs' own run time (adds a little to every run); shown by clifr stats")
 	pprofDir := fs.String("pprof-dir", "", "write the recorder's own CPU and heap profiles to this directory (for development)")
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	heapTarget := fs.String("gc-heap-target", "256M", "heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50 (0 = always 50; GOGC or GOMEMLIMIT in the environment turn this off)")
@@ -88,7 +88,7 @@ func run(args []string) error {
 	if c.Interval < time.Second || c.FDInterval < c.Interval {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}
-	logger := log.New(os.Stderr, "sosv-record: ", log.LstdFlags)
+	logger := log.New(os.Stderr, "clifrd: ", log.LstdFlags)
 	if os.Getenv("GOGC") == "" && os.Getenv("GOMEMLIMIT") == "" {
 		target, err := parseSize(*heapTarget)
 		if err != nil {

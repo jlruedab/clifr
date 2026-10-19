@@ -1,4 +1,4 @@
-// Package query reconstructs ps/lsof/ss/life output from a sosv database.
+// Package query reconstructs ps/lsof/ss/life output from a clifr database.
 package query
 
 import (
@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 const TimeLayout = "2006-01-02 15:04:05"

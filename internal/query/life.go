@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/procfs"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/store"
 )
 
 // lifeProc is one process row overlapping a time range.

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 func TestParsePS(t *testing.T) {

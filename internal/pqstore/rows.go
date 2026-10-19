@@ -1,6 +1,6 @@
 package pqstore
 
-import "sosv/internal/store"
+import "clifr/internal/store"
 
 // Parquet rows mirror the v1 SQLite schema (internal/store) column for
 // column, so the same queries run on both. Repetitive strings use dictionary

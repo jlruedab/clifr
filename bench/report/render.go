@@ -12,7 +12,7 @@ func renderHTML(secs []section) string {
 	b.WriteString(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sosv benchmark report</title>
+<title>clifr benchmark report</title>
 <style>
 :root {
   color-scheme: light;
@@ -74,7 +74,7 @@ svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 6px;
   font-size: 12px; white-space: pre-line; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10; }
 </style></head><body><main>
-<h1>sosv benchmark report</h1>
+<h1>clifr benchmark report</h1>
 `)
 	b.WriteString("<nav>")
 	for i, s := range secs {
@@ -179,7 +179,7 @@ func looksNumeric(s string) bool {
 // renderMarkdown writes the summary version: the same sections without charts.
 func renderMarkdown(secs []section) string {
 	var b strings.Builder
-	b.WriteString("# sosv benchmark report\n\n")
+	b.WriteString("# clifr benchmark report\n\n")
 	for _, s := range secs {
 		fmt.Fprintf(&b, "%s %s\n\n", strings.Repeat("#", s.Level), s.Title)
 		for _, bl := range s.Blocks {

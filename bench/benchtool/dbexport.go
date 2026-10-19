@@ -12,7 +12,7 @@ import (
 
 var tableRe = regexp.MustCompile(`^[a-z_]+$`)
 
-// dbexport writes one table of a sosv database as CSV to stdout, so the
+// dbexport writes one table of a clifr database as CSV to stdout, so the
 // benchmark keeps per-sample self-metrics (samples, guard_events) after the
 // database itself is deleted to save disk.
 //

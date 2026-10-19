@@ -15,7 +15,7 @@
 #     very noisy on virtual disks). This is a benchmark choice; see README.
 #   - caps max_wal_size at 512 MB to bound disk use
 #   - creates the pg_prewarm extension (run.sh caches the tables before each run)
-#   - builds sosv and the bench tools
+#   - builds clifr and the bench tools
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SCALE=${SCALE:-20}
@@ -62,10 +62,10 @@ mkdir -p bench/results
 chown "${SUDO_UID:-0}:${SUDO_GID:-0}" bench/results
 
 mkdir -p bench/bin
-# sosv (the CLI) links DuckDB through cgo; everything else is static Go.
-CGO_ENABLED=1 go build -o bench/bin/sosv ./cmd/sosv
+# clifr (the CLI) links DuckDB through cgo; everything else is static Go.
+CGO_ENABLED=1 go build -o bench/bin/clifr ./cmd/clifr
 export CGO_ENABLED=0
-go build -o bench/bin/sosv-record ./cmd/sosv-record
+go build -o bench/bin/clifrd ./cmd/clifrd
 go build -o bench/bin/load ./bench/load
 go build -o bench/bin/benchtool ./bench/benchtool
 go build -o bench/bin/report ./bench/report

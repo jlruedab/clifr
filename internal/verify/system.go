@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"sosv/internal/query"
-	"sosv/internal/store"
+	"clifr/internal/query"
+	"clifr/internal/store"
 )
 
 // The system-wide tools. Without an interval they print averages since boot,
-// which `sosv <tool> --at` computes from the counters of the checkpoint
+// which `clifr <tool> --at` computes from the counters of the checkpoint
 // sample. The real tool reads its counters a little later (GapMS), so numbers
 // are compared with a tolerance instead of as text.
 
@@ -21,7 +21,7 @@ var systemCommands = []string{"uptime", "vmstat", "mpstat -P ALL", "iostat -dx"}
 func init() {
 	ignoredFields["uptime"] = "the number of users (not recorded); loads may differ by 0.05, the uptime by one minute"
 	ignoredFields["vmstat"] = "r and b (the moment the tool ran); cs (procps-ng 4.0.4 prints context switches per clock tick " +
-		"summed over the CPUs on its since-boot line; sosv prints them per second); numbers match within 1% or 0.02 (free, buff, cache: 2%)"
+		"summed over the CPUs on its since-boot line; clifr prints them per second); numbers match within 1% or 0.02 (free, buff, cache: 2%)"
 	ignoredFields["mpstat -P ALL"] = "none; numbers match within 1% or 0.02"
 	ignoredFields["iostat -dx"] = "none; numbers match within 1% or 0.02"
 }
@@ -65,12 +65,12 @@ func parseColumns(out, marker, keyCol string, skip int) sysTable {
 }
 
 // near reports whether two printed numbers agree within the tolerance.
-func near(real, sosv string, rel, abs float64) bool {
-	if real == sosv {
+func near(real, clifr string, rel, abs float64) bool {
+	if real == clifr {
 		return true
 	}
 	a, err1 := strconv.ParseFloat(real, 64)
-	b, err2 := strconv.ParseFloat(sosv, 64)
+	b, err2 := strconv.ParseFloat(clifr, 64)
 	if err1 != nil || err2 != nil {
 		return false
 	}
@@ -167,7 +167,7 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 				exact = false
 				res.FieldDiffs[col]++
 				if res.FieldDiffs[col] <= 3 {
-					res.example("%s %s: real %q, sosv %q", strings.TrimSpace(snap.cmd+" "+key), col, rv, sr[col])
+					res.example("%s %s: real %q, clifr %q", strings.TrimSpace(snap.cmd+" "+key), col, rv, sr[col])
 				}
 			}
 		}

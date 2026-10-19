@@ -7,9 +7,9 @@
 #   --profiles LIST   load profiles, comma-separated (default: busy)
 #   --configs LIST    configurations (default: A,B,C,D,V1,R1)
 #                       A   workload only (baseline)
-#                       B   sosv-record --interval 30s --fd-interval 120s (default)
-#                       C   sosv-record --interval 10s --fd-interval 60s  (aggressive)
-#                       D   sosv-record --interval 60s --fd-interval 300s (conservative)
+#                       B   clifrd --interval 30s --fd-interval 120s (default)
+#                       C   clifrd --interval 10s --fd-interval 60s  (aggressive)
+#                       D   clifrd --interval 60s --fd-interval 300s (conservative)
 #                       V1  the v1 recorder (tag v1-snapshot, SQLite) at 30s/120s
 #                       R1  atop -w FILE 30                        (reference)
 #                       N1  Prometheus Node Exporter (default collectors, on
@@ -27,10 +27,10 @@
 #                     calibrate per machine, see README)
 #   --clients N --threads N   pgbench clients/threads (default: 16/4)
 #   --load-args "..." extra flags for bench/bin/load (e.g. "--conns 5000")
-#   --rec-args "..."  extra flags for sosv-record in B, C and D; RUN in them is the
+#   --rec-args "..."  extra flags for clifrd in B, C and D; RUN in them is the
 #                     run's directory (e.g. "--pprof-dir RUN/pprof")
 #   --drop-caches     drop the page cache before each run
-#   --keep-db         keep each run's sosv database (default: delete it after
+#   --keep-db         keep each run's clifr database (default: delete it after
 #                     saving its size, stats and per-sample table)
 #   --out DIR         results directory (default: bench/results/<timestamp>)
 #   --smoke           harness check: profile light, config B, 1 repeat,
@@ -46,7 +46,7 @@
 #   3. start the load generator in its own scope, wait for READY
 #   4. start the recorder (or atop) in its own scope
 #   5. pgbench warm-up (discarded), then the measured pgbench run
-#   6. stop the recorder with SIGTERM; save DB size, `sosv stats`, the
+#   6. stop the recorder with SIGTERM; save DB size, `clifr stats`, the
 #      samples and guard_events tables; delete the DB
 #   7. stop the load and the sampler; append a row to matrix.csv
 #
@@ -98,7 +98,7 @@ OUT=$(realpath -m "$OUT") # workload.sh changes directory
 . "$ROOT/bench/lib.sh"
 
 # --- prerequisites ---------------------------------------------------------
-check_common sosv sosv-record load benchtool report
+check_common clifr clifrd load benchtool report
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
@@ -179,7 +179,7 @@ recorder_cmd() {
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     N1) echo "nice -n 10 ionice -c 3 prometheus-node-exporter --web.listen-address=127.0.0.1:9100"; return ;;
     esac
-    echo "nice -n 10 ionice -c 3 $BIN/sosv-record --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
+    echo "nice -n 10 ionice -c 3 $BIN/clifrd --data-dir $RUN/data $BPF_STATS ${REC_ARGS//RUN/$RUN} $s"
 }
 
 stop_all() {

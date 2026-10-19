@@ -3,7 +3,7 @@
 //
 //	benchtool pglat PGBENCH_OUT LOG...   TPS and latency percentiles from pgbench logs
 //	benchtool cgsample --out DIR NAME=CGROUP...  cgroup v2 + system counters every 5 s
-//	benchtool dbexport DB TABLE          one table of a sosv database as CSV
+//	benchtool dbexport DB TABLE          one table of a clifr database as CSV
 package main
 
 import (

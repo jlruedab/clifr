@@ -1,25 +1,25 @@
-# sosv flight recorder.
+# clifr flight recorder.
 #
 # Install:
-#   install -m 0755 sosv-record sosv /usr/local/sbin/
-#   install -m 0644 deploy/sosv.service /etc/systemd/system/sosv.service
-#   systemctl daemon-reload && systemctl enable --now sosv
-# Stop:    systemctl stop sosv   (SIGTERM: open rows are closed cleanly)
-# Query:   sosv ps aux --data-dir /var/lib/sosv/data --at "YYYY-MM-DD HH:MM:SS"
+#   install -m 0755 clifrd clifr /usr/local/sbin/
+#   install -m 0644 deploy/clifrd.service /etc/systemd/system/clifrd.service
+#   systemctl daemon-reload && systemctl enable --now clifrd
+# Stop:    systemctl stop clifrd  (SIGTERM: open rows are closed cleanly)
+# Query:   clifr ps aux --data-dir /var/lib/clifr --at "YYYY-MM-DD HH:MM:SS"
 # Disk:    Parquet files rotate every 5 minutes; data older than --retention
 #          (72h) is deleted, and the oldest hours go first above --max-size.
 
 [Unit]
-Description=sosv flight recorder (processes, sockets, open files, system counters)
-Documentation=file:///usr/local/share/doc/sosv/README.md
+Description=clifr flight recorder (processes, sockets, open files, system counters)
+Documentation=file:///usr/local/share/doc/clifr/README.md
 After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/sosv-record --data-dir /var/lib/sosv/data --interval 30s --fd-interval 120s --cpu-budget 2% --retention 72h --max-size 2G
+ExecStart=/usr/local/sbin/clifrd --data-dir /var/lib/clifr --interval 30s --fd-interval 120s --cpu-budget 2% --retention 72h --max-size 2G
 Restart=on-failure
 RestartSec=30s
-StateDirectory=sosv
+StateDirectory=clifr
 StateDirectoryMode=0700
 
 # Resource limits: the recorder must never compete with the real workload.

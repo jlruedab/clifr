@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // LsofRow is one open file as `lsof -n -P` shows it (without DEVICE and
-// SIZE/OFF, which sosv does not record).
+// SIZE/OFF, which clifr does not record).
 type LsofRow struct {
 	Command   string `json:"command"`
 	PID       int    `json:"pid"`

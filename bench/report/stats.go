@@ -31,7 +31,7 @@ func maxOf(v []float64) float64 {
 	return m
 }
 
-// percentile by nearest rank on a sorted copy (the same rule as sosv stats).
+// percentile by nearest rank on a sorted copy (the same rule as clifr stats).
 func percentile(v []float64, p float64) float64 {
 	var s []float64
 	for _, x := range v {

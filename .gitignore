@@ -1,4 +1,5 @@
-/sosv
+/clifr
+/clifrd
 /bin/
 *.db
 *.db-wal

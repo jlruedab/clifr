@@ -437,7 +437,7 @@ func (s *Source) StateRescued() (n uint64) {
 }
 
 // ProgStats returns, per program, how often it ran and for how long (ns),
-// while the kernel collects BPF statistics (sosv-record --bpf-stats, or
+// while the kernel collects BPF statistics (clifrd --bpf-stats, or
 // sysctl kernel.bpf_stats_enabled); empty otherwise.
 func (s *Source) ProgStats() map[string][2]uint64 {
 	out := map[string][2]uint64{}

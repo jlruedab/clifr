@@ -1,4 +1,4 @@
-// Package duck loads a sosv Parquet data directory (internal/pqstore) into an
+// Package duck loads a clifr Parquet data directory (internal/pqstore) into an
 // in-memory DuckDB database with the v1 table names and columns, so the
 // query and verify packages run on it unchanged.
 //
@@ -18,16 +18,16 @@ import (
 
 	_ "github.com/duckdb/duckdb-go/v2"
 
-	"sosv/internal/pqstore"
-	"sosv/internal/store"
+	"clifr/internal/pqstore"
+	"clifr/internal/store"
 )
 
 // Open loads every table of dataDir.
 func Open(dataDir string) (*store.DB, error) {
 	if _, err := os.Stat(filepath.Join(dataDir, "samples")); err != nil {
-		return nil, fmt.Errorf("%s: not a sosv data directory (no samples/)", dataDir)
+		return nil, fmt.Errorf("%s: not a clifr data directory (no samples/)", dataDir)
 	}
-	tmp, err := os.MkdirTemp("", "sosv-schema-")
+	tmp, err := os.MkdirTemp("", "clifr-schema-")
 	if err != nil {
 		return nil, err
 	}

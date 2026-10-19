@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // maxFDInterval caps how far the CPU budget guard stretches --fd-interval.

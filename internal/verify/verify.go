@@ -1,5 +1,5 @@
 // Package verify compares the real ps/ss/lsof output saved by
-// `sosv record --verify-every` with sosv's reconstruction of the same moment.
+// `clifrd --verify-every` with clifr's reconstruction of the same moment.
 //
 // A row present on only one side counts as churn rather than missing/extra
 // when the database shows the entity appearing or disappearing between the
@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	"sosv/internal/query"
-	"sosv/internal/store"
+	"clifr/internal/query"
+	"clifr/internal/store"
 )
 
 // Result is the comparison of one command at one checkpoint.
@@ -171,7 +171,7 @@ func add(a, b Result) Result {
 	return a
 }
 
-type fieldPair struct{ name, real, sosv string }
+type fieldPair struct{ name, real, clifr string }
 
 // compare counts a matched row as exact, churn-changed (fields differ and
 // changed() shows the entity changing between the sample and the next one)
@@ -179,7 +179,7 @@ type fieldPair struct{ name, real, sosv string }
 func (r *Result) compare(label string, fields []fieldPair, changed func() bool) {
 	var diff []fieldPair
 	for _, f := range fields {
-		if f.real != f.sosv {
+		if f.real != f.clifr {
 			diff = append(diff, f)
 		}
 	}
@@ -192,7 +192,7 @@ func (r *Result) compare(label string, fields []fieldPair, changed func() bool) 
 		for _, f := range diff {
 			r.FieldDiffs[f.name]++
 			if r.FieldDiffs[f.name] <= 3 {
-				r.example("%s %s: real %q, sosv %q", label, f.name, f.real, f.sosv)
+				r.example("%s %s: real %q, clifr %q", label, f.name, f.real, f.clifr)
 			}
 		}
 	}
@@ -314,7 +314,7 @@ func comparePS(db *store.DB, snap snapshot) (Result, error) {
 				res.FieldDiffs[field]++
 				diff = true
 				if res.FieldDiffs[field] <= 3 {
-					res.example("ps pid %d %s: real %q, sosv %q", pid, field, a, b)
+					res.example("ps pid %d %s: real %q, clifr %q", pid, field, a, b)
 				}
 			}
 		}
@@ -506,7 +506,7 @@ func portStr(p int) string {
 type lsofLine struct {
 	command, mode, typ, name string
 	node                     string // real lsof NODE column
-	inode                    int64  // sosv: inode of an inet socket
+	inode                    int64  // clifr: inode of an inet socket
 }
 
 var fdRe = regexp.MustCompile(`^(\d+)([rwu]?)`)
@@ -521,7 +521,7 @@ func splitFD(fd string) (string, string) {
 
 var aInodeRe = regexp.MustCompile(`^\[([^:\]]*)[^\]]*\]$`)
 
-// normName removes detail lsof adds that sosv does not record.
+// normName removes detail lsof adds that clifr does not record.
 func normName(typ, name string) string {
 	switch typ {
 	case "a_inode":
@@ -717,7 +717,7 @@ func pct(a, b int) string {
 }
 
 func printResult(w io.Writer, r Result, examples bool) {
-	fmt.Fprintf(w, "  %-11s real %6d  sosv %6d  matched %6d (%s, exact %s)  missing %4d  extra %4d  churn: missing %4d extra %4d  gap %dms\n",
+	fmt.Fprintf(w, "  %-11s real %6d  clifr %6d  matched %6d (%s, exact %s)  missing %4d  extra %4d  churn: missing %4d extra %4d  gap %dms\n",
 		r.Cmd, r.Real, r.Recon, r.Matched, pct(r.Matched, r.Real), pct(r.Exact, r.Matched-r.ChurnChanged), r.Missing, r.Extra, r.ChurnMissing, r.ChurnExtra, r.GapMS)
 	if r.ChurnChanged > 0 {
 		fmt.Fprintf(w, "              churn-changed (matched, fields changed during the gap): %d\n", r.ChurnChanged)

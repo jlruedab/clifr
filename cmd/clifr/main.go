@@ -1,4 +1,4 @@
-// Command sosv queries what sosv-record recorded: it reconstructs ps/lsof/ss
+// Command clifr queries what clifrd recorded: it reconstructs ps/lsof/ss
 // output and process lifetimes for a past moment or range. It reads a Parquet
 // data directory through DuckDB (--data-dir, the default) or a v1 SQLite
 // database (--db).
@@ -15,31 +15,31 @@ import (
 	"strings"
 	"time"
 
-	"sosv/internal/duck"
-	"sosv/internal/query"
-	"sosv/internal/store"
-	"sosv/internal/verify"
+	"clifr/internal/duck"
+	"clifr/internal/query"
+	"clifr/internal/store"
+	"clifr/internal/verify"
 )
 
-const defaultDataDir = "/var/lib/sosv/data"
+const defaultDataDir = "/var/lib/clifr"
 
-const usage = `usage: sosv <command> [flags]
+const usage = `usage: clifr <command> [flags]
 
-commands (record with sosv-record):
-  ps       sosv ps aux --at T | --start_from A --end_at B
-  lsof     sosv lsof [-p PID] [-i] --at T | --start_from A --end_at B
-  ss       sosv ss -tanp [filter] --at T | --start_from A --end_at B
+commands (record with clifrd):
+  ps       clifr ps aux --at T | --start_from A --end_at B
+  lsof     clifr lsof [-p PID] [-i] --at T | --start_from A --end_at B
+  ss       clifr ss -tanp [filter] --at T | --start_from A --end_at B
            filter: dst IP[/len][:port], src ..., dport = :N, sport = :N, joined with "and"
-  life     sosv life [--name REGEX] [--start_from A --end_at B]
-  oom      sosv oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
-  mounts   sosv mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
-  uptime   sosv uptime --at T | --start_from A --end_at B: uptime and load averages (no user count)
-  vmstat   sosv vmstat --at T (averages since boot) | --start_from A --end_at B [--step D] (one line per interval)
-  mpstat   sosv mpstat [-P ALL|N,M] --at T | --start_from A --end_at B [--step D]
-  iostat   sosv iostat [-x] [-d] [-p] --at T | --start_from A --end_at B [--step D]
+  life     clifr life [--name REGEX] [--start_from A --end_at B]
+  oom      clifr oom [--start_from A --end_at B]: OOM kills with the top processes by RSS
+  mounts   clifr mounts --start_from A [--end_at B]: mounts and unmounts; --at T: the mount table then
+  uptime   clifr uptime --at T | --start_from A --end_at B: uptime and load averages (no user count)
+  vmstat   clifr vmstat --at T (averages since boot) | --start_from A --end_at B [--step D] (one line per interval)
+  mpstat   clifr mpstat [-P ALL|N,M] --at T | --start_from A --end_at B [--step D]
+  iostat   clifr iostat [-x] [-d] [-p] --at T | --start_from A --end_at B [--step D]
   verify   compare saved real ps/ss/lsof and uptime/vmstat/mpstat/iostat output (record --verify-every) with reconstructions
   stats    recorder cost and database summary
-  export   sosv export TABLE: one recorded table as CSV (e.g. samples, guard_events)
+  export   clifr export TABLE: one recorded table as CSV (e.g. samples, guard_events)
 
 data: --data-dir DIR (Parquet, default ` + defaultDataDir + `) or --db FILE (v1 SQLite).
 times are local: "YYYY-MM-DD HH:MM:SS"; informational headers go to stderr.
@@ -53,7 +53,7 @@ func main() {
 	var err error
 	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
 	case "record":
-		err = errors.New("recording moved to the sosv-record command")
+		err = errors.New("recording moved to the clifrd command")
 	case "ps":
 		err = cmdPS(args)
 	case "ss":
@@ -80,7 +80,7 @@ func main() {
 		err = fmt.Errorf("unknown command %q\n%s", cmd, usage)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "sosv:", err)
+		fmt.Fprintln(os.Stderr, "clifr:", err)
 		os.Exit(1)
 	}
 }
@@ -109,7 +109,7 @@ type queryFlags struct {
 }
 
 func (q *queryFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&q.dataDir, "data-dir", defaultDataDir, "Parquet data directory written by sosv-record")
+	fs.StringVar(&q.dataDir, "data-dir", defaultDataDir, "Parquet data directory written by clifrd")
 	fs.StringVar(&q.db, "db", "", "read this v1 SQLite database instead of --data-dir")
 	fs.StringVar(&q.at, "at", "", `point in time "YYYY-MM-DD HH:MM:SS"`)
 	fs.StringVar(&q.from, "start_from", "", "range start")
@@ -157,7 +157,7 @@ func cmdPS(args []string) error {
 		return err
 	}
 	if len(pos) != 1 || pos[0] != "aux" {
-		return errors.New("only `sosv ps aux` is supported")
+		return errors.New("only `clifr ps aux` is supported")
 	}
 	w, err := q.window(true)
 	if err != nil {
@@ -190,7 +190,7 @@ func cmdPS(args []string) error {
 	// OOM kills soon after T are not in the sample; point them out.
 	if kills, err := query.OOMKills(db, s, w.At+query.IntervalMS(db), 0); err == nil {
 		for _, k := range kills {
-			query.Header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see sosv oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
+			query.Header("OOM kill at %s: pid %d, RSS at the kill %d kB (%s); see clifr oom", query.FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
 		}
 	}
 	if q.json {
@@ -447,7 +447,7 @@ func cmdExport(args []string) error {
 		return err
 	}
 	if len(pos) != 1 || !tableRe.MatchString(pos[0]) {
-		return errors.New("usage: sosv export TABLE [--data-dir DIR | --db FILE]")
+		return errors.New("usage: clifr export TABLE [--data-dir DIR | --db FILE]")
 	}
 	db, err := q.open()
 	if err != nil {

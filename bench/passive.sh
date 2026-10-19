@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Real-server mode: measure the recorder's cost on a real (non-test) server.
 # No load is generated. The recorder runs as a transient systemd service with
-# the same limits and sandbox as deploy/sosv.service, plus a 5 s cgroup
+# the same limits and sandbox as deploy/clifrd.service, plus a 5 s cgroup
 # sampler; both survive logout. Run as root.
 #
 #   sudo bench/passive.sh start [--duration 24h] [--interval 30s]
@@ -9,13 +9,13 @@
 #   sudo bench/passive.sh status
 #   sudo bench/passive.sh stop
 #
-# start   checks free disk, writes machine.env, starts sosv-passive.service
+# start   checks free disk, writes machine.env, starts clifr-passive.service
 #         (the recorder, which stops by itself after --duration) and
-#         sosv-passive-sampler.service. Results go to DIR (default
+#         clifr-passive-sampler.service. Results go to DIR (default
 #         bench/results/passive-<timestamp>).
 # status  shows both services, elapsed time, DB size and free disk.
 # stop    stops both services (SIGTERM: the recorder closes its rows
-#         cleanly), saves `sosv stats`, the samples and guard_events tables
+#         cleanly), saves `clifr stats`, the samples and guard_events tables
 #         and the DB size. Run it after --duration has passed, or earlier to
 #         cut the run short. The DB itself is kept: on a real server it is
 #         the flight record.
@@ -32,15 +32,15 @@
 #   - If free disk drops below --min-free-gb the sampler stops the recorder
 #     and writes DIR/LOWDISK.
 #   - To stop everything at any time: sudo bench/passive.sh stop
-#     (or: systemctl stop sosv-passive sosv-passive-sampler).
+#     (or: systemctl stop clifr-passive clifr-passive-sampler).
 #   - Nothing else on the server is changed; the services are transient and
 #     disappear on reboot.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
-STATE=/run/sosv-passive.out # path of the current results directory
-REC=sosv-passive.service
-SAMP=sosv-passive-sampler.service
+STATE=/run/clifr-passive.out # path of the current results directory
+REC=clifr-passive.service
+SAMP=clifr-passive-sampler.service
 
 CMD=${1:-}
 [[ -n $CMD ]] && shift
@@ -70,7 +70,7 @@ seconds() {
 }
 
 start() {
-    check_common sosv sosv-record benchtool
+    check_common clifr clifrd benchtool
     systemctl is-active -q $REC && die "already running (results: $(cat $STATE 2>/dev/null)); use stop first"
     OUT=${OUT:-$ROOT/bench/results/passive-$(date +%Y%m%d-%H%M%S)}
     mkdir -p "$OUT"
@@ -90,8 +90,8 @@ start() {
     } >"$OUT/machine.env"
     systemctl reset-failed $REC $SAMP 2>/dev/null || true
 
-    # Same limits and sandbox as deploy/sosv.service.
-    systemd-run --quiet --unit=$REC --description="sosv recorder (passive benchmark)" \
+    # Same limits and sandbox as deploy/clifrd.service.
+    systemd-run --quiet --unit=$REC --description="clifr recorder (passive benchmark)" \
         -p CPUAccounting=yes -p MemoryAccounting=yes -p IOAccounting=yes \
         -p CPUQuota=5% -p MemoryMax=768M -p Nice=10 -p IOSchedulingClass=idle \
         -p "CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN" \
@@ -99,11 +99,11 @@ start() {
         -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
         -p ProtectControlGroups=yes -p "RestrictAddressFamilies=AF_NETLINK AF_UNIX" \
         -p StandardOutput=append:"$OUT/recorder.log" -p StandardError=append:"$OUT/recorder.log" \
-        "$BIN/sosv-record" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+        "$BIN/clifrd" --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
         --duration "$DURATION"
     local reccg
     reccg=$(systemctl show -p ControlGroup --value $REC)
-    systemd-run --quiet --unit=$SAMP --description="sosv passive benchmark sampler" \
+    systemd-run --quiet --unit=$SAMP --description="clifr passive benchmark sampler" \
         -p RuntimeMaxSec=$((secs + 900)) -p Nice=10 \
         "$BIN/benchtool" cgsample --out "$OUT" --interval 5s --disk "$DISKS" --free-path "$OUT" \
         --min-free "$(min_free_bytes)" --stop-unit $REC rec="$reccg"
@@ -132,7 +132,7 @@ status() {
 }
 
 stop() {
-    check_common sosv sosv-record benchtool
+    check_common clifr clifrd benchtool
     current
     systemctl stop $REC 2>/dev/null || true # SIGTERM: clean shutdown
     sleep 6                                 # one more sampler tick

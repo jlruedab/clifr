@@ -10,7 +10,7 @@ import (
 
 	"github.com/parquet-go/parquet-go"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 func rowsIn(t *testing.T, path string) int64 {

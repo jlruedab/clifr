@@ -1,5 +1,5 @@
 // Command load reproduces a busy server's process, file and connection
-// profile so sosv's cost can be measured the same way on any machine:
+// profile so clifr's cost can be measured the same way on any machine:
 //
 //   - N long-lived processes, each holding open files (total F fds)
 //   - K concurrent TCP connections between local clients and servers,
@@ -148,7 +148,7 @@ func (c *children) stopAll() {
 
 func run(ctx context.Context, p Profile, dir, statsFile string) error {
 	if dir == "" {
-		d, err := os.MkdirTemp("", "sosv-load-")
+		d, err := os.MkdirTemp("", "clifr-load-")
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,7 @@ func startHolders(p Profile, dir string, kids *children) error {
 		if err != nil {
 			return err
 		}
-		f.WriteString("sosv load file\n")
+		f.WriteString("clifr load file\n")
 		files[i] = f
 	}
 	defer func() {

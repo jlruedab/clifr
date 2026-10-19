@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // sysSampler reads the system-wide counters behind uptime, vmstat, mpstat and

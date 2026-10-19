@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"sosv/internal/bpftcp"
-	"sosv/internal/procfs"
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/bpftcp"
+	"clifr/internal/procfs"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 // TCP from events: eBPF reports every connection's state changes, owner and

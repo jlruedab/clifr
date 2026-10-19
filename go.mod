@@ -1,4 +1,4 @@
-module sosv
+module clifr
 
 go 1.25.0
 

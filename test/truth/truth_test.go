@@ -1,6 +1,6 @@
 //go:build truth
 
-// Package truth runs sosv-record against scripted activity whose details the
+// Package truth runs clifrd against scripted activity whose details the
 // test knows exactly, then counts how much of it the recording has: found /
 // expected for every check. As root:
 //
@@ -10,13 +10,13 @@
 //   - 10,000 TCP connections living 5-200 ms: owner, peer and duration of both ends
 //   - 5,000 processes shorter than 100 ms: full command lines and exit codes
 //   - a server rejecting with RST, and connects to a closed port: resets counted
-//   - an OOM kill in a memory.max cgroup: sosv oom shows it with the RSS before the kill
+//   - an OOM kill in a memory.max cgroup: clifr oom shows it with the RSS before the kill
 //   - a tmpfs mounted, remounted read-only, unmounted and mounted again
-//   - a deleted file held open for 10 minutes: sosv lsof at moments inside and after
+//   - a deleted file held open for 10 minutes: clifr lsof at moments inside and after
 //
 // The full scale records with the recorder's default settings. Results go to
 // bench/results/truth-<scale>-<time>/ (truth.md, truth.json, the recorder log,
-// sosv stats and the data directory).
+// clifr stats and the data directory).
 package truth
 
 import (
@@ -40,7 +40,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/duck"
+	"clifr/internal/duck"
 )
 
 var (
@@ -53,7 +53,7 @@ type scale struct {
 	procs, procWorkers int
 	resets             int
 	hold, after        time.Duration // the deleted file: held this long; recording continues this long after
-	recorder           []string      // extra sosv-record flags
+	recorder           []string      // extra clifrd flags
 }
 
 var scales = map[string]scale{
@@ -111,7 +111,7 @@ type shortProc struct {
 
 type env struct {
 	t                *testing.T
-	dir, sosv, proc  string
+	dir, clifr, proc string
 	data             string
 	res              *results
 	sc               scale
@@ -131,7 +131,7 @@ func TestGroundTruth(t *testing.T) {
 	root, _ := filepath.Abs("../..")
 	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
 	for _, b := range []struct{ out, pkg, cgo string }{
-		{"sosv-record", "./cmd/sosv-record", "0"}, {"sosv", "./cmd/sosv", "1"}, {"truthproc", "./test/truth/truthproc", "0"},
+		{"clifrd", "./cmd/clifrd", "0"}, {"clifr", "./cmd/clifr", "1"}, {"truthproc", "./test/truth/truthproc", "0"},
 	} {
 		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Dir = root
@@ -142,7 +142,7 @@ func TestGroundTruth(t *testing.T) {
 	}
 	var un unix.Utsname
 	unix.Uname(&un)
-	e := &env{t: t, dir: dir, sosv: filepath.Join(dir, "sosv"), proc: filepath.Join(dir, "truthproc"),
+	e := &env{t: t, dir: dir, clifr: filepath.Join(dir, "clifr"), proc: filepath.Join(dir, "truthproc"),
 		data: filepath.Join(dir, "data"), sc: sc,
 		res: &results{Scale: *scaleFlag, Kernel: unix.ByteSliceToString(un.Release[:]), CPUs: runtime.NumCPU()}}
 	defer func() {
@@ -151,7 +151,7 @@ func TestGroundTruth(t *testing.T) {
 		}
 	}()
 
-	rec := exec.Command(filepath.Join(dir, "sosv-record"), append([]string{"--data-dir", e.data}, sc.recorder...)...)
+	rec := exec.Command(filepath.Join(dir, "clifrd"), append([]string{"--data-dir", e.data}, sc.recorder...)...)
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {
@@ -434,7 +434,7 @@ func (e *env) checkTCP(tr tcpTruth) {
 	}
 	e.res.add(sc, "recorded connections that never existed", extra, 0, "rows on port %d not matched to a connection; %d matched rows have no close time", tr.port, unclosed)
 
-	// The same through the CLI: sosv ss over the range, grouped by process.
+	// The same through the CLI: clifr ss over the range, grouped by process.
 	var groups []struct {
 		PID   int `json:"pid"`
 		Conns int `json:"conns"`
@@ -447,7 +447,7 @@ func (e *env) checkTCP(tr tcpTruth) {
 			got = g.Conns
 		}
 	}
-	e.res.add(sc, "sosv ss (range): connections of the client", got, n, "sosv ss -tanp dport = :%d --start_from .. --end_at ..", tr.port)
+	e.res.add(sc, "clifr ss (range): connections of the client", got, n, "clifr ss -tanp dport = :%d --start_from .. --end_at ..", tr.port)
 }
 
 // --- short-lived processes ---
@@ -576,7 +576,7 @@ func (e *env) checkProcs(procs []shortProc, from, to time.Time) {
 		}
 	}
 	n := len(procs)
-	e.res.add(sc, "found", found, n, "sosv life --name, by the --id argument; longest measured lifetime %d ms", maxMeasured)
+	e.res.add(sc, "found", found, n, "clifr life --name, by the --id argument; longest measured lifetime %d ms", maxMeasured)
 	e.res.add(sc, "pid", pid, n, "")
 	e.res.add(sc, "full command line", cmd, nShortCmd, "byte-identical, up to %d bytes", longCmdline)
 	e.res.add(sc, "full command line, over 1024 bytes", long, nLong, "1.5-3 kB; the exec event keeps 1024 bytes, the rest must be read from /proc before the process exits")
@@ -667,7 +667,7 @@ func (e *env) checkResets(tr rstTruth) {
 	e.res.add(sc, "refused connects: found", refFound, tr.refused, "connects to a closed port (ECONNREFUSED)")
 	e.res.add(sc, "refused connects: 1 reset received", refReset, tr.refused, "")
 
-	// The totals as sosv ss shows them.
+	// The totals as clifr ss shows them.
 	var groups []struct {
 		PID    int `json:"pid"`
 		Resets int `json:"resets"`
@@ -677,9 +677,9 @@ func (e *env) checkResets(tr rstTruth) {
 	for _, g := range groups {
 		byPID[g.PID] += g.Resets
 	}
-	e.res.add(sc, "sosv ss (range): resets of the reset client", byPID[tr.clientPID], want, "")
-	e.res.add(sc, "sosv ss (range): resets of the rejecting server", byPID[tr.serverPID], want, "")
-	e.res.add(sc, "sosv ss (range): resets of the refused client", byPID[tr.refusePID], tr.refused, "")
+	e.res.add(sc, "clifr ss (range): resets of the reset client", byPID[tr.clientPID], want, "")
+	e.res.add(sc, "clifr ss (range): resets of the rejecting server", byPID[tr.serverPID], want, "")
+	e.res.add(sc, "clifr ss (range): resets of the refused client", byPID[tr.refusePID], tr.refused, "")
 }
 
 // --- OOM kill ---
@@ -691,7 +691,7 @@ type oomTruth struct {
 }
 
 func (e *env) runOOM() oomTruth {
-	cg := fmt.Sprintf("/sys/fs/cgroup/sosv-truth-%d", os.Getpid())
+	cg := fmt.Sprintf("/sys/fs/cgroup/clifr-truth-%d", os.Getpid())
 	if err := os.Mkdir(cg, 0o755); err != nil {
 		e.t.Fatalf("cgroup: %v", err)
 	}
@@ -744,9 +744,9 @@ func (e *env) checkOOM(tr oomTruth) {
 		}
 		note = fmt.Sprintf("RSS at the kill %d kB (%.1f%% of the %d MiB limit)", k.RSSKB, float64(k.RSSKB)/float64(limitKB)*100, oomLimit>>20)
 	}
-	e.res.add(sc, "sosv oom: the kill", found, 1, "pid %d; %d kills listed in the recording", tr.pid, len(kills))
-	e.res.add(sc, "sosv oom: RSS before the kill", rss, 1, "85-105%% of memory.max (RSS includes file pages charged to other cgroups): %s", note)
-	e.res.add(sc, "sosv oom: time and command", min(when, cmd), 1, "between the start and the wait of the process")
+	e.res.add(sc, "clifr oom: the kill", found, 1, "pid %d; %d kills listed in the recording", tr.pid, len(kills))
+	e.res.add(sc, "clifr oom: RSS before the kill", rss, 1, "85-105%% of memory.max (RSS includes file pages charged to other cgroups): %s", note)
+	e.res.add(sc, "clifr oom: time and command", min(when, cmd), 1, "between the start and the wait of the process")
 
 	var life []struct {
 		PID       int  `json:"pid"`
@@ -760,7 +760,7 @@ func (e *env) checkOOM(tr oomTruth) {
 			marked++
 		}
 	}
-	e.res.add(sc, "sosv life: ended by OOM, SIGKILL", marked, 1, "")
+	e.res.add(sc, "clifr life: ended by OOM, SIGKILL", marked, 1, "")
 }
 
 // --- mounts ---
@@ -788,7 +788,7 @@ func (e *env) runMounts() mountTruth {
 		tr.steps = append(tr.steps, mountStep{action, at})
 		time.Sleep(2 * time.Second)
 	}
-	mount := func() error { return unix.Mount("sosv-truth", tr.point, "tmpfs", 0, "size=1m") }
+	mount := func() error { return unix.Mount("clifr-truth", tr.point, "tmpfs", 0, "size=1m") }
 	do("mount", mount)
 	do("remount", func() error { return unix.Mount("", tr.point, "", unix.MS_REMOUNT|unix.MS_RDONLY, "") })
 	do("unmount", func() error { return unix.Unmount(tr.point, 0) })
@@ -835,9 +835,9 @@ func (e *env) checkMounts(tr mountTruth) {
 		}
 	}
 	n := len(tr.steps)
-	e.res.add(sc, "sosv mounts: changes in order", order, n, "tmpfs: mount, remount, unmount, mount, unmount; %d rows recorded for the mount point", len(got))
-	e.res.add(sc, "sosv mounts: time", timed, n, "within 1 s; largest difference %d ms", worst)
-	e.res.add(sc, "sosv mounts: remount shows read-only", ro, 1, "")
+	e.res.add(sc, "clifr mounts: changes in order", order, n, "tmpfs: mount, remount, unmount, mount, unmount; %d rows recorded for the mount point", len(got))
+	e.res.add(sc, "clifr mounts: time", timed, n, "within 1 s; largest difference %d ms", worst)
+	e.res.add(sc, "clifr mounts: remount shows read-only", ro, 1, "")
 
 	// The mount table at a moment: present after the first mount, absent after the unmount.
 	at := func(t time.Time) int {
@@ -853,8 +853,8 @@ func (e *env) checkMounts(tr mountTruth) {
 		}
 		return n
 	}
-	e.res.add(sc, "sosv mounts --at: mounted", at(tr.steps[0].at.Add(1500*time.Millisecond)), 1, "1.5 s after the first mount")
-	e.res.add(sc, "sosv mounts --at: not mounted", at(tr.steps[2].at.Add(1500*time.Millisecond)), 0, "1.5 s after the unmount")
+	e.res.add(sc, "clifr mounts --at: mounted", at(tr.steps[0].at.Add(1500*time.Millisecond)), 1, "1.5 s after the first mount")
+	e.res.add(sc, "clifr mounts --at: not mounted", at(tr.steps[2].at.Add(1500*time.Millisecond)), 0, "1.5 s after the unmount")
 }
 
 // --- deleted file ---
@@ -885,9 +885,9 @@ func (e *env) checkDeleted(pid int, path string, start, end time.Time) {
 		found += has(at)
 		moments = append(moments, "+"+at.Sub(start).Round(time.Second).String())
 	}
-	e.res.add(sc, "sosv lsof -p --at: listed as deleted", found, 3, "held %s; asked at %s", hold.Round(time.Second), strings.Join(moments, ", "))
+	e.res.add(sc, "clifr lsof -p --at: listed as deleted", found, 3, "held %s; asked at %s", hold.Round(time.Second), strings.Join(moments, ", "))
 	after := end.Add(e.sc.after / 2).Truncate(time.Second).Add(time.Second)
-	e.res.add(sc, "sosv lsof -p --at: gone after the release", has(after), 0, "%s after the process ended", after.Sub(end).Round(time.Second))
+	e.res.add(sc, "clifr lsof -p --at: gone after the release", has(after), 0, "%s after the process ended", after.Sub(end).Round(time.Second))
 
 	// How soon it was recorded, and until when.
 	var held []struct {
@@ -906,7 +906,7 @@ func (e *env) checkDeleted(pid int, path string, start, end time.Time) {
 				float64(h.FirstSeen-start.UnixMilli())/1000, float64(end.UnixMilli()-h.LastSeen)/1000)
 		}
 	}
-	e.res.add(sc, "sosv lsof (range): one holding", n, 1, "%s", note)
+	e.res.add(sc, "clifr lsof (range): one holding", n, 1, "%s", note)
 }
 
 // --- recorder health ---
@@ -939,15 +939,15 @@ func (e *env) checkDrops() {
 func (e *env) query(v any, args ...string) {
 	e.t.Helper()
 	args = append(args, "--data-dir", e.data, "--json")
-	cmd := exec.Command(e.sosv, args...)
+	cmd := exec.Command(e.clifr, args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		e.t.Fatalf("sosv %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
+		e.t.Fatalf("clifr %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	if err := json.Unmarshal(out, v); err != nil {
-		e.t.Fatalf("sosv %s: bad JSON: %v\n%.300s", strings.Join(args, " "), err, out)
+		e.t.Fatalf("clifr %s: bad JSON: %v\n%.300s", strings.Join(args, " "), err, out)
 	}
 }
 
@@ -981,7 +981,7 @@ func (e *env) report(root, recLog string) {
 	os.WriteFile(filepath.Join(out, "truth.md"), []byte(b.String()), 0o644)
 	js, _ := json.MarshalIndent(e.res, "", "  ")
 	os.WriteFile(filepath.Join(out, "truth.json"), js, 0o644)
-	if stats, err := exec.Command(e.sosv, "stats", "--data-dir", e.data).CombinedOutput(); err == nil {
+	if stats, err := exec.Command(e.clifr, "stats", "--data-dir", e.data).CombinedOutput(); err == nil {
 		os.WriteFile(filepath.Join(out, "stats.txt"), stats, 0o644)
 	}
 	exec.Command("cp", recLog, filepath.Join(out, "recorder.log")).Run()

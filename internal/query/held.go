@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"sosv/internal/procfs"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/store"
 )
 
 // v2 open files (meta fds = held): fds_held has the fds held across at least

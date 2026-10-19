@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/bpfproc"
-	"sosv/internal/bpftcp"
-	"sosv/internal/procfs"
+	"clifr/internal/bpfproc"
+	"clifr/internal/bpftcp"
+	"clifr/internal/procfs"
 )
 
 // testEBPF loads the eBPF programs, triggers each event type and checks that
@@ -74,13 +74,13 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 	}
 
 	// Fork, exec, exit code.
-	cmd := exec.Command("/bin/sh", "-c", "exit 3", "sosv-test-marker")
+	cmd := exec.Command("/bin/sh", "-c", "exit 3", "clifr-test-marker")
 	cmd.Start()
 	cmd.Wait()
 	got := wait(cmd.Process.Pid, bpfproc.Fork, bpfproc.Exec, bpfproc.Exit)
 	f, x, e := got[bpfproc.Fork], got[bpfproc.Exec], got[bpfproc.Exit]
 	check("fork", f.Kind == bpfproc.Fork && f.PPID == os.Getpid(), fmt.Sprintf("child %d, parent %d", f.PID, f.PPID))
-	check("exec: filename and argv", x.Filename == "/bin/sh" && x.Cmdline == "/bin/sh -c exit 3 sosv-test-marker",
+	check("exec: filename and argv", x.Filename == "/bin/sh" && x.Cmdline == "/bin/sh -c exit 3 clifr-test-marker",
 		fmt.Sprintf("%s: %q", x.Filename, x.Cmdline))
 	code, sig := e.ExitStatus()
 	check("exit code", e.Kind == bpfproc.Exit && code == 3 && sig == 0, fmt.Sprintf("code %d, signal %d", code, sig))
@@ -150,7 +150,7 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 // oomVictim runs this binary as a memory hog in a new cgroup with
 // memory.max 48M and no swap, and returns its pid after it was killed.
 func oomVictim() (int, error) {
-	cg := filepath.Join("/sys/fs/cgroup", fmt.Sprintf("sosv-ebpf-test-%d", os.Getpid()))
+	cg := filepath.Join("/sys/fs/cgroup", fmt.Sprintf("clifr-ebpf-test-%d", os.Getpid()))
 	if err := os.Mkdir(cg, 0o755); err != nil {
 		return 0, fmt.Errorf("cgroup: %w", err)
 	}

@@ -33,9 +33,9 @@ type table struct {
 
 var configDesc = map[string]string{
 	"A":  "workload only (baseline)",
-	"B":  "sosv-record --interval 30s --fd-interval 120s (v2 default)",
-	"C":  "sosv-record --interval 10s --fd-interval 60s (v2 aggressive)",
-	"D":  "sosv-record --interval 60s --fd-interval 300s (v2 conservative)",
+	"B":  "clifrd --interval 30s --fd-interval 120s (v2 default)",
+	"C":  "clifrd --interval 10s --fd-interval 60s (v2 aggressive)",
+	"D":  "clifrd --interval 60s --fd-interval 300s (v2 conservative)",
 	"V1": "v1 recorder (snapshots, SQLite) --interval 30s --fd-interval 120s",
 	"R1": "atop -w FILE 30 (reference)",
 	"N1": "Prometheus Node Exporter, scraped every 15 s (comparison)",
@@ -99,7 +99,7 @@ func (r *Report) overview() section {
 		items = append(items, accuracySummary(a))
 	}
 	for _, p := range r.Passive {
-		items = append(items, fmt.Sprintf("Real-server run %s: sosv used %s of one core and wrote %s per day over %s.",
+		items = append(items, fmt.Sprintf("Real-server run %s: clifr used %s of one core and wrote %s per day over %s.",
 			p.ID, pct(p.M["rec_cpu"]), bytesFmt(p.M["write_per_h"]*24), dur(float64(p.To-p.From)/1000)))
 	}
 	if len(items) == 0 {
@@ -117,7 +117,7 @@ func (r *Report) overview() section {
 				{"OS", fmt.Sprintf("%s, kernel %s", mach["distro"], mach["kernel"])},
 				{"Virtualization", orNone(mach["virt"])},
 				{"Disk", fmt.Sprintf("%s (%s), rotational=%s, filesystem %s", mach["disk"], orNone(mach["disk_model"]), mach["disk_rotational"], mach["fs"])},
-				{"sosv commit", mach["sosv_commit"]},
+				{"clifr commit", mach["sosv_commit"]},
 			},
 		}})
 	}
@@ -135,7 +135,7 @@ func profileSummary(m *Matrix, p string) []string {
 	g := m.Groups[p+"/B"]
 	atop := m.Groups[p+"/R1"]
 	if g != nil {
-		line := fmt.Sprintf("Profile %s, default settings (B): sosv used %s of one core (%s of the machine), "+
+		line := fmt.Sprintf("Profile %s, default settings (B): clifr used %s of one core (%s of the machine), "+
 			"anonymous memory %s, and wrote %s to disk per day",
 			p, statPct(g.Stat["rec_cpu"]), pct(g.Stat["rec_cpu_machine"].Mean),
 			bytesFmt(g.Stat["rec_anon_avg"].Mean), bytesFmt(g.Stat["write_per_h"].Mean*24))
@@ -514,7 +514,7 @@ func bpfTable(s *Scaling) *table {
 	if len(t.Rows) == 0 {
 		return nil
 	}
-	t.Note = "eBPF programs: run time the kernel measured for the recorder's programs (kernel.bpf_stats_enabled, sosv-record --bpf-stats). " +
+	t.Note = "eBPF programs: run time the kernel measured for the recorder's programs (kernel.bpf_stats_enabled, clifrd --bpf-stats). " +
 		"They run inside the system calls and kernel paths of the observed processes, so this time is charged to those processes and is not part of the recorder's CPU column; " +
 		"the measurement itself adds a little to every run."
 	return t
@@ -542,7 +542,7 @@ func passiveSection(p *Run) section {
 	s.Blocks = append(s.Blocks, block{Table: t})
 	if len(p.Timeline) > 0 {
 		s.Blocks = append(s.Blocks, block{Chart: lines("Recorder CPU over time", "minutes", "% of one core",
-			[]lineSeries{{Name: "sosv", Color: "--s1", Pts: p.Timeline}}, 2, "2% budget", 640, 240),
+			[]lineSeries{{Name: "clifr", Color: "--s1", Pts: p.Timeline}}, 2, "2% budget", 640, 240),
 			Caption: "Recorder CPU per 5 s interval"})
 	}
 	return s
@@ -581,8 +581,8 @@ func exactPct(t VerifyResult) float64 {
 
 func accuracySection(a *Accuracy) section {
 	s := section{Title: "Accuracy", Level: 2}
-	s.Blocks = append(s.Blocks, block{Para: fmt.Sprintf("sosv record --verify-every %s under load profile %s for %s (interval %s, fd interval %s); "+
-		"at each of the %d checkpoints the real ps aux, ss -tanp and lsof -n -P outputs were saved and compared with sosv's reconstruction for the same moment.",
+	s.Blocks = append(s.Blocks, block{Para: fmt.Sprintf("clifrd --verify-every %s under load profile %s for %s (interval %s, fd interval %s); "+
+		"at each of the %d checkpoints the real ps aux, ss -tanp and lsof -n -P outputs were saved and compared with clifr's reconstruction for the same moment.",
 		a.Env["verify_every"], a.Env["profile"], a.Env["duration"], a.Env["interval"], a.Env["fd_interval"], a.Checkpoints)})
 	t := &table{Head: []string{"Command", "Real rows", "Matched", "Exact", "Missing", "Extra", "Churn (missing / extra / changed)", "Matched %", "Exact %", "Field mismatches"}}
 	for _, cmd := range []string{"ps aux", "ss -tanp", "lsof -n -P"} {
@@ -617,7 +617,7 @@ func (r *Report) method() section {
 	s := section{Title: "Method and caveats", Level: 2}
 	items := []string{
 		"Every process under test ran in its own systemd scope with CPU, memory and IO accounting; cgroup v2 counters and system-wide /proc counters were sampled every 5 s. Rates are counter differences over the measured window.",
-		"The recorder (and atop) ran with nice 10 and the idle IO class, like the shipped unit, but without its CPUQuota/MemoryMax, so the true cost is measured, not the cap. The sosv CPU guard rail (2% budget) was active in the matrix runs and may lengthen the fd interval; its events are listed per profile.",
+		"The recorder (and atop) ran with nice 10 and the idle IO class, like the shipped unit, but without its CPUQuota/MemoryMax, so the true cost is measured, not the cap. The clifr CPU guard rail (2% budget) was active in the matrix runs and may lengthen the fd interval; its events are listed per profile.",
 		"Workload: pgbench, by default read-only (-S) at a fixed transaction rate with the database cached in memory, and its output written to RAM. The impact on a disk-bound workload is not measured here.",
 		"Confidence intervals: t-distribution over the repeats (mean ± t·s/√n); differences vs. the baseline use Welch's interval. With fewer than two repeats no interval is given.",
 		"Disk written is more than the data kept: the Parquet recorder rewrites the still-open entities at every flush and compacts hourly; v1 (SQLite) writes one transaction per sample.",

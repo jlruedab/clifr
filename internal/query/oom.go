@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // OOMKill is one OOM kill with the processes using the most memory at the

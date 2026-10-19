@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 // SockFilter is a subset of the ss filter language: conditions on dst, src,

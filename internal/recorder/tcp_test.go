@@ -5,10 +5,10 @@ import (
 	"net/netip"
 	"testing"
 
-	"sosv/internal/bpftcp"
-	"sosv/internal/procfs"
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/bpftcp"
+	"clifr/internal/procfs"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 func tcpEvent(sk uint64, old, new int, l string, lp int, r string, rp int) bpftcp.Event {

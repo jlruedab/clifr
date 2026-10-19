@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // uptime, vmstat, mpstat and iostat from the system-wide counters

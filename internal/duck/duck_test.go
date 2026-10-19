@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"sosv/internal/pqstore"
-	"sosv/internal/store"
+	"clifr/internal/pqstore"
+	"clifr/internal/store"
 )
 
 func p64(v int64) *int64 { return &v }

@@ -16,12 +16,12 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/bpfproc"
-	"sosv/internal/bpftcp"
-	"sosv/internal/pqstore"
-	"sosv/internal/procfs"
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/bpfproc"
+	"clifr/internal/bpftcp"
+	"clifr/internal/pqstore"
+	"clifr/internal/procfs"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 type Config struct {
@@ -337,7 +337,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 			r.captureVerify(now.UnixMilli())
 			// A full sample right after the real commands finish: anything
 			// that appeared or vanished while they ran is then classified as
-			// churn by `sosv verify` instead of missing/extra.
+			// churn by `clifr verify` instead of missing/extra.
 			if err := r.sample(time.Now(), true); err != nil {
 				return fmt.Errorf("post-checkpoint sample: %w", err)
 			}

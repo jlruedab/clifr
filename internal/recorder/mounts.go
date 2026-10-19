@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/procfs"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/store"
 )
 
 // Mount changes are events: the kernel flags /proc/self/mountinfo with

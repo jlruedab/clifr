@@ -1,14 +1,19 @@
-# sosv — a Linux flight recorder (working prototype)
+# clifr — a Linux flight recorder (working prototype)
 
-`sosv-record` continuously records which processes existed, which TCP
+*clifr was called sosv until 2026-10-19 (`sosv-record` → `clifrd`,
+`sosv` → `clifr`, `/var/lib/sosv/data` → `/var/lib/clifr`). Recordings made
+under the old name read unchanged; benchmark result directories keep their
+old file names (`sosv-stats.json`, `sosv.db`).*
+
+`clifrd` continuously records which processes existed, which TCP
 connections and open files each one held, when short-lived processes started
-and exited, and the system-wide counters, as Parquet files. The `sosv` CLI
+and exited, and the system-wide counters, as Parquet files. The `clifr` CLI
 then reconstructs `ps aux`, `ss -tanp`, `lsof -n -P`, `uptime`, `vmstat`,
 `mpstat` and `iostat` for a past moment or time range, and lists process
 lifetimes, OOM kills and mount changes.
 
 Tools like sar, atop and PCP record metrics and process statistics, but not
-the *links* between a process and its sockets and files over time. sosv
+the *links* between a process and its sockets and files over time. clifr
 began as a proof of concept to answer two questions with evidence:
 
 1. **Accuracy**: does the recording contain what really happened, and is the
@@ -50,7 +55,7 @@ not yet shown to be viable for production:
 To call it viable: a soak test of 3–7 days with a realistic mixed load
 (memory, disk and data checked daily); `--test-ebpf`, the e2e test and the
 small ground truth on RHEL 9, RHEL 8.x and Ubuntu 22.04 (VMs are enough);
-and a short recording on a real server checked with `sosv verify`. About a
+and a short recording on a real server checked with `clifr verify`. About a
 week, mostly unattended.
 
 ## Build
@@ -58,8 +63,8 @@ week, mostly unattended.
 Two binaries, Go 1.25 or newer (go.mod pins toolchain go1.26.8, which an older
 `go` downloads by itself):
 
-    CGO_ENABLED=0 go build -o sosv-record ./cmd/sosv-record   # the recorder: static, pure Go
-    go build -o sosv ./cmd/sosv                               # the CLI: DuckDB, needs cgo and g++
+    CGO_ENABLED=0 go build -o clifrd ./cmd/clifrd   # the recorder: static, pure Go
+    go build -o clifr ./cmd/clifr                   # the CLI: DuckDB, needs cgo and g++
 
 The recorder runs on the recorded server. The CLI may run anywhere the data
 directory is readable or copied to.
@@ -75,8 +80,8 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 
 ## Recording
 
-    sudo ./sosv-record --data-dir /var/lib/sosv/data
-    sudo ./sosv-record --test-ebpf        # load the programs, trigger every event type, report
+    sudo ./clifrd --data-dir /var/lib/clifr
+    sudo ./clifrd --test-ebpf        # load the programs, trigger every event type, report
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -92,8 +97,8 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
 | `--db FILE` | off | also (or with `--data-dir ""` only) write the v1 SQLite schema |
-| `--verify-every` | off | also save the real tools' output at checkpoints, for `sosv verify` |
-| `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `sosv stats`) |
+| `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
+| `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr stats`) |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
 
 What is recorded:
@@ -127,14 +132,14 @@ last flush.
 
 ### As a service
 
-`deploy/sosv.service` runs the recorder with Nice=10, the idle IO class,
+`deploy/clifrd.service` runs the recorder with Nice=10, the idle IO class,
 CPUQuota=5%, MemoryMax=768M, a read-only filesystem except its state
 directory and only the capabilities it needs (listed in the unit; kernels
 before 5.8 need CAP_SYS_ADMIN for eBPF):
 
-    sudo install -m 0755 sosv-record sosv /usr/local/sbin/
-    sudo install -m 0644 deploy/sosv.service /etc/systemd/system/
-    sudo systemctl daemon-reload && sudo systemctl enable --now sosv
+    sudo install -m 0755 clifrd clifr /usr/local/sbin/
+    sudo install -m 0644 deploy/clifrd.service /etc/systemd/system/
+    sudo systemctl daemon-reload && sudo systemctl enable --now clifrd
 
 MemoryMax is about 1.5 times the highest memory measured in the benchmark
 (502 MiB with 100,000 connections). Read [Limitations](#limitations) before
@@ -148,21 +153,21 @@ Every query command takes `--at "YYYY-MM-DD HH:MM:SS"` (local time) or
 `--start_from A --end_at B`, `--data-dir DIR` (or `--db FILE` for a v1
 SQLite file) and `--json`. Informational headers go to stderr.
 
-    sosv ps aux --at "2026-10-12 13:28:34"
-    sosv ps aux --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
-    sosv ss -tanp dport = :5432 and dst 10.0.0.0/24 --at "2026-10-12 13:28:34"
-    sosv ss -tanp --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
-    sosv lsof -p 4242 --at "2026-10-12 13:28:34"
-    sosv life --name 'backup|rsync' --start_from "2026-10-12 00:00:00" --end_at "2026-10-12 06:00:00"
-    sosv oom --start_from "2026-10-12 00:00:00"
-    sosv mounts --at "2026-10-12 13:28:34"
-    sosv vmstat --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00" --step 1m
-    sosv mpstat -P ALL --at "2026-10-12 13:28:34"
-    sosv iostat -x --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00"
-    sosv uptime --at "2026-10-12 13:28:34"
-    sosv stats
-    sosv verify                 # needs a recording made with --verify-every
-    sosv export tcp_conns       # one table as CSV
+    clifr ps aux --at "2026-10-12 13:28:34"
+    clifr ps aux --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
+    clifr ss -tanp dport = :5432 and dst 10.0.0.0/24 --at "2026-10-12 13:28:34"
+    clifr ss -tanp --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 14:00:00"
+    clifr lsof -p 4242 --at "2026-10-12 13:28:34"
+    clifr life --name 'backup|rsync' --start_from "2026-10-12 00:00:00" --end_at "2026-10-12 06:00:00"
+    clifr oom --start_from "2026-10-12 00:00:00"
+    clifr mounts --at "2026-10-12 13:28:34"
+    clifr vmstat --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00" --step 1m
+    clifr mpstat -P ALL --at "2026-10-12 13:28:34"
+    clifr iostat -x --start_from "2026-10-12 13:00:00" --end_at "2026-10-12 13:10:00"
+    clifr uptime --at "2026-10-12 13:28:34"
+    clifr stats
+    clifr verify                 # needs a recording made with --verify-every
+    clifr export tcp_conns       # one table as CSV
 
 - `ps aux --at` prints the columns of `ps aux`; a range prints one row per
   command with first and last seen, runs, peak %CPU and RSS.
@@ -203,11 +208,11 @@ free disk and validate every run. Keep the machine otherwise idle.
 
 1. **Setup** (once): installs PostgreSQL with pgbench and atop, and builds
    the tools (including the v1 recorder from its tag) into `bench/bin/`.
-   `sosv verify` of the system-wide tools also needs the sysstat package.
+   `clifr verify` of the system-wide tools also needs the sysstat package.
 
        sudo bench/setup.sh
 
-2. **Cost and impact matrix**: configurations A (workload only), B (sosv
+2. **Cost and impact matrix**: configurations A (workload only), B (clifr
    30s/120s, the default), C (10s/60s), D (60s/300s), V1 (the v1 recorder)
    and R1 (atop at 30 s), each 3 times in interleaved order, 2 minutes of
    warm-up and 15 minutes measured. About 5 hours.
@@ -234,7 +239,7 @@ free disk and validate every run. Keep the machine otherwise idle.
        go run ./bench/report -out bench/results/report bench/results/<matrix> bench/results/<scaling>
 
 5. **Accuracy against the real tools** (20 minutes): record under load with
-   checkpoints, then `sosv verify`. `bench/accuracy.sh --profile busy`.
+   checkpoints, then `clifr verify`. `bench/accuracy.sh --profile busy`.
 6. **Real server** (optional): `bench/passive.sh start|status|stop` records
    for 24 h with no generated load, under the shipped unit's limits.
 
@@ -295,7 +300,7 @@ checkpoints and compared with the reconstruction for the same moment.
   A row counts as explained when the recording shows the process, socket or
   fd starting or ending in that gap.
 - `ss`, not explained: TIME-WAIT sockets that the real `ss` prints with a
-  device suffix (`addr%wlp...`), which sosv does not have for them.
+  device suffix (`addr%wlp...`), which clifr does not have for them.
 - `lsof`, not explained (not investigated further): mostly pidfds of the
   load generator and timerfds of desktop processes.
 - Fields of matched rows that did not change in the gap: `ps` 99.40% exact
@@ -309,7 +314,7 @@ checkpoints and compared with the reconstruction for the same moment.
 
 An earlier run the same day (`accuracy-busy-20261013-1833`) had 21 / 21
 unexplained `ss` rows and 17 / 65 `lsof` rows. It led to three fixes: the
-IPV6_V6ONLY flag is recorded (dual-stack listeners), `sosv verify` checks
+IPV6_V6ONLY flag is recorded (dual-stack listeners), `clifr verify` checks
 the held-fd table for files that changed in the gap, and the real `lsof` is
 captured without per-thread rows (1.2 million lines and 12 s per checkpoint
 before, which also took the recorder to 947 MiB).
@@ -320,7 +325,7 @@ Three runs of 15 minutes each (2026-10-17, `report-20261017-1133`, commit
 `2c18c74`). The previous batch (2026-10-12, `report-20261012-1050`) is in
 brackets.
 
-| Metric | sosv, default (B) | sosv v1 | atop 30 s |
+| Metric | clifr, default (B) | v1 | atop 30 s |
 |---|---:|---:|---:|
 | CPU, % of one core | 2.14 ± 0.71 (5.19) | 11.3 ± 0.77 | 0.60 ± 0.05 |
 | CPU, % of the machine | 0.10 (0.24) | 0.51 | 0.03 |
@@ -346,7 +351,7 @@ against no recorder:
 | Latency p99 | 0.122 ms | +0.002 ms | −0.008 to +0.012, within noise |
 | Latency p99.9 | 0.201 ms | +0.022 ms | −0.120 to +0.164, within noise |
 
-No configuration (sosv at any interval, v1, atop) showed a measurable
+No configuration (clifr at any interval, v1, atop) showed a measurable
 latency change. In the previous batch the default configuration raised the
 average by 0.002 ms and p99.9 by 0.121 ms, both measurable; the baseline's
 p99.9 was also higher then (0.320 ms), so part of the difference may be the
@@ -389,14 +394,14 @@ processes and is not part of the recorder's CPU figure.
 
 ### Compared with Prometheus Node Exporter
 
-At the busy load: sosv with the current code (pointer-free rows, default
+At the busy load: clifr with the current code (pointer-free rows, default
 heap target 256M; one run, `profile-busy-20261017-2037-compact3b-heap256`,
 with the CPU profiler on) and from the matrix above (batch 1133, three
 runs); Node Exporter 1.10.2 with the Debian package's default collectors,
 scraped every 15 s (one run, `nodeexp-busy-20261016-1405`). Prometheus
 itself was not run: its column is an estimate.
 
-| | sosv now | sosv, batch 1133 | Node Exporter | Prometheus server (estimate) |
+| | clifr now | clifr, batch 1133 | Node Exporter | Prometheus server (estimate) |
 |---|---:|---:|---:|---:|
 | CPU, % of one core | 1.84 | 2.14 | 1.36 | well under 1 |
 | Memory (anonymous), average / max | 292 / 330 MiB | 429 / 488 MiB | 9.0 / 9.7 MiB | about 50–150 MiB |
@@ -415,15 +420,15 @@ compaction) are a few times that. Its memory is a few KB per series plus
 the server's own base.
 
 The two do different jobs. Node Exporter reports system counters at each
-scrape and keeps nothing between scrapes. sosv records every process,
+scrape and keeps nothing between scrapes. clifr records every process,
 connection and open file so that `ps`, `ss` and `lsof` can be answered for
 any past moment. At this load that is about 1,000 connection ends and
 5,000 TCP state changes per second, 50 process starts per second, and in
 memory 2,554 processes, 7,306 sockets, 57,000 open fds and about 30,000
-connections in time-wait. For the part both do, the system counters, sosv
+connections in time-wait. For the part both do, the system counters, clifr
 keeps about 0.3 MB per day and spends about 0.2 ms per sample.
 
-Estimated floor for sosv at this load, if every reduction we know of were
+Estimated floor for clifr at this load, if every reduction we know of were
 made (not measured):
 
 | | Now | Best case in Go | Best case in Rust | Node Exporter |
@@ -436,8 +441,8 @@ The tracked state alone is some 20–30 MB in compact form, and each
 connection needs some 15–25 bytes on disk even with a tight encoding
 (about 48 now, transitions included). Only recording less closes the gap:
 at this load all connections are loopback from the load generator, and
-without them sosv is near its idle figures (about 22 MB/h and 171 MiB in batch 1133).
-The fair comparison for sosv is atop with process accounting or a
+without them clifr is near its idle figures (about 22 MB/h and 171 MiB in batch 1133).
+The fair comparison for clifr is atop with process accounting or a
 continuous eBPF tracer, not a metrics exporter.
 
 ## Limitations
@@ -482,15 +487,15 @@ continuous eBPF tracer, not a metrics exporter.
 - **System-wide tools**: resolution is the sample interval, so `mpstat 1`
   cannot be reproduced. `uptime` has no user count. `vmstat`'s `r` and `b`
   are the values at the sample. On its since-boot line procps-ng 4.0.4
-  prints a context-switch figure that is not per second; sosv prints the
-  per-second rate. Interval output is not compared by `sosv verify`.
+  prints a context-switch figure that is not per second; clifr prints the
+  per-second rate. Interval output is not compared by `clifr verify`.
 - **Dual-stack listeners in `ss`**: recordings made with a recorder older than
   2026-10-13 do not have the IPV6_V6ONLY flag, so a listener the real `ss` prints as `*:port`
   appears there as `[::]:port`. A listener's backlog (Send-Q) is 0 until
   the next keyframe, like the other queue values.
 - **Namespaces**: only the host network namespace's sockets and the
   recorder's mount namespace are recorded.
-- **Zombie processes** disappear from `sosv ps` at their exit event, while
+- **Zombie processes** disappear from `clifr ps` at their exit event, while
   `ps` lists them until they are reaped.
 - **Command lines** are read at exec and at fd walks; a process that
   rewrites its title can show an older one.

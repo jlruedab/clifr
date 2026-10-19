@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 // TCP recorded from eBPF events (v2): tcp_conns has every connection with

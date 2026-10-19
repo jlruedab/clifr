@@ -1,0 +1,186 @@
+# clifr / clifrd: from working prototype to viable product
+
+Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (the user's file). Phase 1 (rename) started 2026-10-19.
+
+## Context
+
+`docs/clifr command line flight.txt` (the user's spec) defines the product
+interface: `clifr` (query CLI, today `sosv`) and `clifrd` (agent, today
+`sosv-record`), new option names, new commands (netstat, free, df, mount,
+diff, info, help, list, license), range views, JSON with provenance, an
+interactive pager, a YAML config, redaction, push to sos-vault, remote query,
+Prometheus metrics, encryption and licensing. The request: review it, say what
+is missing, and plan the work to a viable product.
+
+Decisions taken with the user (2026-10-19):
+- **First viable release is local-only.** Network (push, `--host`, `/metrics`),
+  TLS, encryption and licensing are a later phase; the CLAUDE.md "no network,
+  encryption" constraint is lifted only when that phase starts.
+- **Remote query = serve files:** clifrd (or sos-vault) serves the Parquet
+  files of a window; `clifr` reconstructs locally. clifrd stays pure Go, static,
+  no query engine.
+- **sos-vault delivery: both** — `clifrd bundle` + sos plugin first, `--push` later.
+- **Dependencies approved:** `gopkg.in/yaml.v3` (clifrd.yml), `golang.org/x/term` (pager).
+
+## Review of the spec
+
+Strong points: one grammar for every command (`clifr --at T "ps aux"`) is
+easier to learn than today's per-command flags; rejecting unsupported options
+keeps the "exact reconstruction" promise honest; `--summary/--changes/--samples`,
+`diff` and `info` cover the incident workflow; per-value "exact or sampled" in
+JSON matches what the recording really knows; `doctor` answers the first
+support question.
+
+Problems to resolve in the spec:
+1. **Encryption at rest with only a public key** makes the data unreadable to
+   local `clifr` (free local use) unless the private key is on the host. Either
+   encrypt only bundles/pushes, or say where the private key lives.
+2. **`memory_limit: 256M` "soft memory limit"**: a Go memory limit was measured
+   unsafe (11% of a core at 100,000 connections). Map it to today's
+   `--gc-heap-target` and name it so (`gc_heap_target`), not "limit"; the
+   busy load already sits around 290–330 MiB with it.
+3. **`--host` remote clifrd** has no matching clifrd option: clifrd needs a
+   `--serve ADDR` (file server for windows) in the network phase.
+4. **`cpu_budget` "lengthens intervals"**: today only the fd interval is
+   lengthened, and at the busy load the guard rail cannot act (fd walks are
+   16% of the cost). Keep the wording to what it does.
+5. **`--max-size` default 2G** is about 11 h at the busy load (4 GB/day),
+   so the 72 h retention would rarely be reached there. Fine as a safety cap;
+   `info` should show the effective coverage.
+6. **`/metrics` "Node Exporter-compatible"** includes filesystems, network
+   interfaces and pressure, which clifrd does not collect today (new collectors).
+7. **"clifr list COMMAND"** is unclear (list of what?). Proposal: drop it and
+   let `clifr help` list commands and `clifr help COMMAND` the options.
+8. **Licence check in an open binary** is easy to remove; that fits the
+   quoted principle (value from remote/fleet/sos-vault, not lock-in) — keep
+   the check light.
+
+Missing from the spec:
+- **The clifr-only views that are the product's edge:** process lifetimes
+  (`life`: short-lived processes), OOM kills, mount changes, recorder gaps.
+  Proposal: `clifr events` (starts/exits, OOM, mounts, gaps) with `--name`,
+  `--since/--until`; keep `life`/`oom` as aliases.
+- **Developer/support commands** today in `sosv`: `verify`, `stats`, `export`.
+  Fold `stats` into `clifr info`; keep `verify` and `export` (hidden from the
+  main help).
+- **clifrd `bundle`** (pure Go, window of hourly files + `meta`) and the
+  **sos plugin**, from `docs/sos-vault-integration.md`.
+- **`meta`:** machine-id, boot ids, host time zone (needed by `--tz` default
+  and sos-vault), bundle schema version.
+- **Supported options per command:** the spec says "unsupported options are
+  rejected" but not which are supported; a matrix is needed (below).
+- **df** needs a new collector (statfs of each mount per sample); `free` and
+  `netstat` can be built from existing data; `mount` from the mounts table.
+- **Per-process I/O** ("process: CPU, memory and I/O samples"): not recorded
+  today (`/proc/<pid>/io`); new column, costs reads.
+- **Separate system interval (10 s) from process interval (30 s):** today
+  one loop; split it.
+- **Local access control:** the data holds every user's command lines; data
+  dir root-only plus a `clifr` group for local readers.
+- **Packaging:** .deb/.rpm, man pages, shell completion, SELinux policy for
+  RHEL (eBPF and /proc access under enforcing), upgrade path for older
+  recordings (schema version), arm64 actually run.
+- **The viability evidence** (README "Status"): soak test, RHEL 9 / 8.x /
+  Ubuntu 22.04 runs, a real server checked with `verify`.
+
+## Supported options for the first release (proposal)
+
+| Command | Options | Source |
+|---|---|---|
+| ps | `aux`, `-ef`, `-eo COLS` (pid,ppid,user,comm,args,rss,vsz,%cpu,stat,lstart,etime,tty), `-p PID`, `-u USER`, `-C NAME` | processes, proc_samples |
+| lsof | `-p PID`, `-i`, `-u USER`, `-c NAME`, `-n`, `-P` | fds_held, tcp_conns |
+| ss | `-t -u -a -n -p -l -4 -6`, filters `src/dst/sport/dport` with `and` | tcp_conns, keyframes |
+| netstat | `-t -u -a -n -p -l` | same as ss |
+| free | `-b -k -m -g -h`, `-w` | sys_samples |
+| vmstat, mpstat (`-P`), iostat (`-x -d -p`), uptime | as today | sys/cpu/disk samples |
+| df | `-h -T -i`, path | new fs_samples |
+| mount | (none), `-t TYPE` | mounts |
+
+## Plan (one step at a time; report and wait after each)
+
+### Phase 1 — Rename (2–3 days)
+- Go module `sosv` → `clifr`; `cmd/sosv-record` → `cmd/clifrd`, `cmd/sosv` →
+  `cmd/clifr`; data dir `/var/lib/clifr`, config `/etc/clifr`; unit
+  `deploy/clifrd.service`; bench scripts, tests, README/CLAUDE/HANDOFF.
+- Readers keep accepting recordings written by sosv (meta unchanged).
+- Verify: unit, e2e, `--test-ebpf`, small ground truth.
+
+### Phase 2 — clifr front end (1–1.5 weeks)
+- New entry point `cmd/clifr/main.go`: global options (spec names and short
+  forms, env vars `CLIFR_*`), `"COMMAND [ARGS]"` split with shell-word
+  rules, dispatch to per-command option parsers built on today's handlers
+  (`cmdPS`, `cmdSS`, … in `cmd/sosv/main.go`).
+- Time parser in `internal/query/common.go` (`ParseTime`): the spec's
+  formats, relative times, `--tz`; resolved range and zone printed on stderr
+  (`query.Header`).
+- `clifr help`, `clifr help COMMAND` (generated from the option tables),
+  rejection of unsupported options, `clifr info` (coverage, gaps, intervals,
+  recording level, `ComputeStats`).
+- Uniform `--json`: one object per row with timestamps and `exact|sampled`
+  per field (`query.PrintJSON` everywhere, a provenance tag per column).
+- New renderers from existing data: `free`, `netstat`, `mount`; ps `-ef/-eo`,
+  lsof/ps user and name filters; `events` (life/oom/mounts/gaps).
+- Verify: unit tests per parser; extend `internal/verify` and `test/truth`
+  to `free`, `netstat`, `mount`, `ps -ef`; e2e on the new grammar.
+
+### Phase 3 — clifrd recorder features (1.5–2 weeks)
+- `clifrd.yml` (yaml.v3): intervals (process, system, files, keyframe),
+  collectors on/off, `cpu_budget`, `gc_heap_target`, `redact`, retention,
+  max size; flags override the file.
+- Split system interval from process interval in `internal/recorder`.
+- New collectors: filesystem usage (statfs per mount → `fs_samples`, for df),
+  per-process I/O (`/proc/<pid>/io`, via `procfs.FS`).
+- `redact`: regex masking of command lines and exec arguments before they
+  are stored.
+- `meta`: machine-id, boot id, time zone, schema version.
+- `clifrd doctor`: kernel, BTF, capabilities, eBPF features (reuse
+  `--test-ebpf` code in `cmd/sosv-record/testebpf.go`), resulting recording
+  level (eBPF full / proc connector / sampling only).
+- `--max-size` default 2G, `--log-level`.
+- Data dir permissions and a `clifr` group in the unit.
+- Verify: unit, e2e, ground truth full; benchmark rerun (matrix + scaling,
+  about 7 h) because the recorder changed.
+
+### Phase 4 — Range views, diff, pager, query performance (1.5–2 weeks)
+- `--summary` (default), `--changes`, `--samples` with `-e/--every`,
+  `-n/--number` for every command, on top of the existing range queries
+  (`PSRange`, `ConnsInRange`, `LsofRange`, `SysSpans`).
+- `clifr diff --at A --at B`.
+- Pager `-I` (x/term), `--plain` when piped.
+- Window-only loading in `internal/duck` (today the whole data dir is loaded):
+  measure 1 h / 6 h / 24 h busy recordings.
+- Verify: tests on recorded fixtures; timing and memory of the CLI.
+
+### Phase 5 — sos-vault without network (1 week)
+- `clifrd bundle --since/--until -o FILE` (whole hourly files + meta, pure Go).
+- sos plugin (Python) running it; `clifr --data-dir` on an unpacked bundle.
+- Verify: bundle of a busy hour opens and matches the source data.
+
+### Phase 6 — Viability evidence and packaging (1–2 weeks, mostly unattended)
+- .deb/.rpm, man pages from the help text, completion, SELinux module.
+- RHEL 9, RHEL 8.x, Ubuntu 22.04 VMs: `doctor`, `--test-ebpf`, e2e, small
+  ground truth; arm64 if a machine exists.
+- 3–7 day soak test under the shipped unit (also settles `CPUQuota=5%`).
+- A real server, checked with `clifr verify`.
+- README Status updated to "viable" if all pass.
+
+### Phase 7 — Network features (later; constraint lifted at its start)
+- `--push` to sos-vault, `clifrd --serve` + `clifr --host` (files for a
+  window), `--token`, `--tls-ca`, licence (`license key|install`),
+  `/metrics` with new collectors (net interfaces, pressure), encryption of
+  bundles/pushes. Sized when the phase starts (needs sos-vault's ingestion API).
+
+Rough total for phases 1–6: 7–10 weeks of work plus the unattended runs.
+
+## Critical files
+- `cmd/sosv/main.go` (→ `cmd/clifr`), `cmd/sosv-record/main.go` (→ `cmd/clifrd`)
+- `internal/query/*` (renderers, `common.go` time parsing, JSON)
+- `internal/recorder/*`, `internal/procfs/*`, `internal/store/batch.go`,
+  `internal/pqstore/*` (new tables), `internal/duck/*` (window loading)
+- `internal/verify/*`, `test/truth`, `test/e2e`, `deploy/sosv.service`
+- `README.md`, `CLAUDE.md`, `HANDOFF.md`, `docs/sos-vault-integration.md`
+
+## Verification (every phase)
+`go test ./...`; e2e; `--test-ebpf`; ground truth small (full after recorder
+changes); benchmark matrix + scaling after phase 3 and before phase 6; results
+recorded in HANDOFF; commit only on the user's request.

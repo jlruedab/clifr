@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"sosv/internal/procfs"
+	"clifr/internal/procfs"
 )
 
 // TestLiveEvents loads the programs (as root) with every fallback
@@ -21,7 +21,7 @@ func TestLiveEvents(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%+v: %v", o, err)
 		}
-		cmd := exec.Command("/bin/sh", "-c", "exit 3", "sosv-bpf-test", "arg two")
+		cmd := exec.Command("/bin/sh", "-c", "exit 3", "clifr-bpf-test", "arg two")
 		cmd.Start()
 		pid := cmd.Process.Pid
 		cmd.Wait()
@@ -38,7 +38,7 @@ func TestLiveEvents(t *testing.T) {
 		}
 		name := s.Buffer + "+" + s.Fork
 		ex, ok := got[Exec]
-		if !ok || ex.Filename != "/bin/sh" || !strings.Contains(ex.Cmdline, "exit 3 sosv-bpf-test arg two") || ex.StartNS == 0 {
+		if !ok || ex.Filename != "/bin/sh" || !strings.Contains(ex.Cmdline, "exit 3 clifr-bpf-test arg two") || ex.StartNS == 0 {
 			t.Errorf("%s: exec event %+v", name, ex)
 		}
 		if code, sig := got[Exit].ExitStatus(); got[Exit].Kind != Exit || code != 3 || sig != 0 || got[Exit].StartNS != ex.StartNS {

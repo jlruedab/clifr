@@ -28,11 +28,11 @@ func TestParseSystemOutput(t *testing.T) {
 		t.Errorf("iostat = %v", io)
 	}
 	for _, c := range []struct {
-		real, sosv string
-		want       bool
+		real, clifr string
+		want        bool
 	}{{"7.91", "7.91", true}, {"7.91", "7.93", true}, {"7.91", "8.20", false}, {"19238.46", "19100.00", true}, {"0.00", "0.05", false}, {"x", "1", false}} {
-		if near(c.real, c.sosv, 0.01, 0.02) != c.want {
-			t.Errorf("near(%s, %s) != %v", c.real, c.sosv, c.want)
+		if near(c.real, c.clifr, 0.01, 0.02) != c.want {
+			t.Errorf("near(%s, %s) != %v", c.real, c.clifr, c.want)
 		}
 	}
 }

@@ -2,9 +2,9 @@
 
 Draft 1, 2026-10-16. Status: proposal for discussion; nothing here is built.
 
-clifr ("command line interface flight recorder") is the planned name of
-sosv. This document uses **clifr** for the product, `clifr-record` for the
-recorder (today `sosv-record`) and `clifr` for the query CLI (today `sosv`).
+clifr ("command line flight recorder") was called sosv until 2026-10-19.
+**clifr** is the product, `clifrd` the recorder (formerly `sosv-record`) and
+`clifr` the query CLI (formerly `sosv`).
 sos-vault is the sosreport analysis appliance
 (<https://github.com/sos-vault/sos-vault-appliance>).
 
@@ -39,7 +39,7 @@ existed, which files were held, at any past moment within its retention.
 
 ## 3. Workflow
 
-1. **Day 0, once per server:** install clifr (`clifr-record` as a systemd
+1. **Day 0, once per server:** install clifr (`clifrd` as a systemd
    service) and upload a baseline sosreport to sos-vault. The sosreport
    registers the server (machine-id, hostname).
 2. **Every day:** clifr records; old data is deleted past the retention.
@@ -72,7 +72,7 @@ through the upload.
 
 - Made by a new recorder subcommand (pure Go, no DuckDB, since the CLI may
   not be on the server), for example
-  `clifr-record bundle --data-dir /var/lib/clifr --last 6h -o clifr.tar`.
+  `clifrd bundle --data-dir /var/lib/clifr --last 6h -o clifr.tar`.
 - Copies whole hourly files that overlap the window, unchanged: almost no
   CPU. Cutting to an exact window would decode and re-encode, at about the
   CPU of hourly compaction.
@@ -96,8 +96,8 @@ fleet with a size cap.
 ### clifr sos plugin
 
 A Python plugin for `sos report` (sos plugins are Python), shipped with
-clifr. It runs `clifr-record bundle` with the window from its options and
-adds the result and `clifr-record --version` to the archive. With no window
+clifr. It runs `clifrd bundle` with the window from its options and
+adds the result and `clifrd --version` to the archive. With no window
 given it takes a default (for example 6 h), so a normal full sosreport also
 carries recent history.
 
@@ -168,7 +168,7 @@ base (`agent/kb`).
 - **Obfuscation (the hardest open item):** `sos clean` masks hostnames,
   IPs, users and keywords in text files but cannot read Parquet. clifr data
   holds command lines (which may contain secrets in arguments), addresses,
-  ports, paths and user ids. Options: (a) `clifr-record bundle --clean`
+  ports, paths and user ids. Options: (a) `clifrd bundle --clean`
   applies the same rules with the same mapping as `sos clean`, so bundle
   and sosreport stay consistent; (b) obfuscated uploads leave clifr data
   out. Until one exists, clifr data must be treated as unobfuscated.
@@ -192,7 +192,7 @@ while recording; a bundle copies files once at capture.
 |---|---|---|---|
 | 1 | Rename to clifr (binaries, unit, paths, docs) | clifr | 1–2 days |
 | 2 | `meta`: machine-id, boot ids, time zone, schema version | clifr | 1 day |
-| 3 | `clifr-record bundle` | clifr | 2–3 days |
+| 3 | `clifrd bundle` | clifr | 2–3 days |
 | 4 | sos plugin | clifr | 1–3 days |
 | 5 | Uniform JSON output; snapshot at T; diff T1..T2 | clifr CLI | 3–5 days |
 | 6 | Window-only loading, with measurements | clifr CLI | 2–4 days |

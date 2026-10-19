@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // verifyCommands are run right after a checkpoint sample. Their output is
-// stored so `sosv verify` can compare it with the reconstruction.
+// stored so `clifr verify` can compare it with the reconstruction.
 var verifyCommands = [][]string{
 	// The system-wide tools first: they are compared with the counters of
 	// the sample, which keep moving.

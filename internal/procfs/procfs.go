@@ -1,4 +1,4 @@
-// Package procfs parses the parts of /proc that sosv needs. Every path goes
+// Package procfs parses the parts of /proc that clifr needs. Every path goes
 // through FS so tests can point it at a fixture directory (--proc-root).
 // It never reads /proc/<pid>/environ.
 package procfs
@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ClockTicks is USER_HZ. It is 100 on every Linux architecture sosv targets.
+// ClockTicks is USER_HZ. It is 100 on every Linux architecture clifr targets.
 const ClockTicks = 100
 
 type FS struct {
@@ -132,7 +132,7 @@ func (f FS) PIDs() ([]int, error) {
 	return pids, nil
 }
 
-// Stat holds the fields of /proc/<pid>/stat that sosv uses.
+// Stat holds the fields of /proc/<pid>/stat that clifr uses.
 type Stat struct {
 	PID        int
 	Comm       string
@@ -209,7 +209,7 @@ func ParseStatm(b []byte) (size, resident int64, err error) {
 	return int64(atoi(fs[0])), int64(atoi(fs[1])), nil
 }
 
-// Status holds the fields of /proc/<pid>/status that sosv uses.
+// Status holds the fields of /proc/<pid>/status that clifr uses.
 type Status struct {
 	UID    int // effective uid, what `ps aux` shows as USER
 	Tgid   int // process id; differs from the pid for threads

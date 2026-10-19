@@ -9,10 +9,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/bpfproc"
-	"sosv/internal/cnproc"
-	"sosv/internal/procfs"
-	"sosv/internal/store"
+	"clifr/internal/bpfproc"
+	"clifr/internal/cnproc"
+	"clifr/internal/procfs"
+	"clifr/internal/store"
 )
 
 type evKind int

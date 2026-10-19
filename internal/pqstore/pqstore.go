@@ -39,7 +39,7 @@ import (
 	"github.com/parquet-go/parquet-go"
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 type Options struct {

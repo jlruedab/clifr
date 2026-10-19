@@ -4,9 +4,9 @@ import (
 	"net"
 	"net/netip"
 
-	"sosv/internal/procfs"
-	"sosv/internal/sockdiag"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/sockdiag"
+	"clifr/internal/store"
 )
 
 // sockKey identifies a socket. The inode alone is not enough: TIME-WAIT and

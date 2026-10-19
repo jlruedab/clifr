@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 type Percentiles struct {
@@ -203,7 +203,7 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 			if span := float64(st.ToMS-st.FromMS) / 1000; span > 0 {
 				e.PerSec = float64(e.Events) / span
 			}
-			// The eBPF programs' own cost (sosv-record --bpf-stats).
+			// The eBPF programs' own cost (clifrd --bpf-stats).
 			if name, ok := strings.CutPrefix(src, "bpf_runs:"); ok {
 				p := st.BPF[name]
 				p.Runs = e.Events

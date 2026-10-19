@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"sosv/internal/procfs"
-	"sosv/internal/query"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/query"
+	"clifr/internal/store"
 )
 
 // fakeProc is a writable proc-root for driving the recorder in tests.

@@ -46,18 +46,18 @@ func (r *Report) validate() []string {
 			if run.Config == "A" {
 				continue
 			}
-			// Every other configuration runs a recorder (sosv or atop).
+			// Every other configuration runs a recorder (clifr or atop).
 			need(w, "recorder CPU (% of one core)", x["rec_cpu"], 0.001, 100*cpus)
 			need(w, "recorder memory", x["rec_mem_avg"], 64*kib, math.Inf(1))
 			need(w, "recorder anonymous memory", x["rec_anon_avg"], 64*kib, math.Inf(1))
 			need(w, "disk written per hour", x["write_per_h"], 0, math.Inf(1))
 			// DB growth needs at least 5 samples (slopePerHour); a smoke run has fewer.
 			// Node Exporter (N1) stores nothing.
-			if run.Config != "N1" && (!run.HasSosv || x["samples"] >= 5) {
+			if run.Config != "N1" && (!run.HasClifr || x["samples"] >= 5) {
 				need(w, "DB or log file growth per hour", x["store_per_h"], kib, math.Inf(1))
 			}
-			if run.HasSosv && len(run.Samples) < 2 {
-				bad(w, "%d sosv samples in the measured window", len(run.Samples))
+			if run.HasClifr && len(run.Samples) < 2 {
+				bad(w, "%d clifr samples in the measured window", len(run.Samples))
 			}
 		}
 	}

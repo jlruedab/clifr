@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"sosv/internal/procfs"
-	"sosv/internal/store"
+	"clifr/internal/procfs"
+	"clifr/internal/store"
 )
 
 // PSRow is one process as `ps aux` would show it at a point in time.
@@ -86,7 +86,7 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	}
 	memKB := metaInt(db, "mem_total_kb")
 	// ps derives START from /proc/stat btime, which is truncated to whole
-	// seconds; sosv stores precise start times. Shift back for display.
+	// seconds; clifr stores precise start times. Shift back for display.
 	skew := int64(0)
 	if bms := metaInt(db, "boot_ms"); bms > 0 {
 		skew = bms - metaInt(db, "boot_time")*1000

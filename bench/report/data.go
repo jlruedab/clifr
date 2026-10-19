@@ -47,7 +47,7 @@ type Run struct {
 	Dir                 string
 	WarmStart           int64
 	From, To            int64 // measured window, Unix ms
-	HasSosv             bool  // samples.csv present
+	HasClifr            bool  // samples.csv present
 	M                   map[string]float64
 	Samples             []Sample // within the measured window
 	Guard               map[string]int
@@ -55,7 +55,7 @@ type Run struct {
 	Timeline            []XY // recorder CPU, % of one core, x = minutes since From
 }
 
-// Sample is one row of the sosv samples table.
+// Sample is one row of the clifr samples table.
 type Sample struct {
 	TS                         int64
 	FDWalk, Skipped            bool
@@ -360,7 +360,7 @@ func (run *Run) loadSamples() error {
 	if err != nil {
 		return err
 	}
-	run.HasSosv = true
+	run.HasClifr = true
 	all := parseSamples(rows)
 	for _, s := range all {
 		if s.TS >= run.From && s.TS <= run.To {
@@ -520,7 +520,7 @@ func loadScaling(dir string, env map[string]string) (*Scaling, error) {
 	return s, nil
 }
 
-// loadBPF reads the eBPF programs' run time from the point's sosv stats, if
+// loadBPF reads the eBPF programs' run time from the point's clifr stats, if
 // they were recorded.
 func (p *Point) loadBPF(path string) {
 	var st struct {

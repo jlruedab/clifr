@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"sosv/internal/store"
+	"clifr/internal/store"
 )
 
 // Two samples 10 s apart on a machine that booted 100 s before the first.
