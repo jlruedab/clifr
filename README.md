@@ -339,6 +339,13 @@ System-wide tools (2026-10-12, a 25 s recording with 4 checkpoints on the
 idle machine): `uptime`, `vmstat`, `mpstat -P ALL` (92 rows) and `iostat -dx`
 (232 rows) all matched the real tools' output within 1% or 0.02.
 
+`free`, `ps -ef` and `netstat -tanp` (2026-10-19, a 150 s recording with 5
+checkpoints on the test machine with a desktop session): `free` 10 of 10
+rows within 2%, `ps -ef` 2,644 of 2,644 rows exact, `netstat -tanp` all 218
+rows matched; 84 differ in PID/Program, all of Chrome processes, which
+rewrite their whole command line (the recording does not keep where argv[0]
+ends; planned for clifrd), and 3 in State, as `ss` shows.
+
 Against the real tools at the busy load (2026-10-13,
 `accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10
 checkpoints and compared with the reconstruction for the same moment.

@@ -513,6 +513,7 @@ func (e *env) runProcs() (procs []shortProc, from, to time.Time) {
 func (e *env) checkProcs(procs []shortProc, from, to time.Time) {
 	const sc = "short processes"
 	var life []struct {
+		Start    int64  `json:"start_ms"`
 		Duration int64  `json:"duration_ms"`
 		PID      int    `json:"pid"`
 		Command  string `json:"command"`
@@ -587,6 +588,40 @@ func (e *env) checkProcs(procs []shortProc, from, to time.Time) {
 	e.res.add(sc, "duration", dur, n, "within %d ms of the measured fork-to-wait time; error p50 %d ms, p99 %d ms, max %d ms; %d recorded as shorter than 100 ms",
 		durTolMS, percentile(errs, 0.5), percentile(errs, 0.99), percentile(errs, 1), short)
 	e.res.add(sc, "recorded more than once", dup, 0, "")
+
+	// The same processes in the events timeline: one start and one exact
+	// exit each, at the times life shows.
+	var evs []struct {
+		TS    int64  `json:"ts_ms"`
+		Kind  string `json:"kind"`
+		Exact bool   `json:"exact"`
+		PID   int    `json:"pid"`
+	}
+	e.query(&evs, "--since", from.Add(-2*time.Second).Format(timeLayout), "--until", to.Add(2*time.Second).Format(timeLayout),
+		"events", "--type", "start,exit", "--name", "^"+regexp.QuoteMeta(e.proc)+" --id=")
+	byPID := map[int][2]int64{} // start, exact exit
+	for _, ev := range evs {
+		t := byPID[ev.PID]
+		switch {
+		case ev.Kind == "start":
+			t[0] = ev.TS
+		case ev.Kind == "exit" && ev.Exact:
+			t[1] = ev.TS
+		}
+		byPID[ev.PID] = t
+	}
+	var starts, exits int
+	for _, l := range life {
+		t := byPID[l.PID]
+		if t[0] != 0 && t[0] == l.Start {
+			starts++
+		}
+		if t[1] != 0 && t[1] == l.Start+l.Duration {
+			exits++
+		}
+	}
+	e.res.add(sc, "clifr events: start", starts, n, "a start event at the start life shows")
+	e.res.add(sc, "clifr events: exact exit", exits, n, "an exact exit event at the end life shows")
 }
 
 // --- resets ---

@@ -192,4 +192,3 @@ func PrintPSFormat(w io.Writer, rows []PSRow, f PSFormat) {
 		line(func(i int, c psCol) string { return c.val(&rows[k]) })
 	}
 }
-

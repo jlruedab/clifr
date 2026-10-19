@@ -140,3 +140,29 @@ func TestChangedInDB(t *testing.T) {
 		t.Errorf("unresolved socket with the same inode: %+v", res)
 	}
 }
+
+func TestParseNewTools(t *testing.T) {
+	free := parseFree("               total        used        free      shared  buff/cache   available\n" +
+		"Mem:        63964028     9566804    44232428     1302548    11100100    54397224\n" +
+		"Swap:        8388604           0     8388604\n")
+	if free["Mem:"]["available"] != "54397224" || free["Swap:"]["free"] != "8388604" || len(free) != 2 {
+		t.Errorf("free: %v", free)
+	}
+	ef := parsePSEF("UID          PID    PPID  C STIME TTY          TIME CMD\n" +
+		"postgres    3101    3085  0 09:21 ?        00:00:00 postgres: 18/main: checkpointer \n")
+	if x := ef[3101]; x.uid != "postgres" || x.ppid != "3085" || x.stime != "09:21" || x.time != "00:00:00" ||
+		x.cmd != "postgres: 18/main: checkpointer " {
+		t.Errorf("ps -ef: %+v", x)
+	}
+	ns := parseNetstat("Active Internet connections (servers and established)\n"+
+		"Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    \n"+
+		"tcp        0      0 127.0.0.1:5432          0.0.0.0:*               LISTEN      3085/postgres       \n"+
+		"tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      3008/sshd: /usr/sbi \n"+
+		"tcp6       0      0 :::22                   :::*                    LISTEN      7/x\n", map[int]bool{7: true})
+	if x := ns["tcp 0.0.0.0:22 0.0.0.0:*"]; x.prog != "3008/sshd: /usr/sbi" || x.state != "LISTEN" {
+		t.Errorf("netstat: %+v", x)
+	}
+	if x := ns["tcp6 :::22 :::*"]; x.prog != "-" {
+		t.Errorf("netstat ignored pid: %+v", x)
+	}
+}

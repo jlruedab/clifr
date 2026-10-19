@@ -121,6 +121,15 @@ func Run(db *store.DB) (*Report, error) {
 			prevLsof = cur
 		case "uptime", "vmstat", "mpstat -P ALL", "iostat -dx":
 			res, err = compareSystem(db, s)
+		case "free":
+			res, err = compareFree(db, s)
+		case "ps -ef":
+			res, err = comparePSEF(db, s)
+		case "netstat -tanp":
+			if !events {
+				continue // compared only with TCP from events
+			}
+			res, err = compareNetstat(db, s)
 		default:
 			continue
 		}
@@ -717,10 +726,10 @@ func pct(a, b int) string {
 }
 
 func printResult(w io.Writer, r Result, examples bool) {
-	fmt.Fprintf(w, "  %-11s real %6d  clifr %6d  matched %6d (%s, exact %s)  missing %4d  extra %4d  churn: missing %4d extra %4d  gap %dms\n",
+	fmt.Fprintf(w, "  %-13s real %6d  clifr %6d  matched %6d (%s, exact %s)  missing %4d  extra %4d  churn: missing %4d extra %4d  gap %dms\n",
 		r.Cmd, r.Real, r.Recon, r.Matched, pct(r.Matched, r.Real), pct(r.Exact, r.Matched-r.ChurnChanged), r.Missing, r.Extra, r.ChurnMissing, r.ChurnExtra, r.GapMS)
 	if r.ChurnChanged > 0 {
-		fmt.Fprintf(w, "              churn-changed (matched, fields changed during the gap): %d\n", r.ChurnChanged)
+		fmt.Fprintf(w, "                churn-changed (matched, fields changed during the gap): %d\n", r.ChurnChanged)
 	}
 	if len(r.FieldDiffs) > 0 {
 		keys := make([]string, 0, len(r.FieldDiffs))
@@ -732,7 +741,7 @@ func printResult(w io.Writer, r Result, examples bool) {
 		for _, k := range keys {
 			parts = append(parts, fmt.Sprintf("%s %d", k, r.FieldDiffs[k]))
 		}
-		fmt.Fprintf(w, "              field mismatches: %s\n", strings.Join(parts, ", "))
+		fmt.Fprintf(w, "                field mismatches: %s\n", strings.Join(parts, ", "))
 	}
 	if len(r.Ignored) > 0 {
 		var parts []string
@@ -740,14 +749,21 @@ func printResult(w io.Writer, r Result, examples bool) {
 			parts = append(parts, fmt.Sprintf("%s %d", k, v))
 		}
 		sort.Strings(parts)
-		fmt.Fprintf(w, "              ignored rows: %s\n", strings.Join(parts, ", "))
+		fmt.Fprintf(w, "                ignored rows: %s\n", strings.Join(parts, ", "))
 	}
 	if examples {
 		for _, e := range r.Examples {
-			fmt.Fprintf(w, "              e.g. %s\n", e)
+			fmt.Fprintf(w, "                e.g. %s\n", e)
 		}
 	}
 }
+
+// compared lists the commands in report order; laterCommands are those added
+// after older recordings were made, listed only when present.
+var (
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free")
+)
 
 func Print(w io.Writer, rep *Report, verbose bool) {
 	if len(rep.Checkpoints) == 0 {
@@ -761,15 +777,15 @@ func Print(w io.Writer, rep *Report, verbose bool) {
 		}
 	}
 	fmt.Fprintf(w, "\nTOTAL over %d checkpoints\n", len(rep.Checkpoints))
-	for _, c := range append([]string{"ps aux", "ss -tanp", "lsof -n -P"}, systemCommands...) {
+	for _, c := range compared {
 		if r, ok := rep.Totals[c]; ok {
 			printResult(w, r, true)
 		}
 	}
 	fmt.Fprintln(w, "\nNot compared:")
-	for _, c := range append([]string{"ps aux", "ss -tanp", "lsof -n -P"}, systemCommands...) {
-		if _, ok := rep.Totals[c]; ok || !slices.Contains(systemCommands, c) {
-			fmt.Fprintf(w, "  %-11s %s\n", c, rep.IgnoredFields[c])
+	for _, c := range compared {
+		if _, ok := rep.Totals[c]; ok || !slices.Contains(systemCommands, c) && !slices.Contains(laterCommands, c) {
+			fmt.Fprintf(w, "  %-13s %s\n", c, rep.IgnoredFields[c])
 		}
 	}
 	fmt.Fprintln(w, "churn = present on one side only, and the database shows it starting or ending between the\n"+
@@ -787,6 +803,10 @@ func connChanged(db *store.DB, key string, from, to int64) bool {
 	f := strings.Fields(key)
 	la, lp := splitSSAddr(f[0])
 	ra, rp := splitSSAddr(f[1])
+	return connChangedAddrs(db, la, lp, ra, rp, from, to)
+}
+
+func connChangedAddrs(db *store.DB, la string, lp int, ra string, rp int, from, to int64) bool {
 	return exists(db, `SELECT 1 FROM tcp_conns c WHERE c.laddr = ?1 AND c.lport = ?2 AND c.raddr = ?3 AND c.rport = ?4
 		AND ((c.open_ts > ?5 AND c.open_ts <= ?6) OR (c.close_ts > ?5 AND c.close_ts <= ?6)
 		  OR (c.linger_until > ?5 - ?7 AND c.linger_until <= ?6) OR (c.owner_until > ?5 AND c.owner_until <= ?6)

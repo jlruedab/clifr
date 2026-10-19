@@ -1,6 +1,6 @@
 # clifr / clifrd: from working prototype to viable product
 
-Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (the user's file). Phase 1 (rename) started 2026-10-19.
+Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (the user's file). Phase 1 (rename) done 2026-10-19 (`0faa79f`); phase 2 (front end) 2026-10-19: grammar `1a7ef54`, new commands `034cfe6`, JSON Lines `9f680c7`, verify and ground truth (2d).
 
 ## Context
 
@@ -94,7 +94,7 @@ Missing from the spec:
 | free | `-b -k -m -g -h`, `-w` | sys_samples |
 | vmstat, mpstat (`-P`), iostat (`-x -d -p`), uptime | as today | sys/cpu/disk samples |
 | df | `-h -T -i`, path | new fs_samples |
-| mount | (none), `-t TYPE` | mounts |
+| mount | (none), `-t TYPE` | mounts (phase 3: needs fs options and order) |
 
 ## Plan (one step at a time; report and wait after each)
 
@@ -118,12 +118,16 @@ Missing from the spec:
   recording level, `ComputeStats`).
 - Uniform `--json`: one object per row with timestamps and `exact|sampled`
   per field (`query.PrintJSON` everywhere, a provenance tag per column).
-- New renderers from existing data: `free`, `netstat`, `mount`; ps `-ef/-eo`,
+- New renderers from existing data: `free`, `netstat`; ps `-ef/-eo`,
   lsof/ps user and name filters; `events` (life/oom/mounts/gaps).
 - Verify: unit tests per parser; extend `internal/verify` and `test/truth`
   to `free`, `netstat`, `mount`, `ps -ef`; e2e on the new grammar.
 
 ### Phase 3 — clifrd recorder features (1.5–2 weeks)
+- Added during phase 2: `mount` needs the file-system (super block) options
+  and the mountinfo order, which the mounts table does not keep; netstat's
+  program name needs where argv[0] ends in the command line (processes that
+  rewrite their whole command line, such as Chrome, differ today).
 - `clifrd.yml` (yaml.v3): intervals (process, system, files, keyframe),
   collectors on/off, `cpu_budget`, `gc_heap_target`, `redact`, retention,
   max size; flags override the file.
