@@ -160,7 +160,8 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
 		"boot_time": strconv.FormatInt(btime, 10), "boot_ms": strconv.FormatInt(r.boot, 10), "clk_tck": strconv.Itoa(procfs.ClockTicks), "page_kb": strconv.Itoa(os.Getpagesize() / 1024),
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
-		"sys_interval_s": fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()), "redact_patterns": strconv.Itoa(len(redact)),
+		"flush_interval_s": fmt.Sprint(cfg.Parquet.FlushInterval.Seconds()),
+		"sys_interval_s":   fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()), "redact_patterns": strconv.Itoa(len(redact)),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
 			return nil, err

@@ -244,6 +244,10 @@ type DB struct {
 	// DataDir is set when the tables were loaded from Parquet files
 	// (internal/duck); Path is then empty.
 	DataDir string
+	// Prepare, if set, runs before every query and may rewrite it
+	// (internal/duck: load the tables it names, or count rows without
+	// loading them).
+	Prepare func(query string) (string, error)
 }
 
 // Open opens (and creates if needed) the database. readOnly is used by the

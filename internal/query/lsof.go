@@ -187,10 +187,18 @@ func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64,
 
 func sortLsof(rows []LsofRow) {
 	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].PID != rows[j].PID {
-			return rows[i].PID < rows[j].PID
+		a, b := &rows[i], &rows[j]
+		if a.PID != b.PID {
+			return a.PID < b.PID
 		}
-		return rows[i].fdNum < rows[j].fdNum // cwd(-1), rtd(-2), txt(-3) sort first
+		if a.fdNum != b.fdNum {
+			return a.fdNum < b.fdNum // cwd(-1), rtd(-2), txt(-3) sort first
+		}
+		// Over a range one fd number holds many files in turn.
+		if a.FirstSeen != b.FirstSeen {
+			return a.FirstSeen < b.FirstSeen
+		}
+		return a.Name < b.Name
 	})
 }
 

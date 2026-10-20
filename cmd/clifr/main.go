@@ -265,11 +265,18 @@ func btoi(b bool) int {
 	return 0
 }
 
-func openDB(g *globals) (*store.DB, error) {
+func openDB(g *globals) (*store.DB, error) { return openWindow(g, duck.Window{}) }
+
+// openWindow opens the recording with the TCP tables limited to w (the zero
+// Window: everything).
+func openWindow(g *globals, w duck.Window) (*store.DB, error) {
 	if g.db != "" {
 		return store.Open(g.db, true)
 	}
-	return duck.Open(g.dataDir)
+	if os.Getenv("CLIFR_FULL_LOAD") != "" { // check: the window must not change any answer
+		w = duck.Window{}
+	}
+	return duck.OpenWindow(g.dataDir, w)
 }
 
 func runTool(g *globals, words []string) error { return runToolAt(g, words, nil) }
@@ -321,7 +328,16 @@ func runToolAt(g *globals, words []string, diff []string) error {
 	if err != nil {
 		return usageError{err}
 	}
-	if c.db, err = openDB(g); err != nil {
+	var win duck.Window
+	switch {
+	case c.diffAt != nil:
+		win = duck.Window{From: c.diffAt[0], To: c.diffAt[1]}
+	case !c.w.IsRange():
+		win = duck.Window{From: c.w.At, To: c.w.At}
+	case c.w.From > 0:
+		win = duck.Window{From: c.w.From, To: c.w.To}
+	}
+	if c.db, err = openWindow(g, win); err != nil {
 		return err
 	}
 	defer c.db.Close()

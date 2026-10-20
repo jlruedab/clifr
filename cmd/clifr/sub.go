@@ -46,7 +46,7 @@ func cmdExport(db *store.DB, table string) error {
 	if !tableRe.MatchString(table) {
 		return errors.New("export: bad table name")
 	}
-	rows, err := db.DB.Query("SELECT * FROM " + table)
+	rows, err := db.Query("SELECT * FROM " + table)
 	if err != nil {
 		return err
 	}

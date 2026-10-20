@@ -170,7 +170,18 @@ func sortSS(out []SSRow) {
 		if c := x.raddr.Compare(y.raddr); c != 0 {
 			return c < 0
 		}
-		return x.RPort < y.RPort
+		if x.RPort != y.RPort {
+			return x.RPort < y.RPort
+		}
+		// Sockets bound to the same addresses (UDP multicast listeners):
+		// a fixed order, not the order the rows were loaded in.
+		if x.Inode != y.Inode {
+			return x.Inode < y.Inode
+		}
+		if len(x.Owners) > 0 && len(y.Owners) > 0 && x.Owners[0].PID != y.Owners[0].PID {
+			return x.Owners[0].PID < y.Owners[0].PID
+		}
+		return len(x.Owners) > 0 && len(y.Owners) > 0 && x.Owners[0].FD < y.Owners[0].FD
 	})
 }
 

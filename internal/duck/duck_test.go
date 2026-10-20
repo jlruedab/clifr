@@ -163,6 +163,9 @@ func TestParityWithSQLite(t *testing.T) {
 	}
 	defer dk.Close()
 	for table, cols := range compare {
+		if _, err := dk.Prepare(table); err != nil { // tables load when a query names them
+			t.Fatal(err)
+		}
 		a, b := dump(t, lite.DB, table, cols), dump(t, dk.DB, table, cols)
 		if a != b {
 			t.Errorf("%s differs\nSQLite:\n%s\nParquet:\n%s", table, a, b)

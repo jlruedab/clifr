@@ -29,6 +29,12 @@ func positional(q string, args []any) (string, []any) {
 }
 
 func (d *DB) Query(q string, args ...any) (*sql.Rows, error) {
+	if d.Prepare != nil {
+		var err error
+		if q, err = d.Prepare(q); err != nil {
+			return nil, err
+		}
+	}
 	if d.DataDir != "" {
 		q, args = positional(q, args)
 	}
@@ -36,6 +42,12 @@ func (d *DB) Query(q string, args ...any) (*sql.Rows, error) {
 }
 
 func (d *DB) QueryRow(q string, args ...any) *sql.Row {
+	if d.Prepare != nil {
+		var err error
+		if q, err = d.Prepare(q); err != nil {
+			return d.DB.QueryRow(`SELECT error(?)`, err.Error()) // the error, at Scan
+		}
+	}
 	if d.DataDir != "" {
 		q, args = positional(q, args)
 	}
