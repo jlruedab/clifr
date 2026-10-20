@@ -627,6 +627,7 @@ func (e *env) checkProcs(procs []shortProc, from, to time.Time) {
 // --- resets ---
 
 type rstTruth struct {
+	serverResets                    int // resets sent by the server's connections, from tcp_conns
 	rstPort, closedPort             int
 	serverPID, clientPID, refusePID int
 	conns                           []conn
@@ -668,7 +669,7 @@ func (e *env) runResets() rstTruth {
 func (e *env) checkResets(tr rstTruth) {
 	const sc = "resets"
 	m := newMatcher(e.connRows(tr.rstPort))
-	var want, cFound, cReset, sFound, sReset int
+	var want, cFound, cReset, sFound, sReset, sResets int
 	for _, c := range tr.conns {
 		if !c.Reset {
 			continue // the client did not see a reset (it would be the test's fault)
@@ -682,15 +683,19 @@ func (e *env) checkResets(tr rstTruth) {
 		}
 		if r := m.find(tr.rstPort, c.LPort, c); r != nil {
 			sFound++
-			if r.resetsSent == 1 && r.resetsRx == 0 {
+			// The abort's RST, and sometimes one more: a segment of the
+			// client's in flight reaches the socket after its TCP_CLOSE.
+			if r.resetsSent >= 1 && r.resetsRx == 0 {
 				sReset++
 			}
+			sResets += r.resetsSent
 		}
 	}
 	e.res.add(sc, "aborted by the server: client end found", cFound, want, "accept, then close with SO_LINGER 0; the client read ECONNRESET")
 	e.res.add(sc, "aborted by the server: client end, 1 reset received", cReset, want, "")
 	e.res.add(sc, "aborted by the server: server end found", sFound, want, "")
-	e.res.add(sc, "aborted by the server: server end, 1 reset sent", sReset, want, "")
+	e.res.add(sc, "aborted by the server: server end, reset sent", sReset, want, "at least 1 (a segment in flight after the abort gets another)")
+	tr.serverResets = sResets
 
 	var refFound, refReset int
 	for _, r := range e.connRows(tr.closedPort) {
@@ -715,7 +720,8 @@ func (e *env) checkResets(tr rstTruth) {
 		byPID[g.PID] += g.Resets
 	}
 	e.res.add(sc, "clifr ss (range): resets of the reset client", byPID[tr.clientPID], want, "")
-	e.res.add(sc, "clifr ss (range): resets of the rejecting server", byPID[tr.serverPID], want, "")
+	e.res.add(sc, "clifr ss (range): resets of the rejecting server", byPID[tr.serverPID], tr.serverResets,
+		"the per-connection total (%d connections)", want)
 	e.res.add(sc, "clifr ss (range): resets of the refused client", byPID[tr.refusePID], tr.refused, "")
 }
 

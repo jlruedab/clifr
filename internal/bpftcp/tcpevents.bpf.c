@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: GPL-2.0
 //
-// TCP connection events for sosv-record.
+// TCP connection events for clifrd.
 //
 // - sock:inet_sock_set_state: every TCP state change. SYN_SENT (connect)
 //   and LISTEN happen in the owning process, which becomes the socket's
@@ -79,6 +79,7 @@ struct sock_common {
 		};
 	};
 	unsigned short skc_family;
+	volatile unsigned char skc_state;
 	unsigned char skc_ipv6only : 1;
 	struct in6_addr skc_v6_daddr;
 	struct in6_addr skc_v6_rcv_saddr;
@@ -151,8 +152,8 @@ struct sys_exit_args {
 // ---- events ----
 
 enum kind { EV_STATE = 1, EV_ACCEPT = 2, EV_ACCEPT_FD = 3, EV_APP_CLOSE = 4, EV_TIME_WAIT = 5, EV_ACTIVE_RESET = 6,
-	EV_TW_END = 7 };
-#define NKINDS 8
+	EV_TW_END = 7, EV_LATE_COUNT = 8 };
+#define NKINDS 9
 
 struct owner {
 	__u32 pid; // process (tgid); 0: unknown
@@ -309,6 +310,8 @@ static __always_inline int state_event(void *ctx, struct tcp_event *e)
 		e->owner = *o;
 	else
 		e->owner.fd = -1;
+	if (e->oldstate == TCP_CLOSE) // a new connection: no count of another before it
+		bpf_map_delete_elem(&counters, &e->sk);
 	if (e->newstate == TCP_CLOSE) {
 		struct counters *c = bpf_map_lookup_elem(&counters, &e->sk);
 		if (c) {
@@ -607,7 +610,7 @@ int BPF_KPROBE(handle_active_reset_kprobe, void *sk)
 	return active_reset(ctx, (__u64)sk);
 }
 
-static __always_inline void count(const void *skaddr, int field)
+static __always_inline void count(void *ctx, const void *skaddr, int field)
 {
 	__u64 sk = (__u64)skaddr;
 	if (!sk) {
@@ -615,6 +618,25 @@ static __always_inline void count(const void *skaddr, int field)
 		__u64 *n = bpf_map_lookup_elem(&nosock_resets, &zero);
 		if (n && field == 1)
 			__sync_fetch_and_add(n, 1);
+		return;
+	}
+	// After its TCP_CLOSE (whose event took the counters) a socket can
+	// still send an RST, e.g. to a segment in flight after an abort. In the
+	// map it would be counted for the next connection at this address:
+	// report it on its own instead.
+	if (BPF_CORE_READ((struct sock *)skaddr, __sk_common.skc_state) == TCP_CLOSE) {
+		struct tcp_event e = {};
+		e.kind = EV_LATE_COUNT;
+		e.mono_ns = bpf_ktime_get_ns();
+		e.sk = sk;
+		e.owner.fd = -1;
+		if (field == 0)
+			e.counters.retransmits = 1;
+		else if (field == 1)
+			e.counters.resets_sent = 1;
+		else
+			e.counters.resets_received = 1;
+		send(ctx, &e);
 		return;
 	}
 	struct counters *c = bpf_map_lookup_elem(&counters, &sk);
@@ -634,7 +656,7 @@ static __always_inline void count(const void *skaddr, int field)
 }
 
 SEC("tracepoint/tcp/tcp_retransmit_skb")
-int handle_retransmit(struct sk_skb_args *ctx) { count(ctx->skaddr, 0); return 0; }
+int handle_retransmit(struct sk_skb_args *ctx) { count(ctx, ctx->skaddr, 0); return 0; }
 SEC("tracepoint/tcp/tcp_send_reset")
 int handle_send_reset(struct sk_skb_args *ctx)
 {
@@ -643,10 +665,10 @@ int handle_send_reset(struct sk_skb_args *ctx)
 	// would leave a count behind for the next socket at this address.
 	if (ctx->skaddr && !ctx->skbaddr)
 		return 0;
-	count(ctx->skaddr, 1);
+	count(ctx, ctx->skaddr, 1);
 	return 0;
 }
 SEC("tracepoint/tcp/tcp_receive_reset")
-int handle_receive_reset(struct sk_args *ctx) { count(ctx->skaddr, 2); return 0; }
+int handle_receive_reset(struct sk_args *ctx) { count(ctx, ctx->skaddr, 2); return 0; }
 
 char LICENSE[] SEC("license") = "GPL";

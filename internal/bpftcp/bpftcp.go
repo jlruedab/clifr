@@ -33,16 +33,17 @@ const (
 	TimeWaitStart Kind = 5 // continues as a time-wait socket in state New (TimeWait or FinWait2)
 	ActiveReset   Kind = 6 // sent an RST on abort (after its TCP_CLOSE)
 	TimeWaitEnd   Kind = 7 // a time-wait socket went away (addresses in the event)
+	LateCount     Kind = 8 // a reset or retransmit of a socket already in TCP_CLOSE (counts in the event)
 )
 
 func (k Kind) String() string {
-	if k >= State && k <= TimeWaitEnd {
-		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset", "time_wait_end"}[k]
+	if k >= State && k <= LateCount {
+		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset", "time_wait_end", "late_count"}[k]
 	}
 	return "unknown"
 }
 
-var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset, TimeWaitEnd}
+var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset, TimeWaitEnd, LateCount}
 
 // TCP states, as the kernel numbers them.
 const (
@@ -423,6 +424,18 @@ func (s *Source) MissedRuns() (n uint64) {
 		}
 	}
 	return n - min(n, s.StateRescued())
+}
+
+// MissedByProgram is the recursion misses per program (state programs
+// before the second one's rescues): which hook loses, for diagnosis.
+func (s *Source) MissedByProgram() map[string]uint64 {
+	out := map[string]uint64{}
+	for name, p := range s.coll.Programs {
+		if st, err := p.Stats(); err == nil && st.RecursionMisses > 0 {
+			out[name] = st.RecursionMisses
+		}
+	}
+	return out
 }
 
 // StateRescued counts the state changes reported by the second state program.

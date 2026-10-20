@@ -197,3 +197,113 @@ func TestReconciledClose(t *testing.T) {
 		t.Errorf("reconciled connection not written closed: %+v", b.TCPConns)
 	}
 }
+
+// A reset counted after a connection's TCP_CLOSE belongs to it, not to the
+// next connection at the same sock pointer.
+func TestLateCount(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	r.tcp.queue = []bpftcp.Event{
+		tcpEvent(7, 10, 3, "127.0.0.2", 80, "127.0.0.1", 40000),
+		tcpEvent(7, 3, 1, "127.0.0.2", 80, "127.0.0.1", 40000),
+		tcpEvent(7, 1, 7, "127.0.0.2", 80, "127.0.0.1", 40000),
+		{Kind: bpftcp.ActiveReset, SK: 7},
+		{Kind: bpftcp.LateCount, SK: 7, ResetsSent: 1},
+		tcpEvent(7, 10, 3, "127.0.0.2", 80, "127.0.0.1", 40001), // the pointer reused
+		tcpEvent(7, 3, 1, "127.0.0.2", 80, "127.0.0.1", 40001),
+	}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	for _, c := range b.TCPConns {
+		switch {
+		case c.RPort == 40000 && c.ResetsSent != 2:
+			t.Errorf("aborted connection: %d resets sent, want 2", c.ResetsSent)
+		case c.RPort == 40001 && c.ResetsSent != 0:
+			t.Errorf("next connection at the pointer: %d resets sent, want 0", c.ResetsSent)
+		}
+	}
+	if len(b.TCPConns) != 2 {
+		t.Errorf("want 2 connections, got %d", len(b.TCPConns))
+	}
+}
+
+// A listener first seen in a keyframe, then closed: the close event (from
+// a sock pointer the tracker has not seen) must close it.
+func TestKeyframeListenerClose(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	tr := r.tcp
+	tr.pendingDump = []sockdiag.Socket{{Proto: "tcp", Family: 4, State: bpftcp.Listen, LAddr: netip.MustParseAddr("0.0.0.0"), LPort: 1739,
+		RAddr: netip.MustParseAddr("0.0.0.0"), Inode: 99}}
+	tr.dumpStart = 1000
+	var b store.Batch
+	r.applyTCP(&b)
+	r.keyframe(&b)
+	r.flushTCP(1000, &b)
+	tr.queue = []bpftcp.Event{tcpEvent(9, bpftcp.Listen, bpftcp.Close, "0.0.0.0", 1739, "0.0.0.0", 0)}
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.flushTCP(2000, &b)
+	closed := 0
+	for _, c := range b.TCPConns {
+		if c.Source == store.SrcKeyframe && c.CloseTS != 0 {
+			closed++
+		}
+	}
+	if closed != 1 || len(b.TCPConns) != 1 {
+		t.Errorf("the listener from the keyframe was not closed by its close event: %+v", b.TCPConns)
+	}
+}
+
+// A connection in a later keyframe whose connect event is applied only in
+// the next sample (it came just before the dump): one connection, not
+// counted as missed by the events.
+func TestDeferredDumpRow(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	tr := r.tcp
+	tr.keyframes = 1 // not the initial keyframe
+	tr.pendingDump = []sockdiag.Socket{{Proto: "tcp", Family: 4, State: bpftcp.SynSent, LAddr: netip.MustParseAddr("127.0.0.1"),
+		LPort: 40000, RAddr: netip.MustParseAddr("127.0.0.2"), RPort: 443, Inode: 77}}
+	tr.dumpStart = 1000
+	var b store.Batch
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.keyframe(&b)
+	r.flushTCP(1000, &b)
+	if len(b.Reconcile) != 0 || len(tr.deferred) != 1 {
+		t.Fatalf("the row should wait: %d reconcile rows, %d deferred", len(b.Reconcile), len(tr.deferred))
+	}
+	tr.queue = []bpftcp.Event{tcpEvent(5, bpftcp.Close, bpftcp.SynSent, "127.0.0.1", 40000, "127.0.0.2", 443)}
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.flushTCP(2000, &b)
+	if len(b.Reconcile) != 1 || b.Reconcile[0].MissingFromEvents != 0 {
+		t.Errorf("reconcile: %+v", b.Reconcile)
+	}
+	if len(b.TCPConns) != 1 || b.TCPConns[0].Source != store.SrcEBPF {
+		t.Errorf("want one connection from the event, got %+v", b.TCPConns)
+	}
+	if len(b.Keyframes) != 1 || b.Keyframes[0].ConnID != b.TCPConns[0].ID {
+		t.Errorf("keyframe row not linked to the connection: %+v", b.Keyframes)
+	}
+	// Still unknown after the next sample: adopted from the dump, counted.
+	tr.keyframes = 2
+	tr.pendingDump = []sockdiag.Socket{{Proto: "tcp", Family: 4, State: 1, LAddr: netip.MustParseAddr("127.0.0.1"),
+		LPort: 40001, RAddr: netip.MustParseAddr("127.0.0.2"), RPort: 443, Inode: 78}}
+	tr.dumpStart = 3000
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.keyframe(&b)
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	if len(b.Reconcile) != 1 || b.Reconcile[0].MissingFromEvents != 1 {
+		t.Errorf("unexplained row: reconcile %+v", b.Reconcile)
+	}
+}

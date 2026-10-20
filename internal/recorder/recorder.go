@@ -473,11 +473,13 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	if r.tcp != nil {
 		t1 := time.Now()
 		r.applyTCP(&b)
+		r.resolveDeferred(&b) // the last keyframe's rows the events had not explained yet
 		if keyframe {
 			r.keyframe(&b)
 		}
 		r.flushTCP(ts, &b)
 		b.Stats = append(b.Stats, r.tcp.stats(ts)...)
+		b.Guard = append(b.Guard, r.tcp.missedGuard(ts)...)
 		durSock += time.Since(t1)
 	}
 	r.sweepOwners(ts, &b)

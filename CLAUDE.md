@@ -93,7 +93,14 @@ wait for the user's go-ahead.
   `tcp_missed_runs` / `ebpf_missed_runs` (dropped). OOM, the syscall fd hooks and the
   reset/retransmit counters are still classic tracepoints.
 - `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
-  there, `EV_ACTIVE_RESET` reports them.
+  there, `EV_ACTIVE_RESET` reports them. A reset or retransmit counted on a socket already in
+  TCP_CLOSE (e.g. an RST to a segment in flight after an abort) is an `EV_LATE_COUNT` event,
+  added to the connection just closed at that pointer (in the counters map it would go to the
+  next connection there); a state change from TCP_CLOSE clears the pointer's counters.
+- Keyframes: a TCP row of a later keyframe that no event explains waits one sample
+  (`resolveDeferred`): an event that fired just before the dump may not be applied yet. A socket
+  adopted from a keyframe takes its first event by its addresses, a listener's own close too.
+  `tcp_missed_runs` guard events name the programs the kernel skipped.
 - Open files (`meta fds`): "held" (v2, `fds_held`): an fd is stored at the second consecutive
   walk of its process that sees it (first_seen = the first), deleted files at once; inet
   socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read

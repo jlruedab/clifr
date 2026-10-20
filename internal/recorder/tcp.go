@@ -2,8 +2,10 @@ package recorder
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,7 +69,10 @@ type holder struct {
 }
 
 type tcpTracker struct {
-	src *bpftcp.Source
+	src            *bpftcp.Source
+	deferred       []deferredRow       // keyframe rows to decide after the next sample's events
+	pendingRec     *store.ReconcileRow // their keyframe's comparison, written then
+	missedReported uint64              // recursion misses already reported as a guard event
 
 	mu       sync.Mutex
 	queue    []bpftcp.Event
@@ -191,6 +196,25 @@ func (t *tcpTracker) take() []bpftcp.Event {
 	return q
 }
 
+// missedGuard reports, when the count grew, which programs the kernel
+// skipped (a BPF program already running on that CPU) and how often since
+// the start; the state programs' counts include misses the second one
+// reported anyway.
+func (t *tcpTracker) missedGuard(ts int64) []store.GuardEvent {
+	n := t.src.MissedRuns()
+	if n <= t.missedReported {
+		return nil
+	}
+	t.missedReported = n
+	var parts []string
+	for name, m := range t.src.MissedByProgram() {
+		parts = append(parts, fmt.Sprintf("%s %d", name, m))
+	}
+	sort.Strings(parts)
+	return []store.GuardEvent{{TS: ts, Kind: "tcp_missed_runs",
+		Detail: fmt.Sprintf("%d runs of TCP programs not taken by the kernel: %s", n, strings.Join(parts, ", "))}}
+}
+
 func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	drops := map[string]int64{}
 	for k, n := range t.src.Drops() {
@@ -201,6 +225,7 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	if n := t.src.MissedRuns(); n > 0 {
 		drops["tcp_missed_runs"] = int64(n)
 	}
+
 	progs := t.src.ProgStats()
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -381,6 +406,16 @@ func (r *Recorder) drainTCP() {
 				add16(&c.row.ResetsSent, 1)
 				c.dirty = true
 			}
+		case bpftcp.LateCount: // counted after its TCP_CLOSE: the connection just closed there
+			if c == nil {
+				c = t.recentClosed[e.SK]
+			}
+			if c != nil {
+				c.row.Retransmits += e.Retransmits
+				add16(&c.row.ResetsSent, e.ResetsSent)
+				add16(&c.row.ResetsReceived, e.ResetsReceived)
+				c.dirty = true
+			}
 		}
 	}
 }
@@ -408,7 +443,10 @@ func (t *tcpTracker) finish(c *tconn, sk uint64, ts int64, final int) {
 // or one first seen in a keyframe (matched by its addresses).
 func (t *tcpTracker) adopt(r *Recorder, e bpftcp.Event, ts int64) *tconn {
 	tp := eventTuple(&e)
-	if c := t.unattached[tp]; c != nil && e.Old != bpftcp.Close && e.Old != bpftcp.Listen {
+	// A socket the keyframe adopted (known by its addresses only) takes its
+	// first event: not a new socket (from TCP_CLOSE) nor a listener's child
+	// (LISTEN to SYN_RECV), but a listener's own close (LISTEN to TCP_CLOSE).
+	if c := t.unattached[tp]; c != nil && e.Old != bpftcp.Close && (e.Old != bpftcp.Listen || e.New == bpftcp.Close) {
 		delete(t.unattached, tp)
 		c.sk = e.SK
 		t.conns[e.SK] = c
@@ -466,6 +504,51 @@ func (t *tcpTracker) isInetInode(ino uint64) bool {
 // keyframe writes the dump, reconciles it with the event state, adopts
 // what events missed and closes what the dump no longer has. Connections
 // with events since the dump started are left out of the comparison: the
+// dumpRow applies one TCP row of a keyframe dump: c is the connection the
+// events know at its addresses, or nil (then one is adopted from the dump).
+func (t *tcpTracker) dumpRow(r *Recorder, b *store.Batch, s sockdiag.Socket, kf store.KeyframeRow, tp tuple, c *tconn, start int64) {
+	if c == nil {
+		c = t.newConn(r, start, store.SrcKeyframe)
+		c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = kf.Family, kf.LAddr, kf.LPort, kf.RAddr, kf.RPort
+		c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, kf.State, s.State, store.NameOf(ifName(s.IfIndex))
+		c.row.V6Only = s.V6Only
+		if s.State == bpftcp.Listen {
+			c.row.Direction = store.DirListen
+		}
+		if s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2 && s.Inode == 0 {
+			// A time-wait socket: its connection closed before this run
+			// (or its close was missed).
+			// sock_diag reports how long it still has (idiag_expires).
+			until := start + int64(s.Expires)
+			c.row.CloseTS, c.row.FinalState, c.row.LingerState, c.row.LingerUntil = start, kf.State, kf.State, until
+			t.lingering[tp] = c
+		} else {
+			t.unattached[tp] = c
+			if s.Inode != 0 {
+				t.byInode[s.Inode] = c
+			}
+		}
+		c.dirty = true
+	}
+	if c.row.CloseTS != 0 && !c.lingerDone && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
+		// Still a time-wait socket: the kernel says how long it has left
+		// (a FIN_WAIT2 one restarts as TIME_WAIT when the peer's FIN comes).
+		until := start + int64(s.Expires)
+		if c.row.LingerUntil == 0 || until > c.row.LingerUntil || c.row.LingerState != kf.State {
+			c.row.LingerState, c.row.LingerUntil, c.dirty = kf.State, until, true
+			t.lingering[tp] = c
+		}
+	}
+	if c.row.PID == 0 && kf.PID != 0 {
+		c.row.PID, c.row.StartTime, c.row.FD, c.dirty = kf.PID, kf.StartTime, kf.FD, true
+	}
+	kf.ConnID = c.row.ID
+	if kf.PID == 0 && c.row.PID != 0 && c.row.OwnerUntil == 0 {
+		kf.PID, kf.StartTime, kf.FD = c.row.PID, c.row.StartTime, c.row.FD
+	}
+	b.Keyframes = append(b.Keyframes, kf)
+}
+
 // dump is not atomic.
 func (r *Recorder) keyframe(b *store.Batch) {
 	t := r.tcp
@@ -519,49 +602,14 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			// First seen through an event after the dump, but it was already open.
 			c.row.OpenTS, c.dirty = start, true
 		}
-		if c == nil {
-			if !initial {
-				rec.MissingFromEvents++
-			}
-			c = t.newConn(r, start, store.SrcKeyframe)
-			c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = kf.Family, kf.LAddr, kf.LPort, kf.RAddr, kf.RPort
-			c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, kf.State, s.State, store.NameOf(ifName(s.IfIndex))
-			c.row.V6Only = s.V6Only
-			if s.State == bpftcp.Listen {
-				c.row.Direction = store.DirListen
-			}
-			if s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2 && s.Inode == 0 {
-				// A time-wait socket: its connection closed before this run
-				// (or its close was missed).
-				// sock_diag reports how long it still has (idiag_expires).
-				until := start + int64(s.Expires)
-				c.row.CloseTS, c.row.FinalState, c.row.LingerState, c.row.LingerUntil = start, kf.State, kf.State, until
-				t.lingering[tp] = c
-			} else {
-				t.unattached[tp] = c
-				if s.Inode != 0 {
-					t.byInode[s.Inode] = c
-				}
-			}
-			c.dirty = true
+		if c == nil && !initial {
+			// Not known to the events yet: its connect or accept may have
+			// come just before the dump, its event still on its way. Decided
+			// after the next sample's events (resolveDeferred).
+			t.deferred = append(t.deferred, deferredRow{s, kf, tp, start})
+			continue
 		}
-		if c.row.CloseTS != 0 && !c.lingerDone && s.Inode == 0 && (s.State == bpftcp.TimeWait || s.State == bpftcp.FinWait2) {
-			// Still a time-wait socket: the kernel says how long it has left
-			// (a FIN_WAIT2 one restarts as TIME_WAIT when the peer's FIN comes).
-			until := start + int64(s.Expires)
-			if c.row.LingerUntil == 0 || until > c.row.LingerUntil || c.row.LingerState != kf.State {
-				c.row.LingerState, c.row.LingerUntil, c.dirty = kf.State, until, true
-				t.lingering[tp] = c
-			}
-		}
-		if c.row.PID == 0 && kf.PID != 0 {
-			c.row.PID, c.row.StartTime, c.row.FD, c.dirty = kf.PID, kf.StartTime, kf.FD, true
-		}
-		kf.ConnID = c.row.ID
-		if kf.PID == 0 && c.row.PID != 0 && c.row.OwnerUntil == 0 {
-			kf.PID, kf.StartTime, kf.FD = c.row.PID, c.row.StartTime, c.row.FD
-		}
-		b.Keyframes = append(b.Keyframes, kf)
+		t.dumpRow(r, b, s, kf, tp, c, start)
 	}
 	// Open in events but gone from the dump: their close was missed.
 	for tp, c := range open {
@@ -581,7 +629,58 @@ func (r *Recorder) keyframe(b *store.Batch) {
 		b.Guard = append(b.Guard, store.GuardEvent{TS: start, Kind: "tcp_reconciled",
 			Detail: "connection open in events but not in the keyframe: " + c.text()})
 	}
+	if len(t.deferred) > 0 {
+		t.pendingRec = &rec // written when the deferred rows are decided
+		return
+	}
 	b.Reconcile = append(b.Reconcile, rec)
+}
+
+// deferredRow is a dump row no event explained when the keyframe was read.
+type deferredRow struct {
+	s     sockdiag.Socket
+	kf    store.KeyframeRow
+	tp    tuple
+	start int64
+}
+
+// resolveDeferred decides the dump rows the events did not know at the
+// keyframe, now that the events of the next sample are applied: matched by
+// their addresses, or adopted from the dump and counted as missed by the
+// events.
+func (r *Recorder) resolveDeferred(b *store.Batch) {
+	t := r.tcp
+	if len(t.deferred) == 0 {
+		return
+	}
+	known := map[tuple]*tconn{}
+	for _, c := range t.recentClosed {
+		known[c.tuple()] = c
+	}
+	for _, c := range t.closedNow {
+		known[c.tuple()] = c
+	}
+	for tp, c := range t.lingering {
+		known[tp] = c
+	}
+	for tp, c := range t.unattached {
+		known[tp] = c
+	}
+	for _, c := range t.conns {
+		known[c.tuple()] = c
+	}
+	for _, d := range t.deferred {
+		c := known[d.tp]
+		if c == nil && t.pendingRec != nil {
+			t.pendingRec.MissingFromEvents++
+		}
+		t.dumpRow(r, b, d.s, d.kf, d.tp, c, d.start)
+	}
+	t.deferred = nil
+	if t.pendingRec != nil {
+		b.Reconcile = append(b.Reconcile, *t.pendingRec)
+		t.pendingRec = nil
+	}
 }
 
 // flushTCP writes the connections that changed, and forgets time-wait
@@ -651,6 +750,7 @@ func (r *Recorder) flushTCP(ts int64, b *store.Batch) {
 
 // closeAllTCP ends every open connection at shutdown (seen until ts).
 func (r *Recorder) closeAllTCP(ts int64, b *store.Batch) {
+	r.resolveDeferred(b)
 	t := r.tcp
 	for _, c := range t.conns {
 		c.row.LastSeen = ts
