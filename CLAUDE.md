@@ -67,6 +67,9 @@ wait for the user's go-ahead.
 - `internal/verify/` — compare saved real tool output with reconstructions.
 - `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
   `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
+- `packaging/` — `build.sh` (.deb/.rpm of clifr and clifrd into `dist/`; clifr built in a
+  Rocky 8 container for glibc 2.28), `test.sh` (install test in containers), man pages from
+  the help texts (`genman.sh`), bash completion (clifr's checked by `TestCompletion`).
 - `deploy/` — systemd unit. `bench/` — load generator, benchmark runner, report. `test/e2e/` — end-to-end test.
 - `test/truth/` — ground-truth test (found/expected per check; `truthproc/` is its helper binary).
 

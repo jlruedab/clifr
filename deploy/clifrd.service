@@ -1,7 +1,7 @@
 # clifr flight recorder.
 #
-# Install:
-#   install -m 0755 clifrd clifr /usr/local/sbin/
+# Installed by the clifrd package (.deb/.rpm, see packaging/). By hand:
+#   install -m 0755 clifrd /usr/sbin/ && install -m 0755 clifr /usr/bin/
 #   install -D -m 0644 deploy/clifr-sysusers.conf /usr/lib/sysusers.d/clifr.conf && systemd-sysusers
 #   (the clifr group: its members can read the recording with clifr, without root)
 #   install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml   (the settings)
@@ -14,13 +14,13 @@
 
 [Unit]
 Description=clifr flight recorder (processes, sockets, open files, system counters)
-Documentation=file:///usr/local/share/doc/clifr/README.md
+Documentation=man:clifrd(8) man:clifr(1)
 After=local-fs.target
 
 [Service]
 Type=simple
 # Settings in /etc/clifr/clifrd.yml; a flag here would override the file.
-ExecStart=/usr/local/sbin/clifrd
+ExecStart=/usr/sbin/clifrd
 Restart=on-failure
 RestartSec=30s
 # The recording holds every user's command lines: root and the clifr group

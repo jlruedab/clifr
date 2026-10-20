@@ -1,0 +1,43 @@
+# bash completion for clifrd (packaging/completion/clifrd.bash)
+
+_clifrd() {
+	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
+	local opts="--config -C --data-dir -D --log-level --version -v --interval
+		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
+		--budget-window --verify-every --flush-interval --flush-rows --retention
+		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target
+		--max-size --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
+		--ebpf-classic-fork --ebpf-kprobes --proc-root --db"
+	local bundle="--data-dir -D --last --since --until -o --output"
+	COMPREPLY=()
+	case $prev in
+	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --db)
+		COMPREPLY=($(compgen -f -- "$cur"))
+		return
+		;;
+	--log-level)
+		COMPREPLY=($(compgen -W "error warn info debug" -- "$cur"))
+		return
+		;;
+	--events)
+		COMPREPLY=($(compgen -W "auto ebpf proc_connector none" -- "$cur"))
+		return
+		;;
+	--tcp)
+		COMPREPLY=($(compgen -W "auto ebpf sample" -- "$cur"))
+		return
+		;;
+	--fd-mode)
+		COMPREPLY=($(compgen -W "held all" -- "$cur"))
+		return
+		;;
+	esac
+	if [[ " ${COMP_WORDS[*]:1:COMP_CWORD-1} " == *" bundle "* ]]; then
+		COMPREPLY=($(compgen -W "$bundle" -- "$cur"))
+	elif [[ $cur == -* ]]; then
+		COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+	elif ((COMP_CWORD == 1)); then
+		COMPREPLY=($(compgen -W "doctor bundle" -- "$cur"))
+	fi
+}
+complete -F _clifrd clifrd

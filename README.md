@@ -69,6 +69,20 @@ Two binaries, Go 1.25 or newer (go.mod pins toolchain go1.26.8, which an older
 The recorder runs on the recorded server. The CLI may run anywhere the data
 directory is readable or copied to.
 
+Packages (x86_64): `packaging/build.sh` (needs docker; `DOCKER="sudo docker"`
+if only root may use it) writes `clifr` and `clifrd` as .deb and .rpm into
+`dist/`. clifr is built in a Rocky Linux 8 container with gcc-toolset-13, so
+it needs only glibc 2.28 (built here it would need this machine's 2.43);
+clifrd is static. The packages carry the man pages (generated from the
+help texts), bash completion, the unit, the sysusers file, `/etc/clifr/clifrd.yml`
+and the sos plugin. `packaging/test.sh [BUNDLE]` installs them with sos in
+Ubuntu 22.04 and 24.04 and Rocky Linux 8 and 9 containers and checks them
+(versions, files, the clifr group, the sos plugin, `clifrd doctor` on this
+kernel, a query of BUNDLE, removal); the service itself is not run there.
+The .deb enables and starts clifrd on install (Debian's convention), the
+.rpm does not (presets: `systemctl enable --now clifrd`); purging the .deb
+deletes the recording. License field: to be decided.
+
 Kernel: Linux with BTF at `/sys/kernel/btf/vmlinux` (RHEL 8.2+/9, Ubuntu
 22.04+). The eBPF objects are committed and load unchanged on any such kernel
 (CO-RE); clang is needed only after editing a `.bpf.c` file
@@ -164,7 +178,8 @@ CPUQuota=5%, MemoryMax=768M, a read-only filesystem except its state
 directory and only the capabilities it needs (listed in the unit; kernels
 before 5.8 need CAP_SYS_ADMIN for eBPF):
 
-    sudo install -m 0755 clifrd clifr /usr/local/sbin/
+    # or install the clifrd and clifr packages (see Build), then only the last two lines
+    sudo install -m 0755 clifrd /usr/sbin/ && sudo install -m 0755 clifr /usr/bin/
     sudo install -D -m 0644 deploy/clifrd.yml /etc/clifr/clifrd.yml
     sudo install -D -m 0644 deploy/clifr-sysusers.conf /usr/lib/sysusers.d/clifr.conf && sudo systemd-sysusers
     sudo install -m 0644 deploy/clifrd.service /etc/systemd/system/

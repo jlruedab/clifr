@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+	systemd-sysusers clifr.conf || true
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+		if [ -z "$2" ]; then
+			# First install: record from now on (Debian's convention for services).
+			systemctl enable --now clifrd.service || true
+		else
+			systemctl try-restart clifrd.service || true
+		fi
+	fi
+fi

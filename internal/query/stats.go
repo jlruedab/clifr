@@ -262,7 +262,9 @@ func PrintStats(w io.Writer, s *Stats) {
 	}
 	fmt.Fprintf(w, "Host:             %s, machine-id %s, boot %s, time zone %s\n", orDash(h.Hostname), orDash(h.MachineID), orDash(h.BootID), orDash(h.TimeZone))
 	fmt.Fprintf(w, "Recorded by:      clifrd %s, schema %s\n", orDash(h.Recorder), h.Schema)
-	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS(s.FromMS), FormatMS(s.ToMS), span.Round(time.Second))
+	// The first second shown is one with a sample at or before it: a query
+	// at the time printed finds data.
+	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS((s.FromMS+999)/1000*1000), FormatMS(s.ToMS), span.Round(time.Second))
 	fmt.Fprintf(w, "Samples:          %d (%d with full fd walk), skipped: %d\n", s.Samples, s.FDWalks, s.Skipped)
 	fmt.Fprintf(w, "Seen per sample:  %.0f processes, %.0f sockets, %.0f fds per walk\n", s.AvgProcs, s.AvgSockets, s.AvgFDs)
 	fmt.Fprintf(w, "DB size:          %s on disk incl. WAL (est. %s/day from logical growth while recording)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))

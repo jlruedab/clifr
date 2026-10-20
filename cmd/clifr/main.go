@@ -201,7 +201,13 @@ func checkLater(g *globals) error {
 	return nil
 }
 
+// releaseVersion is set by the packages' build (-ldflags -X main.releaseVersion=...).
+var releaseVersion string
+
 func version() string {
+	if releaseVersion != "" {
+		return releaseVersion
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		rev, dirty := "", ""
 		for _, s := range bi.Settings {
