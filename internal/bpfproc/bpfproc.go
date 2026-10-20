@@ -141,6 +141,9 @@ func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
 		return nil, err
 	}
 	btfProgs := []string{"handle_exec_btf2", "handle_exec_btf", "handle_exit_btf2", "handle_exit_btf", "handle_fork_btf"}
+	if !btfFork {
+		delete(spec.Programs, "handle_kill_btf")
+	}
 	if btfFork {
 		for _, p := range []string{"handle_fork_tp", "handle_exec", "handle_exit"} {
 			delete(spec.Programs, p)
@@ -188,6 +191,12 @@ func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
 		}
 	}
 	s.OOM = attach("oom", "mark_victim", "handle_oom") == nil // optional
+	if s.OOM && btfFork {
+		// The victim's RSS where the OOM tracepoint lacks it (before 6.x).
+		if l, err := link.AttachTracing(link.TracingOptions{Program: coll.Programs["handle_kill_btf"]}); err == nil {
+			s.links = append(s.links, l)
+		}
+	}
 	if perfBuf {
 		size := o.BufferBytes
 		if size <= 0 {
@@ -351,7 +360,10 @@ func (s *Source) ProgStats() map[string][2]uint64 {
 
 const eventSize = int(unsafe.Sizeof(procRBEvent{}))
 
-const flagTTY = 1 // FLAG_TTY in procevents.bpf.c
+const (
+	flagTTY      = 1 // FLAG_TTY in procevents.bpf.c
+	flagRSSPages = 2 // FLAG_RSS_PAGES
+)
 
 // decode copies the raw event into the generated struct (host layout, the
 // same bytes the kernel side wrote); no reflection. Fork, exit and OOM
@@ -362,6 +374,9 @@ func decode(raw []byte) (Event, error) {
 	e := Event{Kind: Kind(r.Kind), PID: int(r.Pid), PPID: int(r.Ppid), UID: int(r.Uid), MonoNS: r.MonoNs,
 		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb,
 		HaveTTY: r.Flags&flagTTY != 0, TTY: int(r.TtyNr), SID: int(r.Sid), PGRP: int(r.Pgrp)}
+	if r.Flags&flagRSSPages != 0 {
+		e.RSSKB = r.RssKb * uint64(os.Getpagesize()/1024)
+	}
 	if e.Kind == Exec {
 		e.Filename = cstr(r.Filename[:])
 		n := min(int(r.ArgsLen), ArgsMax)

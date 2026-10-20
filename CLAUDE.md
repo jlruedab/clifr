@@ -107,6 +107,9 @@ wait for the user's go-ahead.
   fields move by 8), and the tcp record types are named per kernel (`bpf_core_type_exists`).
   Classic tracepoint records with relocated offsets are read with probe reads (the verifier
   refuses dereferencing a moved ctx pointer). RHEL 8 has cgroup v1 by default.
+  OOM RSS where `mark_victim` lacks it (before 6.x): `tp_btf/signal_generate` stores the RSS
+  (pages, `mm->rss_stat` in both layouts) of a kernel-sent SIGKILL's target, sent just before
+  the victim is marked; `FLAG_RSS_PAGES`, converted with the page size in Go.
 - `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
   there, `EV_ACTIVE_RESET` reports them. A reset or retransmit counted on a socket already in
   TCP_CLOSE (e.g. an RST to a segment in flight after an abort) is an `EV_LATE_COUNT` event,

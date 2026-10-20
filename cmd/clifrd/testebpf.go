@@ -137,7 +137,12 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 		got = wait(pid, bpfproc.OOM, bpfproc.Exit)
 		o, e := got[bpfproc.OOM], got[bpfproc.Exit]
 		_, sig = e.ExitStatus()
-		check("oom kill: victim and its RSS", o.Kind == bpfproc.OOM, fmt.Sprintf("pid %d, RSS %d kB (0: kernel lacks the field)", o.PID, o.RSSKB))
+		// The hog is killed near its 48M limit. The RSS comes from the
+		// tracepoint (Linux 6.x) or from the SIGKILL just before (tp_btf);
+		// only the classic programs on an older kernel have none.
+		rssOK := o.RSSKB >= 30<<10 && o.RSSKB <= 64<<10 || o.RSSKB == 0 && src.Fork != "tp_btf"
+		check("oom kill: victim and its RSS", o.Kind == bpfproc.OOM && rssOK,
+			fmt.Sprintf("pid %d, RSS %d kB (0: not known with classic tracepoints before Linux 6.x)", o.PID, o.RSSKB))
 		check("oom kill: exit by SIGKILL", sig == int(syscall.SIGKILL), fmt.Sprintf("signal %d", sig))
 	}
 	fmt.Printf("drops: %v\n", src.Drops())

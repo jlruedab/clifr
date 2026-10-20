@@ -40,6 +40,7 @@ const (
 	procRBMapBusy            = "busy"
 	procRBMapDrops           = "drops"
 	procRBMapEvents          = "events"
+	procRBMapKillRss         = "kill_rss"
 	procRBMapScratch         = "scratch"
 	procRBProgHandleExec     = "handle_exec"
 	procRBProgHandleExecBtf  = "handle_exec_btf"
@@ -49,6 +50,7 @@ const (
 	procRBProgHandleExitBtf2 = "handle_exit_btf2"
 	procRBProgHandleForkBtf  = "handle_fork_btf"
 	procRBProgHandleForkTp   = "handle_fork_tp"
+	procRBProgHandleKillBtf  = "handle_kill_btf"
 	procRBProgHandleOom      = "handle_oom"
 )
 
@@ -102,6 +104,7 @@ type procRBProgramSpecs struct {
 	HandleExitBtf2 *ebpf.ProgramSpec `ebpf:"handle_exit_btf2"`
 	HandleForkBtf  *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
 	HandleForkTp   *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
+	HandleKillBtf  *ebpf.ProgramSpec `ebpf:"handle_kill_btf"`
 	HandleOom      *ebpf.ProgramSpec `ebpf:"handle_oom"`
 }
 
@@ -112,6 +115,7 @@ type procRBMapSpecs struct {
 	Busy    *ebpf.MapSpec `ebpf:"busy"`
 	Drops   *ebpf.MapSpec `ebpf:"drops"`
 	Events  *ebpf.MapSpec `ebpf:"events"`
+	KillRss *ebpf.MapSpec `ebpf:"kill_rss"`
 	Scratch *ebpf.MapSpec `ebpf:"scratch"`
 }
 
@@ -144,6 +148,7 @@ type procRBMaps struct {
 	Busy    *ebpf.Map `ebpf:"busy"`
 	Drops   *ebpf.Map `ebpf:"drops"`
 	Events  *ebpf.Map `ebpf:"events"`
+	KillRss *ebpf.Map `ebpf:"kill_rss"`
 	Scratch *ebpf.Map `ebpf:"scratch"`
 }
 
@@ -152,6 +157,7 @@ func (m *procRBMaps) Close() error {
 		m.Busy,
 		m.Drops,
 		m.Events,
+		m.KillRss,
 		m.Scratch,
 	)
 }
@@ -174,6 +180,7 @@ type procRBPrograms struct {
 	HandleExitBtf2 *ebpf.Program `ebpf:"handle_exit_btf2"`
 	HandleForkBtf  *ebpf.Program `ebpf:"handle_fork_btf"`
 	HandleForkTp   *ebpf.Program `ebpf:"handle_fork_tp"`
+	HandleKillBtf  *ebpf.Program `ebpf:"handle_kill_btf"`
 	HandleOom      *ebpf.Program `ebpf:"handle_oom"`
 }
 
@@ -187,6 +194,7 @@ func (p *procRBPrograms) Close() error {
 		p.HandleExitBtf2,
 		p.HandleForkBtf,
 		p.HandleForkTp,
+		p.HandleKillBtf,
 		p.HandleOom,
 	)
 }

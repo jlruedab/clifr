@@ -28,6 +28,15 @@ struct mm_struct {
 	unsigned long arg_end;
 } __attribute__((preserve_access_index));
 
+// The memory counters of a process (get_mm_counter): an atomic_long_t array
+// before Linux 6.2, per-CPU counters since (their approximate sum in count).
+enum { MM_FILEPAGES, MM_ANONPAGES, MM_SWAPENTS, MM_SHMEMPAGES, NR_MM_COUNTERS };
+typedef struct { long counter; } atomic_long_t;
+struct mm_rss_stat { atomic_long_t count[4]; } __attribute__((preserve_access_index));
+struct mm_struct___old { struct mm_rss_stat rss_stat; } __attribute__((preserve_access_index));
+struct percpu_counter { __s64 count; } __attribute__((preserve_access_index));
+struct mm_struct___new { struct percpu_counter rss_stat[4]; } __attribute__((preserve_access_index));
+
 struct tty_driver {
 	int major;
 	int minor_start;
@@ -111,6 +120,7 @@ struct event {
 };
 
 #define FLAG_TTY 1 // tty_nr, sid and pgrp are set
+#define FLAG_RSS_PAGES 2 // oom: rss_kb holds pages (userspace knows the page size)
 
 // Fork, exit and OOM events are sent without filename and args.
 #define SHORT_EVENT __builtin_offsetof(struct event, filename)
@@ -405,6 +415,48 @@ int handle_fork_tp(struct trace_event_raw_sched_process_fork *ctx)
 	return 0;
 }
 
+// RSS in pages of a process the kernel sends SIGKILL to, by pid: the OOM
+// killer does so just before it marks the victim, whose tracepoint has no
+// RSS before Linux 6.x (RHEL 8 and 9).
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 256);
+	__type(key, __u32);
+	__type(value, __u64);
+} kill_rss SEC(".maps");
+
+static __always_inline __u64 rss_pages(struct task_struct *t)
+{
+	struct mm_struct *mm = BPF_CORE_READ(t, mm);
+	if (!mm)
+		return 0;
+	__s64 n = 0;
+	if (bpf_core_type_exists(struct mm_rss_stat)) {
+		struct mm_struct___old *o = (void *)mm;
+		n = BPF_CORE_READ(o, rss_stat.count[MM_FILEPAGES].counter) + BPF_CORE_READ(o, rss_stat.count[MM_ANONPAGES].counter) +
+		    BPF_CORE_READ(o, rss_stat.count[MM_SHMEMPAGES].counter);
+	} else {
+		struct mm_struct___new *m = (void *)mm;
+		n = BPF_CORE_READ(m, rss_stat[MM_FILEPAGES].count) + BPF_CORE_READ(m, rss_stat[MM_ANONPAGES].count) +
+		    BPF_CORE_READ(m, rss_stat[MM_SHMEMPAGES].count);
+	}
+	return n > 0 ? n : 0;
+}
+
+#define SIGKILL_ 9
+#define SEND_SIG_PRIV_ 1 // the kernel's own sender ((struct kernel_siginfo *)1)
+
+SEC("tp_btf/signal_generate")
+int BPF_PROG(handle_kill_btf, int sig, void *info, struct task_struct *task, int group, int result)
+{
+	if (sig != SIGKILL_ || (__u64)info != SEND_SIG_PRIV_)
+		return 0;
+	__u32 pid = BPF_CORE_READ(task, tgid);
+	__u64 pages = rss_pages(task);
+	bpf_map_update_elem(&kill_rss, &pid, &pages, BPF_ANY);
+	return 0;
+}
+
 SEC("tracepoint/oom/mark_victim")
 int handle_oom(struct trace_event_raw_mark_victim *ctx)
 {
@@ -413,8 +465,17 @@ int handle_oom(struct trace_event_raw_mark_victim *ctx)
 		return 0;
 	e->pid = BPF_CORE_READ(ctx, pid);
 	e->exit_code = -1;
-	if (bpf_core_field_exists(ctx->anon_rss))
+	if (bpf_core_field_exists(ctx->anon_rss)) {
 		e->rss_kb = BPF_CORE_READ(ctx, anon_rss) + BPF_CORE_READ(ctx, file_rss) + BPF_CORE_READ(ctx, shmem_rss);
+	} else {
+		__u32 pid = e->pid;
+		__u64 *pages = bpf_map_lookup_elem(&kill_rss, &pid);
+		if (pages) {
+			e->rss_kb = *pages;
+			e->flags |= FLAG_RSS_PAGES;
+			bpf_map_delete_elem(&kill_rss, &pid);
+		}
+	}
 	send(ctx, e, SHORT_EVENT, 1); // userspace reads the victim's /proc entries
 	return 0;
 }

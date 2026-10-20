@@ -23,6 +23,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand/v2"
@@ -780,6 +781,37 @@ func (e *env) runOOM() oomTruth {
 	return tr
 }
 
+var killedRe = regexp.MustCompile(`Killed process (\d+) .*anon-rss:(\d+)kB, file-rss:(\d+)kB, shmem-rss:(\d+)kB`)
+
+// kernelKillRSS is the RSS the kernel logged when it OOM-killed pid
+// (anon + file + shmem, kB), from /dev/kmsg; 0 if not found.
+func kernelKillRSS(pid int) int64 {
+	// Raw read(2): an os.File would wait in Go's poller instead of
+	// returning EAGAIN at the end of the log.
+	fd, err := syscall.Open("/dev/kmsg", syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return 0
+	}
+	defer syscall.Close(fd)
+	var kb int64
+	buf := make([]byte, 8192)
+	for {
+		n, err := syscall.Read(fd, buf) // one record per read; EAGAIN at the end
+		if err != nil {
+			if errors.Is(err, syscall.EPIPE) { // overwritten records: go on
+				continue
+			}
+			return kb
+		}
+		if m := killedRe.FindSubmatch(buf[:n]); m != nil && string(m[1]) == strconv.Itoa(pid) {
+			a, _ := strconv.ParseInt(string(m[2]), 10, 64)
+			b, _ := strconv.ParseInt(string(m[3]), 10, 64)
+			c, _ := strconv.ParseInt(string(m[4]), 10, 64)
+			kb = a + b + c
+		}
+	}
+}
+
 func (e *env) checkOOM(tr oomTruth) {
 	const sc = "oom kill"
 	var kills []struct {
@@ -791,13 +823,19 @@ func (e *env) checkOOM(tr oomTruth) {
 	e.query(&kills, "--since", e.recStart.Format(timeLayout), "--until", e.recEnd.Format(timeLayout), "oom")
 	var found, rss, when, cmd int
 	note := ""
+	kernelKB := kernelKillRSS(tr.pid)
 	for _, k := range kills {
 		if k.PID != tr.pid {
 			continue
 		}
 		found++
 		limitKB := int64(oomLimit >> 10)
-		if k.RSSKB >= limitKB*85/100 && k.RSSKB <= limitKB*105/100 {
+		switch {
+		case kernelKB > 0: // what the kernel logged, within 3%
+			if k.RSSKB >= kernelKB*97/100 && k.RSSKB <= kernelKB*103/100 {
+				rss++
+			}
+		case k.RSSKB >= limitKB*85/100 && k.RSSKB <= limitKB*105/100:
 			rss++
 		}
 		if k.TS >= tr.from.UnixMilli() && k.TS <= tr.to.UnixMilli() {
@@ -807,9 +845,13 @@ func (e *env) checkOOM(tr oomTruth) {
 			cmd++
 		}
 		note = fmt.Sprintf("RSS at the kill %d kB (%.1f%% of the %d MiB limit)", k.RSSKB, float64(k.RSSKB)/float64(limitKB)*100, oomLimit>>20)
+		if kernelKB > 0 {
+			note += fmt.Sprintf("; the kernel logged %d kB (%.1f%%)", kernelKB, float64(k.RSSKB)/float64(kernelKB)*100)
+		}
 	}
 	e.res.add(sc, "clifr oom: the kill", found, 1, "pid %d; %d kills listed in the recording", tr.pid, len(kills))
-	e.res.add(sc, "clifr oom: RSS before the kill", rss, 1, "85-105%% of memory.max (RSS includes file pages charged to other cgroups): %s", note)
+	e.res.add(sc, "clifr oom: RSS before the kill", rss, 1, "within 3%% of the kernel's \"Killed process\" line (anon+file+shmem), "+
+		"else 85-105%% of memory.max: %s", note)
 	e.res.add(sc, "clifr oom: time and command", min(when, cmd), 1, "between the start and the wait of the process")
 
 	var life []struct {

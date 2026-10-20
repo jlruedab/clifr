@@ -40,6 +40,7 @@ const (
 	procPerfMapBusy            = "busy"
 	procPerfMapDrops           = "drops"
 	procPerfMapEvents          = "events"
+	procPerfMapKillRss         = "kill_rss"
 	procPerfMapScratch         = "scratch"
 	procPerfProgHandleExec     = "handle_exec"
 	procPerfProgHandleExecBtf  = "handle_exec_btf"
@@ -49,6 +50,7 @@ const (
 	procPerfProgHandleExitBtf2 = "handle_exit_btf2"
 	procPerfProgHandleForkBtf  = "handle_fork_btf"
 	procPerfProgHandleForkTp   = "handle_fork_tp"
+	procPerfProgHandleKillBtf  = "handle_kill_btf"
 	procPerfProgHandleOom      = "handle_oom"
 )
 
@@ -102,6 +104,7 @@ type procPerfProgramSpecs struct {
 	HandleExitBtf2 *ebpf.ProgramSpec `ebpf:"handle_exit_btf2"`
 	HandleForkBtf  *ebpf.ProgramSpec `ebpf:"handle_fork_btf"`
 	HandleForkTp   *ebpf.ProgramSpec `ebpf:"handle_fork_tp"`
+	HandleKillBtf  *ebpf.ProgramSpec `ebpf:"handle_kill_btf"`
 	HandleOom      *ebpf.ProgramSpec `ebpf:"handle_oom"`
 }
 
@@ -112,6 +115,7 @@ type procPerfMapSpecs struct {
 	Busy    *ebpf.MapSpec `ebpf:"busy"`
 	Drops   *ebpf.MapSpec `ebpf:"drops"`
 	Events  *ebpf.MapSpec `ebpf:"events"`
+	KillRss *ebpf.MapSpec `ebpf:"kill_rss"`
 	Scratch *ebpf.MapSpec `ebpf:"scratch"`
 }
 
@@ -144,6 +148,7 @@ type procPerfMaps struct {
 	Busy    *ebpf.Map `ebpf:"busy"`
 	Drops   *ebpf.Map `ebpf:"drops"`
 	Events  *ebpf.Map `ebpf:"events"`
+	KillRss *ebpf.Map `ebpf:"kill_rss"`
 	Scratch *ebpf.Map `ebpf:"scratch"`
 }
 
@@ -152,6 +157,7 @@ func (m *procPerfMaps) Close() error {
 		m.Busy,
 		m.Drops,
 		m.Events,
+		m.KillRss,
 		m.Scratch,
 	)
 }
@@ -174,6 +180,7 @@ type procPerfPrograms struct {
 	HandleExitBtf2 *ebpf.Program `ebpf:"handle_exit_btf2"`
 	HandleForkBtf  *ebpf.Program `ebpf:"handle_fork_btf"`
 	HandleForkTp   *ebpf.Program `ebpf:"handle_fork_tp"`
+	HandleKillBtf  *ebpf.Program `ebpf:"handle_kill_btf"`
 	HandleOom      *ebpf.Program `ebpf:"handle_oom"`
 }
 
@@ -187,6 +194,7 @@ func (p *procPerfPrograms) Close() error {
 		p.HandleExitBtf2,
 		p.HandleForkBtf,
 		p.HandleForkTp,
+		p.HandleKillBtf,
 		p.HandleOom,
 	)
 }
