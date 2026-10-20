@@ -20,8 +20,11 @@
 //   an event of its own, since the kernel sends it after TCP_CLOSE.
 //
 // Owners are kept in a hash map keyed by the sock pointer and deleted when
-// the connection reaches TCP_CLOSE. Tracepoint arguments are read at their
-// fixed offsets (stable since Linux 4.16); kernel structures through CO-RE.
+// the connection reaches TCP_CLOSE. Kernel structures are read through
+// CO-RE, inet_sock_set_state's record too (its protocol is one byte in
+// RHEL 8's 4.18, two upstream) and the reset/retransmit records; the
+// syscall tracepoints' arguments at their fixed offsets (the same in RHEL 9,
+// whose record header is 8 bytes longer).
 
 #include <linux/types.h>
 #include <linux/bpf.h>
@@ -93,7 +96,7 @@ struct socket { struct file *file; } __attribute__((preserve_access_index));
 struct sock {
 	struct sock_common __sk_common;
 	struct socket *sk_socket;
-	__u16 sk_protocol; // a bit-field before Linux 5.6: the BTF tracepoint program then fails to load
+	__u16 sk_protocol; // a bit-field before Linux 5.6 (and in RHEL 8): read with BPF_CORE_READ_BITFIELD_PROBED
 } __attribute__((preserve_access_index));
 struct inet_sock {
 	__u32 inet_saddr;
@@ -109,31 +112,46 @@ struct task_struct___old { __u64 real_start_time; } __attribute__((preserve_acce
 
 // ---- tracepoint arguments (fixed layouts) ----
 
-struct set_state_args {
-	__u64 common;
+// The kernel's record of sock:inet_sock_set_state (CO-RE: offsets and the
+// protocol's size come from the running kernel). Read with probe reads:
+// the verifier does not let a program dereference a context pointer moved
+// by a relocated offset.
+struct trace_event_raw_inet_sock_set_state {
 	const void *skaddr;
 	int oldstate;
 	int newstate;
 	__u16 sport;
 	__u16 dport;
 	__u16 family;
-	__u16 protocol;
+	__u16 protocol; // __u8 in RHEL 8's 4.18
 	__u8 saddr[4];
 	__u8 daddr[4];
 	__u8 saddr_v6[16];
 	__u8 daddr_v6[16];
-};
+} __attribute__((preserve_access_index));
 
-struct sk_skb_args { // tcp_retransmit_skb, tcp_send_reset
-	__u64 common;
+// The records of tcp_retransmit_skb, tcp_send_reset and tcp_receive_reset,
+// through CO-RE: RHEL 9 adds a byte to every record's common header (all
+// fields move by 8), and the record types are named after a shared class on
+// older kernels and after the event on newer ones.
+struct trace_event_raw_tcp_event_sk_skb {
 	const void *skbaddr;
 	const void *skaddr;
-};
-
-struct sk_args { // tcp_receive_reset
-	__u64 common;
+} __attribute__((preserve_access_index));
+struct trace_event_raw_tcp_retransmit_skb {
+	const void *skbaddr;
 	const void *skaddr;
-};
+} __attribute__((preserve_access_index));
+struct trace_event_raw_tcp_send_reset {
+	const void *skbaddr;
+	const void *skaddr;
+} __attribute__((preserve_access_index));
+struct trace_event_raw_tcp_event_sk {
+	const void *skaddr;
+} __attribute__((preserve_access_index));
+struct trace_event_raw_tcp_receive_reset {
+	const void *skaddr;
+} __attribute__((preserve_access_index));
 
 struct sys_enter_fd_args { // sys_enter_connect, sys_enter_listen
 	__u64 common;
@@ -152,8 +170,8 @@ struct sys_exit_args {
 // ---- events ----
 
 enum kind { EV_STATE = 1, EV_ACCEPT = 2, EV_ACCEPT_FD = 3, EV_APP_CLOSE = 4, EV_TIME_WAIT = 5, EV_ACTIVE_RESET = 6,
-	EV_TW_END = 7, EV_LATE_COUNT = 8 };
-#define NKINDS 9
+	EV_TW_END = 7, EV_LATE_COUNT = 8, EV_LOCAL_PORT = 9 };
+#define NKINDS 10
 
 struct owner {
 	__u32 pid; // process (tgid); 0: unknown
@@ -236,6 +254,16 @@ struct {
 	__type(value, __s32);
 } syscall_fd SEC(".maps");
 
+// The socket of a connect() in progress whose SYN_SENT event had no local
+// port yet (the kernel picks it after setting SYN_SENT), per thread: its
+// port is reported when the syscall returns (EV_LOCAL_PORT).
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 16384);
+	__type(key, __u32);
+	__type(value, __u64);
+} connecting SEC(".maps");
+
 // Socket returned by inet_csk_accept, until the accept syscall returns its fd.
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -297,6 +325,8 @@ static __always_inline int state_event(void *ctx, struct tcp_event *e)
 			o.fd = *fd;
 		o.inode = sock_inode((void *)e->sk);
 		bpf_map_update_elem(&owners, &e->sk, &o, BPF_ANY);
+		if (e->newstate == TCP_SYN_SENT && e->sport == 0)
+			bpf_map_update_elem(&connecting, &tid, &e->sk, BPF_ANY);
 	}
 	if (e->newstate == TCP_LISTEN && e->family == 10 /* AF_INET6 */) {
 		// IPV6_V6ONLY cannot change once the socket is bound. Without it
@@ -340,30 +370,36 @@ struct {
 	__type(value, __u64);
 } state_busy SEC(".maps");
 
+// sock_addrs fills e's family, ports and addresses from sk: the values the
+// classic state tracepoint reports.
+static __always_inline void sock_addrs(struct tcp_event *e, struct sock *sk)
+{
+	struct inet_sock *inet = (void *)sk;
+	e->family = BPF_CORE_READ(sk, __sk_common.skc_family);
+	e->sport = __builtin_bswap16(BPF_CORE_READ(inet, inet_sport));
+	e->dport = __builtin_bswap16(BPF_CORE_READ(sk, __sk_common.skc_dport));
+	if (e->family == 2 /* AF_INET */) {
+		__u32 s = BPF_CORE_READ(inet, inet_saddr);
+		__u32 d = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+		__builtin_memcpy(e->saddr, &s, 4);
+		__builtin_memcpy(e->daddr, &d, 4);
+	} else {
+		BPF_CORE_READ_INTO(&e->saddr, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+		BPF_CORE_READ_INTO(&e->daddr, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr8);
+	}
+}
+
 static __always_inline int state_btf(void *ctx, struct sock *sk, int oldstate, int newstate)
 {
-	if (BPF_CORE_READ(sk, sk_protocol) != IPPROTO_TCP_)
+	if (BPF_CORE_READ_BITFIELD_PROBED(sk, sk_protocol) != IPPROTO_TCP_)
 		return 0;
-	struct inet_sock *inet = (void *)sk;
 	struct tcp_event e = {};
 	e.kind = EV_STATE;
 	e.mono_ns = bpf_ktime_get_ns();
 	e.sk = (__u64)sk;
 	e.oldstate = oldstate;
 	e.newstate = newstate;
-	// The same values the classic tracepoint reports.
-	e.family = BPF_CORE_READ(sk, __sk_common.skc_family);
-	e.sport = __builtin_bswap16(BPF_CORE_READ(inet, inet_sport));
-	e.dport = __builtin_bswap16(BPF_CORE_READ(sk, __sk_common.skc_dport));
-	if (e.family == 2 /* AF_INET */) {
-		__u32 s = BPF_CORE_READ(inet, inet_saddr);
-		__u32 d = BPF_CORE_READ(sk, __sk_common.skc_daddr);
-		__builtin_memcpy(e.saddr, &s, 4);
-		__builtin_memcpy(e.daddr, &d, 4);
-	} else {
-		BPF_CORE_READ_INTO(&e.saddr, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
-		BPF_CORE_READ_INTO(&e.daddr, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr8);
-	}
+	sock_addrs(&e, sk);
 	return state_event(ctx, &e);
 }
 
@@ -395,25 +431,25 @@ int BPF_PROG(handle_set_state_btf2, struct sock *sk, int oldstate, int newstate)
 
 // State changes, fallback: the classic tracepoint.
 SEC("tracepoint/sock/inet_sock_set_state")
-int handle_set_state(struct set_state_args *ctx)
+int handle_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
 {
-	if (ctx->protocol != IPPROTO_TCP_)
+	if (BPF_CORE_READ_BITFIELD_PROBED(ctx, protocol) != IPPROTO_TCP_)
 		return 0;
 	struct tcp_event e = {};
 	e.kind = EV_STATE;
 	e.mono_ns = bpf_ktime_get_ns();
-	e.sk = (__u64)ctx->skaddr;
-	e.oldstate = ctx->oldstate;
-	e.newstate = ctx->newstate;
-	e.family = ctx->family;
-	e.sport = ctx->sport;
-	e.dport = ctx->dport;
+	e.sk = (__u64)BPF_CORE_READ(ctx, skaddr);
+	e.oldstate = BPF_CORE_READ(ctx, oldstate);
+	e.newstate = BPF_CORE_READ(ctx, newstate);
+	e.family = BPF_CORE_READ(ctx, family);
+	e.sport = BPF_CORE_READ(ctx, sport);
+	e.dport = BPF_CORE_READ(ctx, dport);
 	if (e.family == 2 /* AF_INET */) {
-		__builtin_memcpy(e.saddr, ctx->saddr, 4);
-		__builtin_memcpy(e.daddr, ctx->daddr, 4);
+		bpf_core_read(&e.saddr, 4, &ctx->saddr);
+		bpf_core_read(&e.daddr, 4, &ctx->daddr);
 	} else {
-		__builtin_memcpy(e.saddr, ctx->saddr_v6, 16);
-		__builtin_memcpy(e.daddr, ctx->daddr_v6, 16);
+		bpf_core_read(&e.saddr, 16, &ctx->saddr_v6);
+		bpf_core_read(&e.daddr, 16, &ctx->daddr_v6);
 	}
 	return state_event(ctx, &e);
 }
@@ -435,8 +471,43 @@ static __always_inline int drop_fd(void)
 
 SEC("tracepoint/syscalls/sys_enter_connect")
 int handle_enter_connect(struct sys_enter_fd_args *ctx) { return save_fd(ctx); }
+// local_port reports the local port of this thread's connect in progress,
+// once the kernel has picked it: when tcp_v4_connect or tcp_v6_connect
+// returns (before a blocking connect waits for the handshake), or else when
+// the syscall returns.
+static __always_inline int local_port(void *ctx)
+{
+	__u32 tid = (__u32)bpf_get_current_pid_tgid();
+	__u64 *skp = bpf_map_lookup_elem(&connecting, &tid);
+	if (!skp)
+		return 0;
+	struct tcp_event e = {};
+	e.kind = EV_LOCAL_PORT;
+	e.mono_ns = bpf_ktime_get_ns();
+	e.sk = *skp;
+	sock_addrs(&e, (struct sock *)*skp);
+	if (e.sport == 0)
+		return 0; // not yet (tcp_v6_connect calling tcp_v4_connect), or the connect failed
+	bpf_map_delete_elem(&connecting, &tid);
+	send(ctx, &e);
+	return 0;
+}
+
+SEC("fexit/tcp_v4_connect")
+int handle_connect4_fexit(void *ctx) { return local_port(ctx); }
+SEC("fexit/tcp_v6_connect")
+int handle_connect6_fexit(void *ctx) { return local_port(ctx); }
+SEC("kretprobe/tcp_v4_connect")
+int handle_connect_kret(void *ctx) { return local_port(ctx); }
+
 SEC("tracepoint/syscalls/sys_exit_connect")
-int handle_exit_connect(void *ctx) { return drop_fd(); }
+int handle_exit_connect(void *ctx)
+{
+	local_port(ctx);
+	__u32 tid = (__u32)bpf_get_current_pid_tgid();
+	bpf_map_delete_elem(&connecting, &tid);
+	return drop_fd();
+}
 SEC("tracepoint/syscalls/sys_enter_listen")
 int handle_enter_listen(struct sys_enter_fd_args *ctx) { return save_fd(ctx); }
 SEC("tracepoint/syscalls/sys_exit_listen")
@@ -655,20 +726,48 @@ static __always_inline void count(void *ctx, const void *skaddr, int field)
 		__sync_fetch_and_add(&c->resets_received, 1);
 }
 
+// Read with probe reads: the verifier does not let a program dereference a
+// context pointer moved by a relocated offset.
 SEC("tracepoint/tcp/tcp_retransmit_skb")
-int handle_retransmit(struct sk_skb_args *ctx) { count(ctx, ctx->skaddr, 0); return 0; }
-SEC("tracepoint/tcp/tcp_send_reset")
-int handle_send_reset(struct sk_skb_args *ctx)
+int handle_retransmit(void *ctx)
 {
+	const void *sk;
+	if (bpf_core_type_exists(struct trace_event_raw_tcp_retransmit_skb))
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_retransmit_skb *)ctx, skaddr);
+	else
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_event_sk_skb *)ctx, skaddr);
+	count(ctx, sk, 0);
+	return 0;
+}
+SEC("tracepoint/tcp/tcp_send_reset")
+int handle_send_reset(void *ctx)
+{
+	const void *sk, *skb;
+	if (bpf_core_type_exists(struct trace_event_raw_tcp_send_reset)) {
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_send_reset *)ctx, skaddr);
+		skb = BPF_CORE_READ((struct trace_event_raw_tcp_send_reset *)ctx, skbaddr);
+	} else {
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_event_sk_skb *)ctx, skaddr);
+		skb = BPF_CORE_READ((struct trace_event_raw_tcp_event_sk_skb *)ctx, skbaddr);
+	}
 	// Since Linux 6.10 tcp_send_active_reset fires this tracepoint too, with
 	// no skb. EV_ACTIVE_RESET reports those; counting them here as well
 	// would leave a count behind for the next socket at this address.
-	if (ctx->skaddr && !ctx->skbaddr)
+	if (sk && !skb)
 		return 0;
-	count(ctx, ctx->skaddr, 1);
+	count(ctx, sk, 1);
 	return 0;
 }
 SEC("tracepoint/tcp/tcp_receive_reset")
-int handle_receive_reset(struct sk_args *ctx) { count(ctx, ctx->skaddr, 2); return 0; }
+int handle_receive_reset(void *ctx)
+{
+	const void *sk;
+	if (bpf_core_type_exists(struct trace_event_raw_tcp_receive_reset))
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_receive_reset *)ctx, skaddr);
+	else
+		sk = BPF_CORE_READ((struct trace_event_raw_tcp_event_sk *)ctx, skaddr);
+	count(ctx, sk, 2);
+	return 0;
+}
 
 char LICENSE[] SEC("license") = "GPL";

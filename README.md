@@ -83,6 +83,13 @@ The .deb enables and starts clifrd on install (Debian's convention), the
 .rpm does not (presets: `systemctl enable --now clifrd`); purging the .deb
 deletes the recording. License field: to be decided.
 
+Tested kernels (packages in KVM guests, 2026-10-20, `packaging/vm.sh`):
+Rocky Linux 8.10 (4.18, SELinux enforcing), AlmaLinux 9.8 (5.14, enforcing),
+Ubuntu 22.04.5 (5.15), and this machine's 7.0: `--test-ebpf` 21/21 in all
+three attach modes, e2e and the small ground truth pass (43/43; 42/43 on
+RHEL 8 and 9, the OOM victim's RSS, see Limitations), the service records
+with no SELinux denials (clifrd runs unconfined: no policy module is needed).
+
 Kernel: Linux with BTF at `/sys/kernel/btf/vmlinux` (RHEL 8.2+/9, Ubuntu
 22.04+). The eBPF objects are committed and load unchanged on any such kernel
 (CO-RE); clang is needed only after editing a `.bpf.c` file
@@ -619,6 +626,14 @@ The fair comparison for clifr is atop with process accounting or a
 continuous eBPF tracer, not a metrics exporter.
 
 ## Limitations
+
+- **The latest minutes cannot be queried**: clifrd keeps rows in memory
+  and writes them every `--flush-interval` (5 minutes), so a moment after
+  the last flush is refused ("after the end of the recording ... clifrd
+  writes to disk every 5m0s"), like a moment in a gap of the recording.
+- **OOM victim's RSS on RHEL 8 and 9**: their `oom:mark_victim` tracepoint
+  has no RSS fields (added in Linux 6.x), so `clifr oom` shows the RSS that
+  clifrd read from /proc as the victim died, or 0 once it is gone.
 
 - **CPU is just under the 2% budget at the busy load**: 1.84% of one core
   on average (runs of 1.7–2.1%), with a few `budget_exceeded` events; an hourly

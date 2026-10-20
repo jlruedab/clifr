@@ -135,6 +135,13 @@ func TestGroundTruth(t *testing.T) {
 	for _, b := range []struct{ out, pkg, cgo string }{
 		{"clifrd", "./cmd/clifrd", "0"}, {"clifr", "./cmd/clifr", "1"}, {"truthproc", "./test/truth/truthproc", "0"},
 	} {
+		if bin := os.Getenv("CLIFR_TEST_BIN"); bin != "" {
+			// Prebuilt (a machine without Go, such as a test VM).
+			if err := exec.Command("cp", filepath.Join(bin, b.out), dir).Run(); err != nil {
+				t.Fatalf("CLIFR_TEST_BIN: %s: %v", b.out, err)
+			}
+			continue
+		}
 		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "CGO_ENABLED="+b.cgo)
@@ -734,22 +741,36 @@ type oomTruth struct {
 }
 
 func (e *env) runOOM() oomTruth {
-	cg := fmt.Sprintf("/sys/fs/cgroup/clifr-truth-%d", os.Getpid())
+	// cgroup v2, or the v1 memory controller (RHEL 8's default).
+	v1 := false
+	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
+		v1 = true
+	}
+	root, limit, eventsFile := "/sys/fs/cgroup", "memory.max", "memory.events"
+	if v1 {
+		root, limit, eventsFile = "/sys/fs/cgroup/memory", "memory.limit_in_bytes", "memory.oom_control"
+	}
+	cg := fmt.Sprintf("%s/clifr-truth-%d", root, os.Getpid())
 	if err := os.Mkdir(cg, 0o755); err != nil {
 		e.t.Fatalf("cgroup: %v", err)
 	}
 	e.cleanup = append(e.cleanup, func() { os.Remove(cg) })
-	if err := os.WriteFile(filepath.Join(cg, "memory.max"), []byte(strconv.Itoa(oomLimit)), 0o644); err != nil {
-		e.t.Fatalf("memory.max: %v", err)
+	if err := os.WriteFile(filepath.Join(cg, limit), []byte(strconv.Itoa(oomLimit)), 0o644); err != nil {
+		e.t.Fatalf("%s: %v", limit, err)
 	}
-	os.WriteFile(filepath.Join(cg, "memory.swap.max"), []byte("0"), 0o644) // absent without swap accounting
+	if v1 {
+		os.WriteFile(filepath.Join(cg, "memory.swappiness"), []byte("0"), 0o644)
+		os.WriteFile(filepath.Join(cg, "memory.memsw.limit_in_bytes"), []byte(strconv.Itoa(oomLimit)), 0o644)
+	} else {
+		os.WriteFile(filepath.Join(cg, "memory.swap.max"), []byte("0"), 0o644) // absent without swap accounting
+	}
 	tr := oomTruth{from: time.Now()}
 	cmd, _ := e.start("oom", cg)
 	tr.pid = cmd.Process.Pid
 	err := cmd.Wait()
 	tr.to = time.Now()
 	ws, _ := cmd.ProcessState.Sys().(syscall.WaitStatus)
-	events, _ := os.ReadFile(filepath.Join(cg, "memory.events"))
+	events, _ := os.ReadFile(filepath.Join(cg, eventsFile))
 	tr.killed = ws.Signaled() && ws.Signal() == syscall.SIGKILL && strings.Contains(string(events), "oom_kill 1")
 	e.t.Logf("oom: pid %d in a %d MiB cgroup: %v; memory.events: %s", tr.pid, oomLimit>>20, err,
 		strings.Join(strings.Fields(string(events)), " "))

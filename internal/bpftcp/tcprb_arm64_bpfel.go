@@ -52,6 +52,7 @@ type tcpRBTcpEvent struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	tcpRBMapAccepting                = "accepting"
+	tcpRBMapConnecting               = "connecting"
 	tcpRBMapCounters                 = "counters"
 	tcpRBMapDrops                    = "drops"
 	tcpRBMapEvents                   = "events"
@@ -65,6 +66,9 @@ const (
 	tcpRBProgHandleActiveResetKprobe = "handle_active_reset_kprobe"
 	tcpRBProgHandleCloseFentry       = "handle_close_fentry"
 	tcpRBProgHandleCloseKprobe       = "handle_close_kprobe"
+	tcpRBProgHandleConnect4Fexit     = "handle_connect4_fexit"
+	tcpRBProgHandleConnect6Fexit     = "handle_connect6_fexit"
+	tcpRBProgHandleConnectKret       = "handle_connect_kret"
 	tcpRBProgHandleEnterConnect      = "handle_enter_connect"
 	tcpRBProgHandleEnterListen       = "handle_enter_listen"
 	tcpRBProgHandleExitAccept        = "handle_exit_accept"
@@ -132,6 +136,9 @@ type tcpRBProgramSpecs struct {
 	HandleActiveResetKprobe *ebpf.ProgramSpec `ebpf:"handle_active_reset_kprobe"`
 	HandleCloseFentry       *ebpf.ProgramSpec `ebpf:"handle_close_fentry"`
 	HandleCloseKprobe       *ebpf.ProgramSpec `ebpf:"handle_close_kprobe"`
+	HandleConnect4Fexit     *ebpf.ProgramSpec `ebpf:"handle_connect4_fexit"`
+	HandleConnect6Fexit     *ebpf.ProgramSpec `ebpf:"handle_connect6_fexit"`
+	HandleConnectKret       *ebpf.ProgramSpec `ebpf:"handle_connect_kret"`
 	HandleEnterConnect      *ebpf.ProgramSpec `ebpf:"handle_enter_connect"`
 	HandleEnterListen       *ebpf.ProgramSpec `ebpf:"handle_enter_listen"`
 	HandleExitAccept        *ebpf.ProgramSpec `ebpf:"handle_exit_accept"`
@@ -155,6 +162,7 @@ type tcpRBProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type tcpRBMapSpecs struct {
 	Accepting    *ebpf.MapSpec `ebpf:"accepting"`
+	Connecting   *ebpf.MapSpec `ebpf:"connecting"`
 	Counters     *ebpf.MapSpec `ebpf:"counters"`
 	Drops        *ebpf.MapSpec `ebpf:"drops"`
 	Events       *ebpf.MapSpec `ebpf:"events"`
@@ -192,6 +200,7 @@ func (o *tcpRBObjects) Close() error {
 // It can be passed to loadTcpRBObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tcpRBMaps struct {
 	Accepting    *ebpf.Map `ebpf:"accepting"`
+	Connecting   *ebpf.Map `ebpf:"connecting"`
 	Counters     *ebpf.Map `ebpf:"counters"`
 	Drops        *ebpf.Map `ebpf:"drops"`
 	Events       *ebpf.Map `ebpf:"events"`
@@ -204,6 +213,7 @@ type tcpRBMaps struct {
 func (m *tcpRBMaps) Close() error {
 	return _TcpRBClose(
 		m.Accepting,
+		m.Connecting,
 		m.Counters,
 		m.Drops,
 		m.Events,
@@ -231,6 +241,9 @@ type tcpRBPrograms struct {
 	HandleActiveResetKprobe *ebpf.Program `ebpf:"handle_active_reset_kprobe"`
 	HandleCloseFentry       *ebpf.Program `ebpf:"handle_close_fentry"`
 	HandleCloseKprobe       *ebpf.Program `ebpf:"handle_close_kprobe"`
+	HandleConnect4Fexit     *ebpf.Program `ebpf:"handle_connect4_fexit"`
+	HandleConnect6Fexit     *ebpf.Program `ebpf:"handle_connect6_fexit"`
+	HandleConnectKret       *ebpf.Program `ebpf:"handle_connect_kret"`
 	HandleEnterConnect      *ebpf.Program `ebpf:"handle_enter_connect"`
 	HandleEnterListen       *ebpf.Program `ebpf:"handle_enter_listen"`
 	HandleExitAccept        *ebpf.Program `ebpf:"handle_exit_accept"`
@@ -257,6 +270,9 @@ func (p *tcpRBPrograms) Close() error {
 		p.HandleActiveResetKprobe,
 		p.HandleCloseFentry,
 		p.HandleCloseKprobe,
+		p.HandleConnect4Fexit,
+		p.HandleConnect6Fexit,
+		p.HandleConnectKret,
 		p.HandleEnterConnect,
 		p.HandleEnterListen,
 		p.HandleExitAccept,

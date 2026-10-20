@@ -34,6 +34,7 @@ type tcpPerfOwner struct {
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
 	tcpPerfMapAccepting                = "accepting"
+	tcpPerfMapConnecting               = "connecting"
 	tcpPerfMapCounters                 = "counters"
 	tcpPerfMapDrops                    = "drops"
 	tcpPerfMapEvents                   = "events"
@@ -47,6 +48,9 @@ const (
 	tcpPerfProgHandleActiveResetKprobe = "handle_active_reset_kprobe"
 	tcpPerfProgHandleCloseFentry       = "handle_close_fentry"
 	tcpPerfProgHandleCloseKprobe       = "handle_close_kprobe"
+	tcpPerfProgHandleConnect4Fexit     = "handle_connect4_fexit"
+	tcpPerfProgHandleConnect6Fexit     = "handle_connect6_fexit"
+	tcpPerfProgHandleConnectKret       = "handle_connect_kret"
 	tcpPerfProgHandleEnterConnect      = "handle_enter_connect"
 	tcpPerfProgHandleEnterListen       = "handle_enter_listen"
 	tcpPerfProgHandleExitAccept        = "handle_exit_accept"
@@ -114,6 +118,9 @@ type tcpPerfProgramSpecs struct {
 	HandleActiveResetKprobe *ebpf.ProgramSpec `ebpf:"handle_active_reset_kprobe"`
 	HandleCloseFentry       *ebpf.ProgramSpec `ebpf:"handle_close_fentry"`
 	HandleCloseKprobe       *ebpf.ProgramSpec `ebpf:"handle_close_kprobe"`
+	HandleConnect4Fexit     *ebpf.ProgramSpec `ebpf:"handle_connect4_fexit"`
+	HandleConnect6Fexit     *ebpf.ProgramSpec `ebpf:"handle_connect6_fexit"`
+	HandleConnectKret       *ebpf.ProgramSpec `ebpf:"handle_connect_kret"`
 	HandleEnterConnect      *ebpf.ProgramSpec `ebpf:"handle_enter_connect"`
 	HandleEnterListen       *ebpf.ProgramSpec `ebpf:"handle_enter_listen"`
 	HandleExitAccept        *ebpf.ProgramSpec `ebpf:"handle_exit_accept"`
@@ -137,6 +144,7 @@ type tcpPerfProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type tcpPerfMapSpecs struct {
 	Accepting    *ebpf.MapSpec `ebpf:"accepting"`
+	Connecting   *ebpf.MapSpec `ebpf:"connecting"`
 	Counters     *ebpf.MapSpec `ebpf:"counters"`
 	Drops        *ebpf.MapSpec `ebpf:"drops"`
 	Events       *ebpf.MapSpec `ebpf:"events"`
@@ -174,6 +182,7 @@ func (o *tcpPerfObjects) Close() error {
 // It can be passed to loadTcpPerfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type tcpPerfMaps struct {
 	Accepting    *ebpf.Map `ebpf:"accepting"`
+	Connecting   *ebpf.Map `ebpf:"connecting"`
 	Counters     *ebpf.Map `ebpf:"counters"`
 	Drops        *ebpf.Map `ebpf:"drops"`
 	Events       *ebpf.Map `ebpf:"events"`
@@ -186,6 +195,7 @@ type tcpPerfMaps struct {
 func (m *tcpPerfMaps) Close() error {
 	return _TcpPerfClose(
 		m.Accepting,
+		m.Connecting,
 		m.Counters,
 		m.Drops,
 		m.Events,
@@ -213,6 +223,9 @@ type tcpPerfPrograms struct {
 	HandleActiveResetKprobe *ebpf.Program `ebpf:"handle_active_reset_kprobe"`
 	HandleCloseFentry       *ebpf.Program `ebpf:"handle_close_fentry"`
 	HandleCloseKprobe       *ebpf.Program `ebpf:"handle_close_kprobe"`
+	HandleConnect4Fexit     *ebpf.Program `ebpf:"handle_connect4_fexit"`
+	HandleConnect6Fexit     *ebpf.Program `ebpf:"handle_connect6_fexit"`
+	HandleConnectKret       *ebpf.Program `ebpf:"handle_connect_kret"`
 	HandleEnterConnect      *ebpf.Program `ebpf:"handle_enter_connect"`
 	HandleEnterListen       *ebpf.Program `ebpf:"handle_enter_listen"`
 	HandleExitAccept        *ebpf.Program `ebpf:"handle_exit_accept"`
@@ -239,6 +252,9 @@ func (p *tcpPerfPrograms) Close() error {
 		p.HandleActiveResetKprobe,
 		p.HandleCloseFentry,
 		p.HandleCloseKprobe,
+		p.HandleConnect4Fexit,
+		p.HandleConnect6Fexit,
+		p.HandleConnectKret,
 		p.HandleEnterConnect,
 		p.HandleEnterListen,
 		p.HandleExitAccept,

@@ -101,6 +101,36 @@ func metaInt(db *store.DB, key string) int64 {
 
 // IntervalMS is the recorder's sample interval from the metadata (30 s if
 // unknown).
+// Covered returns an error when the recording has nothing for the moment t:
+// t is after its last sample (the recorder stopped, or its latest rows are
+// not flushed to disk yet) or in a gap between samples. Before the first
+// sample SnapshotAt says so.
+func Covered(db *store.DB, t int64) error {
+	iv := IntervalMS(db)
+	var prev, next sql.NullInt64
+	if err := db.QueryRow(`SELECT MAX(ts) FROM samples WHERE ts <= ?`, t).Scan(&prev); err != nil {
+		return err
+	}
+	if !prev.Valid || t-prev.Int64 <= iv*5/2 {
+		return nil
+	}
+	if err := db.QueryRow(`SELECT MIN(ts) FROM samples WHERE ts > ?`, t).Scan(&next); err != nil {
+		return err
+	}
+	if next.Valid {
+		return fmt.Errorf("nothing was recorded at %s: no samples from %s to %s (clifrd was not running)",
+			FormatMS(t), FormatMS(prev.Int64), FormatMS(next.Int64))
+	}
+	flush := "every flush interval"
+	var v string
+	db.QueryRow(`SELECT value FROM meta WHERE key = 'flush_interval_s'`).Scan(&v)
+	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+		flush = "every " + fmtDur(int64(f*1000))
+	}
+	return fmt.Errorf("%s is after the end of the recording (last sample %s): clifrd writes to disk %s, "+
+		"so the latest minutes may not be there yet, or it was not running", FormatMS(t), FormatMS(prev.Int64), flush)
+}
+
 func IntervalMS(db *store.DB) int64 {
 	var v string
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'interval_s'`).Scan(&v)

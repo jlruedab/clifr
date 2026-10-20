@@ -42,9 +42,10 @@ struct upid { int nr; } __attribute__((preserve_access_index));
 struct pid { struct upid numbers[1]; } __attribute__((preserve_access_index));
 
 // enum pid_type since Linux 4.19, when the process group and session moved
-// to signal_struct (pids[]) and PIDTYPE_TGID was added.
-#define PIDTYPE_PGID 2
-#define PIDTYPE_SID 3
+// to signal_struct (pids[]) and PIDTYPE_TGID was added. RHEL 8's 4.18 has
+// signal->pids[] with the old order (PID, PGID, SID, TGID): the indices are
+// taken from the running kernel's enum (CO-RE).
+enum pid_type { PIDTYPE_PID, PIDTYPE_TGID, PIDTYPE_PGID, PIDTYPE_SID, PIDTYPE_MAX };
 
 struct signal_struct {
 	atomic_t live; // threads still running; 0 once the whole process has exited
@@ -205,10 +206,17 @@ static __always_inline void fill_tty(struct event *e, struct task_struct *t)
 	struct signal_struct *sig = BPF_CORE_READ(t, signal);
 	if (!sig || !bpf_core_field_exists(sig->pids))
 		return;
-	struct pid *p = BPF_CORE_READ(sig, pids[PIDTYPE_SID]);
+	struct pid **pids = (struct pid **)__builtin_preserve_access_index(&sig->pids[0]);
+	__u64 sid_i = bpf_core_enum_value(enum pid_type, PIDTYPE_SID);
+	__u64 pgid_i = bpf_core_enum_value(enum pid_type, PIDTYPE_PGID);
+	struct pid *p = 0;
+	if (sid_i < 4)
+		bpf_probe_read_kernel(&p, sizeof(p), pids + sid_i);
 	if (p)
 		e->sid = BPF_CORE_READ(p, numbers[0].nr);
-	p = BPF_CORE_READ(sig, pids[PIDTYPE_PGID]);
+	p = 0;
+	if (pgid_i < 4)
+		bpf_probe_read_kernel(&p, sizeof(p), pids + pgid_i);
 	if (p)
 		e->pgrp = BPF_CORE_READ(p, numbers[0].nr);
 	struct tty_struct *tty = BPF_CORE_READ(sig, tty);

@@ -380,6 +380,15 @@ func runToolAt(g *globals, words []string, diff []string) error {
 		return err
 	}
 	defer c.db.Close()
+	// A moment the recording has nothing for is an error, not an empty or
+	// stale answer.
+	for _, at := range append([]int64{c.w.At}, c.diffAt...) {
+		if at != 0 {
+			if err := query.Covered(c.db, at); err != nil {
+				return err
+			}
+		}
+	}
 	return exec()
 }
 

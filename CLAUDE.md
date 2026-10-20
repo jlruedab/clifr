@@ -67,6 +67,9 @@ wait for the user's go-ahead.
 - `internal/verify/` — compare saved real tool output with reconstructions.
 - `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
   `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
+- `packaging/vm.sh` — KVM test VMs (Rocky 8, Alma 9, Ubuntu 22.04 cloud images in
+  /var/lib/libvirt/images; `up`, `bins`, `test`, `down`); `vm-test.sh` runs inside: service,
+  `--test-ebpf` x3, e2e and truth from prebuilt test binaries (`CLIFR_TEST_BIN`), sos.
 - `packaging/` — `build.sh` (.deb/.rpm of clifr and clifrd into `dist/`; clifr built in a
   Rocky 8 container for glibc 2.28), `test.sh` (install test in containers), man pages from
   the help texts (`genman.sh`), bash completion (clifr's checked by `TestCompletion`).
@@ -97,11 +100,23 @@ wait for the user's go-ahead.
   when its sock pointer is reused (`tcp_close_missed` guard event); `recorder_stats` has
   `tcp_missed_runs` / `ebpf_missed_runs` (dropped). OOM, the syscall fd hooks and the
   reset/retransmit counters are still classic tracepoints.
+- Kernel differences found in VMs (2026-10-20; keep reading through CO-RE): RHEL 8's
+  `sk_protocol` is a bitfield (`BPF_CORE_READ_BITFIELD_PROBED`) and `inet_sock_set_state`'s
+  protocol one byte; RHEL 8 keeps the old `pid_type` order (PID, PGID, SID, TGID:
+  `bpf_core_enum_value`); RHEL 9 adds a byte to every classic tracepoint record's header (all
+  fields move by 8), and the tcp record types are named per kernel (`bpf_core_type_exists`).
+  Classic tracepoint records with relocated offsets are read with probe reads (the verifier
+  refuses dereferencing a moved ctx pointer). RHEL 8 has cgroup v1 by default.
 - `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
   there, `EV_ACTIVE_RESET` reports them. A reset or retransmit counted on a socket already in
   TCP_CLOSE (e.g. an RST to a segment in flight after an abort) is an `EV_LATE_COUNT` event,
   added to the connection just closed at that pointer (in the counters map it would go to the
   next connection there); a state change from TCP_CLOSE clears the pointer's counters.
+- connect(): the kernel sets SYN_SENT before it picks the local port, so that event has
+  port 0 and the connection no addresses yet (`setTuple` waits for a port). `EV_LOCAL_PORT`
+  reports the addresses when tcp_v4_connect / tcp_v6_connect return (fexit or kretprobe;
+  optional, else at the connect syscall's exit: late for a blocking connect). Without it a
+  connection stuck in SYN_SENT was missing from `ss` until a keyframe adopted it.
 - Keyframes: a TCP row of a later keyframe that no event explains waits one sample
   (`resolveDeferred`): an event that fired just before the dump may not be applied yet. A socket
   adopted from a keyframe takes its first event by its addresses, a listener's own close too.

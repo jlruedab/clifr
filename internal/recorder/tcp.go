@@ -416,6 +416,11 @@ func (r *Recorder) drainTCP() {
 				add16(&c.row.ResetsReceived, e.ResetsReceived)
 				c.dirty = true
 			}
+		case bpftcp.LocalPort: // connect() picked its port after SYN_SENT: the addresses are known now
+			if c != nil && c.row.LPort == 0 {
+				e.New = int(c.state)
+				c.setTuple(e)
+			}
 		}
 	}
 }

@@ -307,3 +307,38 @@ func TestDeferredDumpRow(t *testing.T) {
 		t.Errorf("unexplained row: reconcile %+v", b.Reconcile)
 	}
 }
+
+// A connect stuck in SYN_SENT: its state event has no local port (the
+// kernel picks it after), the connect's return reports it, and a later
+// keyframe matches the connection instead of adopting a second one.
+func TestLocalPort(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	tr := r.tcp
+	tr.keyframes = 1
+	tr.queue = []bpftcp.Event{tcpEvent(5, bpftcp.Close, bpftcp.SynSent, "10.0.0.1", 0, "10.0.0.9", 443),
+		{Kind: bpftcp.LocalPort, SK: 5, Family: 2, SAddr: netip.MustParseAddr("10.0.0.1"), SPort: 50900,
+			DAddr: netip.MustParseAddr("10.0.0.9"), DPort: 443}}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	tr.pendingDump = []sockdiag.Socket{{Proto: "tcp", Family: 4, State: bpftcp.SynSent, LAddr: netip.MustParseAddr("10.0.0.1"),
+		LPort: 50900, RAddr: netip.MustParseAddr("10.0.0.9"), RPort: 443, Inode: 77}}
+	tr.dumpStart = 2000
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.keyframe(&b)
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.flushTCP(3000, &b)
+	if len(b.Reconcile) != 1 || b.Reconcile[0].MissingFromEvents != 0 {
+		t.Errorf("reconcile: %+v", b.Reconcile)
+	}
+	for _, c := range b.TCPConns {
+		if c.Source != store.SrcEBPF || c.LPort != 50900 {
+			t.Errorf("connection %+v", c)
+		}
+	}
+}

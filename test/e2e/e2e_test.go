@@ -62,6 +62,14 @@ func TestMain(m *testing.M) {
 
 var held []any // keeps helper connections and files reachable
 
+// holdForever blocks until the helper is killed. Not select {}: without cgo
+// the runtime ends a process whose only goroutine blocks that way (deadlock).
+func holdForever() {
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
 func server() {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -87,7 +95,7 @@ func client() {
 		held = append(held, c)
 	}
 	fmt.Println("READY")
-	select {}
+	holdForever()
 }
 
 func deleted() {
@@ -102,7 +110,7 @@ func deleted() {
 	}
 	held = append(held, f)
 	fmt.Println("READY")
-	select {}
+	holdForever()
 }
 
 func TestIncident(t *testing.T) {
@@ -115,6 +123,13 @@ func TestIncident(t *testing.T) {
 	for _, b := range []struct{ out, pkg, cgo string }{
 		{"clifrd", "./cmd/clifrd", "0"}, {"clifr", "./cmd/clifr", "1"}, {"load", "./bench/load", "0"},
 	} {
+		if bin := os.Getenv("CLIFR_TEST_BIN"); bin != "" {
+			// Prebuilt (a machine without Go, such as a test VM).
+			if err := exec.Command("cp", filepath.Join(bin, b.out), dir).Run(); err != nil {
+				t.Fatalf("CLIFR_TEST_BIN: %s: %v", b.out, err)
+			}
+			continue
+		}
 		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "CGO_ENABLED="+b.cgo)
@@ -124,6 +139,13 @@ func TestIncident(t *testing.T) {
 	}
 	clifr := filepath.Join(dir, "clifr")
 	data := filepath.Join(dir, "data")
+	if keep := os.Getenv("CLIFR_E2E_KEEP"); keep != "" { // keep the data and the log for a look
+		defer func() {
+			exec.Command("cp", "-r", data, keep).Run()
+			exec.Command("cp", filepath.Join(dir, "recorder.log"), keep).Run()
+			t.Logf("data copied to %s", keep)
+		}()
+	}
 
 	// Background load and the recorder.
 	load := start(t, exec.Command(filepath.Join(dir, "load"), "--profile", "light"), "READY")
@@ -295,10 +317,7 @@ func TestIncident(t *testing.T) {
 		if out, err := exec.Command(clifr, "info", "--data-dir", data).CombinedOutput(); err == nil {
 			t.Logf("stats:\n%s", out)
 		}
-		if keep := os.Getenv("CLIFR_E2E_KEEP"); keep != "" { // keep the data for a look
-			exec.Command("cp", "-r", data, keep).Run()
-			t.Logf("data copied to %s; burst %s .. %s", keep, burstStart.Format("15:04:05.000"), burstEnd.Format("15:04:05.000"))
-		}
+		t.Logf("burst %s .. %s", burstStart.Format("15:04:05.000"), burstEnd.Format("15:04:05.000"))
 	}
 }
 

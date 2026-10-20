@@ -25,6 +25,7 @@ rpmrel=0.git$snap
 dist=$PWD/dist
 stage=$dist/stage
 rm -rf "$stage" && mkdir -p "$stage" "$dist/.cache"
+rm -f "$dist"/*.deb "$dist"/*.rpm
 owner=$(stat -c %u:%g .)
 
 echo "== clifrd $full (static)"

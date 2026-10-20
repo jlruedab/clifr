@@ -34,16 +34,17 @@ const (
 	ActiveReset   Kind = 6 // sent an RST on abort (after its TCP_CLOSE)
 	TimeWaitEnd   Kind = 7 // a time-wait socket went away (addresses in the event)
 	LateCount     Kind = 8 // a reset or retransmit of a socket already in TCP_CLOSE (counts in the event)
+	LocalPort     Kind = 9 // the local port a connect() got after its SYN_SENT event (SPort)
 )
 
 func (k Kind) String() string {
-	if k >= State && k <= LateCount {
-		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset", "time_wait_end", "late_count"}[k]
+	if k >= State && k <= LocalPort {
+		return [...]string{"", "state", "accept", "accept_fd", "app_close", "time_wait", "active_reset", "time_wait_end", "late_count", "local_port"}[k]
 	}
 	return "unknown"
 }
 
-var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset, TimeWaitEnd, LateCount}
+var Kinds = []Kind{State, Accept, AcceptFD, AppClose, TimeWaitStart, ActiveReset, TimeWaitEnd, LateCount, LocalPort}
 
 // TCP states, as the kernel numbers them.
 const (
@@ -161,6 +162,12 @@ func open(perfBuf, fentry, btfState bool, o Options) (s *Source, err error) {
 			delete(spec.Programs, p[0])
 		}
 	}
+	if fentry {
+		delete(spec.Programs, "handle_connect_kret")
+	} else {
+		delete(spec.Programs, "handle_connect4_fexit")
+		delete(spec.Programs, "handle_connect6_fexit")
+	}
 	if btfState {
 		delete(spec.Programs, "handle_set_state")
 	} else {
@@ -225,6 +232,25 @@ func open(perfBuf, fentry, btfState bool, o Options) (s *Source, err error) {
 				return
 			}
 			s.links = append(s.links, l)
+		}
+	}
+	// Optional: the local port of a connect as soon as the kernel picks it
+	// (else when the connect syscall returns: late for a blocking connect).
+	if fentry {
+		for _, p := range [][2]string{{"handle_connect4_fexit", "tcp_v4_connect"}, {"handle_connect6_fexit", "tcp_v6_connect"}} {
+			if l, err := link.AttachTracing(link.TracingOptions{Program: coll.Programs[p[0]]}); err == nil {
+				s.links = append(s.links, l)
+			} else {
+				s.Missing = append(s.Missing, p[1])
+			}
+		}
+	} else {
+		for _, fn := range []string{"tcp_v4_connect", "tcp_v6_connect"} {
+			if l, err := link.Kretprobe(fn, coll.Programs["handle_connect_kret"], nil); err == nil {
+				s.links = append(s.links, l)
+			} else {
+				s.Missing = append(s.Missing, fn)
+			}
 		}
 	}
 	// Optional: inet_twsk_kill is static and may be inlined or renamed.
@@ -478,7 +504,7 @@ func decode(raw []byte) (Event, error) {
 		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport), V6Only: r.Flags&flagV6Only != 0,
 		Owner:       Owner{PID: int(r.Owner.Pid), StartNS: r.Owner.StartNs, FD: int(r.Owner.Fd), Inode: r.Owner.Inode},
 		Retransmits: r.Counters.Retransmits, ResetsSent: r.Counters.ResetsSent, ResetsReceived: r.Counters.ResetsReceived}
-	if e.Kind == State || e.Kind == TimeWaitEnd {
+	if e.Kind == State || e.Kind == TimeWaitEnd || e.Kind == LocalPort {
 		if e.Family == 2 {
 			e.SAddr = netip.AddrFrom4([4]byte(r.Saddr[:4]))
 			e.DAddr = netip.AddrFrom4([4]byte(r.Daddr[:4]))
