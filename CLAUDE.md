@@ -65,6 +65,8 @@ wait for the user's go-ahead.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.
 - `internal/verify/` — compare saved real tool output with reconstructions.
+- `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
+  `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
 - `deploy/` — systemd unit. `bench/` — load generator, benchmark runner, report. `test/e2e/` — end-to-end test.
 - `test/truth/` — ground-truth test (found/expected per check; `truthproc/` is its helper binary).
 

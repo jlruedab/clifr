@@ -40,6 +40,9 @@ func run(args []string) error {
 	if len(args) == 1 && args[0] == "--thread-exit" {
 		threadExit()
 	}
+	if len(args) > 0 && args[0] == "bundle" {
+		return bundleCmd(args[1:])
+	}
 	doDoctor := len(args) > 0 && args[0] == "doctor"
 	if doDoctor {
 		args = args[1:]
@@ -48,7 +51,8 @@ func run(args []string) error {
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "clifrd records processes, sockets, open files and system counters for clifr.\n\n"+
 			"Usage:\n  clifrd [OPTIONS]          record (normally run by systemd)\n"+
-			"  clifrd doctor [OPTIONS]   check what this system supports and show the recording level\n\nOptions:\n")
+			"  clifrd doctor [OPTIONS]   check what this system supports and show the recording level\n"+
+			"  clifrd bundle [OPTIONS]   write the recording, or a window of it, as one file (clifrd bundle --help)\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	c := recorder.Config{Version: version()}

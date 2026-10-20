@@ -155,7 +155,7 @@ Missing from the spec:
   measure 1 h / 6 h / 24 h busy recordings.
 - Verify: tests on recorded fixtures; timing and memory of the CLI.
 
-### Phase 5 — sos-vault without network (1 week)
+### Phase 5 — sos-vault without network (1 week) — done 2026-10-20
 - `clifrd bundle --since/--until -o FILE` (whole hourly files + meta, pure Go).
 - sos plugin (Python) running it; `clifr --data-dir` on an unpacked bundle.
 - Verify: bundle of a busy hour opens and matches the source data.

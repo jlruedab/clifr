@@ -198,3 +198,44 @@ func TestValBufRowSize(t *testing.T) {
 		t.Errorf("TCPConn is %d bytes", n)
 	}
 }
+
+func TestFileSpan(t *testing.T) {
+	ms := func(s string) int64 { tm, _ := time.Parse("2006-01-02 15:04", s); return tm.UnixMilli() }
+	for _, c := range []struct {
+		path   string
+		flush  time.Duration
+		lo, hi int64
+		ok     bool
+	}{
+		{"x/2026-10-20/05-40.parquet", 5 * time.Minute, ms("2026-10-20 05:34"), ms("2026-10-20 05:42"), true},
+		{"x/2026-10-20/05-40-2.parquet", 0, 0, ms("2026-10-20 05:42"), true},
+		{"x/2026-10-20/05.parquet", 5 * time.Minute, ms("2026-10-20 04:54"), ms("2026-10-20 06:01"), true},
+		{"x/open/1792451773.parquet", 0, 0, 0, false},
+	} {
+		lo, hi, ok := FileSpan(c.path, c.flush)
+		if lo != c.lo || hi != c.hi || ok != c.ok {
+			t.Errorf("%s: %d %d %v, want %d %d %v", c.path, lo, hi, ok, c.lo, c.hi, c.ok)
+		}
+	}
+}
+
+func TestStartedBy(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.parquet")
+	f, err := os.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := parquet.NewGenericWriter[tcpConnRow](f, writerOptions...)
+	w.Write([]tcpConnRow{{ID: 1, OpenTS: 100}, {ID: 2, OpenTS: 200}, {ID: 3, OpenTS: 300}})
+	w.Close()
+	f.Close()
+	out := filepath.Join(dir, "out.parquet")
+	n, err := StartedBy("tcp_conns", []string{in}, out, 200)
+	if err != nil || n != 2 {
+		t.Fatalf("kept %d, %v", n, err)
+	}
+	if _, err := StartedBy("samples", []string{in}, out, 200); err == nil {
+		t.Error("a table without entities was accepted")
+	}
+}

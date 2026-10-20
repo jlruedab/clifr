@@ -109,36 +109,14 @@ func (l *loader) files(table string) []string {
 	return files
 }
 
-// filesIn keeps the files that can hold rows with times in [lo, hi]. A data
-// file is named after when it was written (UTC): DAY/HH-MM.parquet for a
-// flush, DAY/HH.parquet for a compacted hour; its rows are no later than
-// that, and no earlier than one flush interval before (when the recording
-// says how long that is). Open files and unknown names are always kept.
+// filesIn keeps the files that can hold rows with times in [lo, hi]
+// (pqstore.FileSpan). Open files and unknown names are always kept.
 func (l *loader) filesIn(table string, lo, hi int64) []string {
-	flush := l.flushMS()
-	const slack = 60_000
+	flush := time.Duration(l.flushMS()) * time.Millisecond
 	var out []string
 	for _, f := range l.files(table) {
-		day, name := filepath.Base(filepath.Dir(f)), strings.TrimSuffix(filepath.Base(f), ".parquet")
-		var start, end time.Time
-		var err error
-		if len(name) == 5 { // HH-MM
-			start, err = time.Parse("2006-01-02 15-04", day+" "+name)
-			end = start.Add(time.Minute)
-		} else {
-			start, err = time.Parse("2006-01-02 15", day+" "+name)
-			end = start.Add(time.Hour)
-		}
-		if err != nil {
-			out = append(out, f)
-			continue
-		}
-		fHi := end.UnixMilli() + slack
-		fLo := int64(0)
-		if flush > 0 {
-			fLo = start.UnixMilli() - flush - slack
-		}
-		if fHi >= lo && fLo <= hi {
+		fLo, fHi, ok := pqstore.FileSpan(f, flush)
+		if !ok || fHi >= lo && fLo <= hi {
 			out = append(out, f)
 		}
 	}

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"clifr/internal/bundle"
 	"errors"
 	"flag"
 	"fmt"
@@ -151,10 +152,42 @@ func run(args []string) error {
 	if err := checkLater(&g); err != nil {
 		return err
 	}
+	if g.db == "" {
+		cleanup, err := openBundle(&g)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+	}
 	if sub != "" {
 		return runSub(&g, sub, subArgs)
 	}
 	return runTool(&g, words)
+}
+
+// openBundle lets --data-dir name a bundle (clifrd bundle): it is unpacked
+// into a temporary directory, removed when clifr ends.
+func openBundle(g *globals) (func(), error) {
+	st, err := os.Stat(g.dataDir)
+	if err != nil || !st.Mode().IsRegular() {
+		return func() {}, nil
+	}
+	f, err := os.Open(g.dataDir)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	tmp, err := os.MkdirTemp("", "clifr-bundle-")
+	if err != nil {
+		return nil, err
+	}
+	dir, _, err := bundle.Extract(f, tmp)
+	if err != nil {
+		os.RemoveAll(tmp)
+		return nil, fmt.Errorf("%s: %w", g.dataDir, err)
+	}
+	g.dataDir = dir
+	return func() { os.RemoveAll(tmp) }, nil
 }
 
 // checkLater rejects options of features that are not in this release.

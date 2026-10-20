@@ -309,6 +309,40 @@ A command can also be given unquoted after clifr's options
   size, recorder CPU and RSS, sample durations by phase, events and drops per
   source, guard-rail changes and estimated disk per day.
 
+### Bundles and sos report
+
+`clifrd bundle` writes the recording, or what a window of it needs, as one
+tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
+(unpacked into a temporary directory for the query):
+
+    sudo clifrd bundle --last 6h -o /tmp/clifr.tar
+    sudo clifrd bundle --since "2026-10-20 12:00" --until "2026-10-20 13:00" -o /tmp/clifr.tar
+    clifr --data-dir /tmp/clifr.tar --at "2026-10-20 12:31" "ss -tanp"
+
+- Data files are copied unchanged (the window's hours, whole), plus a
+  lead-in for the state at the window's start (keyframe, samples), the
+  values written only when they change, and `bundle.json` (the host's
+  machine-id, boot id, time zone, versions, window, SHA-256 per file).
+  Entity rows written after the window (processes and connections that
+  closed later) are filtered to the ones that began by its end.
+- Pure Go, safe while clifrd records. On the busy 6-hour recording: one
+  hour in the middle 342 MB in 10 s (the filtering), the whole recording
+  1.0 GB in 1 s; every output compared (44 moments, ranges, changes, diff)
+  is identical to the same query on the recording.
+- clifr refuses bundles of a newer layout, and damaged files.
+- `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside
+  sos's plugins, `sos/report/plugins/`). It adds the bundle as
+  `sos_commands/clifr/clifr-bundle.tar`, plus `clifrd --version`,
+  `clifrd doctor` and `/etc/clifr`:
+
+      sos report -o clifr                       # the last 6 hours
+      sos report -o clifr -k clifr.window=24h   # or all
+      sos report -o clifr -k clifr.start="2026-10-20 12:00" -k clifr.end="2026-10-20 13:00"
+
+  Tested with sos 4.11.2 (Ubuntu's package, run from its files). xz
+  hardly shrinks the Parquet files: plan the upload size (about 175 MB
+  per hour at the busy load).
+
 ## Tests
 
     go test ./...                                                  # unit tests, /proc fixtures
