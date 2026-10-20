@@ -297,6 +297,14 @@ A command can also be given unquoted after clifr's options
        "local":"192.168.1.12","lport":32800,"peer":"40.99.129.18","rport":443,"proto":"tcp",
        "inode":305975,"owners":[{"comm":"firefox","pid":12348,"fd":147}],"sampled":["recv_q","send_q"]}
 
+- Query cost: clifr loads only the tables a query names, and the TCP tables
+  and processes only around the time asked for. On a 6-hour recording of
+  the busy load (978 MB, about 23 million connections; 2026-10-20,
+  `longrec-20261020-0945`): `vmstat` 0.05 s and 93 MB, `ps aux` about
+  0.1 s and 150 MB, `ss -tanp` 0.7–1.2 s and 0.5 GB, `lsof` 1.0–1.5 s and
+  0.6 GB at any moment in it; `info` 0.4 s and 1.4 GB. A range costs in
+  proportion to its length: 30 minutes of `ss -tan` (1.8 million
+  connections) 5.2 s and 2.3 GB.
 - `info` shows the recording range, samples and skips, rows per table, data
   size, recorder CPU and RSS, sample durations by phase, events and drops per
   source, guard-rail changes and estimated disk per day.

@@ -1,6 +1,6 @@
 # clifr / clifrd: from working prototype to viable product
 
-Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (the user's file). Phase 1 (rename) done 2026-10-19 (`0faa79f`); phase 2 (front end) 2026-10-19: grammar `1a7ef54`, new commands `034cfe6`, JSON Lines `9f680c7`, verify and ground truth `32eee75`; phase 3 (recorder) 2026-10-19 `03df9d3` .. `abc43af`, benchmark batch 20261019-1620.
+Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (the user's file). Phase 1 (rename) done 2026-10-19 (`0faa79f`); phase 2 (front end) 2026-10-19: grammar `1a7ef54`, new commands `034cfe6`, JSON Lines `9f680c7`, verify and ground truth `32eee75`; phase 3 (recorder) 2026-10-19 `03df9d3` .. `abc43af`, benchmark batch 20261019-1620; phase 4 (range views, diff, pager, loading) 2026-10-20 `438f503` .. `a9c619d`.
 
 ## Context
 
