@@ -188,7 +188,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
 - **Step 2, the CSV's priority items** (new tables, ~2–3 weeks): `netstat -s
   [-6]`, `nstat -zas` (/proc/net/snmp, snmp6, netstat per system sample;
   recording, nstat and netstat -s done 2026-10-21);
-  `ip -s -d link` (/proc/net/dev + netlink); `ip addr`, `ip route [-6]`,
+  `ip -s -d link` (rtnetlink; done 2026-10-21 without each interface type's
+  own parameters, the user's choice; their raw attributes are recorded); `ip addr`, `ip route [-6]`,
   `ip rule` (netlink notifications, list at start then changes); `dmesg [-T]`
   (/dev/kmsg; the user decided 2026-10-21: record it, relax the unit's
   `ProtectKernelLogs`, apply the `--redact` patterns to the messages);

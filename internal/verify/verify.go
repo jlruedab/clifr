@@ -133,6 +133,8 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = compareTop(db, s)
 		case "findmnt":
 			res, err = compareFindmnt(db, s)
+		case "ip -s -d link":
+			res, err = compareIPLink(db, s)
 		case "netstat -s", "netstat -s -6":
 			res, err = compareNetstatStats(db, s)
 		case "nstat -zas":
@@ -778,8 +780,8 @@ func printResult(w io.Writer, r Result, examples bool) {
 // compared lists the commands in report order; laterCommands are those added
 // after older recordings were made, listed only when present.
 var (
-	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6"}
-	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6")
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link")
 )
 
 func Print(w io.Writer, rep *Report, verbose bool) {

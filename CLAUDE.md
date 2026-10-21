@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -58,6 +58,7 @@ wait for the user's go-ahead.
 - `internal/bpftcp/` — eBPF TCP events: `tcpevents.bpf.c` (state changes with owners,
   accept fds, app close, time-wait start/end, retransmits/resets); objects for amd64 and arm64.
 - `internal/cnproc/` — kernel proc connector (fork/exec/exit events), the fallback.
+- `internal/rtnl/` — rtnetlink reads (network interfaces; later addresses, routes, rules).
 - `internal/store/` — `Backend` interface, the per-sample `Batch` and its rows, `DB` (a
   recording loaded into DuckDB). `internal/testrec/` — small recordings for tests (Parquet,
   read back through DuckDB). `internal/duck/testdata/roundtrip.golden`: every table as
@@ -150,6 +151,11 @@ wait for the user's go-ahead.
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
   (`internal/duck` loads that window).
+- `links` (schema 5): each network interface from rtnetlink (`internal/rtnl`, RTM_GETLINK) at
+  system samples: every attribute ip -s -d link prints (-1 / empty when the kernel does not send
+  it), the raw per-type data (`info_data`, `slave_data`: not printed yet) and rtnl_link_stats64;
+  a row when anything changed, all every 5 min, `gone` = 1 when it went away. Not with
+  `--proc-root` fixtures.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).

@@ -495,3 +495,89 @@ type netCounterRow struct {
 	Name    string `parquet:"name,dict"`
 	Value   int64  `parquet:"value"`
 }
+
+// linkRow: store.LinkRow. LinkStatCols names its Stats columns, in order.
+type linkRow struct {
+	TS             int64  `parquet:"ts"`
+	Index          int32  `parquet:"ifindex"`
+	Type           int32  `parquet:"type"`
+	Gone           int32  `parquet:"gone"`
+	Flags          int64  `parquet:"flags"`
+	XDP            int32  `parquet:"xdp"`
+	HasStats       int32  `parquet:"has_stats"`
+	Name           string `parquet:"name,dict"`
+	Qdisc          string `parquet:"qdisc,dict"`
+	Alias          string `parquet:"alias,dict"`
+	Kind           string `parquet:"kind,dict"`
+	SlaveKind      string `parquet:"slave_kind,dict"`
+	PhysPortName   string `parquet:"phys_port_name,dict"`
+	ParentBus      string `parquet:"parent_bus,dict"`
+	ParentDev      string `parquet:"parent_dev,dict"`
+	AltNames       string `parquet:"alt_names,dict"`
+	MTU            int64  `parquet:"mtu"`
+	Master         int64  `parquet:"master"`
+	Link           int64  `parquet:"link"`
+	LinkNetnsID    int64  `parquet:"link_netnsid"`
+	OperState      int64  `parquet:"operstate"`
+	LinkMode       int64  `parquet:"linkmode"`
+	Group          int64  `parquet:"grp"`
+	TxQLen         int64  `parquet:"txqlen"`
+	Promiscuity    int64  `parquet:"promiscuity"`
+	Allmulti       int64  `parquet:"allmulti"`
+	MinMTU         int64  `parquet:"min_mtu"`
+	MaxMTU         int64  `parquet:"max_mtu"`
+	NetnsImmutable int64  `parquet:"netns_immutable"`
+	AddrGenMode    int64  `parquet:"addr_gen_mode"`
+	NumTxQueues    int64  `parquet:"num_tx_queues"`
+	NumRxQueues    int64  `parquet:"num_rx_queues"`
+	GSOMaxSize     int64  `parquet:"gso_max_size"`
+	GSOMaxSegs     int64  `parquet:"gso_max_segs"`
+	TSOMaxSize     int64  `parquet:"tso_max_size"`
+	TSOMaxSegs     int64  `parquet:"tso_max_segs"`
+	GROMaxSize     int64  `parquet:"gro_max_size"`
+	GSOIPv4MaxSize int64  `parquet:"gso_ipv4_max_size"`
+	GROIPv4MaxSize int64  `parquet:"gro_ipv4_max_size"`
+	ProtoDown      int64  `parquet:"proto_down"`
+	CarrierChanges int64  `parquet:"carrier_changes"`
+	Address        []byte `parquet:"address"`
+	Broadcast      []byte `parquet:"broadcast"`
+	PermAddress    []byte `parquet:"perm_address"`
+	PhysPortID     []byte `parquet:"phys_port_id"`
+	PhysSwitchID   []byte `parquet:"phys_switch_id"`
+	InfoData       []byte `parquet:"info_data"`
+	SlaveData      []byte `parquet:"slave_data"`
+	S0             int64  `parquet:"rx_packets"`
+	S1             int64  `parquet:"tx_packets"`
+	S2             int64  `parquet:"rx_bytes"`
+	S3             int64  `parquet:"tx_bytes"`
+	S4             int64  `parquet:"rx_errors"`
+	S5             int64  `parquet:"tx_errors"`
+	S6             int64  `parquet:"rx_dropped"`
+	S7             int64  `parquet:"tx_dropped"`
+	S8             int64  `parquet:"multicast"`
+	S9             int64  `parquet:"collisions"`
+	S10            int64  `parquet:"rx_length_errors"`
+	S11            int64  `parquet:"rx_over_errors"`
+	S12            int64  `parquet:"rx_crc_errors"`
+	S13            int64  `parquet:"rx_frame_errors"`
+	S14            int64  `parquet:"rx_fifo_errors"`
+	S15            int64  `parquet:"rx_missed_errors"`
+	S16            int64  `parquet:"tx_aborted_errors"`
+	S17            int64  `parquet:"tx_carrier_errors"`
+	S18            int64  `parquet:"tx_fifo_errors"`
+	S19            int64  `parquet:"tx_heartbeat_errors"`
+	S20            int64  `parquet:"tx_window_errors"`
+	S21            int64  `parquet:"rx_compressed"`
+	S22            int64  `parquet:"tx_compressed"`
+	S23            int64  `parquet:"rx_nohandler"`
+	S24            int64  `parquet:"rx_otherhost_dropped"`
+}
+
+// LinkStatCols are the links table's statistics columns, in store.LinkRow.Stats order.
+var LinkStatCols = []string{"rx_packets", "tx_packets", "rx_bytes", "tx_bytes", "rx_errors", "tx_errors", "rx_dropped", "tx_dropped", "multicast", "collisions", "rx_length_errors", "rx_over_errors", "rx_crc_errors", "rx_frame_errors", "rx_fifo_errors", "rx_missed_errors", "tx_aborted_errors", "tx_carrier_errors", "tx_fifo_errors", "tx_heartbeat_errors", "tx_window_errors", "rx_compressed", "tx_compressed", "rx_nohandler", "rx_otherhost_dropped"}
+
+func linkOf(l *store.LinkRow) linkRow {
+	return linkRow{TS: l.TS, Index: int32(l.Index), Type: int32(l.Type), Gone: b2i(l.Gone), Flags: l.Flags, XDP: b2i(l.XDP), HasStats: b2i(l.HasStats),
+		Name: l.Name, Qdisc: l.Qdisc, Alias: l.Alias, Kind: l.Kind, SlaveKind: l.SlaveKind, PhysPortName: l.PhysPortName, ParentBus: l.ParentBus, ParentDev: l.ParentDev, AltNames: l.AltNames, MTU: l.MTU, Master: l.Master, Link: l.Link, LinkNetnsID: l.LinkNetnsID, OperState: l.OperState, LinkMode: l.LinkMode, Group: l.Group, TxQLen: l.TxQLen, Promiscuity: l.Promiscuity, Allmulti: l.Allmulti, MinMTU: l.MinMTU, MaxMTU: l.MaxMTU, NetnsImmutable: l.NetnsImmutable, AddrGenMode: l.AddrGenMode, NumTxQueues: l.NumTxQueues, NumRxQueues: l.NumRxQueues, GSOMaxSize: l.GSOMaxSize, GSOMaxSegs: l.GSOMaxSegs, TSOMaxSize: l.TSOMaxSize, TSOMaxSegs: l.TSOMaxSegs, GROMaxSize: l.GROMaxSize, GSOIPv4MaxSize: l.GSOIPv4MaxSize, GROIPv4MaxSize: l.GROIPv4MaxSize, ProtoDown: l.ProtoDown, CarrierChanges: l.CarrierChanges, Address: l.Address, Broadcast: l.Broadcast, PermAddress: l.PermAddress, PhysPortID: l.PhysPortID, PhysSwitchID: l.PhysSwitchID, InfoData: l.InfoData, SlaveData: l.SlaveData,
+		S0: l.Stats[0], S1: l.Stats[1], S2: l.Stats[2], S3: l.Stats[3], S4: l.Stats[4], S5: l.Stats[5], S6: l.Stats[6], S7: l.Stats[7], S8: l.Stats[8], S9: l.Stats[9], S10: l.Stats[10], S11: l.Stats[11], S12: l.Stats[12], S13: l.Stats[13], S14: l.Stats[14], S15: l.Stats[15], S16: l.Stats[16], S17: l.Stats[17], S18: l.Stats[18], S19: l.Stats[19], S20: l.Stats[20], S21: l.Stats[21], S22: l.Stats[22], S23: l.Stats[23], S24: l.Stats[24]}
+}

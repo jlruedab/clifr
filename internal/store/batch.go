@@ -251,6 +251,34 @@ type NetCounter struct {
 	Value   int64
 }
 
+// LinkRow is one network interface (rtnl.Link) at a system sample: written
+// when anything about it changed (its counters included), all of them every
+// NetCountersFullMS, and with Gone when it went away. Numbers are -1 when the
+// kernel did not report them.
+type LinkRow struct {
+	TS                                    int64
+	Index, Type                           int
+	Gone                                  bool
+	Flags                                 int64
+	Name, Qdisc, Alias, Kind, SlaveKind   string
+	PhysPortName, ParentBus, ParentDev    string
+	AltNames                              string // newline-separated
+	MTU, Master, Link, LinkNetnsID        int64
+	OperState, LinkMode, Group, TxQLen    int64
+	Promiscuity, Allmulti, MinMTU, MaxMTU int64
+	NetnsImmutable, AddrGenMode           int64
+	NumTxQueues, NumRxQueues              int64
+	GSOMaxSize, GSOMaxSegs                int64
+	TSOMaxSize, TSOMaxSegs, GROMaxSize    int64
+	GSOIPv4MaxSize, GROIPv4MaxSize        int64
+	ProtoDown, CarrierChanges             int64
+	Address, Broadcast, PermAddress       []byte
+	PhysPortID, PhysSwitchID              []byte
+	InfoData, SlaveData                   []byte
+	XDP, HasStats                         bool
+	Stats                                 [25]int64 // rtnl_link_stats64, rx_packets .. rx_otherhost_dropped
+}
+
 // NetCountersFullMS: how often every protocol counter is written, so a moment
 // needs only the rows of the 5 minutes before it.
 const NetCountersFullMS = 5 * 60 * 1000
@@ -339,6 +367,7 @@ type Batch struct {
 	CPUs        []CPUSample
 	Disks       []DiskSample
 	NetCounters []NetCounter
+	Links       []LinkRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -349,5 +378,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links)
 }

@@ -228,6 +228,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at now "last -F reboot"
     clifr --at "02:45" "nstat -zas"
     clifr --at "02:45" "netstat -s"
+    clifr --at "02:45" "ip -s -d link"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -321,6 +322,14 @@ chooses one; a line on stderr says when a style other than current is used.
   sentences, sections and quirks (counters its tables miss print as
   "Name: value", only when not 0). Checked with `clifr verify` here and in
   the RHEL 8, RHEL 9 and Ubuntu 22.04 VMs: every line, 100%.
+- `ip [-s [-s]] [-d] link [show] [[dev] NAME]`: the network interfaces at the
+  system sample at or before T, in iproute2's layout (flags, state, MTU,
+  qdisc, addresses, RX/TX counters, `-s -s` error counters, `-d`'s generic
+  attributes, altnames). clifrd reads them over rtnetlink at each system
+  sample (schema 5). Not reconstructed: the parameters of each interface
+  type (`-d` prints "bridge", "bond", "vlan", ... without them), XDP
+  programs, VF information. Checked: every interface 100% here (iproute2
+  6.19) and in the VMs (6.2, 6.17, 5.15; only lo and one NIC there).
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

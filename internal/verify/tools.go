@@ -22,6 +22,7 @@ func init() {
 	ignoredFields["df -al -x autofs"] = ignoredFields["df"]
 	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
 	ignoredFields["uname -a"] = "none"
+	ignoredFields["ip -s -d link"] = "each interface type's own parameters (bridge, bond, vlan, ...: not reconstructed); counters that moved within 1% or 100 count as churn-changed"
 	ignoredFields["netstat -s"] = "none; counters that moved within 1% or 10 count as churn-changed"
 	ignoredFields["netstat -s -6"] = ignoredFields["netstat -s"]
 	ignoredFields["nstat -zas"] = "the rate column (nstat's own history); values that moved within 1% or 10 count as churn-changed"
@@ -884,6 +885,95 @@ func compareNetstatStats(db *store.DB, snap snapshot) (Result, error) {
 		for _, x := range xs {
 			res.Extra++
 			res.example("%s extra %q", snap.cmd, strings.TrimSpace(x))
+		}
+	}
+	return res, nil
+}
+
+// ---- ip -s -d link ----
+
+var linkHead = regexp.MustCompile(`^\d+: ([^:@ ]+)`)
+
+// parseIPLink splits ip link's output into one block of lines per interface.
+func parseIPLink(out string) map[string][]string {
+	m := map[string][]string{}
+	var cur string
+	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if h := linkHead.FindStringSubmatch(l); h != nil {
+			cur = h[1]
+		}
+		if cur != "" {
+			m[cur] = append(m[cur], strings.TrimRight(l, " "))
+		}
+	}
+	return m
+}
+
+// kindLine drops an interface type's own parameters, which clifr does not
+// reconstruct: "    bridge forward_delay 1500 ... addrgenmode eui64 ..." ->
+// "    bridge addrgenmode eui64 ...".
+func kindLine(l string) string {
+	f := strings.Fields(l)
+	if !strings.HasPrefix(l, "    ") || len(f) < 2 || strings.HasPrefix(f[0], "link/") || f[0] == "RX:" || f[0] == "TX:" ||
+		f[0] == "altname" || f[0] == "alias" || strings.Contains(f[0], "errors") {
+		return l
+	}
+	for _, k := range []string{" addrgenmode ", " numtxqueues "} {
+		if i := strings.Index(l, k); i > 0 {
+			return "    " + f[0] + l[i:]
+		}
+	}
+	return "    " + f[0]
+}
+
+func compareIPLink(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	links, _, err := query.LinksAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	real := parseIPLink(snap.output)
+	rec := parseIPLink(render(func(sb *strings.Builder) {
+		query.PrintIPLink(sb, links, query.IPLinkOptions{Stats: 1, Details: true})
+	}))
+	res.Real, res.Recon = len(real), len(rec)
+	for name, rl := range real {
+		xl, ok := rec[name]
+		if !ok {
+			res.Missing++
+			res.example("ip link missing %s", name)
+			continue
+		}
+		res.Matched++
+		var fields []fieldPair
+		close := true
+		for i := 0; i < len(rl) || i < len(xl); i++ {
+			var r, x string
+			if i < len(rl) {
+				r = kindLine(rl[i])
+			}
+			if i < len(xl) {
+				x = kindLine(xl[i])
+			}
+			fields = append(fields, fieldPair{fmt.Sprintf("line %d", i+1), r, x})
+			if numRe.ReplaceAllString(r, "N") != numRe.ReplaceAllString(x, "N") {
+				close = false
+				continue
+			}
+			rn, xn := numRe.FindAllString(r, -1), numRe.FindAllString(x, -1)
+			for j := range rn {
+				if !near(rn[j], xn[j], 0.01, 100) {
+					close = false
+				}
+			}
+		}
+		res.compare("ip link "+name, fields, func() bool { return close })
+	}
+	for name := range rec {
+		if _, ok := real[name]; !ok {
+			res.Extra++
+			res.example("ip link extra %s", name)
 		}
 	}
 	return res, nil

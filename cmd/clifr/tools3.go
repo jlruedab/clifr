@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"clifr/internal/query"
+	"clifr/internal/store"
 )
 
 func pstreeTool() *tool {
@@ -377,6 +378,79 @@ func nstatTool() *tool {
 					return rowMeta{TS: c.w.At, SampleTS: to, From: from, To: to, Sampled: []string{"value", "rate"}}
 				},
 					func(w io.Writer) { query.PrintNstat(w, rows) })
+			}, nil
+		},
+	}
+}
+
+func ipTool() *tool {
+	return &tool{
+		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]",
+		about: "network interfaces, as iproute2 ip prints them",
+		opts: []opt{
+			{short: 's', long: "stats", help: "statistics (twice: also the error counters)"},
+			{short: 'd', long: "details", help: "details (each interface type's own parameters are not reconstructed)"},
+		},
+		window: true,
+		notes: []string{
+			"link: the interfaces at the system sample at or before T (recorded since 2026-10-21), in",
+			"iproute2 6.19's layout. -d prints the generic attributes and an interface's type (bridge,",
+			"bond, vlan, ...) but not that type's parameters.",
+			"--since: one report per sample with --samples.",
+		},
+		examples: []string{`clifr --at "02:45" "ip -s -d link"`, `clifr --at "02:45" "ip -s -s link show eth0"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			args := p.pos
+			if len(args) == 0 || !strings.HasPrefix("link", args[0]) {
+				return nil, errors.New(`ip: only "ip [-s] [-d] link [show] [DEV]" is supported so far`)
+			}
+			args = args[1:]
+			if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst") {
+				args = args[1:]
+			}
+			o := query.IPLinkOptions{Stats: len(p.all["stats"]), Details: p.has("details")}
+			switch {
+			case len(args) == 2 && args[0] == "dev":
+				o.Dev = args[1]
+			case len(args) == 1 && args[0] != "dev":
+				o.Dev = args[0]
+			case len(args) > 0:
+				return nil, fmt.Errorf("ip link: unsupported arguments %q (only [dev] NAME)", strings.Join(args, " "))
+			}
+			if c.g.changes {
+				return nil, errors.New("ip: --changes is not supported; use --samples")
+			}
+			if c.w.IsRange() && !c.g.samples {
+				return nil, errors.New("ip: a range needs --samples (one report per sample)")
+			}
+			return func() error {
+				v := view[store.LinkRow]{
+					name: "ip link",
+					at: func(t int64) ([]store.LinkRow, func(*store.LinkRow) rowMeta, error) {
+						links, s, err := query.LinksAt(c.db, t)
+						if err == nil && o.Dev != "" {
+							found := false
+							for _, l := range links {
+								found = found || l.Name == o.Dev
+							}
+							if !found {
+								err = fmt.Errorf("ip link: device %q does not exist at %s", o.Dev, query.FormatMS(t))
+							}
+						}
+						return links, func(*store.LinkRow) rowMeta { return rowMeta{TS: t, SampleTS: s} }, err
+					},
+					key:   func(l *store.LinkRow) string { return l.Name },
+					same:  func(a, b *store.LinkRow) bool { return true },
+					print: func(w io.Writer, links []store.LinkRow) { query.PrintIPLink(w, links, o) },
+				}
+				if ok, err := rangeView(c, v); ok {
+					return err
+				}
+				links, meta, err := v.at(c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit(links, func(i int) rowMeta { return meta(&links[i]) }, func(w io.Writer) { v.print(w, links) })
 			}, nil
 		},
 	}

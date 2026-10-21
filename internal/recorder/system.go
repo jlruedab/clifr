@@ -2,8 +2,10 @@ package recorder
 
 import (
 	"os"
+	"reflect"
 	"strings"
 
+	"clifr/internal/rtnl"
 	"clifr/internal/store"
 )
 
@@ -16,6 +18,9 @@ type sysSampler struct {
 	// Protocol counters as last written, and when all of them were.
 	netLast map[string]int64
 	netFull int64
+	// Network interfaces likewise (by ifindex; the row without TS).
+	linkLast map[int]store.LinkRow
+	linkFull int64
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -81,6 +86,11 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.Raw6InUse, row.Frag6InUse, row.Frag6Memory = int64(k.Raw6InUse), int64(k.Frag6InUse), int64(k.Frag6Memory)
 	}
 	b.Sys = append(b.Sys, *row)
+	if s.sysfs { // rtnetlink describes this machine, not a --proc-root fixture
+		if links, err := rtnl.Dump(); !fail("rtnetlink links", err) {
+			s.addLinks(ts, links, b)
+		}
+	}
 	if c, err := r.fs.ReadNetCounters(); !fail("net/snmp", err) {
 		full := s.netLast == nil || ts-s.netFull >= store.NetCountersFullMS
 		if full {
@@ -109,4 +119,47 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		ds.V[12], ds.V[13], ds.V[14], ds.V[15], ds.V[16] = int64(d.InFlight), int64(d.IOTicks), int64(d.TimeInQueue), int64(d.FlIOs), int64(d.FlTicks)
 		b.Disks = append(b.Disks, ds)
 	}
+}
+
+// addLinks writes the interfaces that changed (counters included), all of
+// them every NetCountersFullMS, and a Gone row for each that went away.
+func (s *sysSampler) addLinks(ts int64, links []rtnl.Link, b *store.Batch) {
+	full := s.linkLast == nil || ts-s.linkFull >= store.NetCountersFullMS
+	if full {
+		s.linkFull = ts
+	}
+	seen := map[int]store.LinkRow{}
+	for i := range links {
+		row := linkRow(&links[i])
+		seen[row.Index] = row
+		if old, ok := s.linkLast[row.Index]; full || !ok || !reflect.DeepEqual(old, row) {
+			row.TS = ts
+			b.Links = append(b.Links, row)
+		}
+	}
+	for idx, old := range s.linkLast {
+		if _, ok := seen[idx]; !ok {
+			b.Links = append(b.Links, store.LinkRow{TS: ts, Index: idx, Name: old.Name, Gone: true})
+		}
+	}
+	s.linkLast = seen
+}
+
+func linkRow(l *rtnl.Link) store.LinkRow {
+	r := store.LinkRow{Index: l.Index, Type: l.Type, Flags: int64(l.Flags), Name: l.Name, Qdisc: l.Qdisc, Alias: l.Alias,
+		Kind: l.Kind, SlaveKind: l.SlaveKind, PhysPortName: l.PhysPortName, ParentBus: l.ParentBus, ParentDev: l.ParentDev,
+		AltNames: strings.Join(l.AltNames, "\n"), MTU: l.MTU, Master: l.Master, Link: l.Link, LinkNetnsID: l.LinkNetnsID,
+		OperState: l.OperState, LinkMode: l.LinkMode, Group: l.Group, TxQLen: l.TxQLen, Promiscuity: l.Promiscuity,
+		Allmulti: l.Allmulti, MinMTU: l.MinMTU, MaxMTU: l.MaxMTU, NetnsImmutable: l.NetnsImmutable, AddrGenMode: l.AddrGenMode,
+		NumTxQueues: l.NumTxQueues, NumRxQueues: l.NumRxQueues, GSOMaxSize: l.GSOMaxSize, GSOMaxSegs: l.GSOMaxSegs,
+		TSOMaxSize: l.TSOMaxSize, TSOMaxSegs: l.TSOMaxSegs, GROMaxSize: l.GROMaxSize, GSOIPv4MaxSize: l.GSOIPv4MaxSize,
+		GROIPv4MaxSize: l.GROIPv4MaxSize, ProtoDown: l.ProtoDown, CarrierChanges: l.CarrierChanges,
+		Address: l.Address, Broadcast: l.Broadcast, PermAddress: l.PermAddress, PhysPortID: l.PhysPortID,
+		PhysSwitchID: l.PhysSwitchID, InfoData: l.InfoData, SlaveData: l.SlaveData, XDP: l.XDP, HasStats: l.Stats != nil}
+	for i, v := range l.Stats {
+		if i < len(r.Stats) {
+			r.Stats[i] = int64(v)
+		}
+	}
+	return r
 }
