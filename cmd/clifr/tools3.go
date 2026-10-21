@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"clifr/internal/query"
@@ -145,4 +146,91 @@ func dateText(t time.Time, rfc bool) string {
 		return t.Format("Mon, 02 Jan 2006 15:04:05 -0700")
 	}
 	return t.Format("Mon Jan _2 15:04:05 MST 2006")
+}
+
+func findmntTool() *tool {
+	return &tool{
+		name: "findmnt", synopsis: "[-l] [-a|--ascii]",
+		about: "the mount tree, as util-linux findmnt prints it",
+		opts: []opt{
+			{short: 'l', long: "list", help: "a list in mountinfo order instead of the tree"},
+			{short: 'a', long: "ascii", help: "ASCII tree characters (the default: as in the C locale)"},
+		},
+		window: true, diff: true,
+		notes: []string{
+			"--at: the mount table at T (exact), TARGET SOURCE FSTYPE OPTIONS. The parent of each mount is",
+			"not recorded: it is taken to be the mount on the longest prefix of its path (findmnt reads it",
+			"from mountinfo; the two differ only for mounts made under a path that was later mounted over).",
+			"--since: --samples, or --changes (mounts that appeared, went or changed options).",
+		},
+		examples: []string{`clifr --at "02:45" findmnt`, `clifr --since "02:00" --until "03:00" --changes findmnt`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("findmnt: unexpected argument %q (searching by device or path is not supported)", p.pos[0])
+			}
+			if c.w.IsRange() && !c.g.samples && !c.g.changes {
+				return nil, errors.New("findmnt: over a range, add --samples or --changes")
+			}
+			list := p.has("list")
+			v := view[query.FindmntRow]{
+				name: "findmnt",
+				at: func(t int64) ([]query.FindmntRow, func(*query.FindmntRow) rowMeta, error) {
+					rows, err := query.Findmnt(c.db, t, list)
+					return rows, func(*query.FindmntRow) rowMeta { return rowMeta{TS: t} }, err
+				},
+				key:   func(r *query.FindmntRow) string { return strconv.Itoa(r.MountID) + " " + r.Target },
+				same:  func(a, b *query.FindmntRow) bool { return a.Source == b.Source && a.Options == b.Options },
+				print: query.PrintFindmnt,
+			}
+			return func() error {
+				if ok, err := rangeView(c, v); ok {
+					return err
+				}
+				rows, meta, err := v.at(c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) }, func(w io.Writer) { v.print(w, rows) })
+			}, nil
+		},
+	}
+}
+
+func hostnameTool() *tool {
+	return &tool{
+		name: "hostname", synopsis: "[-s]",
+		about: "the host name, as clifrd recorded it when it started",
+		opts: []opt{
+			{short: 's', long: "short", help: "up to the first dot"},
+		},
+		window: true,
+		notes: []string{
+			"The name the kernel had when the clifrd run covering T started; a later change is not recorded.",
+			"-f (the FQDN, from DNS) is not recorded.",
+		},
+		examples: []string{`clifr --at "02:45" hostname`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("hostname: unexpected argument %q (setting the name is not supported)", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("hostname: needs --at")
+			}
+			return func() error {
+				h := query.MetaAt(c.db, "hostname", c.w.At)
+				if h == "" {
+					return fmt.Errorf("hostname: not recorded at %s", query.FormatMS(c.w.At))
+				}
+				if p.has("short") {
+					h, _, _ = strings.Cut(h, ".")
+				}
+				return c.emit(hostRow{Hostname: h}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { fmt.Fprintln(w, h) })
+			}, nil
+		},
+	}
+}
+
+type hostRow struct {
+	Hostname string `json:"hostname"`
 }

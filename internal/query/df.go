@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -90,11 +91,34 @@ var (
 	dfHidden = map[string]bool{"devtmpfs": true, "squashfs": true}
 )
 
+// DFSelect holds df's selection options.
+type DFSelect struct {
+	All     bool     // -a: dummy, empty and duplicate file systems too
+	Local   bool     // -l: no network file systems
+	Exclude []string // -x TYPE
+	Only    []string // -t TYPE
+}
+
+// noStatfs are the types clifrd does not measure (they have no blocks; see
+// recorder.noUsage): df -a shows them with zeros.
+var noStatfs = map[string]bool{"tracefs": true, "securityfs": true, "cgroup": true, "cgroup2": true,
+	"pstore": true, "bpf": true, "configfs": true, "binfmt_misc": true, "nsfs": true, "hugetlbfs": true}
+
+// dfRemote is gnulib's ME_REMOTE: a network file system (left out by -l).
+func dfRemote(source, fstype string) bool {
+	switch fstype {
+	case "acfs", "afs", "coda", "auristorfs", "fhgfs", "gpfs", "ibrix", "ocfs2", "vxfs":
+		return true
+	}
+	return strings.Contains(source, ":") || source == "-hosts" ||
+		strings.HasPrefix(source, "//") && (fstype == "smbfs" || fstype == "smb3" || fstype == "cifs")
+}
+
 // DF reconstructs df at t: the mounts then, in mountinfo order, with the
 // usage of each from the latest sample at or before t (sampled). Like df it
 // leaves out dummy and empty file systems and lists a device mounted more
-// than once only once.
-func DF(db *store.DB, t int64) ([]DFRow, error) {
+// than once only once, unless sel.All.
+func DF(db *store.DB, t int64, sel DFSelect) ([]DFRow, error) {
 	mounts, err := MountsAt(db, t)
 	if err != nil {
 		return nil, err
@@ -102,7 +126,8 @@ func DF(db *store.DB, t int64) ([]DFRow, error) {
 	var out []DFRow
 	seen := map[string]int{} // dev -> index in out
 	for _, m := range mounts {
-		if dfDummy[m.FSType] || dfHidden[m.FSType] {
+		if !sel.All && (dfDummy[m.FSType] || dfHidden[m.FSType]) || slices.Contains(sel.Exclude, m.FSType) ||
+			len(sel.Only) > 0 && !slices.Contains(sel.Only, m.FSType) || sel.Local && dfRemote(m.Source, m.FSType) {
 			continue
 		}
 		var r DFRow
@@ -110,19 +135,24 @@ func DF(db *store.DB, t int64) ([]DFRow, error) {
 		err := db.QueryRow(`SELECT ts, frsize, blocks, bfree, bavail, files, ffree FROM fs_samples
 			WHERE mount_id = ?1 AND ts >= ?2 AND ts <= ?3 ORDER BY ts DESC LIMIT 1`, m.MountID, m.since, t).
 			Scan(&r.SampleTS, &frsize, &blocks, &bfree, &bavail, &r.Inodes, &r.IFree)
-		if err == sql.ErrNoRows {
+		switch {
+		case err == sql.ErrNoRows && sel.All && (dfDummy[m.FSType] || noStatfs[m.FSType]):
+			// not measured: no blocks, shown with zeros
+		case err == sql.ErrNoRows:
 			continue // not measured (yet)
-		}
-		if err != nil {
+		case err != nil:
 			return nil, err
-		}
-		if blocks == 0 {
+		case blocks == 0 && !sel.All:
 			continue
 		}
 		r.Source, r.FSType, r.Point, r.dev, r.root = m.Source, m.FSType, m.Point, m.Dev, m.Root
 		r.SizeBytes, r.UsedBytes, r.AvailBytes = blocks*frsize, (blocks-bfree)*frsize, bavail*frsize
 		r.used, r.nonroot = blocks-bfree, blocks-bfree+bavail
 		r.IUsed = r.Inodes - r.IFree
+		if sel.All {
+			out = append(out, r)
+			continue
+		}
 		if i, ok := seen[r.dev]; ok && r.dev != "" {
 			// GNU df keeps one entry per device: a real device name over
 			// another one, else the mount point nearer the root (unless that

@@ -19,8 +19,10 @@ func init() {
 	ignoredFields["ps -ef"] = "C (derived from TIME, which is compared); the work-item suffix of kernel worker names"
 	ignoredFields["netstat -tanp"] = "none"
 	ignoredFields["df"] = "none; sizes match within 1% or 1 MiB, Use% within 1"
+	ignoredFields["df -al -x autofs"] = ignoredFields["df"]
+	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
 	ignoredFields["mount"] = "none"
-	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and its place in the tree"
+	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and name (which set its place)"
 	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
 		"SHR (not recorded), the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
@@ -268,8 +270,9 @@ type dfLine struct {
 }
 
 // parseDF reads df's default output, keyed by mount point (the rest of the
-// line after Use%).
-func parseDF(out string) map[string]dfLine {
+// line after Use%) and, for df -a, which lists a mount point twice when a
+// file system is mounted over another, the file system.
+func parseDF(out string, all bool) map[string]dfLine {
 	m := map[string]dfLine{}
 	for i, l := range strings.Split(out, "\n") {
 		f := strings.Fields(l)
@@ -277,6 +280,9 @@ func parseDF(out string) map[string]dfLine {
 			continue
 		}
 		point := strings.Join(f[5:], " ")
+		if all {
+			point = f[0] + " " + point
+		}
 		m[point] = dfLine{fs: f[0], size: f[1], used: f[2], avail: f[3], pct: strings.TrimSuffix(f[4], "%"), pos: len(m)}
 	}
 	return m
@@ -284,12 +290,16 @@ func parseDF(out string) map[string]dfLine {
 
 func compareDF(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
-	rows, err := query.DF(db, snap.ts)
+	sel := query.DFSelect{}
+	if snap.cmd == "df -al -x autofs" {
+		sel = query.DFSelect{All: true, Local: true, Exclude: []string{"autofs"}}
+	}
+	rows, err := query.DF(db, snap.ts, sel)
 	if err != nil {
 		return res, err
 	}
-	real := parseDF(snap.output)
-	rec := parseDF(render(func(sb *strings.Builder) { query.PrintDF(sb, rows, query.DFFormat{}) }))
+	real := parseDF(snap.output, sel.All)
+	rec := parseDF(render(func(sb *strings.Builder) { query.PrintDF(sb, rows, query.DFFormat{}) }), sel.All)
 	res.Real, res.Recon = len(real), len(rec)
 	for point, r := range real {
 		x, ok := rec[point]
@@ -551,11 +561,11 @@ func compareTop(db *store.DB, snap snapshot) (Result, error) {
 
 var pstreeTok = regexp.MustCompile(`([^\s(]|\([^\d])*\((\d+)\)`)
 
-// parsePstree reads each process's parent from pstree -p's layout: a child's
-// name starts 3 columns ("---", "-+-", " |-", " `-") after its parent's ends,
-// and the parent is the latest process ending in that column.
-func parsePstree(out string) (parent map[int]int, order []int) {
-	parent = map[int]int{}
+// parsePstree reads each process's parent and name from pstree -p's layout:
+// a child's name starts 3 columns ("---", "-+-", " |-", " `-") after its
+// parent's ends, and the parent is the latest process ending in that column.
+func parsePstree(out string) (parent map[int]int, name map[int]string) {
+	parent, name = map[int]int{}, map[int]string{}
 	endAt := map[int]int{} // column after a name -> its pid
 	for _, l := range strings.Split(out, "\n") {
 		for _, m := range pstreeTok.FindAllStringSubmatchIndex(l, -1) {
@@ -569,11 +579,11 @@ func parsePstree(out string) (parent map[int]int, order []int) {
 			} else {
 				parent[pid] = 0
 			}
+			name[pid] = l[start : m[4]-1]
 			endAt[end] = pid
-			order = append(order, pid)
 		}
 	}
-	return parent, order
+	return parent, name
 }
 
 var forestPrefix = regexp.MustCompile(`^(?: \\_ | \|  |    )*`)
@@ -601,8 +611,8 @@ func parseForest(out string) map[int]string {
 	return m
 }
 
-// compareTree compares pstree -lpT (each process's parent and the order of
-// the processes) or ps auxfwww (each process's tree prefix).
+// compareTree compares pstree -lpT (each process's parent and name) or ps
+// auxfwww (each process's tree prefix).
 func compareTree(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
 	rows, s, err := query.PSAt(db, snap.ts)
@@ -613,25 +623,16 @@ func compareTree(db *store.DB, snap snapshot) (Result, error) {
 	real, rec := map[int]string{}, map[int]string{}
 	if snap.cmd == "pstree -lpT" {
 		lines, _ := query.Pstree(rows, query.PstreeFormat{Root: 1, Long: true})
-		rp, ro := parsePstree(snap.output)
-		cp, co := parsePstree(strings.Join(lines, "\n"))
-		// The order: a process's position among the processes both list.
-		rank := func(order []int, other map[int]int) map[int]int {
-			m, n := map[int]int{}, 0
-			for _, pid := range order {
-				if _, ok := other[pid]; ok && !snap.ignore[pid] && !snap.ignore[other[pid]] {
-					m[pid] = n
-					n++
-				}
-			}
-			return m
-		}
-		rr, cr := rank(ro, cp), rank(co, rp)
+		rp, rn := parsePstree(snap.output)
+		cp, cn := parsePstree(strings.Join(lines, "\n"))
+		// The parent and the name, which sets the order among siblings: a
+		// process that renamed itself after the sample counts once, not
+		// for every sibling it moved past.
 		for pid, p := range rp {
-			real[pid] = fmt.Sprintf("parent %d, place %d", p, rr[pid])
+			real[pid] = fmt.Sprintf("parent %d, name %s", p, rn[pid])
 		}
 		for pid, p := range cp {
-			rec[pid] = fmt.Sprintf("parent %d, place %d", p, cr[pid])
+			rec[pid] = fmt.Sprintf("parent %d, name %s", p, cn[pid])
 		}
 	} else {
 		real = parseForest(snap.output)
@@ -668,6 +669,50 @@ func compareTree(db *store.DB, snap snapshot) (Result, error) {
 				res.Extra++
 				res.example("%s extra pid %d", snap.cmd, pid)
 			}
+		}
+	}
+	return res, nil
+}
+
+// ---- findmnt ----
+
+// parseFindmnt reads findmnt's lines keyed by TARGET and SOURCE (a point
+// can hold a stack of mounts); the value is the whole line, tree included.
+func parseFindmnt(out string) map[string]string {
+	m := map[string]string{}
+	for _, l := range strings.Split(out, "\n")[1:] {
+		f := strings.Fields(strings.TrimLeft(l, "|`- "))
+		if len(f) < 3 {
+			continue
+		}
+		m[f[0]+" "+f[1]] = strings.TrimRight(l, " ")
+	}
+	return m
+}
+
+func compareFindmnt(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, err := query.Findmnt(db, snap.ts, false)
+	if err != nil {
+		return res, err
+	}
+	real := parseFindmnt(snap.output)
+	rec := parseFindmnt(render(func(sb *strings.Builder) { query.PrintFindmnt(sb, rows) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for k, r := range real {
+		x, ok := rec[k]
+		if !ok {
+			res.Missing++
+			res.example("findmnt missing %s", k)
+			continue
+		}
+		res.Matched++
+		res.compare("findmnt "+k, []fieldPair{{"LINE", r, x}}, func() bool { return false })
+	}
+	for k := range rec {
+		if _, ok := real[k]; !ok {
+			res.Extra++
+			res.example("findmnt extra %s", k)
 		}
 	}
 	return res, nil

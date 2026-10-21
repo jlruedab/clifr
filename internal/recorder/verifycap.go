@@ -23,7 +23,9 @@ var verifyCommands = [][]string{
 	{"iostat", "-dx"},
 	{"free"},
 	{"df"},
+	{"df", "-al", "-x", "autofs"},
 	{"mount"},
+	{"findmnt"},
 	{"ps", "aux"},
 	{"top", "-b", "-n", "1", "-w", "512"}, // wide: command names are not cut
 	{"pstree", "-lpT"},                    // psmisc; skipped where it is not installed

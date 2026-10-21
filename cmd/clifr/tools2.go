@@ -524,24 +524,31 @@ func mountTool() *tool {
 
 func dfTool() *tool {
 	return &tool{
-		name: "df", diff: true, synopsis: "[-h] [-T] [-i] [PATH...]",
+		name: "df", diff: true, synopsis: "[-h] [-T] [-i] [-a] [-l] [-x TYPE] [-t TYPE] [PATH...]",
 		about: "file-system usage",
 		opts: []opt{
 			{short: 'h', long: "human-readable", help: "sizes in powers of 1024 (K, M, G), rounded up"},
 			{short: 'T', long: "print-type", help: "also the file-system type"},
 			{short: 'i', long: "inodes", help: "inodes instead of blocks"},
 			{short: 'k', help: "1K blocks (the default)"},
+			{short: 'a', long: "all", help: "also dummy, empty and duplicate file systems (with zeros where they have no blocks)"},
+			{short: 'l', long: "local", help: "no network file systems (NFS, CIFS, ...)"},
+			{short: 'x', long: "exclude-type", arg: "TYPE", help: "leave out this type (repeat -x for more)"},
+			{short: 't', long: "type", arg: "TYPE", help: "only this type (repeat -t for more)"},
 		},
 		window: true,
 		notes: []string{
 			"Usage from the sample at or before T (sampled; recordings since schema 2). As GNU df: dummy",
 			"and empty file systems, devtmpfs and squashfs are left out, a device mounted more than once is",
-			"listed once, in mountinfo order. PATH: the file system whose mount point holds it.",
+			"listed once (all of them with -a), in mountinfo order. PATH: the file system whose mount point",
+			"holds it.",
 			"--since: one report per sample with --samples (-e, -n).",
 		},
 		examples: []string{`clifr --at "02:45" "df -h"`, `clifr --at "02:45" "df -h /var/log"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			f := query.DFFormat{Human: p.has("human-readable"), Type: p.has("print-type"), Inodes: p.has("inodes")}
+			sel := query.DFSelect{All: p.has("all"), Local: p.has("local"),
+				Exclude: splitList(p.all["exclude-type"]), Only: splitList(p.all["type"])}
 			if f.Human && f.Inodes {
 				return nil, errors.New("df: -h with -i is not supported")
 			}
@@ -554,7 +561,7 @@ func dfTool() *tool {
 				return nil, errors.New("df: over a range, add --samples (one report per sample) or --changes")
 			}
 			return func() error {
-				v := dfView(c, f, p.pos)
+				v := dfView(c, f, sel, p.pos)
 				if ok, err := rangeView(c, v); ok {
 					return err
 				}

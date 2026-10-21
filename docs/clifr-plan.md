@@ -182,7 +182,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   interval), `date [--utc]`, `pstree -lp`, `ps` forest (`f`) (these three
   done 2026-10-21), `ss -s`,
   `df -a -l -x`, `findmnt` (tree from mount paths), `hostname` (as recorded
-  at start), `last -F reboot` (boots within the recording).
+  at start) (these three done 2026-10-21), `last -F reboot` (boots within
+  the recording).
 - **Step 2, the CSV's priority items** (new tables, ~2–3 weeks): `netstat -s
   [-6]`, `nstat -zas` (/proc/net/snmp, snmp6, netstat per system sample);
   `ip -s -d link` (/proc/net/dev + netlink); `ip addr`, `ip route [-6]`,

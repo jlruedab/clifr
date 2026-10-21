@@ -222,6 +222,8 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "pstree -lp"
     clifr --at "02:45" "top -b -n 1"
     clifr --at "02:45" "date --utc"
+    clifr --at "02:45" findmnt
+    clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
     clifr --at "13:28" "ss -ltn"
@@ -267,7 +269,12 @@ A command can also be given unquoted after clifr's options
   pstree merges identical subtrees). Over a range: one tree per sample with
   `--samples`.
 - `date [-u|--utc] [-R]`: the moment asked for, in GNU date's C-locale
-  format.
+  format. `hostname [-s]`: the name when the clifrd run covering the moment
+  started (later changes and `-f` are not recorded).
+- `findmnt [-l]`: util-linux's tree (C locale: ASCII), TARGET SOURCE
+  FSTYPE OPTIONS. The parent mount is not recorded: the tree uses the mount
+  on the longest prefix of each path, which differs from findmnt only for a
+  mount made under a path that was later mounted over.
 - `top -b [-n 1] [-c] [-i] [-w COLUMNS] [-o FIELD] [-p PIDS] [-u USER]`:
   procps-ng 4's batch output. The summary comes from the system sample at or
   before T, the processes from the process sample at or before it, with
@@ -297,10 +304,11 @@ A command can also be given unquoted after clifr's options
 - `mount [-t TYPES]`: the mount table as util-linux prints it (mount and
   file-system options, loop devices by their backing file, `/run/mount/utab`
   options), in mountinfo order; exact. Over a range: the changes.
-- `df [-h] [-T] [-i] [PATH...]`: usage from the sample at or before T, as
-  GNU df selects and prints it (dummy, empty, devtmpfs and squashfs file
-  systems left out, a device mounted twice listed once, df's rounding and
-  column widths). FUSE mounts without `allow_other` cannot be measured by
+- `df [-h] [-T] [-i] [-a] [-l] [-x TYPE] [-t TYPE] [PATH...]`: usage from
+  the sample at or before T, as GNU df selects and prints it (dummy, empty,
+  devtmpfs and squashfs file systems left out, a device mounted twice listed
+  once, df's rounding and column widths; `-a` all of them, the dummies with
+  zeros; `-l` no network file systems). FUSE mounts without `allow_other` cannot be measured by
   root and are left out. Over a range with `--samples`.
 - `life` (clifr only) lists start, end, duration, pid, ppid, command, exit
   code or signal; `oom` the OOM kills with the largest processes; `mounts`
@@ -506,6 +514,10 @@ RES and TIME+ in about 25 each (top ran about 350 ms after the sample);
 the task counts and memory lines matched. In a second such recording
 `pstree -lpT` placed 836 of 836 processes under the right parent in the
 right order, and `ps auxfwww` drew the same tree prefix for 2,094 of 2,094.
+In a third (4 checkpoints), `findmnt` matched 376 of 376 lines exactly and
+`df -al -x autofs` 372 of 372 rows; `pstree -lpT` had the right parent and
+name for 863 of 866 processes (the 3: a Firefox process that renamed itself
+after the sample; names are recorded at start and exec).
 
 Against the real tools at the busy load (2026-10-13,
 `accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10

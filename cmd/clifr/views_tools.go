@@ -131,11 +131,11 @@ func lsofView(c *runCtx, sel query.LsofSelect) view[query.LsofRow] {
 	}
 }
 
-func dfView(c *runCtx, f query.DFFormat, paths []string) view[query.DFRow] {
+func dfView(c *runCtx, f query.DFFormat, sel query.DFSelect, paths []string) view[query.DFRow] {
 	return view[query.DFRow]{
 		name: "df",
 		at: func(t int64) ([]query.DFRow, func(*query.DFRow) rowMeta, error) {
-			rows, err := query.DF(c.db, t)
+			rows, err := query.DF(c.db, t, sel)
 			if err != nil {
 				return nil, nil, err
 			}
