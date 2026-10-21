@@ -26,8 +26,9 @@ The ground-truth test and the benchmark are the main deliverables; see
 
 Version 1 (tag `v1-snapshot`) sampled everything every 30 s into one SQLite
 file. Version 2, described here, takes process and TCP changes from eBPF
-events and samples only what has no event. v1 stays buildable for
-side-by-side benchmarks.
+events and samples only what has no event. v1 ran side by side in the
+benchmarks until 2026-10-21, when it and the SQLite backend were removed;
+its figures below come from the last batch that included it.
 
 ## Status
 
@@ -96,7 +97,7 @@ Kernel: Linux with BTF at `/sys/kernel/btf/vmlinux` (RHEL 8.2+/9, Ubuntu
 llvm-18, libbpf-dev).
 
 Dependencies: `cilium/ebpf`, `parquet-go/parquet-go`, `duckdb/duckdb-go` (CLI
-only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
+only), `golang.org/x/sys`.
 
 ## Recording
 
@@ -120,7 +121,6 @@ only), `modernc.org/sqlite` (v1 backend), `golang.org/x/sys`.
 | `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
-| `--db FILE` | off | also (or with `--data-dir ""` only) write the v1 SQLite schema |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
@@ -241,7 +241,7 @@ resolved time and time zone and other informational lines go to stderr.
 
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
-`/var/lib/clifr`; hidden: `--db FILE` for a v1 SQLite file); `-j/--json`;
+`/var/lib/clifr`); `-j/--json`;
 for ranges `--summary` (default), `--changes`, `--samples`,
 `-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).
@@ -386,15 +386,15 @@ information under `bench/results/<name>/`. The scripts stop below 1.5 GB of
 free disk and validate every run. Keep the machine otherwise idle.
 
 1. **Setup** (once): installs PostgreSQL with pgbench and atop, and builds
-   the tools (including the v1 recorder from its tag) into `bench/bin/`.
+   the tools into `bench/bin/`.
    `clifr verify` of the system-wide tools also needs the sysstat package.
 
        sudo bench/setup.sh
 
 2. **Cost and impact matrix**: configurations A (workload only), B (clifr
-   30s/120s, the default), C (10s/60s), D (60s/300s), V1 (the v1 recorder)
-   and R1 (atop at 30 s), each 3 times in interleaved order, 2 minutes of
-   warm-up and 15 minutes measured. About 5 hours.
+   30s/120s, the default), C (10s/60s), D (60s/300s) and R1 (atop at 30 s),
+   each 3 times in interleaved order, 2 minutes of warm-up and 15 minutes
+   measured. About 4.5 hours.
 
        sudo bench/run.sh --profiles busy --rate 80000 --cpus 0-11
 

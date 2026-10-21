@@ -1,10 +1,10 @@
 package verify
 
 import (
-	"path/filepath"
 	"testing"
 
 	"clifr/internal/store"
+	"clifr/internal/testrec"
 )
 
 func TestParsePS(t *testing.T) {
@@ -101,27 +101,18 @@ func TestCompareChurnChanged(t *testing.T) {
 // connection whose state changed after the sample, one that did not, and a
 // socket lsof could not resolve.
 func TestChangedInDB(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "v.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	exec := func(q string, args ...any) {
-		t.Helper()
-		if _, err := db.Exec(q, args...); err != nil {
-			t.Fatalf("%s: %v", q, err)
-		}
-	}
-	for i, ts := range []int64{1000, 31000, 61000} {
-		exec(`INSERT INTO samples(id, ts, fd_walk) VALUES (?, ?, 1)`, i+1, ts)
-	}
-	exec(`INSERT INTO processes(id, pid, start_time, ppid, uid, comm, first_seen, source) VALUES (1, 50, 1, 1, 0, 'load', 0, 'sample')`)
 	// Socket 1 changes state at 31000; socket 2 stays ESTAB.
-	exec(`INSERT INTO sockets(id, inode, proto, family, laddr, lport, raddr, rport, first_seen) VALUES
-		(1, 111, 'tcp', 4, '127.0.0.2', 40000, '127.0.0.1', 30000, 0),
-		(2, 222, 'tcp', 4, '127.0.0.3', 40001, '127.0.0.1', 30000, 0)`)
-	exec(`INSERT INTO sock_samples(sock_id, ts, state) VALUES (1, 0, 1), (1, 31000, 6), (2, 0, 1)`)
-	exec(`INSERT INTO sock_owners(id, sock_id, proc_id, fd, first_seen) VALUES (1, 1, 1, 7, 0), (2, 2, 1, 8, 0)`)
+	db := testrec.Open(t, nil,
+		&store.Batch{Sample: store.Sample{TS: 1000, FDWalk: true},
+			ProcInserts: []store.ProcRow{{ID: 1, PID: 50, StartTime: 1, PPID: 1, Comm: "load", Source: "sample"}},
+			SockInserts: []store.SockRow{
+				{ID: 1, Inode: 111, Proto: "tcp", Family: 4, LAddr: "127.0.0.2", LPort: 40000, RAddr: "127.0.0.1", RPort: 30000},
+				{ID: 2, Inode: 222, Proto: "tcp", Family: 4, LAddr: "127.0.0.3", LPort: 40001, RAddr: "127.0.0.1", RPort: 30000}},
+			SockSamples: []store.SockSample{{SockID: 1, TS: 0, State: 1}, {SockID: 2, TS: 0, State: 1}},
+			OwnInserts:  []store.OwnerRow{{ID: 1, SockID: 1, ProcID: 1, FD: 7}, {ID: 2, SockID: 2, ProcID: 1, FD: 8}}},
+		&store.Batch{Sample: store.Sample{TS: 31000, FDWalk: true},
+			SockSamples: []store.SockSample{{SockID: 1, TS: 31000, State: 6}}},
+		&store.Batch{Sample: store.Sample{TS: 61000, FDWalk: true}})
 
 	if !sockChanged(db, "127.0.0.2:40000 127.0.0.1:30000", 1000, 31000) {
 		t.Error("state change after the sample not seen")

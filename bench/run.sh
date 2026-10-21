@@ -5,12 +5,11 @@
 #   sudo bench/run.sh [options]
 #
 #   --profiles LIST   load profiles, comma-separated (default: busy)
-#   --configs LIST    configurations (default: A,B,C,D,V1,R1)
+#   --configs LIST    configurations (default: A,B,C,D,R1)
 #                       A   workload only (baseline)
 #                       B   clifrd --interval 30s --fd-interval 120s (default)
 #                       C   clifrd --interval 10s --fd-interval 60s  (aggressive)
 #                       D   clifrd --interval 60s --fd-interval 300s (conservative)
-#                       V1  the v1 recorder (tag v1-snapshot, SQLite) at 30s/120s
 #                       R1  atop -w FILE 30                        (reference)
 #                       N1  Prometheus Node Exporter (default collectors, on
 #                           127.0.0.1:9100), scraped every 15 s from outside its
@@ -65,7 +64,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 
-PROFILES=busy CONFIGS="A B C D V1 R1" REPEATS=3 BPF_STATS="" CPUS="" WARMUP=120 MEASURE=900
+PROFILES=busy CONFIGS="A B C D R1" REPEATS=3 BPF_STATS="" CPUS="" WARMUP=120 MEASURE=900
 PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" REC_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
 while (($#)); do
     case $1 in
@@ -102,7 +101,7 @@ check_common clifr clifrd load benchtool report
 for c in $CONFIGS; do
     case $c in
     A | B | C | D) ;;
-    V1) [[ -x $BIN/sosv-v1 ]] || die "V1 needs $BIN/sosv-v1; run bench/setup.sh" ;;
+    V1) die "V1 (the v1 recorder, SQLite) was removed on 2026-10-21; its results are history" ;;
     R1) command -v atop >/dev/null || die "R1 needs atop" ;;
     N1) command -v prometheus-node-exporter >/dev/null || die "N1 needs prometheus-node-exporter" ;;
     R2) die "R2 (PCP pmlogger) is not implemented: PCP is not installed on the test machine" ;;
@@ -175,7 +174,6 @@ recorder_cmd() {
     B) s="--interval 30s --fd-interval 120s" ;;
     C) s="--interval 10s --fd-interval 60s" ;;
     D) s="--interval 60s --fd-interval 300s" ;;
-    V1) echo "nice -n 10 ionice -c 3 $BIN/sosv-v1 record --db $RUN/sosv.db --interval 30s --fd-interval 120s"; return ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
     N1) echo "nice -n 10 ionice -c 3 prometheus-node-exporter --web.listen-address=127.0.0.1:9100"; return ;;
     esac
@@ -273,9 +271,9 @@ run_one() {
         systemctl stop "sosvbench-rec-$RUNID.scope" 2>/dev/null || true # SIGTERM, clean shutdown
         wait $rec_pid || true
     fi
-    if [[ -f $RUN/sosv.db || -d $RUN/data ]]; then
+    if [[ -d $RUN/data ]]; then
         collect_db "$RUN"
-        ((KEEP_DB)) || rm -rf "$RUN"/sosv.db* "$RUN/data"
+        ((KEEP_DB)) || rm -rf "$RUN/data"
     fi
     if [[ -f $RUN/atop.raw ]]; then
         stat -c %s "$RUN/atop.raw" >"$RUN/atop_bytes"

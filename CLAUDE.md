@@ -2,7 +2,7 @@
 
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
-counters, as Parquet files (or, for v1 comparisons, one SQLite file).
+counters, as Parquet files.
 `clifr` reconstructs the output of the real tools (`ps`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
@@ -21,8 +21,8 @@ result file names (`sosv-stats.*`, `sosv.db`, `sosv_commit`) keep the old name.
 The product plan (phases 1–7) is in `docs/clifr-plan.md`.
 
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
-1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot` and stays
-benchmarkable side by side. `HANDOFF.md` has the current results, the open
+1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot`; its benchmark
+configuration and the SQLite backend were removed on 2026-10-21 (the user). `HANDOFF.md` has the current results, the open
 items and the history. Do one step at a time, run it, report results, and
 wait for the user's go-ahead.
 
@@ -37,8 +37,7 @@ wait for the user's go-ahead.
   CAP_BPF + CAP_PERFMON (CAP_SYS_ADMIN on older kernels). Netlink proc
   connector stays as the fallback for process events.
 - Storage: Parquet (`github.com/parquet-go/parquet-go`, zstd, dictionary
-  encoding) behind a small interface; the v1 SQLite schema stays available as
-  a backend for side-by-side comparison.
+  encoding) behind a small interface (`store.Backend`). No SQLite.
 - Other dependencies only with the user's approval.
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
@@ -49,7 +48,7 @@ wait for the user's go-ahead.
 - `cmd/clifr/` — the query CLI (DuckDB via cgo): `clifr [--at T | --since A --until B] [OPTIONS] "COMMAND [ARGS]"`;
   per-command option tables in `tools.go`, `tools2.go`, `systools.go` (unsupported options
   are rejected);
-  `--data-dir` Parquet or hidden `--db` SQLite.
+  `--data-dir` Parquet.
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
   system-wide stat, loadavg, meminfo, vmstat, diskstats).
 - `internal/sockdiag/` — NETLINK_SOCK_DIAG (inet_diag) dumps.
@@ -59,7 +58,10 @@ wait for the user's go-ahead.
 - `internal/bpftcp/` — eBPF TCP events: `tcpevents.bpf.c` (state changes with owners,
   accept fds, app close, time-wait start/end, retransmits/resets); objects for amd64 and arm64.
 - `internal/cnproc/` — kernel proc connector (fork/exec/exit events), the fallback.
-- `internal/store/` — `Backend` interface, v1 SQLite schema and batch writer, `Tee`.
+- `internal/store/` — `Backend` interface, the per-sample `Batch` and its rows, `DB` (a
+  recording loaded into DuckDB). `internal/testrec/` — small recordings for tests (Parquet,
+  read back through DuckDB). `internal/duck/testdata/roundtrip.golden`: every table as
+  written and read back (`go test ./internal/duck -run RoundTrip -update` rewrites it).
 - `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention.
 - `internal/duck/` — loads a Parquet data directory into in-memory DuckDB with the v1 table names.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.

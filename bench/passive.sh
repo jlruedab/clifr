@@ -13,12 +13,12 @@
 #         (the recorder, which stops by itself after --duration) and
 #         clifr-passive-sampler.service. Results go to DIR (default
 #         bench/results/passive-<timestamp>).
-# status  shows both services, elapsed time, DB size and free disk.
+# status  shows both services, elapsed time, recording size and free disk.
 # stop    stops both services (SIGTERM: the recorder closes its rows
 #         cleanly), saves `clifr stats`, the samples and guard_events tables
-#         and the DB size. Run it after --duration has passed, or earlier to
-#         cut the run short. The DB itself is kept: on a real server it is
-#         the flight record.
+#         and the recording's size. Run it after --duration has passed, or
+#         earlier to cut the run short. The recording (DIR/data) is kept: on
+#         a real server it is the flight record.
 #
 # Safety on a production server:
 #   - The recorder runs with CPUQuota=5%, MemoryMax=768M, Nice=10,
@@ -99,7 +99,7 @@ start() {
         -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
         -p ProtectControlGroups=yes -p "RestrictAddressFamilies=AF_NETLINK AF_UNIX" \
         -p StandardOutput=append:"$OUT/recorder.log" -p StandardError=append:"$OUT/recorder.log" \
-        "$BIN/clifrd" --config /dev/null --data-dir= --db "$OUT/sosv.db" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
+        "$BIN/clifrd" --config /dev/null --data-dir "$OUT/data" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
         --duration "$DURATION"
     local reccg
     reccg=$(systemctl show -p ControlGroup --value $REC)
@@ -125,7 +125,7 @@ status() {
     for s in $REC $SAMP; do printf '%-30s %s\n' "$s" "$(systemctl is-active "$s" || true)"; done
     echo "results:   $OUT"
     echo "started:   $(sed -n 's/^start_ms=//p' "$OUT/machine.env" | awk '{print strftime("%F %T", $1/1000)}')"
-    echo "db size:   $(du -ch "$OUT"/sosv.db* 2>/dev/null | tail -1 | cut -f1)"
+    echo "data size: $(du -sh "$OUT/data" 2>/dev/null | cut -f1)"
     echo "free disk: $(df -h --output=avail "$OUT" | tail -1 | xargs)"
     [[ -f $OUT/LOWDISK ]] && echo "LOW DISK: the recorder was stopped by the sampler"
     tail -3 "$OUT/recorder.log"
@@ -138,13 +138,13 @@ stop() {
     sleep 6                                 # one more sampler tick
     systemctl stop $SAMP 2>/dev/null || true
     echo "end_ms=$(now_ms)" >>"$OUT/machine.env"
-    [[ -f $OUT/sosv.db ]] || die "no database in $OUT"
+    [[ -d $OUT/data ]] || die "no recording in $OUT"
     collect_db "$OUT"
     gzip -f "$OUT"/*.csv
     rm -f $STATE
     chown -R "${SUDO_UID:-0}:${SUDO_GID:-0}" "$OUT" 2>/dev/null || true
     cat "$OUT/sosv-stats.txt"
-    log "results in $OUT (the database is kept: $OUT/sosv.db)"
+    log "results in $OUT (the recording is kept: $OUT/data)"
 }
 
 case $CMD in

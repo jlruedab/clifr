@@ -1,7 +1,7 @@
 // Package recorder runs the sampling loop: each sample reads processes (and,
 // in later phases, sockets and open files), updates the in-memory interval
 // trackers and writes the resulting changes as one batch to the storage
-// backend (SQLite: one transaction; Parquet: buffered, flushed periodically).
+// backend (Parquet: buffered, flushed periodically).
 package recorder
 
 import (
@@ -25,8 +25,7 @@ import (
 
 type Config struct {
 	Version string // clifrd's version, stored in meta
-	DB      string // SQLite database (v1 schema); "" = none
-	DataDir string // Parquet data directory; "" = none. Both set: write both.
+	DataDir string // Parquet data directory
 	Parquet pqstore.Options
 	// Events: "auto" (eBPF, else the proc connector), "ebpf",
 	// "proc_connector" or "none".
@@ -220,43 +219,16 @@ func (r *Recorder) v1FDs(why string) {
 	}
 }
 
-// openBackend opens the SQLite database, the Parquet directory, or both.
+// openBackend opens the Parquet data directory.
 func openBackend(cfg Config, logger *Logger) (store.Backend, error) {
-	var lite store.Backend
-	if cfg.DB != "" {
-		db, err := store.Open(cfg.DB, false)
-		if err != nil {
-			return nil, err
-		}
-		if n, err := db.Recover(); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("recover open rows: %w", err)
-		} else if n > 0 {
-			logger.Printf("closed %d rows left open by a previous run", n)
-		}
-		lite = db
-	}
 	if cfg.DataDir == "" {
-		if lite == nil {
-			return nil, fmt.Errorf("no storage: set a database file or a data directory")
-		}
-		return lite, nil
+		return nil, fmt.Errorf("no storage: set a data directory")
 	}
 	opt := cfg.Parquet
 	if opt.Logf == nil {
 		opt.Logf = logger.Warnf
 	}
-	pq, err := pqstore.Open(cfg.DataDir, opt)
-	if err != nil {
-		if lite != nil {
-			lite.Close()
-		}
-		return nil, err
-	}
-	if lite == nil {
-		return pq, nil
-	}
-	return store.Tee(pq, lite), nil
+	return pqstore.Open(cfg.DataDir, opt)
 }
 
 // preciseBootMS returns the boot time in unix ms. /proc/stat's btime is

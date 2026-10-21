@@ -2,9 +2,9 @@ package pqstore
 
 import "clifr/internal/store"
 
-// Parquet rows mirror the v1 SQLite schema (internal/store) column for
-// column, so the same queries run on both. Repetitive strings use dictionary
-// encoding; nullable columns are pointers.
+// Parquet rows: the tables the queries read (internal/duck loads them under
+// these names). Repetitive strings use dictionary encoding; nullable columns
+// are pointers or optional.
 
 type sampleRow struct {
 	TS          int64  `parquet:"ts"`

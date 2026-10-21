@@ -7,11 +7,11 @@ _clifrd() {
 		--budget-window --verify-every --flush-interval --flush-rows --retention
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target
 		--max-size --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
-		--ebpf-classic-fork --ebpf-kprobes --proc-root --db"
+		--ebpf-classic-fork --ebpf-kprobes --proc-root"
 	local bundle="--data-dir -D --last --since --until -o --output"
 	COMPREPLY=()
 	case $prev in
-	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --db)
+	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root)
 		COMPREPLY=($(compgen -f -- "$cur"))
 		return
 		;;

@@ -27,9 +27,6 @@ func TestCompletion(t *testing.T) {
 	var g globals
 	var want []string
 	newFlags(&g, io.Discard).VisitAll(func(f *flag.Flag) {
-		if f.Name == "db" {
-			return
-		}
 		if len(f.Name) == 1 {
 			want = append(want, "-"+f.Name)
 		} else {

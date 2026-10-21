@@ -6,10 +6,9 @@ import (
 	"strconv"
 )
 
-// The query code uses SQLite's numbered parameters (?1, ?2, ...), may skip
-// some and may repeat them. The DuckDB driver binds parameters by count, so
-// for a DuckDB-backed DB (DataDir set) each ?N becomes a plain ? and the
-// arguments are listed in order of appearance.
+// The query code uses numbered parameters (?1, ?2, ...), may skip some and
+// may repeat them. The DuckDB driver binds parameters by count, so each ?N
+// becomes a plain ? and the arguments are listed in order of appearance.
 
 var numberedParam = regexp.MustCompile(`\?(\d+)`)
 
@@ -35,9 +34,7 @@ func (d *DB) Query(q string, args ...any) (*sql.Rows, error) {
 			return nil, err
 		}
 	}
-	if d.DataDir != "" {
-		q, args = positional(q, args)
-	}
+	q, args = positional(q, args)
 	return d.DB.Query(q, args...)
 }
 
@@ -48,8 +45,6 @@ func (d *DB) QueryRow(q string, args ...any) *sql.Row {
 			return d.DB.QueryRow(`SELECT error(?)`, err.Error()) // the error, at Scan
 		}
 	}
-	if d.DataDir != "" {
-		q, args = positional(q, args)
-	}
+	q, args = positional(q, args)
 	return d.DB.QueryRow(q, args...)
 }

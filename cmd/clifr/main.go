@@ -1,7 +1,7 @@
 // Command clifr shows what a Linux diagnostic command would have printed at a
 // past moment, from data recorded by clifrd. It never runs the command: it
 // rebuilds the output from the recording, a Parquet data directory read
-// through DuckDB (or, hidden, a v1 SQLite database with --db).
+// through DuckDB.
 package main
 
 import (
@@ -32,7 +32,7 @@ type globals struct {
 	everyMS                   int64
 	number                    int
 	json, interactive, plain  bool
-	dataDir, db               string
+	dataDir                   string
 	host, token, tlsCA, lic   string
 	version, help, verbose    bool
 }
@@ -72,7 +72,6 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 		dd = defaultDataDir
 	}
 	str(&g.dataDir, "D", "data-dir", dd)
-	str(&g.db, "", "db", "")
 	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
 	str(&g.tlsCA, "", "tls-ca", "")
@@ -152,13 +151,11 @@ func run(args []string) error {
 	if err := checkLater(&g); err != nil {
 		return err
 	}
-	if g.db == "" {
-		cleanup, err := openBundle(&g)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
+	cleanup, err := openBundle(&g)
+	if err != nil {
+		return err
 	}
+	defer cleanup()
 	if sub != "" {
 		return runSub(&g, sub, subArgs)
 	}
@@ -309,9 +306,6 @@ func openDB(g *globals) (*store.DB, error) { return openWindow(g, duck.Window{})
 // openWindow opens the recording with the TCP tables limited to w (the zero
 // Window: everything).
 func openWindow(g *globals, w duck.Window) (*store.DB, error) {
-	if g.db != "" {
-		return store.Open(g.db, true)
-	}
 	if os.Getenv("CLIFR_FULL_LOAD") != "" { // check: the window must not change any answer
 		w = duck.Window{}
 	}
@@ -399,7 +393,7 @@ func misplaced(a string) bool {
 		return false
 	}
 	switch name {
-	case "at", "since", "until", "tz", "data-dir", "json", "summary", "changes", "samples", "every", "number", "db":
+	case "at", "since", "until", "tz", "data-dir", "json", "summary", "changes", "samples", "every", "number":
 		return true
 	}
 	return false

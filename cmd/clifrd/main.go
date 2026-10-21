@@ -1,6 +1,5 @@
 // Command clifrd is the clifr recorder: it stores processes, sockets and
-// open files as time ranges, as Parquet files in a data directory (the
-// default) or in a v1 SQLite database, or both for side-by-side comparisons.
+// open files as time ranges, as Parquet files in a data directory.
 // Query the result with the clifr command. Pure Go, statically linked.
 package main
 
@@ -58,12 +57,11 @@ func run(args []string) error {
 	c := recorder.Config{Version: version()}
 	configPath := fs.String("config", defaultConfig, "configuration file (settings in it apply unless given as flags)")
 	fs.StringVar(configPath, "C", defaultConfig, "short for --config")
-	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, `Parquet data directory ("" for none)`)
+	fs.StringVar(&c.DataDir, "data-dir", defaultDataDir, "Parquet data directory")
 	fs.StringVar(&c.DataDir, "D", defaultDataDir, "short for --data-dir")
 	logLevel := fs.String("log-level", "info", "error, warn, info or debug")
 	showVersion := fs.Bool("version", false, "show the version and exit")
 	fs.BoolVar(showVersion, "v", false, "short for --version")
-	fs.StringVar(&c.DB, "db", "", "also (or, with --data-dir \"\", only) write this v1 SQLite database")
 	fs.DurationVar(&c.Interval, "interval", 30*time.Second, "process and socket sample interval")
 	fs.DurationVar(&c.SysInterval, "sys-interval", 10*time.Second, "system-wide counters (vmstat, mpstat, iostat, free, uptime), at most --interval")
 	fs.DurationVar(&c.FDInterval, "fd-interval", 120*time.Second, "full open-file walk interval")
@@ -170,9 +168,6 @@ func run(args []string) error {
 	var to []string
 	if c.DataDir != "" {
 		to = append(to, c.DataDir+" (Parquet, flushed every "+c.Parquet.FlushInterval.String()+")")
-	}
-	if c.DB != "" {
-		to = append(to, c.DB+" (SQLite)")
 	}
 	logger.Printf("recording to %s every %s (fd walk every %s)", strings.Join(to, " and "), c.Interval, c.FDInterval)
 	return r.Run(ctx)

@@ -236,8 +236,7 @@ func nextSample(db *store.DB, s int64, fdWalk bool) int64 {
 // churn query must not silently count as "no churn".
 var queryErr error
 
-// exists runs SELECT EXISTS(q). SQLite returns 0/1 and DuckDB a BOOLEAN;
-// both scan into a bool.
+// exists runs SELECT EXISTS(q).
 func exists(db *store.DB, q string, args ...any) bool {
 	var ok bool
 	if err := db.QueryRow(`SELECT EXISTS(`+q+`)`, args...).Scan(&ok); err != nil && queryErr == nil {

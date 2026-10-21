@@ -1,21 +1,16 @@
 package query
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"clifr/internal/store"
+	"clifr/internal/testrec"
 )
 
 // Two samples 10 s apart on a machine that booted 100 s before the first.
 func sysDB(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "s.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
 	base := int64(1_790_000_000_000)
 	batch := func(ts, up int64, sys store.SysSample, all, cpu0 [10]int64, disk [17]int64) *store.Batch {
 		sys.TS, sys.UptimeMS = ts, up
@@ -30,18 +25,12 @@ func sysDB(t *testing.T) *store.DB {
 	a.Intr, a.Ctxt, a.PgpgIn, a.PgpgOut, a.PswpIn = 10_000, 20_000, 1000, 2000, 100
 	b := a
 	b.ProcsBlocked, b.Intr, b.Ctxt, b.PgpgIn, b.PgpgOut, b.PswpIn = 2, 15_000, 50_000, 1500, 2100, 150
-	for _, x := range []*store.Batch{
+	return testrec.Open(t, nil,
 		batch(base, 100_000, a, [10]int64{1000, 0, 500, 8000, 500}, [10]int64{1000, 0, 500, 8000, 500},
 			[17]int64{100, 0, 2000, 400, 50, 50, 4000, 1000, 0, 0, 0, 0, 0, 5000, 2000, 10, 20}),
 		// in 10 s: 400 ticks user (100 of them guest), 100 system, 400 idle, 50 iowait, 30 irq, 20 softirq
 		batch(base+10_000, 110_000, b, [10]int64{1400, 0, 600, 8400, 550, 30, 20, 0, 100}, [10]int64{1400, 0, 600, 8400, 550, 30, 20, 0, 100},
-			[17]int64{300, 0, 6000, 800, 150, 150, 8000, 3000, 0, 0, 0, 0, 0, 7000, 5000, 20, 60}),
-	} {
-		if err := db.Write(x); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return db
+			[17]int64{300, 0, 6000, 800, 150, 150, 8000, 3000, 0, 0, 0, 0, 0, 7000, 5000, 20, 60}))
 }
 
 func out(print func(sb *strings.Builder)) string {

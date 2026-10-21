@@ -2,9 +2,13 @@ package duck
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
+	"maps"
 	"net/netip"
+	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,7 +84,7 @@ func shutdown() *store.Batch {
 	}
 }
 
-// dump renders a table sorted, with NULLs visible, for comparison.
+// dump renders a table sorted, with NULLs visible.
 func dump(t *testing.T, db *sql.DB, table, cols string) string {
 	t.Helper()
 	rows, err := db.Query(`SELECT ` + cols + ` FROM ` + table + ` ORDER BY ` + strings.Split(cols, ",")[0] + `, 2`)
@@ -99,7 +103,11 @@ func dump(t *testing.T, db *sql.DB, table, cols string) string {
 		if err := rows.Scan(p...); err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, fmt.Sprint(v...))
+		f := make([]string, n)
+		for i := range v {
+			f[i] = fmt.Sprint(v[i])
+		}
+		out = append(out, strings.Join(f, " | "))
 	}
 	return strings.Join(out, "\n")
 }
@@ -129,50 +137,59 @@ var compare = map[string]string{
 	"fs_samples":       "ts, mount_id, frsize, blocks, bfree, bavail, files, ffree",
 }
 
-// The same batches through Tee: every table reads back identically from
-// SQLite and from Parquet through DuckDB.
-func TestParityWithSQLite(t *testing.T) {
+var update = flag.Bool("update", false, "rewrite testdata/roundtrip.golden")
+
+// The batches written to Parquet, with a mid-run flush (the open file, then
+// closed rows replace it), read back through DuckDB: every table as in
+// testdata/roundtrip.golden (go test -run RoundTrip -update rewrites it).
+func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	lite, err := store.Open(filepath.Join(dir, "v1.db"), false)
+	pq, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pq, err := pqstore.Open(filepath.Join(dir, "data"), pqstore.Options{FlushInterval: time.Hour})
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := store.Tee(pq, lite)
-	b.SetMeta("interval_s", "30")
+	pq.SetMeta("interval_s", "30")
 	for _, x := range batches() {
-		if err := b.Write(x); err != nil {
+		if err := pq.Write(x); err != nil {
 			t.Fatal(err)
 		}
 	}
-	pq.Flush() // a mid-run flush: the open file, then closed rows replace it
-	if err := b.Write(shutdown()); err != nil {
+	pq.Flush()
+	if err := pq.Write(shutdown()); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Close(); err != nil {
+	if err := pq.Close(); err != nil {
 		t.Fatal(err)
 	}
-	lite, _ = store.Open(filepath.Join(dir, "v1.db"), true)
-	defer lite.Close()
-	dk, err := Open(filepath.Join(dir, "data"))
+	dk, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer dk.Close()
-	for table, cols := range compare {
+	var sb strings.Builder
+	for _, table := range slices.Sorted(maps.Keys(compare)) {
 		if _, err := dk.Prepare(table); err != nil { // tables load when a query names them
 			t.Fatal(err)
 		}
-		a, b := dump(t, lite.DB, table, cols), dump(t, dk.DB, table, cols)
-		if a != b {
-			t.Errorf("%s differs\nSQLite:\n%s\nParquet:\n%s", table, a, b)
-		}
-		if a == "" {
+		d := dump(t, dk.DB, table, compare[table])
+		if d == "" {
 			t.Errorf("%s: no rows", table)
 		}
+		fmt.Fprintf(&sb, "== %s: %s\n%s\n", table, compare[table], d)
+	}
+	golden := filepath.Join("testdata", "roundtrip.golden")
+	if *update {
+		os.MkdirAll("testdata", 0o755)
+		if err := os.WriteFile(golden, []byte(sb.String()), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sb.String(); got != string(want) {
+		t.Errorf("tables differ from %s:\n%s", golden, got)
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"clifr/internal/store"
+	"clifr/internal/duck"
 )
 
 func TestRedactor(t *testing.T) {
@@ -40,14 +40,14 @@ func TestRedactedCmdline(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(50, "db", 100, 1)
 	os.WriteFile(filepath.Join(fp.root, "50", "cmdline"), []byte("/bin/db\x00--password=s3cr3t\x00-v\x00"), 0o644)
-	dbPath := filepath.Join(t.TempDir(), "t.db")
-	r, err := New(Config{DB: dbPath, Interval: time.Second, FDInterval: time.Minute, ProcRoot: fp.root,
+	dataDir := t.TempDir()
+	r, err := New(Config{DataDir: dataDir, Interval: time.Second, FDInterval: time.Minute, ProcRoot: fp.root,
 		Redact: []string{`--password=(\S+)`}}, NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	must(t, err)
 	must(t, r.sample(time.Now(), true))
 	must(t, r.shutdown())
 	r.db.Close()
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	var cmd string

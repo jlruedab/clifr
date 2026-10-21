@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"clifr/internal/duck"
 	"clifr/internal/procfs"
 	"clifr/internal/query"
 	"clifr/internal/store"
@@ -47,20 +48,20 @@ func (f *fakeProc) set(pid int, comm string, startTicks, cpu int) {
 func (f *fakeProc) remove(pid int) { os.RemoveAll(filepath.Join(f.root, fmt.Sprint(pid))) }
 
 func newTestRecorder(t *testing.T, root string) (*Recorder, string) {
-	dbPath := filepath.Join(t.TempDir(), "t.db")
-	r, err := New(Config{DB: dbPath, Interval: time.Second, FDInterval: time.Minute, ProcRoot: root},
+	dataDir := t.TempDir()
+	r, err := New(Config{DataDir: dataDir, Interval: time.Second, FDInterval: time.Minute, ProcRoot: root},
 		NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, dbPath
+	return r, dataDir
 }
 
 func TestIntervalLifecycle(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "alpha", 100, 5)
 	fp.set(20, "beta", 200, 0)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 
 	t1 := time.UnixMilli(1790001000000)
 	t2 := t1.Add(30 * time.Second)
@@ -78,7 +79,7 @@ func TestIntervalLifecycle(t *testing.T) {
 	must(t, r.shutdown())
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 
@@ -132,22 +133,27 @@ func TestIntervalLifecycle(t *testing.T) {
 func TestRecoverAfterCrash(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "alpha", 100, 5)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	t1 := time.UnixMilli(1790001000000)
 	must(t, r.sample(t1, true))
 	must(t, r.sample(t1.Add(time.Minute), false))
 	r.db.Close() // no shutdown: simulates a crash
+	// A run is named by its start second (the unit restarts after 30 s).
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
 
-	r2, _ := New(Config{DB: dbPath, Interval: time.Second, FDInterval: time.Minute, ProcRoot: fp.root},
+	r2, _ := New(Config{DataDir: dataDir, Interval: time.Second, FDInterval: time.Minute, ProcRoot: fp.root},
 		NewLogger(log.New(io.Discard, "", 0), LevelInfo))
-	defer r2.db.Close()
+	if r2.ids["processes"] <= r.ids["processes"] {
+		t.Errorf("ids of the new run (from %d) do not follow the old run's (%d)", r2.ids["processes"], r.ids["processes"])
+	}
+	r2.db.Close()
+	db, err := duck.Open(dataDir)
+	must(t, err)
+	defer db.Close()
 	var last int64
-	r2.db.(*store.DB).QueryRow(`SELECT last_seen FROM processes WHERE pid = 10`).Scan(&last)
+	db.QueryRow(`SELECT last_seen FROM processes WHERE pid = 10`).Scan(&last)
 	if last != t1.Add(time.Minute).UnixMilli() {
 		t.Errorf("recovered last_seen = %d", last)
-	}
-	if r2.ids["processes"] != 1 {
-		t.Errorf("id counter not restored: %d", r2.ids["processes"])
 	}
 }
 
@@ -187,7 +193,7 @@ func TestSocketOwnership(t *testing.T) {
 	fp.setTCP("0100007F:1E61 00000000:0000 0A 500") // 127.0.0.1:7777 LISTEN
 	fp.setFD(10, 3, "socket:[500]")
 	fp.setFD(10, 4, "/var/log/x")
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 
 	t1 := time.UnixMilli(1790001000000)
 	t2, t3, t4 := t1.Add(30*time.Second), t1.Add(60*time.Second), t1.Add(90*time.Second)
@@ -212,7 +218,7 @@ func TestSocketOwnership(t *testing.T) {
 	must(t, r.shutdown())
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	ms := func(t time.Time) int64 { return t.UnixMilli() }
@@ -291,7 +297,7 @@ func TestOpenFiles(t *testing.T) {
 	fp.setTCP()
 	fp.setFD(10, 3, "/var/log/app.log")
 	fp.setFD(10, 4, "/tmp/scratch")
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	r.cfg.FDMode = "all" // v1: every fd in open_files
 	t1 := time.UnixMilli(1790001000000)
 	t2, t3, t4 := t1.Add(30*time.Second), t1.Add(60*time.Second), t1.Add(90*time.Second)
@@ -304,7 +310,7 @@ func TestOpenFiles(t *testing.T) {
 	must(t, r.sample(t4, false))
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	type f struct {
@@ -351,7 +357,7 @@ func TestOpenFiles(t *testing.T) {
 func TestEvents(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "daemon", 100, 0)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	r.events = newEventQueue()
 	t1 := time.UnixMilli(1790001000000)
 	t2 := t1.Add(30 * time.Second)
@@ -378,7 +384,7 @@ func TestEvents(t *testing.T) {
 	must(t, r.shutdown())
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	type row struct {
@@ -425,7 +431,7 @@ func TestEvents(t *testing.T) {
 func TestForkCmdlineFromParent(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "daemon", 100, 0)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	r.events = newEventQueue()
 	t1 := time.UnixMilli(1790001000000)
 	t2 := t1.Add(30 * time.Second)
@@ -460,7 +466,7 @@ func TestForkCmdlineFromParent(t *testing.T) {
 	must(t, r.shutdown())
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	got := map[int]string{}
@@ -482,8 +488,8 @@ func TestForkCmdlineFromParent(t *testing.T) {
 func TestSkipOnOverrun(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "a", 100, 0)
-	dbPath := filepath.Join(t.TempDir(), "t.db")
-	r, err := New(Config{DB: dbPath, Interval: 200 * time.Millisecond, FDInterval: time.Second,
+	dataDir := t.TempDir()
+	r, err := New(Config{DataDir: dataDir, Interval: 200 * time.Millisecond, FDInterval: time.Second,
 		Duration: 1500 * time.Millisecond, ProcRoot: fp.root}, NewLogger(log.New(io.Discard, "", 0), LevelInfo))
 	must(t, err)
 	n := 0
@@ -494,7 +500,7 @@ func TestSkipOnOverrun(t *testing.T) {
 		}
 	}
 	must(t, r.Run(context.Background()))
-	db, _ := store.Open(dbPath, true)
+	db, _ := duck.Open(dataDir)
 	defer db.Close()
 	var skipped, guard, samples int
 	db.QueryRow(`SELECT COUNT(*) FROM samples WHERE skipped = 1`).Scan(&skipped)
@@ -565,7 +571,7 @@ func TestEBPFEvents(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "daemon", 100, 0)
 	fp.set(20, "victim", 200, 0)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	r.events = newEventQueue()
 	t1 := time.UnixMilli(1790001000000)
 	t2 := t1.Add(30 * time.Second)
@@ -596,7 +602,7 @@ func TestEBPFEvents(t *testing.T) {
 	must(t, r.shutdown())
 	r.db.Close()
 
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	life, err := query.Life(db, 0, t2.UnixMilli(), nil)
@@ -637,7 +643,7 @@ func TestEBPFEvents(t *testing.T) {
 func TestZombieKeepsExecCmdline(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "daemon", 100, 0)
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	r.events = newEventQueue()
 	t1 := time.UnixMilli(1790001000000)
 	must(t, r.sample(t1, true))
@@ -652,7 +658,7 @@ func TestZombieKeepsExecCmdline(t *testing.T) {
 	must(t, r.sample(t1.Add(30*time.Second), true))
 	must(t, r.shutdown())
 	r.db.Close()
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	var cmd string
@@ -670,7 +676,7 @@ func TestHeldFDs(t *testing.T) {
 	fp.setTCP()
 	fp.setFD(10, 3, "/var/log/app.log")
 	fp.setFD(10, 4, "/tmp/brief")
-	r, dbPath := newTestRecorder(t, fp.root)
+	r, dataDir := newTestRecorder(t, fp.root)
 	t1 := time.UnixMilli(1790001000000)
 	t2, t3 := t1.Add(2*time.Minute), t1.Add(4*time.Minute)
 	must(t, r.sample(t1, true))
@@ -681,7 +687,7 @@ func TestHeldFDs(t *testing.T) {
 	must(t, r.sample(t3, true))
 	must(t, r.shutdown())
 	r.db.Close()
-	db, err := store.Open(dbPath, true)
+	db, err := duck.Open(dataDir)
 	must(t, err)
 	defer db.Close()
 	got := map[string][2]int64{}

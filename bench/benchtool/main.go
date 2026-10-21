@@ -3,7 +3,6 @@
 //
 //	benchtool pglat PGBENCH_OUT LOG...   TPS and latency percentiles from pgbench logs
 //	benchtool cgsample --out DIR NAME=CGROUP...  cgroup v2 + system counters every 5 s
-//	benchtool dbexport DB TABLE          one table of a clifr database as CSV
 package main
 
 import (
@@ -13,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: benchtool pglat|cgsample|dbexport args")
+		fmt.Fprintln(os.Stderr, "usage: benchtool pglat|cgsample args")
 		os.Exit(2)
 	}
 	var err error
@@ -22,8 +21,6 @@ func main() {
 		err = pglat(os.Args[2:])
 	case "cgsample":
 		err = cgsample(os.Args[2:])
-	case "dbexport":
-		err = dbexport(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
