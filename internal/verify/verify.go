@@ -133,6 +133,10 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = compareTop(db, s)
 		case "findmnt":
 			res, err = compareFindmnt(db, s)
+		case "uname -a":
+			res, err = compareUname(db, s)
+		case "ss -s":
+			res, err = compareSSSummary(db, s)
 		case "pstree -lpT", "ps auxfwww":
 			res, err = compareTree(db, s)
 		case "netstat -tanp":
@@ -770,8 +774,8 @@ func printResult(w io.Writer, r Result, examples bool) {
 // compared lists the commands in report order; laterCommands are those added
 // after older recordings were made, listed only when present.
 var (
-	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt"}
-	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt")
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s")
 )
 
 func Print(w io.Writer, rep *Report, verbose bool) {

@@ -274,3 +274,50 @@ func (f FS) ReadDiskStats() ([]DiskStat, error) {
 	})
 	return out, nil
 }
+
+// SockStat is /proc/net/sockstat and sockstat6: socket counts by protocol
+// (what ss -s prints). Mem values are in pages. Without IPv6 the 6 fields
+// stay 0.
+type SockStat struct {
+	Used                                         uint64 // sockets of every family
+	TCPInUse, TCPOrphan, TCPTW, TCPAlloc, TCPMem uint64
+	UDPInUse, UDPMem, UDPLiteInUse, RawInUse     uint64
+	FragInUse, FragMemory                        uint64
+	TCP6InUse, UDP6InUse, UDPLite6InUse          uint64
+	Raw6InUse, Frag6InUse, Frag6Memory           uint64
+}
+
+func (f FS) ReadSockStat() (SockStat, error) {
+	var s SockStat
+	vals := map[string]*uint64{
+		"sockets used": &s.Used, "TCP inuse": &s.TCPInUse, "TCP orphan": &s.TCPOrphan, "TCP tw": &s.TCPTW,
+		"TCP alloc": &s.TCPAlloc, "TCP mem": &s.TCPMem, "UDP inuse": &s.UDPInUse, "UDP mem": &s.UDPMem,
+		"UDPLITE inuse": &s.UDPLiteInUse, "RAW inuse": &s.RawInUse, "FRAG inuse": &s.FragInUse, "FRAG memory": &s.FragMemory,
+		"TCP6 inuse": &s.TCP6InUse, "UDP6 inuse": &s.UDP6InUse, "UDPLITE6 inuse": &s.UDPLite6InUse,
+		"RAW6 inuse": &s.Raw6InUse, "FRAG6 inuse": &s.Frag6InUse, "FRAG6 memory": &s.Frag6Memory,
+	}
+	// "TCP: inuse 41 orphan 0 tw 2 alloc 46 mem 1015": name value pairs.
+	parse := func(b []byte) {
+		for _, line := range bytes.Split(b, []byte("\n")) {
+			key, rest, ok := bytes.Cut(line, []byte(":"))
+			if !ok {
+				continue
+			}
+			fs := fields(rest, nil)
+			for i := 0; i+1 < len(fs); i += 2 {
+				if p := vals[string(key)+" "+string(fs[i])]; p != nil {
+					*p = u64(fs[i+1])
+				}
+			}
+		}
+	}
+	b, err := os.ReadFile(f.path("net/sockstat"))
+	if err != nil {
+		return s, err
+	}
+	parse(b)
+	if b, err := os.ReadFile(f.path("net/sockstat6")); err == nil {
+		parse(b)
+	}
+	return s, nil
+}

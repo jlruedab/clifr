@@ -1,10 +1,13 @@
 package query
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"clifr/internal/duck"
+	"clifr/internal/pqstore"
 	"clifr/internal/store"
 	"clifr/internal/testrec"
 )
@@ -83,5 +86,52 @@ func TestFindmnt(t *testing.T) {
 	later := time.Now().Add(time.Hour).UnixMilli()
 	if MetaAt(db, "hostname", later) != "web1.example.com" || MetaAt(db, "nothing", later) != "" {
 		t.Error("MetaAt")
+	}
+}
+
+// Two clifrd runs in two boots: last reboot lists both, the newer still
+// running, the older ending at its last sample.
+func TestLastReboot(t *testing.T) {
+	dir := t.TempDir()
+	boot1 := time.Date(2026, 10, 19, 9, 0, 0, 0, time.Local).UnixMilli()
+	boot2 := time.Date(2026, 10, 20, 10, 51, 30, 0, time.Local).UnixMilli()
+	run := func(id string, boot int64, kernel string, samples ...int64) {
+		s, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, v := range map[string]string{"boot_id": id, "boot_ms": strconv.FormatInt(boot, 10), "uname_release": kernel} {
+			s.SetMeta(k, v)
+		}
+		for _, ts := range samples {
+			s.Write(&store.Batch{Sample: store.Sample{TS: ts}})
+		}
+		s.Close()
+	}
+	run("aaa", boot1, "5.14.0-427.13.1.el9_4.x86_64", boot1+20_000, boot1+90_061_000)
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second))) // runs are named by their start second
+	run("bbb", boot2, "5.14.0-503.11.1.el9_5.x86_64", boot2+20_000)
+	db, err := duck.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// testrec-style meta times are "now": ask about a moment after them.
+	boots, err := Boots(db, time.Now().Add(time.Hour).UnixMilli())
+	if err != nil || len(boots) != 2 || boots[0].LastMS != boot1+90_061_000 || boots[1].Kernel != "5.14.0-503.11.1.el9_5.x86_64" {
+		t.Fatalf("boots %+v %v", boots, err)
+	}
+	var sb strings.Builder
+	PrintLastReboot(&sb, boots, boot1+20_000, true)
+	want := "reboot   system boot  5.14.0-503.11.1. Tue Oct 20 10:51:30 2026   still running\n" +
+		"reboot   system boot  5.14.0-427.13.1. Mon Oct 19 09:00:00 2026 - Tue Oct 20 10:01:01 2026 (1+01:01)\n" +
+		"\nwtmp begins Mon Oct 19 09:00:20 2026\n"
+	if sb.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", sb.String(), want)
+	}
+	sb.Reset()
+	PrintLastReboot(&sb, boots[:1], boot1, false)
+	if !strings.HasPrefix(sb.String(), "reboot   system boot  5.14.0-427.13.1. Mon Oct 19 09:00   still running\n") {
+		t.Errorf("short: %q", sb.String())
 	}
 }

@@ -21,6 +21,8 @@ func init() {
 	ignoredFields["df"] = "none; sizes match within 1% or 1 MiB, Use% within 1"
 	ignoredFields["df -al -x autofs"] = ignoredFields["df"]
 	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
+	ignoredFields["uname -a"] = "none"
+	ignoredFields["ss -s"] = "none; counts within 5% or 3 (sockets come and go between the sample and the run)"
 	ignoredFields["mount"] = "none"
 	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and name (which set its place)"
 	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
@@ -713,6 +715,76 @@ func compareFindmnt(db *store.DB, snap snapshot) (Result, error) {
 		if _, ok := real[k]; !ok {
 			res.Extra++
 			res.example("findmnt extra %s", k)
+		}
+	}
+	return res, nil
+}
+
+// ---- uname -a, ss -s ----
+
+// compareUname compares uname -a word by word (the kernel version holds
+// spaces, so the line as a whole).
+func compareUname(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	at := func(k string) string { return query.MetaAt(db, k, snap.ts) }
+	m := at("uname_machine")
+	rec := strings.Join([]string{at("uname_sysname"), at("hostname"), at("uname_release"), at("uname_version"), m, m, m, "GNU/Linux"}, " ")
+	real := strings.TrimSpace(snap.output)
+	res.Real, res.Recon, res.Matched = 1, 1, 1
+	res.compare("uname -a", []fieldPair{{"LINE", real, rec}}, func() bool { return false })
+	return res, nil
+}
+
+var ssCountRe = regexp.MustCompile(`([A-Za-z]+)[ :\t]+(\d+)`)
+
+// parseSSSummary reads ss -s as "TCP: estab" -> value and "UDP\tIP" -> value.
+func parseSSSummary(out string) sysTable {
+	t := sysTable{}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Fields(l)
+		switch {
+		case len(f) == 2 && f[0] == "Total:":
+			t["Total"] = map[string]string{"": f[1]}
+		case len(f) > 2 && f[0] == "TCP:":
+			row := map[string]string{"": f[1]}
+			for _, m := range ssCountRe.FindAllStringSubmatch(strings.Join(f[2:], " "), -1) {
+				row[m[1]] = m[2]
+			}
+			t["TCP:"] = row
+		case len(f) == 4 && f[0] != "Transport":
+			t[f[0]] = map[string]string{"Total": f[1], "IP": f[2], "IPv6": f[3]}
+		}
+	}
+	return t
+}
+
+func compareSSSummary(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	s, err := query.SSSummaryAt(db, snap.ts)
+	if err != nil {
+		res.example("ss -s: %v", err)
+		return res, nil
+	}
+	real := parseSSSummary(snap.output)
+	rec := parseSSSummary(render(func(sb *strings.Builder) { query.PrintSSSummary(sb, s) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for key, rr := range real {
+		sr, ok := rec[key]
+		if !ok {
+			res.Missing++
+			continue
+		}
+		res.Matched++
+		exact := true
+		for col, rv := range rr {
+			if !near(rv, sr[col], 0.05, 3) {
+				exact = false
+				res.FieldDiffs[key+" "+col]++
+				res.example("ss -s %s %s: real %q, clifr %q", key, col, rv, sr[col])
+			}
+		}
+		if exact {
+			res.Exact++
 		}
 	}
 	return res, nil

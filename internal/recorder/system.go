@@ -71,6 +71,12 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.PgpgIn, row.PgpgOut, row.PswpIn, row.PswpOut = int64(v.PgpgIn), int64(v.PgpgOut), int64(v.PswpIn), int64(v.PswpOut)
 		row.PgFault, row.PgMajFault = int64(v.PgFault), int64(v.PgMajFault)
 	}
+	if k, err := r.fs.ReadSockStat(); !fail("net/sockstat", err) {
+		row.SockUsed, row.TCPInUse, row.TCPOrphan, row.TCPTW, row.TCPAlloc, row.TCPMem = int64(k.Used), int64(k.TCPInUse), int64(k.TCPOrphan), int64(k.TCPTW), int64(k.TCPAlloc), int64(k.TCPMem)
+		row.UDPInUse, row.UDPMem, row.UDPLiteInUse, row.RawInUse, row.FragInUse = int64(k.UDPInUse), int64(k.UDPMem), int64(k.UDPLiteInUse), int64(k.RawInUse), int64(k.FragInUse)
+		row.FragMemory, row.TCP6InUse, row.UDP6InUse, row.UDPLite6InUse = int64(k.FragMemory), int64(k.TCP6InUse), int64(k.UDP6InUse), int64(k.UDPLite6InUse)
+		row.Raw6InUse, row.Frag6InUse, row.Frag6Memory = int64(k.Raw6InUse), int64(k.Frag6InUse), int64(k.Frag6Memory)
+	}
 	b.Sys = append(b.Sys, *row)
 	disks, err := r.fs.ReadDiskStats()
 	if fail("diskstats", err) {

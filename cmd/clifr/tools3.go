@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -233,4 +234,105 @@ func hostnameTool() *tool {
 
 type hostRow struct {
 	Hostname string `json:"hostname"`
+}
+
+func unameTool() *tool {
+	return &tool{
+		name: "uname", synopsis: "[-a] [-s] [-n] [-r] [-v] [-m] [-p] [-i] [-o]",
+		about: "the kernel, as clifrd recorded it when it started",
+		opts: []opt{
+			{short: 'a', long: "all", help: "everything, in the order below"},
+			{short: 's', long: "kernel-name", help: "kernel name (the default)"},
+			{short: 'n', long: "nodename", help: "host name"},
+			{short: 'r', long: "kernel-release", help: "kernel release"},
+			{short: 'v', long: "kernel-version", help: "kernel version"},
+			{short: 'm', long: "machine", help: "machine hardware name"},
+			{short: 'p', long: "processor", help: "processor type (the machine, as RHEL's and Debian's coreutils print it)"},
+			{short: 'i', long: "hardware-platform", help: "hardware platform (the machine, likewise)"},
+			{short: 'o', long: "operating-system", help: "operating system (GNU/Linux)"},
+		},
+		window: true,
+		notes: []string{
+			"The values of the clifrd run covering T (recorded since schema 3; a kernel changes only at boot).",
+		},
+		examples: []string{`clifr --at "02:45" "uname -a"`, `clifr --at "02:45" "uname -r"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("uname: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("uname: needs --at")
+			}
+			keys := []string{"kernel-name", "nodename", "kernel-release", "kernel-version", "machine", "processor", "hardware-platform", "operating-system"}
+			var want []string
+			for _, k := range keys {
+				if p.has("all") || p.has(k) {
+					want = append(want, k)
+				}
+			}
+			if len(want) == 0 {
+				want = []string{"kernel-name"}
+			}
+			return func() error {
+				at := func(key string) string { return query.MetaAt(c.db, key, c.w.At) }
+				machine := at("uname_machine")
+				if at("uname_release") == "" {
+					return fmt.Errorf("uname: not in this recording at %s (recorded since schema 3)", query.FormatMS(c.w.At))
+				}
+				vals := map[string]string{"kernel-name": at("uname_sysname"), "nodename": at("hostname"),
+					"kernel-release": at("uname_release"), "kernel-version": at("uname_version"), "machine": machine,
+					"processor": machine, "hardware-platform": machine, "operating-system": "GNU/Linux"}
+				var out []string
+				for _, k := range want {
+					out = append(out, vals[k])
+				}
+				line := strings.Join(out, " ")
+				return c.emit(unameRow{Uname: line}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { fmt.Fprintln(w, line) })
+			}, nil
+		},
+	}
+}
+
+type unameRow struct {
+	Uname string `json:"uname"`
+}
+
+func lastTool() *tool {
+	return &tool{
+		name: "last", synopsis: "[-F] reboot",
+		about: "the boots of the machine within the recording, as util-linux last reboot prints them",
+		opts: []opt{
+			{short: 'F', long: "fulltimes", help: "full times (date and seconds)"},
+		},
+		window: true,
+		notes: []string{
+			"Only reboot: logins are not recorded. The boots that started by T (boot id and time of each",
+			"clifrd run; the kernel recorded since schema 3, \"-\" before). The boot covering T is \"still",
+			"running\"; an earlier one ends at its last recorded sample (wtmp has the shutdown time, or",
+			"\"crash\"). \"wtmp begins\" is the start of the recording.",
+		},
+		examples: []string{`clifr --at now "last -F reboot"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) != 1 || p.pos[0] != "reboot" {
+				return nil, errors.New(`last: only "last [-F] reboot" (logins are not recorded)`)
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("last: needs --at")
+			}
+			return func() error {
+				boots, err := query.Boots(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				if len(boots) == 0 {
+					return fmt.Errorf("last: no boot recorded by %s", query.FormatMS(c.w.At))
+				}
+				var begins sql.NullInt64
+				c.db.QueryRow(`SELECT MIN(ts) FROM samples`).Scan(&begins)
+				return c.emit(boots, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintLastReboot(w, boots, begins.Int64, p.has("fulltimes")) })
+			}, nil
+		},
+	}
 }

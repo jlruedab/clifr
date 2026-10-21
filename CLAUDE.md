@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -149,10 +149,13 @@ wait for the user's go-ahead.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 2 since
-  2026-10-19; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
-  `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, plus boot time, intervals and
-  modes. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 3 since
+  2026-10-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
+  machine` (schema 3), plus boot time, intervals and modes. Per-run values (hostname, uname,
+  boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
+  latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL
+  before) for `ss -s`. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).
 - Redaction (`--redact`, clifrd.yml `redact`): `recorder.Redactor` masks command lines before
   they are stored; every /proc read goes through `r.readCmdline`, exec events through
   `r.redact.Cmdline`; argv[0] and the arguments are masked apart (argv0_len stays right).

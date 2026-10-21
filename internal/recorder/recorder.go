@@ -153,7 +153,9 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	host, _ := os.Hostname()
 	bootID, _ := fs.ReadBootID()
 	_, offset := time.Now().Zone()
+	sysname, release, version, machine := uname()
 	for k, v := range map[string]string{
+		"uname_sysname": sysname, "uname_release": release, "uname_version": version, "uname_machine": machine,
 		"schema_version": strconv.Itoa(store.SchemaVersion), "clifrd_version": cfg.Version,
 		"machine_id": machineID(), "boot_id": bootID, "timezone": timeZone(), "tz_offset_s": strconv.Itoa(offset),
 		"hostname": host, "mem_total_kb": strconv.FormatInt(memKB, 10),
@@ -662,6 +664,16 @@ func machineID() string {
 		}
 	}
 	return ""
+}
+
+// uname is the kernel's identity as uname -s, -r, -v and -m print it.
+func uname() (sysname, release, version, machine string) {
+	var u unix.Utsname
+	if unix.Uname(&u) != nil {
+		return
+	}
+	return unix.ByteSliceToString(u.Sysname[:]), unix.ByteSliceToString(u.Release[:]),
+		unix.ByteSliceToString(u.Version[:]), unix.ByteSliceToString(u.Machine[:])
 }
 
 // timeZone is the host's time zone name (e.g. Australia/Adelaide): $TZ, the

@@ -55,7 +55,7 @@ func init() {
 	addTool(topTool())
 	addTool(pstreeTool())
 	addTool(&tool{
-		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER]",
+		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER] | -s",
 		about: "TCP and UDP sockets",
 		opts: []opt{
 			{short: 't', long: "tcp", help: "TCP sockets"},
@@ -66,6 +66,7 @@ func init() {
 			{short: 'p', long: "processes", help: "show the processes using each socket"},
 			{short: '4', long: "ipv4", help: "only IPv4 sockets"},
 			{short: '6', long: "ipv6", help: "only IPv6 sockets"},
+			{short: 's', long: "summary", help: "socket counts by protocol (from /proc/net/sockstat, recorded since schema 3)"},
 		},
 		window: true,
 		notes: []string{
@@ -74,6 +75,8 @@ func init() {
 			"resolved with /etc/services of the machine running clifr.",
 			"TCP from events: connections, states and owners exact; Recv-Q/Send-Q from the keyframe (sampled).",
 			"--since: TCP connections by process over the range (every connection, however short).",
+			"-s: the counts from the system sample at or before T; estab (ESTABLISHED and CLOSE-WAIT) from",
+			"the TCP records at T.",
 		},
 		examples: []string{`clifr --at "14:00" "ss -ltnp"`,
 			`clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" "ss -tanp dst 10.0.4.21 and dport = :5432"`},
@@ -133,6 +136,25 @@ func init() {
 }
 
 func prepareSS(p parsed, c *runCtx) (func() error, error) {
+	if p.has("summary") {
+		if len(p.set) > 1 || len(p.pos) > 0 {
+			return nil, errors.New("ss: -s takes no other option or filter")
+		}
+		if c.w.IsRange() {
+			return nil, errors.New("ss: -s needs --at")
+		}
+		return func() error {
+			s, err := query.SSSummaryAt(c.db, c.w.At)
+			if err != nil {
+				return err
+			}
+			c.header("ss -s at %s: counts from the system sample at %s", query.FormatMS(c.w.At), query.FormatMS(s.SampleTS))
+			return c.emit(s, func(int) rowMeta {
+				return rowMeta{TS: c.w.At, SampleTS: s.SampleTS, Sampled: []string{"total", "tcp", "transport"}}
+			},
+				func(w io.Writer) { query.PrintSSSummary(w, s) })
+		}, nil
+	}
 	tcp, udp := p.has("tcp"), p.has("udp")
 	if !tcp && !udp {
 		return nil, errors.New("ss: add -t and/or -u: without them ss lists every socket type (unix, netlink, ...), and clifr records TCP and UDP")

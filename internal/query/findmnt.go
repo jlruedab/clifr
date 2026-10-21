@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"clifr/internal/store"
 )
@@ -137,4 +140,95 @@ func MetaAt(db *store.DB, key string, t int64) string {
 	db.QueryRow(`SELECT arg_max(value, ts) FROM read_parquet(?, union_by_name = true) WHERE key = ? AND ts <= ?`,
 		filepath.Join(db.DataDir, "meta", "**", "*.parquet"), key, t).Scan(&v)
 	return v.String
+}
+
+// Boot is one boot of the machine within the recording: from the meta of
+// the clifrd runs in it.
+type Boot struct {
+	BootID   string `json:"boot_id"`
+	BootMS   int64  `json:"boot_ms"`
+	Kernel   string `json:"kernel_release"` // "" before schema 3
+	LastMS   int64  `json:"last_sample_ms"` // the last sample recorded in it
+	FirstRun int64  `json:"first_run_ms"`   // when clifrd first recorded in it
+}
+
+// Boots lists the boots that started at or before t, oldest first.
+func Boots(db *store.DB, t int64) ([]Boot, error) {
+	rows, err := db.Query(`SELECT run, min(ts), max(value) FILTER (WHERE key = 'boot_id'),
+			max(value) FILTER (WHERE key = 'boot_ms'), max(value) FILTER (WHERE key = 'uname_release')
+		FROM read_parquet(?, union_by_name = true) GROUP BY run ORDER BY run`, filepath.Join(db.DataDir, "meta", "**", "*.parquet"))
+	if err != nil {
+		return nil, err
+	}
+	var out []Boot
+	for rows.Next() {
+		var run, first int64
+		var id, ms, kernel sql.NullString
+		if err := rows.Scan(&run, &first, &id, &ms, &kernel); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		bootMS, _ := strconv.ParseInt(ms.String, 10, 64)
+		if !id.Valid || bootMS == 0 || bootMS > t {
+			continue
+		}
+		if n := len(out); n > 0 && out[n-1].BootID == id.String {
+			if out[n-1].Kernel == "" {
+				out[n-1].Kernel = kernel.String
+			}
+			continue
+		}
+		out = append(out, Boot{BootID: id.String, BootMS: bootMS, Kernel: kernel.String, FirstRun: first})
+	}
+	rows.Close()
+	for i := range out {
+		end := int64(math.MaxInt64)
+		if i+1 < len(out) {
+			end = out[i+1].BootMS
+		}
+		var last sql.NullInt64
+		db.QueryRow(`SELECT MAX(ts) FROM samples WHERE ts >= ? AND ts < ? AND ts <= ?`, out[i].BootMS, end, t).Scan(&last)
+		out[i].LastMS = last.Int64
+	}
+	return out, nil
+}
+
+// PrintLastReboot prints boots like util-linux last reboot (with full, -F:
+// full times), newest first: the boot that covers the moment (the last one)
+// is "still running"; an earlier one ends at its last recorded sample (wtmp
+// has the shutdown time, or "crash"). begins: when the recording starts.
+func PrintLastReboot(w io.Writer, boots []Boot, begins int64, full bool) {
+	login := func(ms int64) string {
+		if full {
+			return time.UnixMilli(ms).Format("Mon Jan _2 15:04:05 2006")
+		}
+		return time.UnixMilli(ms).Format("Mon Jan _2 15:04")
+	}
+	logout := func(ms int64) string {
+		if full {
+			return time.UnixMilli(ms).Format("Mon Jan _2 15:04:05 2006")
+		}
+		return time.UnixMilli(ms).Format("15:04")
+	}
+	for i := len(boots) - 1; i >= 0; i-- {
+		b := boots[i]
+		kernel := b.Kernel
+		if kernel == "" {
+			kernel = "-"
+		}
+		line := fmt.Sprintf("%-8.8s %-12.12s %-16.16s %s", "reboot", "system boot", kernel, login(b.BootMS))
+		if i == len(boots)-1 {
+			line += "   still running"
+		} else {
+			secs := (b.LastMS - b.BootMS) / 1000
+			mins, hours, days := secs/60%60, secs/3600%24, secs/86400
+			length := fmt.Sprintf(" (%02d:%02d)", hours, mins)
+			if days > 0 {
+				length = fmt.Sprintf("(%d+%02d:%02d)", days, hours, mins)
+			}
+			line += " - " + logout(b.LastMS) + " " + length
+		}
+		fmt.Fprintln(w, line)
+	}
+	fmt.Fprintf(w, "\nwtmp begins %s\n", time.UnixMilli(begins).Format("Mon Jan _2 15:04:05 2006"))
 }

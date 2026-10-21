@@ -180,10 +180,11 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   week): `top -b -n 1` (done 2026-10-21) (summary lines; PID USER PR NI VIRT RES S %CPU %MEM
   TIME+ COMMAND; PR = 20 + NI, SHR unknown until step 3, %CPU over the sample
   interval), `date [--utc]`, `pstree -lp`, `ps` forest (`f`) (these three
-  done 2026-10-21), `ss -s`,
+  done 2026-10-21), `ss -s` (done 2026-10-21 with sockstat recorded: schema 3),
   `df -a -l -x`, `findmnt` (tree from mount paths), `hostname` (as recorded
   at start) (these three done 2026-10-21), `last -F reboot` (boots within
-  the recording).
+  the recording; done 2026-10-21 with uname recorded per run, which also
+  gives `uname`, pulled forward from step 4).
 - **Step 2, the CSV's priority items** (new tables, ~2–3 weeks): `netstat -s
   [-6]`, `nstat -zas` (/proc/net/snmp, snmp6, netstat per system sample);
   `ip -s -d link` (/proc/net/dev + netlink); `ip addr`, `ip route [-6]`,

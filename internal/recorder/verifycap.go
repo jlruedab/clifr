@@ -22,6 +22,8 @@ var verifyCommands = [][]string{
 	{"mpstat", "-P", "ALL"},
 	{"iostat", "-dx"},
 	{"free"},
+	{"ss", "-s"},
+	{"uname", "-a"},
 	{"df"},
 	{"df", "-al", "-x", "autofs"},
 	{"mount"},

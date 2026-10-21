@@ -223,6 +223,9 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "top -b -n 1"
     clifr --at "02:45" "date --utc"
     clifr --at "02:45" findmnt
+    clifr --at "02:45" "ss -s"
+    clifr --at "02:45" "uname -a"
+    clifr --at now "last -F reboot"
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
@@ -270,7 +273,13 @@ A command can also be given unquoted after clifr's options
   `--samples`.
 - `date [-u|--utc] [-R]`: the moment asked for, in GNU date's C-locale
   format. `hostname [-s]`: the name when the clifrd run covering the moment
-  started (later changes and `-f` are not recorded).
+  started (later changes and `-f` are not recorded). `uname [-asnrvmpio]`:
+  the kernel the run covering the moment recorded (since schema 3; `-p` and
+  `-i` print the machine, as RHEL's and Debian's coreutils do). `last [-F]
+  reboot`: the boots within the recording, newest "still running"; an
+  earlier boot ends at its last recorded sample, where wtmp has the shutdown
+  time or "crash"; boot times are the kernel's (wtmp's record is written a
+  few seconds later, when systemd starts); logins are not recorded.
 - `findmnt [-l]`: util-linux's tree (C locale: ASCII), TARGET SOURCE
   FSTYPE OPTIONS. The parent mount is not recorded: the tree uses the mount
   on the longest prefix of each path, which differs from findmnt only for a
@@ -283,6 +292,9 @@ A command can also be given unquoted after clifr's options
   out of the first line), SHR (`-`) and the scheduling policy (PR is 20 +
   NI, never `rt`). Over a range: one report per sample with `--samples`
   (`-n` and `-d` as top's).
+- `ss -s`: the counts of /proc/net/sockstat and sockstat6 at the system
+  sample at or before T (recorded since schema 3), estab (ESTABLISHED and
+  CLOSE-WAIT) from the TCP records at T.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

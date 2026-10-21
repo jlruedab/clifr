@@ -114,6 +114,11 @@ type SysSample struct {
 	SwapCached, Active, Inactive, SwapTotal, SwapFree     int64
 	Dirty, Writeback, Shmem, Slab, SReclaimable           int64
 	PgpgIn, PgpgOut, PswpIn, PswpOut, PgFault, PgMajFault int64
+	// /proc/net/sockstat and sockstat6 (schema 3): socket counts, mem in pages.
+	SockUsed, TCPInUse, TCPOrphan, TCPTW, TCPAlloc, TCPMem int64
+	UDPInUse, UDPMem, UDPLiteInUse, RawInUse, FragInUse    int64
+	FragMemory, TCP6InUse, UDP6InUse, UDPLite6InUse        int64
+	Raw6InUse, Frag6InUse, Frag6Memory                     int64
 }
 
 // CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).

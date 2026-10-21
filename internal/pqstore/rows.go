@@ -408,12 +408,35 @@ type sysRow struct {
 	PswpOut      int64 `parquet:"pswpout"`
 	PgFault      int64 `parquet:"pgfault"`
 	PgMajFault   int64 `parquet:"pgmajfault"`
+	// sockstat (schema 3; absent, so NULL, in older files)
+	SockUsed      int64 `parquet:"sock_used"`
+	TCPInUse      int64 `parquet:"tcp_inuse"`
+	TCPOrphan     int64 `parquet:"tcp_orphan"`
+	TCPTW         int64 `parquet:"tcp_tw"`
+	TCPAlloc      int64 `parquet:"tcp_alloc"`
+	TCPMem        int64 `parquet:"tcp_mem"`
+	UDPInUse      int64 `parquet:"udp_inuse"`
+	UDPMem        int64 `parquet:"udp_mem"`
+	UDPLiteInUse  int64 `parquet:"udplite_inuse"`
+	RawInUse      int64 `parquet:"raw_inuse"`
+	FragInUse     int64 `parquet:"frag_inuse"`
+	FragMemory    int64 `parquet:"frag_memory"`
+	TCP6InUse     int64 `parquet:"tcp6_inuse"`
+	UDP6InUse     int64 `parquet:"udp6_inuse"`
+	UDPLite6InUse int64 `parquet:"udplite6_inuse"`
+	Raw6InUse     int64 `parquet:"raw6_inuse"`
+	Frag6InUse    int64 `parquet:"frag6_inuse"`
+	Frag6Memory   int64 `parquet:"frag6_memory"`
 }
 
 func sysOf(s *store.SysSample) sysRow {
 	return sysRow{TS: s.TS, UptimeMS: s.UptimeMS,
 		Load1: int32(s.Load1), Load5: int32(s.Load5), Load15: int32(s.Load15), Runnable: int32(s.Runnable), Threads: int32(s.Threads), ProcsRunning: int32(s.ProcsRunning), ProcsBlocked: int32(s.ProcsBlocked),
-		Intr: s.Intr, Ctxt: s.Ctxt, Forks: s.Forks, SoftIRQ: s.SoftIRQ, MemTotal: s.MemTotal, MemFree: s.MemFree, MemAvailable: s.MemAvailable, Buffers: s.Buffers, Cached: s.Cached, SwapCached: s.SwapCached, Active: s.Active, Inactive: s.Inactive, SwapTotal: s.SwapTotal, SwapFree: s.SwapFree, Dirty: s.Dirty, Writeback: s.Writeback, Shmem: s.Shmem, Slab: s.Slab, SReclaimable: s.SReclaimable, PgpgIn: s.PgpgIn, PgpgOut: s.PgpgOut, PswpIn: s.PswpIn, PswpOut: s.PswpOut, PgFault: s.PgFault, PgMajFault: s.PgMajFault}
+		Intr: s.Intr, Ctxt: s.Ctxt, Forks: s.Forks, SoftIRQ: s.SoftIRQ, MemTotal: s.MemTotal, MemFree: s.MemFree, MemAvailable: s.MemAvailable, Buffers: s.Buffers, Cached: s.Cached, SwapCached: s.SwapCached, Active: s.Active, Inactive: s.Inactive, SwapTotal: s.SwapTotal, SwapFree: s.SwapFree, Dirty: s.Dirty, Writeback: s.Writeback, Shmem: s.Shmem, Slab: s.Slab, SReclaimable: s.SReclaimable, PgpgIn: s.PgpgIn, PgpgOut: s.PgpgOut, PswpIn: s.PswpIn, PswpOut: s.PswpOut, PgFault: s.PgFault, PgMajFault: s.PgMajFault,
+		SockUsed: s.SockUsed, TCPInUse: s.TCPInUse, TCPOrphan: s.TCPOrphan, TCPTW: s.TCPTW, TCPAlloc: s.TCPAlloc, TCPMem: s.TCPMem,
+		UDPInUse: s.UDPInUse, UDPMem: s.UDPMem, UDPLiteInUse: s.UDPLiteInUse, RawInUse: s.RawInUse, FragInUse: s.FragInUse,
+		FragMemory: s.FragMemory, TCP6InUse: s.TCP6InUse, UDP6InUse: s.UDP6InUse, UDPLite6InUse: s.UDPLite6InUse,
+		Raw6InUse: s.Raw6InUse, Frag6InUse: s.Frag6InUse, Frag6Memory: s.Frag6Memory}
 }
 
 type cpuRow struct {

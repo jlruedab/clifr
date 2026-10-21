@@ -25,7 +25,15 @@ func TestSystemCounters(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	os.MkdirAll(filepath.Join(dir, "net"), 0o755)
+	os.WriteFile(filepath.Join(dir, "net", "sockstat"), []byte("sockets: used 1417\nTCP: inuse 41 orphan 1 tw 2 alloc 46 mem 1015\n"+
+		"UDP: inuse 13 mem 884\nUDPLITE: inuse 0\nRAW: inuse 0\nFRAG: inuse 3 memory 4096\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "net", "sockstat6"), []byte("TCP6: inuse 4\nUDP6: inuse 4\nUDPLITE6: inuse 0\nRAW6: inuse 1\nFRAG6: inuse 0 memory 0\n"), 0o644)
 	fs := New(dir)
+	if s, err := fs.ReadSockStat(); err != nil || s != (SockStat{Used: 1417, TCPInUse: 41, TCPOrphan: 1, TCPTW: 2, TCPAlloc: 46, TCPMem: 1015,
+		UDPInUse: 13, UDPMem: 884, FragInUse: 3, FragMemory: 4096, TCP6InUse: 4, UDP6InUse: 4, Raw6InUse: 1}) {
+		t.Errorf("sockstat = %+v %v", s, err)
+	}
 	st, err := fs.ReadSysStat()
 	if err != nil {
 		t.Fatal(err)
