@@ -196,7 +196,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   and a re-dump after them); `ip addr`, `ip route [-6]`,
   `ip rule` (netlink notifications, list at start then changes); `dmesg [-T]`
   (/dev/kmsg; the user decided 2026-10-21: record it, relax the unit's
-  `ProtectKernelLogs`, apply the `--redact` patterns to the messages);
+  `ProtectKernelLogs`, apply the `--redact` patterns to the messages; done
+  2026-10-21: schema 6 `kmsg`, CAP_SYSLOG in the unit);
   `systemctl list-units [--all|--failed]` (D-Bus unit signals; the user
   approved `github.com/godbus/dbus/v5` on 2026-10-21).
 - **Step 3, process fields** (benchmark after): policy, real-time priority,

@@ -48,11 +48,12 @@ IOSchedulingClass=idle
 #   CAP_NET_ADMIN        subscribe to the proc connector (and SO_RCVBUFFORCE)
 #   CAP_BPF CAP_PERFMON  load and attach the eBPF programs (kernel 5.8+)
 #   CAP_SYS_RESOURCE     raise RLIMIT_MEMLOCK for BPF maps (kernels before 5.11)
+#   CAP_SYSLOG           read the kernel log, /dev/kmsg (with kernel.dmesg_restrict=1)
 # Kernels before 5.8 (e.g. RHEL 8) have no CAP_BPF/CAP_PERFMON and need
 # CAP_SYS_ADMIN for eBPF; add it there, or the recorder falls back to the
 # proc connector. sock_diag needs no capability. Keep the host network
 # namespace: the recorder must see the host's sockets.
-CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_SYS_RESOURCE
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_SYS_RESOURCE CAP_SYSLOG
 AmbientCapabilities=
 NoNewPrivileges=yes
 
@@ -65,7 +66,11 @@ PrivateTmp=no
 PrivateDevices=no
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
-ProtectKernelLogs=yes
+# Off: the recorder reads /dev/kmsg (clifr dmesg). It only reads; the
+# --redact patterns are applied to the kernel log too. ProtectClock below
+# limits devices to an allow list (char-rtc), so /dev/kmsg is added to it.
+ProtectKernelLogs=no
+DeviceAllow=/dev/kmsg r
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes

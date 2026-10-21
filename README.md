@@ -232,6 +232,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "ip -o addr"
     clifr --at "02:45" "ip route show table all"
     clifr --at "02:45" "ip -6 rule list"
+    clifr --at "02:45" "dmesg -T"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -350,6 +351,15 @@ chooses one; a line on stderr says when a style other than current is used.
   so the order is right within seconds. Table names other than local, main
   and default print as numbers (a host's /etc/iproute2/rt_tables is not
   recorded); MPLS and other encapsulations are recorded but not printed.
+- `dmesg [-T] [-t] [-x]`: the kernel log. `--at T`: the records of the boot
+  running at T that were still in the kernel's buffer, as dmesg would have
+  printed them; a range: the records written in it. clifrd reads
+  `/dev/kmsg` as the kernel writes it (CAP_SYSLOG; the unit no longer sets
+  `ProtectKernelLogs`) and applies the `--redact` patterns to it. `-T`
+  computes times from the boot time as the host's util-linux does (2.32,
+  2.37 and 2.41 each differently). The buffer's oldest record is noted at
+  most 10 s after records arrive, so right after a burst the oldest lines
+  may still be listed although the kernel had dropped them.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

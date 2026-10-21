@@ -614,3 +614,47 @@ func prepareIPRouting(p parsed, c *runCtx, obj string, args []string) (func() er
 		return c.emit(reps, func(i int) rowMeta { return meta(&reps[i]) }, func(w io.Writer) { print(w, reps) })
 	}, nil
 }
+
+func dmesgTool() *tool {
+	return &tool{
+		name: "dmesg", synopsis: "[-T] [-t] [-x]",
+		about: "the kernel log, as util-linux dmesg prints it",
+		opts: []opt{
+			{short: 'T', long: "ctime", help: "human-readable times (computed as the host's dmesg does, from the boot time)"},
+			{short: 't', long: "notime", help: "no times"},
+			{short: 'x', long: "decode", help: "facility and level as names"},
+		},
+		window: true,
+		notes: []string{
+			"--at T: the records of the boot running at T still in the kernel's buffer, as dmesg would have",
+			"printed them then. A range: the records written in it (all boots). clifrd reads /dev/kmsg as the",
+			"kernel writes it (needs CAP_SYSLOG) and masks the --redact patterns in it; recorded since schema 6.",
+			"The buffer's oldest record is recorded at most 10 s after records arrive, so for a few seconds",
+			"after a burst the oldest lines may still be listed although the kernel had dropped them.",
+		},
+		examples: []string{`clifr --at "02:45" "dmesg -T"`, `clifr --since "02:00" --until "03:00" dmesg`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("dmesg: unexpected argument %q", p.pos[0])
+			}
+			o := query.DmesgOptions{Ctime: p.has("ctime"), NoTime: p.has("notime"), Decode: p.has("decode")}
+			return func() error {
+				var recs []query.Kmsg
+				var err error
+				ts := c.w.At
+				if c.w.IsRange() {
+					recs, err = query.KmsgBetween(c.db, c.w.From, c.w.To)
+					ts = c.w.To
+				} else {
+					recs, err = query.KmsgAt(c.db, c.w.At)
+				}
+				if err != nil {
+					return err
+				}
+				st := query.StyleAt(c.db, ts)
+				return c.emit(recs, func(i int) rowMeta { return rowMeta{TS: recs[i].TS} },
+					func(w io.Writer) { query.PrintDmesg(w, recs, o, st) })
+			}, nil
+		},
+	}
+}

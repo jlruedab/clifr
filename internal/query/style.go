@@ -28,20 +28,27 @@ type ToolStyle struct {
 	// IostatV11: sysstat 11 (iostat): no discard/flush columns, svctm, sr
 	// devices named scd.
 	IostatV11 bool
+	// DmesgTime: util-linux's dmesg -T arithmetic ("2.32", "2.37"; "" =
+	// 2.41: see recordTime). DmesgCaller: the PRINTK_CALLER field is
+	// printed (2.41; older versions leave it out).
+	DmesgTime   string
+	DmesgCaller bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
 // is the newest tools' (procps-ng 4, coreutils 9.7, lsof 4.99), for unknown
 // distributions and recordings without the distribution (before 2026-10-21).
 var Styles = map[string]ToolStyle{
-	"current": {Name: "current"},
+	"current": {Name: "current", DmesgCaller: true},
 	// Each checked with clifr verify in a VM (2026-10-21): Rocky Linux 8.10
 	// (procps-ng 3.3.15, coreutils 8.30, lsof 4.93.2, sysstat 11.7.3), AlmaLinux
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
-	"rhel-8":       {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true},
-	"rhel-9":       {Name: "rhel-9", DFListAll: true, VmstatTickRates: true},
-	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true},
+	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
+		DmesgTime: "2.32"},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37"},
+	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
+		DmesgTime: "2.37"},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

@@ -307,6 +307,23 @@ type RoutingRow struct {
 	Msg               []byte
 }
 
+// KmsgRow is a kernel log record from /dev/kmsg (Kind "msg"), or the state
+// of the kernel's log buffer (Kind "ring"). A record: Seq, Prio (facility <<
+// 3 | level), MonoUS (the kernel's timestamp, µs since boot without
+// suspends), Caller (PRINTK_CALLER, e.g. "T123", "" without it) and Msg (the
+// text as /dev/kmsg escapes it, redacted). A ring row: Seq is the oldest
+// record still in the buffer, BootUS the boot time as dmesg computes it
+// (CLOCK_REALTIME - CLOCK_BOOTTIME) and SuspUS the time suspended
+// (CLOCK_BOOTTIME - CLOCK_MONOTONIC), both in µs. TS is when it was read.
+type KmsgRow struct {
+	TS             int64
+	BootID, Kind   string
+	Seq, MonoUS    int64
+	Prio           int
+	Caller, Msg    string
+	BootUS, SuspUS int64
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -402,6 +419,7 @@ type Batch struct {
 	Links       []LinkRow
 	Addrs       []AddrRow
 	Routing     []RoutingRow
+	Kmsg        []KmsgRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -412,5 +430,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg)
 }

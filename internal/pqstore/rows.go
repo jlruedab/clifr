@@ -619,3 +619,16 @@ type routingRow struct {
 	Family int32  `parquet:"family"`
 	Msg    []byte `parquet:"msg"`
 }
+
+type kmsgRow struct {
+	TS     int64  `parquet:"ts"`
+	BootID string `parquet:"boot_id,dict"`
+	Kind   string `parquet:"kind,dict"`
+	Seq    int64  `parquet:"seq"`
+	Prio   int32  `parquet:"prio"`
+	MonoUS int64  `parquet:"mono_us"`
+	Caller string `parquet:"caller,dict"`
+	Msg    string `parquet:"msg"`
+	BootUS int64  `parquet:"boot_us"`
+	SuspUS int64  `parquet:"susp_us"`
+}

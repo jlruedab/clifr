@@ -97,6 +97,7 @@ func addSystemTools() {
 	addTool(dateTool())
 	addTool(hostnameTool())
 	addTool(unameTool())
+	addTool(dmesgTool())
 	addTool(lastTool())
 	addTool(nstatTool())
 	addTool(ipTool())

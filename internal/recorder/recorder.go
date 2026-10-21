@@ -99,6 +99,7 @@ type Recorder struct {
 	redact       Redactor
 	mounts       *mountWatch
 	net          *netWatch // interface addresses
+	kmsg         *kmsgWatch
 	fsUsage      fsUsage
 	lostReported int
 	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
@@ -274,6 +275,11 @@ func (r *Recorder) Run(ctx context.Context) error {
 		defer stop()
 		defer close(netDone)
 	}
+	kmsgDone := make(chan struct{})
+	if stop := r.startKmsg(kmsgDone); stop != nil {
+		defer stop()
+		defer close(kmsgDone)
+	}
 	tcpDone := make(chan struct{})
 	if stop, err := r.startTCPMode(tcpDone); err != nil {
 		return err
@@ -420,6 +426,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	if r.net != nil {
 		addrs, routing := r.net.take()
 		b.Addrs, b.Routing = append(b.Addrs, addrs...), append(b.Routing, routing...)
+	}
+	if r.kmsg != nil {
+		b.Kmsg = append(b.Kmsg, r.kmsg.take()...)
 	}
 	if r.mounts != nil {
 		b.Mounts = append(b.Mounts, r.mounts.take()...)

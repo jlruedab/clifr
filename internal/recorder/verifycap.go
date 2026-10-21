@@ -33,6 +33,8 @@ var verifyCommands = [][]string{
 	{"ip", "-6", "route", "show", "table", "all"},
 	{"ip", "-4", "rule", "list"},
 	{"ip", "-6", "rule", "list"},
+	{"dmesg"},
+	{"dmesg", "-T"},
 	{"uname", "-a"},
 	{"df"},
 	{"df", "-al", "-x", "autofs"},

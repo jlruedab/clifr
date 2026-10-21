@@ -42,6 +42,8 @@ if has service; then
 	end=$(clifr info 2>/dev/null | awk '/^Recording:/ {print $5, $6}')
 	n=$(clifr --plain --at "$end" "ps aux" 2>/dev/null | wc -l)
 	[ "$n" -gt 50 ] && ok "clifr ps aux from the service's recording: $n lines" || bad "clifr ps aux: $n lines"
+	n=$(clifr --plain --at "$end" dmesg 2>/dev/null | grep -vc '^#')
+	[ "$n" -gt 10 ] && ok "clifr dmesg from the service's recording: $n lines" || bad "clifr dmesg: $n lines (the kernel log is not recorded)"
 	out=$(su - tester -c "clifr --plain --at '$end' 'ss -tan'" 2>&1)
 	n=$(echo "$out" | grep -vc '^#')
 	[ "$n" -gt 1 ] && ok "clifr as a member of the clifr group: ss -tan $n lines" || bad "clifr as the clifr group at $end: $(echo "$out" | tail -3)"

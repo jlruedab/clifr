@@ -27,6 +27,8 @@ func init() {
 	ignoredFields["ip -o addr"] = "none; lifetimes that counted down by up to 5 s count as churn-changed"
 	ignoredFields["ip route show table all"] = "none; an expiring route's time left within 5 s"
 	ignoredFields["ip -6 route show table all"] = ignoredFields["ip route show table all"]
+	ignoredFields["dmesg"] = "none"
+	ignoredFields["dmesg -T"] = "none"
 	ignoredFields["ip -4 rule list"] = "none"
 	ignoredFields["ip -6 rule list"] = "none"
 	ignoredFields["netstat -s"] = "none; counters that moved within 1% or 10 count as churn-changed"
@@ -1143,4 +1145,75 @@ func compareIPRouting(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// ---- dmesg, dmesg -T ----
+
+// compareDmesg compares the kernel log line by line and in order.
+func compareDmesg(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	recs, err := query.KmsgAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	st := query.StyleAt(db, snap.ts)
+	text := render(func(sb *strings.Builder) {
+		query.PrintDmesg(sb, recs, query.DmesgOptions{Ctime: strings.Contains(snap.cmd, "-T")}, st)
+	})
+	compareLines(&res, snap.cmd, snap.output, text)
+	return res, nil
+}
+
+// compareLines matches the lines of two outputs (a line repeated counts
+// each time) and checks the order of those both have.
+func compareLines(res *Result, cmd, real, recon string) {
+	index := func(out string) (map[string]int, []string) {
+		at := map[string]int{}
+		var keys []string
+		for i, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if l == "" {
+				continue
+			}
+			k := l
+			for n := 2; ; n++ {
+				if _, dup := at[k]; !dup {
+					break
+				}
+				k = fmt.Sprintf("%s #%d", l, n)
+			}
+			at[k] = i
+			keys = append(keys, k)
+		}
+		return at, keys
+	}
+	ra, rk := index(real)
+	xa, xk := index(recon)
+	res.Real, res.Recon = len(rk), len(xk)
+	var common []string
+	for _, k := range rk {
+		if _, ok := xa[k]; ok {
+			res.Matched++
+			res.compare(cmd, []fieldPair{{"line", k, k}}, func() bool { return true })
+			common = append(common, k)
+		} else {
+			res.Missing++
+			res.example("%s missing %q", cmd, k)
+		}
+	}
+	for _, k := range xk {
+		if _, ok := ra[k]; !ok {
+			res.Extra++
+			res.example("%s extra %q", cmd, k)
+		}
+	}
+	xo := append([]string(nil), common...)
+	sort.Slice(xo, func(i, j int) bool { return xa[xo[i]] < xa[xo[j]] })
+	for i := range common {
+		if common[i] != xo[i] {
+			res.FieldDiffs["order"]++
+			res.example("%s order: real %q, clifr %q at place %d", cmd, common[i], xo[i], i+1)
+			break
+		}
+	}
 }

@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -164,10 +164,15 @@ wait for the user's go-ahead.
   `query/iproute.go`, `iprule.go`), `kind` route|rule, `key` (`rtnl.RouteKey`/`RuleKey`) for
   changes; same present/add/del scheme as `addrs`, plus a re-dump ~1 s after changes (at most
   every 10 s, not above 50,000 routes) so the kernel's order is recorded.
+- `kmsg` (schema 6): /dev/kmsg records (`kind` msg: seq, prio, mono_us, caller, msg as the kernel
+  escapes it, redacted; `boot_id`) read as written (`recorder/kmsg.go`; at start the whole buffer
+  again: readers keep one row per boot and seq), and `ring` rows (oldest seq in the buffer,
+  realtime-boottime and boottime-monotonic in µs for dmesg -T) at start and at most every 10 s
+  while records arrive. Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`).
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 3 since
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 6 since
   2026-10-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
