@@ -152,7 +152,10 @@ wait for the user's go-ahead.
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 3 since
   2026-10-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
-  machine` (schema 3), plus boot time, intervals and modes. Per-run values (hostname, uname,
+  machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
+  plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,
+  df, lsof, vmstat and iostat as the recorded distribution's tool versions do (rhel-8, rhel-9,
+  ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. Per-run values (hostname, uname,
   boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
   latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL
   before) for `ss -s`. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).

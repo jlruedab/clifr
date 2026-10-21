@@ -61,6 +61,9 @@ Interactive keys:
 
 Sources:
   -D, --data-dir DIR   local recording directory (default /var/lib/clifr)
+      --style STYLE    print free, top, df and lsof as these tools' versions do:
+                       rhel-8, rhel-9, ubuntu-22.04 or current (default: the
+                       recorded host's distribution; current if unknown)
 
 Other:
   -v, --version        show version
@@ -72,7 +75,7 @@ Other commands:
   clifr export TABLE   one recorded table as CSV
 
 Environment variables:
-  CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR
+  CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE
 
 Examples:
   # Processes at 02:45 this morning

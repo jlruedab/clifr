@@ -10,8 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 	_ "time/tzdata" // --tz works where the system has no zoneinfo
@@ -32,7 +34,7 @@ type globals struct {
 	everyMS                   int64
 	number                    int
 	json, interactive, plain  bool
-	dataDir                   string
+	dataDir, style            string
 	host, token, tlsCA, lic   string
 	version, help, verbose    bool
 }
@@ -72,6 +74,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 		dd = defaultDataDir
 	}
 	str(&g.dataDir, "D", "data-dir", dd)
+	str(&g.style, "", "style", os.Getenv("CLIFR_STYLE"))
 	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
 	str(&g.tlsCA, "", "tls-ca", "")
@@ -150,6 +153,13 @@ func run(args []string) error {
 	}
 	if err := checkLater(&g); err != nil {
 		return err
+	}
+	if g.style != "" {
+		if _, ok := query.Styles[g.style]; !ok {
+			names := slices.Sorted(maps.Keys(query.Styles))
+			return usageError{fmt.Errorf("--style: unknown style %q (%s)", g.style, strings.Join(names, ", "))}
+		}
+		query.StyleOverride = g.style
 	}
 	cleanup, err := openBundle(&g)
 	if err != nil {
@@ -374,6 +384,17 @@ func runToolAt(g *globals, words []string, diff []string) error {
 		return err
 	}
 	defer c.db.Close()
+	// The commands whose output differs between tool versions say which
+	// version's they follow, unless it is the current one.
+	if styled[t.name] {
+		at := c.w.At
+		if c.w.IsRange() {
+			at = c.w.To
+		}
+		if note := query.StyleNote(c.db, at); note != "" {
+			query.Header("%s", note)
+		}
+	}
 	// A moment the recording has nothing for is an error, not an empty or
 	// stale answer.
 	for _, at := range append([]int64{c.w.At}, c.diffAt...) {
@@ -386,6 +407,9 @@ func runToolAt(g *globals, words []string, diff []string) error {
 	return exec()
 }
 
+// styled are the commands ToolStyle changes.
+var styled = map[string]bool{"free": true, "top": true, "df": true, "lsof": true}
+
 // misplaced reports a clifr option given after an unquoted command.
 func misplaced(a string) bool {
 	name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
@@ -393,7 +417,7 @@ func misplaced(a string) bool {
 		return false
 	}
 	switch name {
-	case "at", "since", "until", "tz", "data-dir", "json", "summary", "changes", "samples", "every", "number":
+	case "at", "since", "until", "tz", "data-dir", "style", "json", "summary", "changes", "samples", "every", "number":
 		return true
 	}
 	return false

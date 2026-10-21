@@ -1,0 +1,104 @@
+package query
+
+import (
+	"slices"
+	"strings"
+
+	"clifr/internal/store"
+)
+
+// ToolStyle is how the recorded host's versions of the tools print the
+// things that differ between versions. clifr prints as the host's own tools
+// would, so its output agrees with them and with sosreports of that host.
+type ToolStyle struct {
+	Name string // a key of Styles
+	// OldUsed: procps-ng 3.3 of RHEL 8 and Ubuntu 22.04 (free, top): used =
+	// total - free - buffers - cache, not total - available (RHEL 9's 3.3.17
+	// already computes the latter).
+	OldUsed bool
+	// DFListAll: GNU df of RHEL 8 and 9 (coreutils 8.30, 8.32): devtmpfs and
+	// squashfs are listed (Ubuntu 22.04's coreutils 8.32 leaves them out).
+	DFListAll bool
+	// LsofNoUnixState: lsof 4.93 (RHEL 8, Ubuntu 22.04): a unix socket's NAME
+	// has no "(CONNECTED)", "(LISTEN)" or "(UNCONNECTED)".
+	LsofNoUnixState bool
+	// VmstatTickRates: procps-ng before 4.0 (vmstat): the since-boot rates
+	// are per second of CPU time summed over all CPUs.
+	VmstatTickRates bool
+	// IostatV11: sysstat 11 (iostat): no discard/flush columns, svctm, sr
+	// devices named scd.
+	IostatV11 bool
+}
+
+// Styles by distribution and major version (Ubuntu: its release). "current"
+// is the newest tools' (procps-ng 4, coreutils 9.7, lsof 4.99), for unknown
+// distributions and recordings without the distribution (before 2026-10-21).
+var Styles = map[string]ToolStyle{
+	"current": {Name: "current"},
+	// Each checked with clifr verify in a VM (2026-10-21): Rocky Linux 8.10
+	// (procps-ng 3.3.15, coreutils 8.30, lsof 4.93.2, sysstat 11.7.3), AlmaLinux
+	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
+	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
+	"rhel-8":       {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true},
+	"rhel-9":       {Name: "rhel-9", DFListAll: true, VmstatTickRates: true},
+	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true},
+}
+
+// StyleOverride, if set (clifr --style), is used instead of the recorded
+// distribution.
+var StyleOverride string
+
+// StyleName maps /etc/os-release's ID, VERSION_ID and ID_LIKE to a key of
+// Styles ("" when there is no entry for it).
+func StyleName(id, version, like string) string {
+	major, _, _ := strings.Cut(version, ".")
+	rhel := slices.Contains([]string{"rhel", "centos", "rocky", "almalinux", "ol"}, id) ||
+		slices.Contains(strings.Fields(like), "rhel")
+	var name string
+	switch {
+	case rhel:
+		name = "rhel-" + major
+	case id == "ubuntu":
+		name = "ubuntu-" + version
+	}
+	if _, ok := Styles[name]; ok {
+		return name
+	}
+	return ""
+}
+
+// StyleAt is the style of the tools of the host recorded at t (the clifrd
+// run covering t), or the override.
+func StyleAt(db *store.DB, t int64) ToolStyle {
+	if s, ok := Styles[StyleOverride]; ok {
+		return s
+	}
+	name := StyleName(MetaAt(db, "os_id", t), MetaAt(db, "os_version_id", t), MetaAt(db, "os_id_like", t))
+	if name == "" {
+		return Styles["current"]
+	}
+	return Styles[name]
+}
+
+// StyleNote describes the style for an informational line, "" for current.
+func StyleNote(db *store.DB, t int64) string {
+	s := StyleAt(db, t)
+	if s.Name == "current" {
+		return ""
+	}
+	if StyleOverride != "" {
+		return "output in the style of " + s.Name + "'s tools (--style)"
+	}
+	return "output in the style of " + s.Name + "'s tools, the recorded host's (" + MetaAt(db, "os_pretty_name", t) + ")"
+}
+
+// unixState strips a unix socket NAME's state for lsof before 4.95:
+// "/run/x type=STREAM (CONNECTED)" -> "/run/x type=STREAM".
+func unixState(name string) string {
+	for _, st := range []string{" (CONNECTED)", " (UNCONNECTED)", " (LISTEN)"} {
+		if s, ok := strings.CutSuffix(name, st); ok && strings.Contains(s, "type=") {
+			return s
+		}
+	}
+	return name
+}

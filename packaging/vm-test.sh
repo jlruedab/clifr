@@ -20,10 +20,10 @@ if ! command -v clifrd >/dev/null; then
 		apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$T"/pkg/*.deb lsof sysstat sosreport >/dev/null 2>&1
 	fi
 	usermod -aG clifr tester
-elif $rhel; then # a VM kept from an earlier test: upgrade to these packages
-	dnf -q -y install "$T"/pkg/*.rpm >/dev/null 2>&1 && systemctl restart clifrd
+elif $rhel; then # a VM kept from an earlier test: these packages, even if the version is the same
+	rpm -U --force --quiet "$T"/pkg/*.rpm && systemctl restart clifrd
 else
-	DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$T"/pkg/*.deb >/dev/null 2>&1 && systemctl restart clifrd
+	dpkg -i "$T"/pkg/*.deb >/dev/null && systemctl restart clifrd
 fi
 # Nothing of the new run is on disk before its first flush (5 min by
 # default); until then the latest moment is the old run's shutdown, when

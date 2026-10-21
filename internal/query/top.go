@@ -50,7 +50,8 @@ type TopCPU struct {
 	St     float64 `json:"st"`
 }
 
-// TopMem is in KiB; used = total - available (procps-ng 4).
+// TopMem is in KiB; used = total - available (procps-ng 4), total - free -
+// buff/cache before (ToolStyle.OldUsed).
 type TopMem struct {
 	Total     int64 `json:"mem_total_kb"`
 	Free      int64 `json:"mem_free_kb"`
@@ -134,7 +135,10 @@ func TopAt(db *store.DB, t int64) (TopReport, error) {
 	rep.Mem = TopMem{Total: sys.MemTotal, Free: sys.MemFree, BuffCache: sys.Buffers + sys.Cached + sys.SReclaimable,
 		SwapTotal: sys.SwapTotal, SwapFree: sys.SwapFree, SwapUsed: sys.SwapTotal - sys.SwapFree, Available: sys.MemAvailable}
 	rep.Mem.Used = rep.Mem.Total - rep.Mem.Available
-	if rep.Mem.Available > rep.Mem.Total {
+	if StyleAt(db, spans[0].To).OldUsed { // procps-ng before 4.0
+		rep.Mem.Used = rep.Mem.Total - rep.Mem.Free - rep.Mem.BuffCache
+	}
+	if rep.Mem.Used < 0 || rep.Mem.Available > rep.Mem.Total {
 		rep.Mem.Used = rep.Mem.Total - rep.Mem.Free
 	}
 	if rep.CPU, err = topCPU(db, spans[0].To); err != nil {

@@ -91,6 +91,18 @@ func lsofCommand(comm string) string {
 // latest sample s, which is refreshed every interval. Only processes alive at
 // s are listed.
 func LsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64, err error) {
+	rows, s, sfd, err = lsofAt(db, t, o)
+	if err == nil && StyleAt(db, t).LsofNoUnixState {
+		for i := range rows {
+			if rows[i].Type == "unix" {
+				rows[i].Name = unixState(rows[i].Name)
+			}
+		}
+	}
+	return rows, s, sfd, err
+}
+
+func lsofAt(db *store.DB, t int64, o LsofOptions) (rows []LsofRow, s, sfd int64, err error) {
 	if FDsHeld(db) {
 		return lsofHeld(db, t, o)
 	}

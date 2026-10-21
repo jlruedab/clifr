@@ -124,9 +124,10 @@ func DF(db *store.DB, t int64, sel DFSelect) ([]DFRow, error) {
 		return nil, err
 	}
 	var out []DFRow
-	seen := map[string]int{} // dev -> index in out
+	seen := map[string]int{}            // dev -> index in out
+	listAll := StyleAt(db, t).DFListAll // coreutils before 9 lists devtmpfs and squashfs
 	for _, m := range mounts {
-		if !sel.All && (dfDummy[m.FSType] || dfHidden[m.FSType]) || slices.Contains(sel.Exclude, m.FSType) ||
+		if !sel.All && (dfDummy[m.FSType] || dfHidden[m.FSType] && !listAll) || slices.Contains(sel.Exclude, m.FSType) ||
 			len(sel.Only) > 0 && !slices.Contains(sel.Only, m.FSType) || sel.Local && dfRemote(m.Source, m.FSType) {
 			continue
 		}

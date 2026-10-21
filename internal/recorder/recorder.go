@@ -154,7 +154,9 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	bootID, _ := fs.ReadBootID()
 	_, offset := time.Now().Zone()
 	sysname, release, version, machine := uname()
+	osID, osVersion, osLike, osPretty := osRelease()
 	for k, v := range map[string]string{
+		"os_id": osID, "os_version_id": osVersion, "os_id_like": osLike, "os_pretty_name": osPretty,
 		"uname_sysname": sysname, "uname_release": release, "uname_version": version, "uname_machine": machine,
 		"schema_version": strconv.Itoa(store.SchemaVersion), "clifrd_version": cfg.Version,
 		"machine_id": machineID(), "boot_id": bootID, "timezone": timeZone(), "tz_offset_s": strconv.Itoa(offset),
@@ -664,6 +666,36 @@ func machineID() string {
 		}
 	}
 	return ""
+}
+
+// osRelease is the distribution from /etc/os-release (or /usr/lib/os-release):
+// ID, VERSION_ID, ID_LIKE and PRETTY_NAME, unquoted; "" if unknown. clifr
+// prints the tools' output as that distribution's versions of them do.
+func osRelease() (id, version, like, pretty string) {
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		if b, err = os.ReadFile("/usr/lib/os-release"); err != nil {
+			return
+		}
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		k, v, ok := strings.Cut(l, "=")
+		if !ok {
+			continue
+		}
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		switch k {
+		case "ID":
+			id = v
+		case "VERSION_ID":
+			version = v
+		case "ID_LIKE":
+			like = v
+		case "PRETTY_NAME":
+			pretty = v
+		}
+	}
+	return
 }
 
 // uname is the kernel's identity as uname -s, -r, -v and -m print it.

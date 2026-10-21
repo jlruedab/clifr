@@ -252,13 +252,26 @@ resolved time and time zone and other informational lines go to stderr.
 
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
-`/var/lib/clifr`); `-j/--json`;
+`/var/lib/clifr`); `--style STYLE`; `-j/--json`;
 for ranges `--summary` (default), `--changes`, `--samples`,
 `-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).
 `CLIFR_SINCE`, `CLIFR_UNTIL`, `CLIFR_TZ` and `CLIFR_DATA_DIR` set defaults.
 A command can also be given unquoted after clifr's options
 (`clifr --at 13:28 ps aux`).
+
+Tool versions differ between distributions, and some print the same data
+differently. clifr prints as the recorded host's own tools do, so its output
+agrees with them and with that host's sosreports: clifrd records the
+distribution (`/etc/os-release`) and clifr picks the style of its tools.
+Checked with `clifr verify` in VMs: RHEL 8 (`free`/`top` "used" as total -
+free - buff/cache, `df` lists devtmpfs and squashfs, `lsof` without unix
+socket state, `vmstat`'s since-boot rates per CPU-second, `iostat` in
+sysstat 11's layout), RHEL 9 (`df` and `vmstat` as RHEL 8, the rest current)
+and Ubuntu 22.04 (`free`/`top`, `lsof` and `vmstat` as RHEL 8). Other
+distributions, and recordings made before 2026-10-21, get the current tools'
+style. `--style rhel-8|rhel-9|ubuntu-22.04|current` (or `CLIFR_STYLE`)
+chooses one; a line on stderr says when a style other than current is used.
 
 - `ps aux`, or `-e`/`-p`/`-u`/`-C` with the default format, `-f` or
   `-o COLUMNS` (pid, ppid, uid, user, comm, args, cmd, rss, vsz, %cpu, %mem,

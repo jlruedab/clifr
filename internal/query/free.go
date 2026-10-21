@@ -13,7 +13,7 @@ import (
 type FreeRow struct {
 	TS        int64 `json:"ts_ms"`
 	Total     int64 `json:"mem_total_kb"`
-	Used      int64 `json:"mem_used_kb"` // total - available
+	Used      int64 `json:"mem_used_kb"` // total - available (procps-ng before 4: - free - buff/cache)
 	Free      int64 `json:"mem_free_kb"`
 	Shared    int64 `json:"shared_kb"`
 	Buffers   int64 `json:"buffers_kb"`
@@ -37,7 +37,10 @@ func Free(db *store.DB, spans []Span) ([]FreeRow, error) {
 			Cache: s.Cached + s.SReclaimable, Available: s.MemAvailable,
 			SwapTotal: s.SwapTotal, SwapFree: s.SwapFree, SwapUsed: s.SwapTotal - s.SwapFree}
 		r.Used = r.Total - r.Available
-		if r.Available > r.Total {
+		if StyleAt(db, sp.To).OldUsed { // procps-ng before 4.0
+			r.Used = r.Total - r.Free - r.Buffers - r.Cache
+		}
+		if r.Used < 0 || r.Available > r.Total {
 			r.Used = r.Total - r.Free
 		}
 		out = append(out, r)

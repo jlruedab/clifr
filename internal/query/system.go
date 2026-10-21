@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"clifr/internal/procfs"
 	"clifr/internal/store"
 )
 
@@ -258,6 +259,11 @@ func VMStat(db *store.DB, spans []Span) ([]VMStatRow, error) {
 		t := cpus[-1]
 		use, sys := t[cUser]+t[cNice], t[cSystem]+t[cIRQ]+t[cSoftIRQ]
 		div := use + sys + t[cIdle] + t[cIOWait] + t[cSteal]
+		if sp.From == 0 && div > 0 && StyleAt(db, sp.To).VmstatTickRates {
+			// procps-ng before 4.0: since boot, per second of CPU time summed
+			// over the CPUs (so divided by their number).
+			secs = float64(div) / float64(procfs.ClockTicks)
+		}
 		pct := func(v int64) int64 {
 			if div == 0 {
 				return 0
@@ -435,6 +441,7 @@ type IOStatReport struct {
 	SinceBoot bool        `json:"since_boot"`
 	CPU       IOStatCPU   `json:"avg_cpu"`
 	Devices   []IOStatDev `json:"devices"`
+	v11       bool        // sysstat 11 layout (ToolStyle.IostatV11)
 }
 
 type diskVals [17]int64
@@ -484,7 +491,7 @@ func IOStat(db *store.DB, spans []Span, parts bool) ([]IOStatReport, error) {
 		if err != nil {
 			return nil, err
 		}
-		rep := IOStatReport{TS: sp.To, Time: FormatMS(sp.To), SinceBoot: sp.From == 0}
+		rep := IOStatReport{TS: sp.To, Time: FormatMS(sp.To), SinceBoot: sp.From == 0, v11: StyleAt(db, sp.To).IostatV11}
 		cpus, err := cpuDelta(db, sp)
 		if err != nil {
 			return nil, err
@@ -549,6 +556,10 @@ func PrintIOStat(w io.Writer, reps []IOStatReport, extended, devOnly bool) {
 			io.WriteString(w, "avg-cpu:  %user   %nice %system %iowait  %steal   %idle\n")
 			fmt.Fprintf(w, "        %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f\n\n", c.User, c.Nice, c.System, c.IOWait, c.Steal, c.Idle)
 		}
+		if rep.v11 {
+			printIOStat11(w, rep, extended)
+			continue
+		}
 		if extended {
 			io.WriteString(w, "Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util\n")
 			for _, d := range rep.Devices {
@@ -562,5 +573,34 @@ func PrintIOStat(w io.Writer, reps []IOStatReport, extended, devOnly bool) {
 		for _, d := range rep.Devices {
 			fmt.Fprintf(w, "%-13s %8.2f %12.2f %12.2f %12.2f %10d %10d %10d\n", d.Device, d.TPS, d.RKBS, d.WKBS, d.DKBS, d.KBRead, d.KBWrtn, d.KBDscd)
 		}
+	}
+}
+
+// printIOStat11 prints the devices as sysstat 11 (RHEL 8) does: no discard
+// and flush columns, svctm (%util spread over the I/Os, in ms), and sr
+// devices named scd as its ioconf maps them.
+func printIOStat11(w io.Writer, rep IOStatReport, extended bool) {
+	name := func(d string) string {
+		if n, ok := strings.CutPrefix(d, "sr"); ok {
+			return "scd" + n
+		}
+		return d
+	}
+	if !extended {
+		io.WriteString(w, "Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn\n")
+		for _, d := range rep.Devices {
+			fmt.Fprintf(w, "%-13s %8.2f %12.2f %12.2f %10d %10d\n", name(d.Device), d.TPS, d.RKBS, d.WKBS, d.KBRead, d.KBWrtn)
+		}
+		return
+	}
+	io.WriteString(w, "Device            r/s     w/s     rkB/s     wkB/s   rrqm/s   wrqm/s  %rrqm  %wrqm r_await w_await aqu-sz rareq-sz wareq-sz  svctm  %util\n")
+	for _, d := range rep.Devices {
+		svctm := 0.0
+		if ios := d.RS + d.WS; ios > 0 {
+			svctm = d.Util * 10 / ios
+		}
+		fmt.Fprintf(w, "%-13s %7.2f %7.2f %9.2f %9.2f %8.2f %8.2f %6.2f %6.2f %7.2f %7.2f %6.2f %8.2f %8.2f %6.2f %6.2f\n",
+			name(d.Device), d.RS, d.WS, d.RKBS, d.WKBS, d.RRQMS, d.WRQMS, d.RRQMPct, d.WRQMPct, d.RAwait, d.WAwait, d.AquSz,
+			d.RAreqSz, d.WAreqSz, svctm, d.Util)
 	}
 }
