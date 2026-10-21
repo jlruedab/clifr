@@ -566,7 +566,8 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			CPUTicks: ticks, RSSKB: rss * int64(pageKB),
 			VSZKB: int64(st.VSize / 1024), Threads: st.NumThreads,
 			MinFlt: int64(st.MinFlt), MajFlt: int64(st.MajFlt), ShrKB: shr * int64(pageKB),
-			Priority: st.Priority, Policy: st.Policy, RTPriority: st.RTPriority, CPU: st.Processor}
+			Priority: st.Priority, Policy: st.Policy, RTPriority: st.RTPriority, CPU: st.Processor,
+			PSFlags: int(st.Flags>>6) & 7}
 		r.sampleRun(e, &s, fresh, status, haveStatus)
 		if !e.hasSamp || !sameProcSample(e.sample, s) {
 			b.ProcSamples = append(b.ProcSamples, s)

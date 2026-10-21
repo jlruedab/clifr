@@ -246,6 +246,7 @@ type ProcSample struct {
 	// (cumulative), priority as top's PR, policy, real-time priority, the
 	// CPU it last ran on, shared memory (top's SHR).
 	MinFlt, MajFlt, ShrKB             int64
+	PSFlags                           int // ps's F: (PF_* >> 6) & 7 (forked without exec, used superuser privileges)
 	Priority, Policy, RTPriority, CPU int
 	// From status and wchan when the process used CPU since its last sample,
 	// and on fd-walk samples: context switches (cumulative) and the kernel

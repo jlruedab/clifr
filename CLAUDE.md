@@ -179,7 +179,7 @@ wait for the user's go-ahead.
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
 - Process fields (schema 8): `proc_samples` min_flt, maj_flt, priority (stat field 18: top's PR,
-  -100 = "rt"), policy, rt_priority, processor (stat) and shr_kb (statm: top's SHR) at every
+  -100 = "rt"), policy, rt_priority, processor, ps_flags (ps's F: (PF_* >> 6) & 7) (stat) and shr_kb (statm: top's SHR) at every
   sample; vol_ctx, nonvol_ctx (status) and wchan ("0" = running) by the same rule as the I/O
   columns. `processes.label` (attr/current) and `cgroup` (/proc/<pid>/cgroup, all lines) when
   first sampled, on fd walks, the label also at an exec; empty for event-only processes. NULL in

@@ -11,7 +11,7 @@ import (
 	"clifr/internal/query"
 )
 
-var bsdPS = regexp.MustCompile(`^[auxwf]+$`)
+var bsdPS = regexp.MustCompile(`^[auxwflZ]+$`)
 
 // splitList splits ps/lsof lists: "1,2 3" and repeated options.
 func splitList(vals []string) []string {
@@ -24,7 +24,7 @@ func splitList(vals []string) []string {
 
 func psTool() *tool {
 	return &tool{
-		name: "ps", diff: true, synopsis: "aux[f] | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
+		name: "ps", diff: true, synopsis: "aux[f|Z] | alx | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
 		about: "processes and their CPU, memory, state and command line",
 		opts: []opt{
 			{short: 'e', help: "every process"},
@@ -33,12 +33,17 @@ func psTool() *tool {
 			{short: 'u', arg: "USERS", help: "processes of these users (names or numbers)"},
 			{short: 'C', arg: "NAMES", help: "processes with these command names"},
 			{short: 'f', help: "full format: UID PID PPID C STIME TTY TIME CMD"},
-			{short: 'o', arg: "FORMAT", help: "these columns: pid ppid uid user comm args cmd rss vsz %cpu %mem c ni nlwp s stat lstart start stime etime etimes time tty (KEY:WIDTH, KEY=HEADING)"},
+			{short: 'o', arg: "FORMAT", help: "these columns: pid ppid uid user comm args cmd rss vsz %cpu %mem c ni nlwp s stat lstart start stime etime etimes time tty f pri priority rtprio cls psr minflt majflt wchan label (KEY:WIDTH, KEY=HEADING)"},
 		},
 		window: true,
 		notes: []string{
-			"BSD form: aux (w, ww accepted: lines are never cut; f: the process tree in COMMAND, as procps",
-			"draws it). Without -f or -o: PID TTY TIME CMD.",
+			"BSD forms: aux (w, ww accepted: lines are never cut; f: the process tree in COMMAND, as procps",
+			"draws it; Z: the security label first), alx (F UID PID PPID PRI NI VSZ RSS WCHAN STAT TTY TIME",
+			"COMMAND). Without -f or -o: PID TTY TIME CMD.",
+			"WCHAN: re-read when the process used CPU since the sample before, so a process that slept again",
+			"without using a whole clock tick shows where it waited before. Label and cgroup: read when the",
+			"process is first sampled, at an exec and every fd walk. Recordings before 2026-10-22 have none",
+			"of F, WCHAN, LABEL, RTPRIO, CLS, PSR, MINFLT, MAJFLT (\"-\"); PRI from the nice value.",
 			"--at: the processes alive at T with their values from the sample at or before T (sampled);",
 			"processes only seen through exec/exit events show \"-\" for sampled values.",
 			"--since: every process seen in the range, identical commands collapsed, with first/last",
@@ -53,15 +58,24 @@ func psTool() *tool {
 func preparePS(p parsed, c *runCtx) (func() error, error) {
 	dash := len(p.set) > 0
 	if len(p.pos) > 0 {
-		if dash || len(p.pos) != 1 || !bsdPS.MatchString(p.pos[0]) || !strings.Contains(p.pos[0], "a") ||
-			!strings.Contains(p.pos[0], "u") || !strings.Contains(p.pos[0], "x") {
-			return nil, errors.New(`ps: the BSD form supported is "ps aux" (with f for the tree); other forms use -e, -p, -u or -C (see: clifr help ps)`)
+		bsd := p.pos[0]
+		has := func(l string) bool { return strings.Contains(bsd, l) }
+		if dash || len(p.pos) != 1 || !bsdPS.MatchString(bsd) || !has("a") || !has("x") || has("u") == has("l") ||
+			has("l") && (has("f") || has("Z")) || has("f") && has("Z") {
+			return nil, errors.New(`ps: the BSD forms supported are "ps aux" (with f for the tree, or Z for the security label) and "ps alx"; other forms use -e, -p, -u or -C (see: clifr help ps)`)
 		}
-		forest := strings.Contains(p.pos[0], "f")
-		if forest && c.w.IsRange() && !c.g.samples && !c.g.changes {
-			return nil, errors.New("ps: f (the tree) needs --at, --samples or --changes, not the range summary")
+		var f query.PSFormat
+		switch {
+		case has("l"):
+			f = query.PSLong
+		case has("Z"):
+			f = query.PSAuxLabel
 		}
-		return func() error { return runPS(c, nil, nil, forest) }, nil
+		forest := has("f")
+		if (forest || f != nil) && c.w.IsRange() && !c.g.samples && !c.g.changes {
+			return nil, fmt.Errorf("ps: %s needs --at, --samples or --changes, not the range summary", bsd)
+		}
+		return func() error { return runPS(c, nil, f, forest) }, nil
 	}
 	all := p.has("e") || p.has("A")
 	pids, users, names := splitList(p.all["p"]), splitList(p.all["u"]), splitList(p.all["C"])

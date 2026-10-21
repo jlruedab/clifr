@@ -39,6 +39,21 @@ type PSRow struct {
 	IOWChar      int64 `json:"io_wchar"`
 	IOReadBytes  int64 `json:"io_read_bytes"`
 	IOWriteBytes int64 `json:"io_write_bytes"`
+	// Schema 8 (Known false in older recordings: printed as "-", PRI as
+	// 20 + NI).
+	Known      bool   `json:"-"`
+	Flags      int    `json:"flags"`    // ps's F
+	Priority   int    `json:"priority"` // the kernel's (top's PR)
+	Policy     int    `json:"policy"`   // SCHED_*
+	RTPriority int    `json:"rt_priority"`
+	Processor  int    `json:"processor"`
+	MinFlt     int64  `json:"min_flt"`
+	MajFlt     int64  `json:"maj_flt"`
+	VolCtx     int64  `json:"vol_ctx"`
+	NonVolCtx  int64  `json:"nonvol_ctx"`
+	Wchan      string `json:"wchan"` // as ps prints it: "-" while running
+	Label      string `json:"label"`
+	Cgroup     string `json:"cgroup"`
 	// For the other ps formats (psfmt.go).
 	args      string
 	permille  uint64 // %CPU in tenths
@@ -59,10 +74,10 @@ type procAt struct {
 	rchar, wchar, rbytes   sql.NullInt64
 	wbytes                 sql.NullInt64
 	// Schema 8 (NULL in older recordings).
-	minFlt, majFlt, shrKB     sql.NullInt64
-	prio, policy, rtPrio, psr sql.NullInt64
-	volCtx, nonVolCtx         sql.NullInt64
-	wchan, label, cgroup      sql.NullString
+	minFlt, majFlt, shrKB, psFlags sql.NullInt64
+	prio, policy, rtPrio, psr      sql.NullInt64
+	volCtx, nonVolCtx              sql.NullInt64
+	wchan, label, cgroup           sql.NullString
 }
 
 // processesAt returns processes alive at t: those alive at sample s (with
@@ -73,7 +88,7 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		SELECT p.id, p.pid, p.ppid, p.uid, p.start_time, p.tty, p.sid, p.pgrp, p.locked, p.comm,
 		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb,
 		       x.rchar, x.wchar, x.read_bytes, x.write_bytes,
-		       x.min_flt, x.maj_flt, x.shr_kb, x.priority, x.policy, x.rt_priority, x.processor,
+		       x.min_flt, x.maj_flt, x.shr_kb, x.ps_flags, x.priority, x.policy, x.rt_priority, x.processor,
 		       x.vol_ctx, x.nonvol_ctx, x.wchan, p.label, p.cgroup
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
@@ -93,7 +108,7 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.uid, &p.startMS, &p.tty, &p.sid, &p.pgrp, &locked,
 			&p.comm, &p.cmdline, &p.source, &p.state, &p.nice, &p.tpgid, &p.threads, &p.cpuTicks,
 			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes,
-			&p.minFlt, &p.majFlt, &p.shrKB, &p.prio, &p.policy, &p.rtPrio, &p.psr,
+			&p.minFlt, &p.majFlt, &p.shrKB, &p.psFlags, &p.prio, &p.policy, &p.rtPrio, &p.psr,
 			&p.volCtx, &p.nonVolCtx, &p.wchan, &p.label, &p.cgroup); err != nil {
 			return nil, err
 		}
@@ -120,9 +135,11 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	if bms := metaInt(db, "boot_ms"); bms > 0 {
 		skew = bms - metaInt(db, "boot_time")*1000
 	}
+	strip := StyleAt(db, s).PsWchanStrip
 	out := make([]PSRow, 0, len(procs))
 	for _, p := range procs {
 		r := psRow(p, s, memKB)
+		r.Wchan = psWchan(r.Wchan, strip)
 		r.Start = psStart(p.startMS-skew, s)
 		r.startDisp = p.startMS - skew
 		r.ElapsedS = max(t-p.startMS, 0) / 1000
@@ -163,8 +180,36 @@ func psRow(p procAt, now, memKB int64) PSRow {
 	r.Time = fmt.Sprintf("%d:%02d", cpuSecs/60, cpuSecs%60)
 	r.Command = commandOf(p.cmdline, p.comm, p.state.String)
 	r.args = r.Command
+	r.Label, r.Cgroup = p.label.String, p.cgroup.String
+	if p.prio.Valid {
+		r.Known = true
+		r.Flags, r.Priority, r.Policy, r.RTPriority = int(p.psFlags.Int64), int(p.prio.Int64), int(p.policy.Int64), int(p.rtPrio.Int64)
+		r.Processor, r.MinFlt, r.MajFlt = int(p.psr.Int64), p.minFlt.Int64, p.majFlt.Int64
+		r.VolCtx, r.NonVolCtx, r.Wchan = p.volCtx.Int64, p.nonVolCtx.Int64, p.wchan.String
+	}
 	return r
 }
+
+// psWchan is WCHAN as ps prints it: "-" while running or unknown, without
+// leading underscores; procps 3.3 strips a leading "do_" or "sys_" instead
+// when there is one.
+func psWchan(w string, strip bool) string {
+	if w == "" || w == "0" {
+		return "-"
+	}
+	switch {
+	case strip && strings.HasPrefix(w, "sys_"):
+		return w[4:]
+	case strip && strings.HasPrefix(w, "do_"):
+		return w[3:]
+	}
+	return strings.TrimLeft(w, "_")
+}
+
+// niceClass: SCHED_OTHER and SCHED_BATCH, the policies whose nice value ps
+// prints as NI; for the others (FIFO, RR, IDLE, DEADLINE) NI is "-" and
+// RTPRIO the real-time priority.
+func niceClass(policy int) bool { return policy == 0 || policy == 3 }
 
 func tenths(permille uint64) string {
 	if permille > 999 {

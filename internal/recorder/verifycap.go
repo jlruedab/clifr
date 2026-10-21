@@ -48,6 +48,8 @@ var verifyCommands = [][]string{
 	{"pstree", "-lpT"},                    // psmisc; skipped where it is not installed
 	{"ps", "auxfwww"},
 	{"ps", "-ef"},
+	{"ps", "alxwww"},
+	{"ps", "auxZww"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

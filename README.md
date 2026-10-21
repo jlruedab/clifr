@@ -284,11 +284,17 @@ chooses one; a line on stderr says when a style other than current is used.
 
 - `ps aux`, or `-e`/`-p`/`-u`/`-C` with the default format, `-f` or
   `-o COLUMNS` (pid, ppid, uid, user, comm, args, cmd, rss, vsz, %cpu, %mem,
-  c, ni, nlwp, s, stat, lstart, start, stime, etime, etimes, time, tty;
+  c, ni, nlwp, s, stat, lstart, start, stime, etime, etimes, time, tty, f,
+  pri, priority, rtprio, cls, psr, minflt, majflt, wchan, label;
   `KEY:WIDTH`, `KEY=HEADING`), with procps's headings, widths and overflow.
   Over a range (aux or -e): one row per command with first and last seen,
   runs, peak %CPU and RSS. `ps auxf` draws the process tree in COMMAND as
-  procps does (init's children at the top level, kthreadd's tree first).
+  procps does (init's children at the top level, kthreadd's tree first);
+  `ps auxZ` adds the security label (SELinux context, AppArmor profile);
+  `ps alx` is the BSD long format (F, PRI, NI, WCHAN). WCHAN is re-read
+  when the process used CPU since the sample before, the label and cgroup
+  when it is first sampled, at an exec and every fd walk (recorded since
+  2026-10-22: `-` before).
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

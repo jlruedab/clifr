@@ -31,8 +31,8 @@ func TestPSTimes(t *testing.T) {
 }
 
 func TestPSFormat(t *testing.T) {
-	if _, err := ParsePSFormat("pid,wchan"); err == nil {
-		t.Error("wchan accepted")
+	if _, err := ParsePSFormat("pid,blocked"); err == nil {
+		t.Error("blocked (not recorded) accepted")
 	}
 	f, err := ParsePSFormat("pid,user,rss,vsz,stat,args")
 	if err != nil {

@@ -51,6 +51,13 @@ var psCols map[string]psCol
 
 func init() {
 	sampled := func(r *PSRow) bool { return r.CPUTicks >= 0 }
+	known := func(r *PSRow) bool { return r.Known && sampled(r) }
+	prio := func(r *PSRow) int {
+		if r.Known {
+			return r.Priority
+		}
+		return 20 + r.Nice
+	}
 	num := func(f func(r *PSRow) int64) func(r *PSRow) string {
 		return func(r *PSRow) string { return strconv.FormatInt(f(r), 10) }
 	}
@@ -79,8 +86,49 @@ func init() {
 			return dash(sampled(r), func() string { return strconv.FormatUint(min(r.permille/10, 99), 10) })
 		}},
 		"ni": {"NI", 3, true, "", func(r *PSRow) string {
+			if r.Known && !niceClass(r.Policy) {
+				return "-"
+			}
 			return dash(sampled(r), func() string { return strconv.Itoa(r.Nice) })
 		}},
+		// Schema 8 (older recordings: "-"; PRI from the nice value).
+		"f": {"F", 1, true, "", func(r *PSRow) string {
+			return dash(known(r), func() string { return strconv.Itoa(r.Flags) })
+		}},
+		"priority": {"PRI", 3, true, "", func(r *PSRow) string {
+			return dash(sampled(r), func() string { return strconv.Itoa(prio(r)) })
+		}},
+		"pri": {"PRI", 3, true, "", func(r *PSRow) string {
+			return dash(sampled(r), func() string { return strconv.Itoa(39 - prio(r)) })
+		}},
+		"rtprio": {"RTPRIO", 6, true, "", func(r *PSRow) string {
+			return dash(known(r) && !niceClass(r.Policy), func() string { return strconv.Itoa(r.RTPriority) })
+		}},
+		"cls": {"CLS", 3, true, "", func(r *PSRow) string {
+			return dash(known(r), func() string {
+				if r.Policy >= 0 && r.Policy < len(schedClass) {
+					return schedClass[r.Policy]
+				}
+				return "?"
+			})
+		}},
+		"psr": {"PSR", 3, true, "", func(r *PSRow) string {
+			return dash(known(r), func() string { return strconv.Itoa(r.Processor) })
+		}},
+		"minflt": {"MINFLT", 6, true, "", func(r *PSRow) string {
+			return dash(known(r), func() string { return strconv.FormatInt(r.MinFlt, 10) })
+		}},
+		"majflt": {"MAJFLT", 6, true, "", func(r *PSRow) string {
+			return dash(known(r), func() string { return strconv.FormatInt(r.MajFlt, 10) })
+		}},
+		"wchan": {"WCHAN", 6, false, "-", func(r *PSRow) string { return r.Wchan }},
+		"label": {"LABEL", 31, false, "", func(r *PSRow) string {
+			if r.Label == "" {
+				return "-"
+			}
+			return r.Label
+		}},
+		"bsdtime": {"TIME", 6, true, "", func(r *PSRow) string { return r.Time }},
 		"nlwp": {"NLWP", 4, true, "", func(r *PSRow) string {
 			return dash(sampled(r), func() string { return strconv.Itoa(r.Threads) })
 		}},
@@ -110,9 +158,16 @@ func init() {
 		psCols[alias] = psCols[key]
 	}
 	psCols["rsz"] = psCol{"RSZ", 5, true, "", psCols["rss"].val}
+	psCols["min_flt"] = psCol{"MINFL", 6, true, "", psCols["minflt"].val}
+	psCols["maj_flt"] = psCol{"MAJFL", 6, true, "", psCols["majflt"].val}
 	PSDefault, _ = ParsePSFormat("pid,tty=TTY,time,comm=CMD")
 	PSFull, _ = ParsePSFormat("user=UID,pid,ppid,c,stime,tty=TTY,time,args=CMD")
+	PSLong, _ = ParsePSFormat("f,uid,pid,ppid,priority,ni,vsz,rss,wchan,stat,tty=TTY,bsdtime,args=COMMAND")
+	PSAuxLabel, _ = ParsePSFormat("label,user,pid,%cpu,%mem,vsz,rss,tty=TTY,stat,stime=START,bsdtime,args=COMMAND")
 }
+
+// schedClass is ps's CLS by scheduling policy.
+var schedClass = []string{"TS", "FF", "RR", "B", "ISO", "IDL", "DLN"}
 
 // PSFormat is a parsed ps -o list (or the default and -f formats).
 type PSFormat []psCol
@@ -147,9 +202,9 @@ func ParsePSFormat(spec string) (PSFormat, error) {
 	return f, nil
 }
 
-// PSDefault is ps's format without -f or -o; PSFull is -f (set up in init,
-// after the columns).
-var PSDefault, PSFull PSFormat
+// PSDefault is ps's format without -f or -o; PSFull is -f; PSLong is BSD l
+// (ps alx); PSAuxLabel is ps auxZ (set up in init, after the columns).
+var PSDefault, PSFull, PSLong, PSAuxLabel PSFormat
 
 // PrintPSFormat prints rows in format f. Like procps, a value wider than its
 // column pushes the rest of the line right and later padding takes it back;

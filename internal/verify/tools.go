@@ -41,8 +41,10 @@ func init() {
 	ignoredFields["mount"] = "none"
 	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and name (which set its place)"
 	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
+	ignoredFields["ps alxwww"] = "the work-item suffix of kernel worker names"
+	ignoredFields["ps auxZww"] = "everything but LABEL (the rest is compared by ps aux)"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
-		"SHR (not recorded), the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
+		"the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
 		"the work-item suffix of kernel worker names; task counts within 3, memory within 2%"
 }
 
@@ -189,6 +191,101 @@ func comparePSEF(db *store.DB, snap snapshot) (Result, error) {
 		} else {
 			res.Extra++
 			res.example("ps -ef extra pid %d: %s", pid, x.cmd)
+		}
+	}
+	return res, nil
+}
+
+// ---- ps alxwww and ps auxZww ----
+
+// parsePSLong reads F UID PID PPID PRI NI VSZ RSS WCHAN STAT TTY TIME
+// COMMAND into the fields by name (COMMAND: the rest of the line).
+func parsePSLong(out string) map[int]map[string]string {
+	heads := []string{"F", "UID", "PID", "PPID", "PRI", "NI", "VSZ", "RSS", "WCHAN", "STAT", "TTY", "TIME"}
+	m := map[int]map[string]string{}
+	for _, l := range strings.Split(out, "\n")[1:] {
+		f := strings.Fields(l)
+		if len(f) <= len(heads) {
+			continue
+		}
+		pid, err := strconv.Atoi(f[2])
+		if err != nil {
+			continue
+		}
+		row := map[string]string{}
+		cmd := l
+		for i, h := range heads {
+			row[h] = f[i]
+			cmd = strings.TrimLeft(cmd, " ")
+			cmd = cmd[strings.IndexByte(cmd, ' ')+1:]
+		}
+		row["COMMAND"] = kworkerBase(strings.TrimLeft(cmd, " "))
+		m[pid] = row
+	}
+	return m
+}
+
+// psLabelLine: a label (which may hold spaces: AppArmor's "name (enforce)"),
+// then USER, PID, %CPU and %MEM.
+var psLabelLine = regexp.MustCompile(`^(.*?)\s+\S+\s+(\d+)\s+[\d.-]+\s+[\d.-]+\s`)
+
+func parsePSLabel(out string) map[int]map[string]string {
+	m := map[int]map[string]string{}
+	for _, l := range strings.Split(out, "\n")[1:] {
+		if g := psLabelLine.FindStringSubmatch(l); g != nil {
+			pid, _ := strconv.Atoi(g[2])
+			m[pid] = map[string]string{"LABEL": g[1]}
+		}
+	}
+	return m
+}
+
+// comparePSFormat compares ps alxwww or ps auxZww with the reconstruction
+// in format f, field by field (the fields parse returns).
+func comparePSFormat(db *store.DB, snap snapshot, f query.PSFormat, parse func(string) map[int]map[string]string, fields []string) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, s, err := query.PSAt(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	next := nextSample(db, s, false)
+	real := parse(snap.output)
+	rec := parse(render(func(sb *strings.Builder) { query.PrintPSFormat(sb, rows, f) }))
+	for pid := range snap.ignore {
+		if _, ok := real[pid]; ok {
+			res.Ignored["recorder/tool processes"]++
+		}
+		delete(real, pid)
+		delete(rec, pid)
+	}
+	res.Real, res.Recon = len(real), len(rec)
+	for pid, r := range real {
+		x, ok := rec[pid]
+		if !ok {
+			if procChurn(db, pid, s, next) {
+				res.ChurnMissing++
+			} else {
+				res.Missing++
+				res.example("%s missing pid %d: %v", snap.cmd, pid, r)
+			}
+			continue
+		}
+		res.Matched++
+		var pairs []fieldPair
+		for _, k := range fields {
+			pairs = append(pairs, fieldPair{k, r[k], x[k]})
+		}
+		res.compare(snap.cmd+" pid "+strconv.Itoa(pid), pairs, func() bool { return false })
+	}
+	for pid, x := range rec {
+		if _, ok := real[pid]; ok {
+			continue
+		}
+		if procChurn(db, pid, s, next) {
+			res.ChurnExtra++
+		} else {
+			res.Extra++
+			res.example("%s extra pid %d: %v", snap.cmd, pid, x)
 		}
 	}
 	return res, nil

@@ -76,6 +76,7 @@ type procSampleRow struct {
 	Policy     int32  `parquet:"policy"`
 	RTPriority int32  `parquet:"rt_priority"`
 	CPU        int32  `parquet:"processor"`
+	PSFlags    int32  `parquet:"ps_flags"`
 	VolCtx     int64  `parquet:"vol_ctx"`
 	NonVolCtx  int64  `parquet:"nonvol_ctx"`
 	Wchan      string `parquet:"wchan,dict"`
@@ -369,7 +370,7 @@ func procSampleOf(p store.ProcSample) procSampleRow {
 		CPUTicks: p.CPUTicks, RSSKB: p.RSSKB, VSZKB: p.VSZKB, Threads: int32(p.Threads),
 		RChar: p.RChar, WChar: p.WChar, ReadBytes: p.ReadBytes, WriteBytes: p.WriteBytes, CancelledWrite: p.CancelledWrite,
 		MinFlt: p.MinFlt, MajFlt: p.MajFlt, ShrKB: p.ShrKB, Priority: int32(p.Priority), Policy: int32(p.Policy),
-		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
+		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), PSFlags: int32(p.PSFlags), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
 }
 
 func socketOf(s store.SockRow) socketRow {

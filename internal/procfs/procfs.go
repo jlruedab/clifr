@@ -149,6 +149,7 @@ type Stat struct {
 	StartTime  uint64 // clock ticks after boot
 	VSize      uint64 // bytes
 	RSS        int64  // pages
+	Flags      uint64 // PF_* (include/linux/sched.h)
 	MinFlt     uint64
 	MajFlt     uint64
 	Priority   int // top's PR: 20 + nice, or -1 - rt_priority (-100: "rt")
@@ -196,6 +197,7 @@ func ParseStat(b []byte) (Stat, error) {
 	s.StartTime = atou(field(22))
 	s.VSize = atou(field(23))
 	s.RSS = int64(atoi(field(24)))
+	s.Flags = atou(field(9))
 	s.MinFlt = atou(field(10))
 	s.MajFlt = atou(field(12))
 	s.Priority = atoi(field(18))
