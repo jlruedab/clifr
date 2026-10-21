@@ -300,7 +300,8 @@ A command can also be given unquoted after clifr's options
   own format; anything shorter than a sample interval is in `events`.
 - On a terminal, output goes through a pager (`-I`; `--plain` prints, as
   when piped): one page per sample or comparison; PgDn/n and PgUp/p move
-  between samples, Home/End to the first and last, `g` jumps to a time,
+  between samples, Home/End to the first and last, `g` jumps to a time
+  (`HH:MM` without a date: the one nearest the sample shown, so on its day),
   arrows, space and `b` scroll, `q` quits. One page that fits on the
   screen is just printed.
 - `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount)

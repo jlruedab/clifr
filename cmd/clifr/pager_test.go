@@ -56,6 +56,16 @@ func TestPager(t *testing.T) {
 	if p.cur != 1 {
 		t.Errorf("g 10:01: page %d, want 1", p.cur)
 	}
+	// Paging an older day: a time of day is that day's, not today's.
+	p.now = func() time.Time { return time.Date(2026, 10, 25, 9, 0, 0, 0, time.Local) }
+	press("Home", "g", "1", "0", ":", "0", "1", "Enter")
+	if p.cur != 1 {
+		t.Errorf("g 10:01 three days later: page %d, want 1", p.cur)
+	}
+	press("g", "-", "1", "h", "Enter") // relative: from now, after every page
+	if p.cur != 2 {
+		t.Errorf("g -1h: page %d, want 2", p.cur)
+	}
 	press("g", "x", "Enter")
 	if p.msg == "" {
 		t.Error("g with a bad time: no message")
@@ -76,5 +86,23 @@ func TestKeyName(t *testing.T) {
 		if got := keyName([]byte(in)); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A range across midnight: on the 23:59 page, "00:01" is the next day's.
+func TestPagerJumpMidnight(t *testing.T) {
+	base := time.Date(2026, 10, 20, 23, 58, 0, 0, time.Local).UnixMilli()
+	var pages []page
+	for i := range 4 {
+		pages = append(pages, page{ts: base + int64(i)*60_000, body: func(io.Writer) error { return nil }})
+	}
+	p := &pager{pages: pages, cache: map[int][]string{}, width: 20, height: 11,
+		now: func() time.Time { return time.Date(2026, 10, 25, 9, 0, 0, 0, time.Local) }}
+	p.setPage(1)
+	for _, k := range []string{"g", "0", "0", ":", "0", "1", "Enter"} {
+		p.key(k)
+	}
+	if p.cur != 3 {
+		t.Errorf("g 00:01 on the 23:59 page: page %d, want 3", p.cur)
 	}
 }

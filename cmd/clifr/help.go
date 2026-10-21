@@ -56,6 +56,7 @@ Interactive keys:
   Home        first sample         End         last sample
   g           jump to a time       q           quit
   arrows, space, b: scroll within a sample
+  (at g, HH:MM is on the day of the sample shown)
 
 Sources:
   -D, --data-dir DIR   local recording directory (default /var/lib/clifr)

@@ -143,12 +143,25 @@ func (p *pager) key(k string) bool {
 }
 
 // jump goes to the last page at or before the time typed (the first page
-// if none).
+// if none). A time of day without a date is the one nearest the page shown
+// (its day, the day before or after: a range may cross midnight); the other
+// forms ("now", "-30m", a date) are as on the command line.
 func (p *pager) jump(s string) {
 	t, err := query.ParseWhen(s, p.now())
 	if err != nil {
 		p.msg = err.Error()
 		return
+	}
+	if cur := p.pages[p.cur].ts; cur != 0 && clockOnly(s) {
+		shown := time.UnixMilli(cur)
+		best := t
+		for _, d := range []int{-1, 0, 1} {
+			c, _ := query.ParseWhen(s, shown.AddDate(0, 0, d))
+			if c.Sub(shown).Abs() < best.Sub(shown).Abs() {
+				best = c
+			}
+		}
+		t = best
 	}
 	ms, best := t.UnixMilli(), 0
 	for i, pg := range p.pages {
@@ -157,6 +170,16 @@ func (p *pager) jump(s string) {
 		}
 	}
 	p.setPage(best)
+}
+
+// clockOnly: s is a time of day without a date ("10:01", "10:01:30").
+func clockOnly(s string) bool {
+	for _, layout := range []string{"15:04:05", "15:04"} {
+		if _, err := time.Parse(layout, strings.TrimSpace(s)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // screen is the text to draw: the visible lines cut to the width, then the
