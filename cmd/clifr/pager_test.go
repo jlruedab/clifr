@@ -23,7 +23,9 @@ func testPages(n, lines int) []page {
 }
 
 func TestPager(t *testing.T) {
-	p := &pager{pages: testPages(3, 50), cache: map[int][]string{}, width: 20, height: 11}
+	// The pages are on 2026-10-20 from 10:00; "10:01" is that day's.
+	now := func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local) }
+	p := &pager{pages: testPages(3, 50), cache: map[int][]string{}, width: 20, height: 11, now: now}
 	press := func(keys ...string) {
 		for _, k := range keys {
 			if p.key(k) {

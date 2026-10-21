@@ -59,6 +59,7 @@ type pager struct {
 	prompt         *string // reading a time for g
 	msg            string
 	err            error
+	now            func() time.Time // for times typed at g ("10:01" is today); time.Now
 }
 
 func (p *pager) lines(i int) []string {
@@ -144,7 +145,7 @@ func (p *pager) key(k string) bool {
 // jump goes to the last page at or before the time typed (the first page
 // if none).
 func (p *pager) jump(s string) {
-	t, err := query.ParseWhen(s, time.Now())
+	t, err := query.ParseWhen(s, p.now())
 	if err != nil {
 		p.msg = err.Error()
 		return
@@ -233,7 +234,7 @@ func runPager(pages []page, forced bool) error {
 	if err != nil {
 		return errors.New("--interactive: cannot read the terminal size")
 	}
-	p := &pager{pages: pages, cache: map[int][]string{}, width: w, height: h}
+	p := &pager{pages: pages, cache: map[int][]string{}, width: w, height: h, now: time.Now}
 	if len(pages) == 1 && !forced && len(p.lines(0)) < h {
 		_, err := os.Stdout.WriteString(strings.Join(p.lines(0), "\n") + "\n")
 		return err
