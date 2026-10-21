@@ -22,6 +22,8 @@ func init() {
 	ignoredFields["df -al -x autofs"] = ignoredFields["df"]
 	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
 	ignoredFields["uname -a"] = "none"
+	ignoredFields["netstat -s"] = "none; counters that moved within 1% or 10 count as churn-changed"
+	ignoredFields["netstat -s -6"] = ignoredFields["netstat -s"]
 	ignoredFields["nstat -zas"] = "the rate column (nstat's own history); values that moved within 1% or 10 count as churn-changed"
 	ignoredFields["ss -s"] = "none; counts within 5% or 3 (sockets come and go between the sample and the run)"
 	ignoredFields["mount"] = "none"
@@ -833,5 +835,56 @@ func compareNstat(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	res.compareOrder("nstat", rankOf(real), rankOf(rec))
+	return res, nil
+}
+
+// ---- netstat -s ----
+
+var numRe = regexp.MustCompile(`\d+`)
+
+// compareNetstatStats compares netstat -s line by line: the same sentence,
+// and its numbers within 1% or 10 (counters keep moving between the sample
+// and the run).
+func compareNetstatStats(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	text, _, err := query.NetstatStats(db, snap.ts, query.NetstatStatsOptions{V6: strings.HasSuffix(snap.cmd, "-6")})
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	lines := func(s string) []string { return strings.Split(strings.TrimRight(s, "\n"), "\n") }
+	real, rec := lines(snap.output), lines(text)
+	res.Real, res.Recon = len(real), len(rec)
+	key := func(l string) string { return numRe.ReplaceAllString(l, "N") }
+	recAt := map[string][]string{} // sentence -> lines, in order
+	for _, l := range rec {
+		recAt[key(l)] = append(recAt[key(l)], l)
+	}
+	for _, r := range real {
+		k := key(r)
+		xs := recAt[k]
+		if len(xs) == 0 {
+			res.Missing++
+			res.example("%s missing %q", snap.cmd, strings.TrimSpace(r))
+			continue
+		}
+		x := xs[0]
+		recAt[k] = xs[1:]
+		res.Matched++
+		rn, xn := numRe.FindAllString(r, -1), numRe.FindAllString(x, -1)
+		close := true
+		for i := range rn {
+			if i < len(xn) && !near(rn[i], xn[i], 0.01, 10) {
+				close = false
+			}
+		}
+		res.compare(snap.cmd+" "+strings.TrimSpace(k), []fieldPair{{"value", r, x}}, func() bool { return close })
+	}
+	for _, xs := range recAt {
+		for _, x := range xs {
+			res.Extra++
+			res.example("%s extra %q", snap.cmd, strings.TrimSpace(x))
+		}
+	}
 	return res, nil
 }

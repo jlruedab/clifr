@@ -187,7 +187,7 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   gives `uname`, pulled forward from step 4).
 - **Step 2, the CSV's priority items** (new tables, ~2–3 weeks): `netstat -s
   [-6]`, `nstat -zas` (/proc/net/snmp, snmp6, netstat per system sample;
-  recording and nstat done 2026-10-21);
+  recording, nstat and netstat -s done 2026-10-21);
   `ip -s -d link` (/proc/net/dev + netlink); `ip addr`, `ip route [-6]`,
   `ip rule` (netlink notifications, list at start then changes); `dmesg [-T]`
   (/dev/kmsg; the user decided 2026-10-21: record it, relax the unit's

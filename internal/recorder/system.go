@@ -88,7 +88,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		}
 		for i, n := range c {
 			if v, ok := s.netLast[n.Name]; full || !ok || v != n.Value {
-				b.NetCounters = append(b.NetCounters, store.NetCounter{TS: ts, Pos: i, Name: n.Name, Value: n.Value})
+				b.NetCounters = append(b.NetCounters, store.NetCounter{TS: ts, Pos: i, Section: n.Section, Name: n.Name, Value: n.Value})
 				s.netLast[n.Name] = n.Value
 			}
 		}

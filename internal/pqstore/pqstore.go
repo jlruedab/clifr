@@ -351,7 +351,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.disks = append(s.disks, diskOf(d))
 	}
 	for _, n := range b.NetCounters {
-		s.netCounters = append(s.netCounters, netCounterRow{TS: n.TS, Pos: int32(n.Pos), Name: n.Name, Value: n.Value})
+		s.netCounters = append(s.netCounters, netCounterRow{TS: n.TS, Pos: int32(n.Pos), Section: n.Section, Name: n.Name, Value: n.Value})
 	}
 	for i := range b.TCPConns {
 		// Whole rows: the newest version replaces the open or buffered one.

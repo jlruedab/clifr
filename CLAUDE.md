@@ -147,7 +147,7 @@ wait for the user's go-ahead.
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--sys-interval`. `uptime` has no user count.
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
-  `pos` = file order), at system samples, written when changed and all every
+  `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
   (`internal/duck` loads that window).
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,

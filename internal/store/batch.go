@@ -244,10 +244,11 @@ type ProcSample struct {
 // changed, and all of them at a run's first sample and every
 // NetCountersFullMS.
 type NetCounter struct {
-	TS    int64
-	Pos   int
-	Name  string
-	Value int64
+	TS      int64
+	Pos     int
+	Section string // in /proc/net/snmp or netstat; "" in snmp6
+	Name    string
+	Value   int64
 }
 
 // NetCountersFullMS: how often every protocol counter is written, so a moment

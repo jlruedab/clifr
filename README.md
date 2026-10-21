@@ -227,6 +227,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "uname -a"
     clifr --at now "last -F reboot"
     clifr --at "02:45" "nstat -zas"
+    clifr --at "02:45" "netstat -s"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -316,6 +317,10 @@ chooses one; a line on stderr says when a style other than current is used.
   before T (clifrd writes a counter when it changes, and all of them every
   5 minutes; since schema 4). Over a range, `nstat [-z]` shows each
   counter's increase from the start to the end and its rate per second.
+- `netstat -s [-t] [-u] [-w] [-6]`: the same counters in net-tools 2.10's
+  sentences, sections and quirks (counters its tables miss print as
+  "Name: value", only when not 0). Checked with `clifr verify` here and in
+  the RHEL 8, RHEL 9 and Ubuntu 22.04 VMs: every line, 100%.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

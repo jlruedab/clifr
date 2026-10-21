@@ -489,8 +489,9 @@ func diskOf(d store.DiskSample) diskRow {
 }
 
 type netCounterRow struct {
-	TS    int64  `parquet:"ts"`
-	Pos   int32  `parquet:"pos"`
-	Name  string `parquet:"name,dict"`
-	Value int64  `parquet:"value"`
+	TS      int64  `parquet:"ts"`
+	Pos     int32  `parquet:"pos"`
+	Section string `parquet:"section,dict"`
+	Name    string `parquet:"name,dict"`
+	Value   int64  `parquet:"value"`
 }

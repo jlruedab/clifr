@@ -35,8 +35,8 @@ func TestSystemCounters(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "net", "netstat"), []byte("TcpExt: SyncookiesSent ListenDrops\nTcpExt: 0 5\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "net", "snmp6"), []byte("Ip6InReceives                   	241\nIcmp6InMsgs  7\n"), 0o644)
 	fs := New(dir)
-	if c, err := fs.ReadNetCounters(); err != nil || fmt.Sprint(c) != "[{IpForwarding 1} {IpDefaultTTL 64} {IpInReceives 3850274} "+
-		"{TcpRtoAlgorithm 1} {TcpMaxConn -1} {TcpCurrEstab 36} {TcpExtSyncookiesSent 0} {TcpExtListenDrops 5} {Ip6InReceives 241} {Icmp6InMsgs 7}]" {
+	if c, err := fs.ReadNetCounters(); err != nil || fmt.Sprint(c) != "[{Ip IpForwarding 1} {Ip IpDefaultTTL 64} {Ip IpInReceives 3850274} "+
+		"{Tcp TcpRtoAlgorithm 1} {Tcp TcpMaxConn -1} {Tcp TcpCurrEstab 36} {TcpExt TcpExtSyncookiesSent 0} {TcpExt TcpExtListenDrops 5} { Ip6InReceives 241} { Icmp6InMsgs 7}]" {
 		t.Errorf("net counters = %v %v", c, err)
 	}
 	if s, err := fs.ReadSockStat(); err != nil || s != (SockStat{Used: 1417, TCPInUse: 41, TCPOrphan: 1, TCPTW: 2, TCPAlloc: 46, TCPMem: 1015,

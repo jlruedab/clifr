@@ -24,6 +24,8 @@ var verifyCommands = [][]string{
 	{"free"},
 	{"ss", "-s"},
 	{"nstat", "-zas"}, // iproute2; -s: no history file written
+	{"netstat", "-s"}, // net-tools; skipped where it is not installed
+	{"netstat", "-s", "-6"},
 	{"uname", "-a"},
 	{"df"},
 	{"df", "-al", "-x", "autofs"},

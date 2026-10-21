@@ -324,10 +324,12 @@ func (f FS) ReadSockStat() (SockStat, error) {
 
 // NetCounter is one protocol counter of /proc/net/snmp, netstat or snmp6,
 // named as nstat names them ("IpInReceives", "TcpExtListenDrops",
-// "Ip6InReceives").
+// "Ip6InReceives"), with its section in snmp and netstat ("Ip", "TcpExt";
+// "" in snmp6, which has none).
 type NetCounter struct {
-	Name  string
-	Value int64
+	Section string
+	Name    string
+	Value   int64
 }
 
 // ReadNetCounters reads every counter of /proc/net/snmp and netstat (a
@@ -346,7 +348,7 @@ func (f FS) ReadNetCounters() ([]NetCounter, error) {
 			names, vals := fields(hv, nil), fields(vv, nil)
 			for j := 0; j < len(names) && j < len(vals); j++ {
 				v, _ := strconv.ParseInt(string(vals[j]), 10, 64)
-				out = append(out, NetCounter{Name: string(hk) + string(names[j]), Value: v})
+				out = append(out, NetCounter{Section: string(hk), Name: string(hk) + string(names[j]), Value: v})
 			}
 		}
 	}

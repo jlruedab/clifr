@@ -338,7 +338,7 @@ func freeTool() *tool {
 
 func netstatTool() *tool {
 	return &tool{
-		name: "netstat", diff: true, synopsis: "-n -t|-u [-a|-l] [-p] [-W] [-4|-6]",
+		name: "netstat", diff: true, synopsis: "-n -t|-u [-a|-l] [-p] [-W] [-4|-6]  |  -s [-t] [-u] [-w] [-6]",
 		about: "TCP and UDP sockets (net-tools)",
 		opts: []opt{
 			{short: 't', long: "tcp", help: "TCP sockets"},
@@ -349,10 +349,14 @@ func netstatTool() *tool {
 			{short: 'p', long: "programs", help: "PID/Program name"},
 			{short: 'W', long: "wide", help: "do not cut addresses"},
 			{short: '4', help: "only IPv4 sockets"},
-			{short: '6', help: "only IPv6 sockets"},
+			{short: '6', help: "only IPv6 sockets (with -s: the IPv6 statistics)"},
+			{short: 's', long: "statistics", help: "protocol statistics (/proc/net/snmp and netstat; recorded since 2026-10-21)"},
+			{short: 'w', long: "raw", help: "with -s: IP and ICMP statistics"},
 		},
 		window: true,
 		notes: []string{
+			"-s: the counters at the system sample at or before T, in net-tools 2.10's words; -t, -u, -w",
+			"choose sections (sections net-tools has no table for are always shown, as by netstat).",
 			"Same data as ss. Without -a or -l: TCP in every state but LISTEN, connected UDP only.",
 			"Program names: argv[0] from the recording, by net-tools' rule (recordings before schema 2:",
 			"approximated from the command line).",
@@ -361,7 +365,12 @@ func netstatTool() *tool {
 		examples: []string{`clifr --at "02:45" "netstat -tulpn"`, `clifr --at "02:45" "netstat -tanp"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			tcp, udp := p.has("tcp"), p.has("udp")
+			if p.has("statistics") {
+				return prepareNetstatStats(p, c)
+			}
 			switch {
+			case p.has("raw"):
+				return nil, errors.New("netstat: -w (raw sockets) is not recorded; with -s it selects the IP and ICMP statistics")
 			case !p.has("numeric"):
 				return nil, errors.New("netstat: add -n: without it netstat looks up host names, which cannot be done for the past")
 			case !tcp && !udp:
@@ -577,4 +586,35 @@ func dfTool() *tool {
 			}, nil
 		},
 	}
+}
+
+func prepareNetstatStats(p parsed, c *runCtx) (func() error, error) {
+	for k := range p.set {
+		switch k {
+		case "statistics", "tcp", "udp", "raw", "6", "numeric":
+		default:
+			return nil, fmt.Errorf("netstat: -s takes -t, -u, -w and -6, not --%s", k)
+		}
+	}
+	if len(p.pos) > 0 {
+		return nil, fmt.Errorf("netstat: unexpected argument %q", p.pos[0])
+	}
+	if c.w.IsRange() {
+		return nil, errors.New("netstat: -s needs --at (for increases over a range: clifr ... nstat)")
+	}
+	o := query.NetstatStatsOptions{Raw: p.has("raw"), TCP: p.has("tcp"), UDP: p.has("udp"), V6: p.has("6")}
+	return func() error {
+		text, ts, err := query.NetstatStats(c.db, c.w.At, o)
+		if err != nil {
+			return err
+		}
+		c.header("netstat -s at %s: the counters at the system sample at %s", query.FormatMS(c.w.At), query.FormatMS(ts))
+		lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+		rows := make([]pstreeLine, len(lines))
+		for i, l := range lines {
+			rows[i] = pstreeLine{Line: l}
+		}
+		return c.emit(rows, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: ts} },
+			func(w io.Writer) { io.WriteString(w, text) })
+	}, nil
 }
