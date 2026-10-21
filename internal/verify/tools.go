@@ -19,6 +19,9 @@ func init() {
 	ignoredFields["netstat -tanp"] = "none"
 	ignoredFields["df"] = "none; sizes match within 1% or 1 MiB, Use% within 1"
 	ignoredFields["mount"] = "none"
+	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
+		"SHR (not recorded), the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
+		"the work-item suffix of kernel worker names; task counts within 3, memory within 2%"
 }
 
 // ---- free ----
@@ -419,5 +422,124 @@ func compareMount(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	res.compareOrder("mount", rankOf(real), rankOf(rec))
+	return res, nil
+}
+
+// ---- top -b -n 1 ----
+
+type topLine struct{ user, pr, ni, virt, res, s, time, cmd string }
+
+// parseTop reads top's summary (Tasks, MiB Mem, MiB Swap as "Tasks: total"
+// -> value) and its process lines by PID. COMMAND is the rest of the line.
+func parseTop(out string) (sysTable, map[int]topLine) {
+	sum, procs := sysTable{}, map[int]topLine{}
+	numRe := regexp.MustCompile(`([\d.]+) ([a-z/]+(?: Mem)?)`)
+	inProcs := false
+	for _, l := range strings.Split(out, "\n") {
+		for _, head := range []string{"Tasks:", "MiB Mem :", "MiB Swap:"} {
+			if rest, ok := strings.CutPrefix(l, head); ok {
+				row := map[string]string{}
+				for _, m := range numRe.FindAllStringSubmatch(rest, -1) {
+					row[m[2]] = m[1]
+				}
+				sum[head] = row
+			}
+		}
+		f := strings.Fields(l)
+		if len(f) > 0 && f[0] == "PID" {
+			inProcs = true
+			continue
+		}
+		if !inProcs || len(f) < 12 {
+			continue
+		}
+		pid, err := strconv.Atoi(f[0])
+		if err != nil {
+			continue
+		}
+		cmd := l
+		for i := 0; i < 11; i++ {
+			cmd = strings.TrimLeft(cmd, " ")
+			cmd = cmd[strings.IndexByte(cmd, ' ')+1:]
+		}
+		procs[pid] = topLine{user: f[1], pr: f[2], ni: f[3], virt: f[4], res: f[5], s: f[7], time: f[10],
+			cmd: strings.TrimLeft(cmd, " ")}
+	}
+	return sum, procs
+}
+
+// topComm drops a kernel worker's work item, as kworkerBase does for ps:
+// "kworker/u88:1-i915" -> "kworker/u88:1".
+func topComm(c string) string {
+	if strings.HasPrefix(c, "kworker/") {
+		if i := strings.IndexAny(c, "-+"); i > 0 {
+			return c[:i]
+		}
+	}
+	return c
+}
+
+func compareTop(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rep, err := query.TopAt(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	next := nextSample(db, rep.SampleTS, false)
+	realSum, real := parseTop(snap.output)
+	recSum, rec := parseTop(render(func(sb *strings.Builder) { query.PrintTop(sb, rep, query.TopFormat{Width: 512}) }))
+	for pid := range snap.ignore {
+		if _, ok := real[pid]; ok {
+			res.Ignored["recorder/tool processes"]++
+		}
+		delete(real, pid)
+		delete(rec, pid)
+	}
+	// The summary: memory within 2% (totals exactly); the task counts within
+	// 2% or 3 (processes start and end between the sample and the run).
+	for head, rr := range realSum {
+		for col, rv := range rr {
+			rel, abs := 0.02, 0.0
+			switch {
+			case col == "total" && head != "Tasks:":
+				rel = 0
+			case head == "Tasks:":
+				abs = 3
+			}
+			if !near(rv, recSum[head][col], rel, abs) {
+				res.FieldDiffs[head+" "+col]++
+				res.example("top %s %s: real %q, clifr %q", head, col, rv, recSum[head][col])
+			}
+		}
+	}
+	res.Real, res.Recon = len(real), len(rec)
+	for pid, r := range real {
+		x, ok := rec[pid]
+		if !ok {
+			if procChurn(db, pid, rep.SampleTS, next) {
+				res.ChurnMissing++
+			} else {
+				res.Missing++
+				res.example("top missing pid %d: %s", pid, r.cmd)
+			}
+			continue
+		}
+		res.Matched++
+		res.compare("top pid "+strconv.Itoa(pid), []fieldPair{
+			{"USER", r.user, x.user}, {"PR", r.pr, x.pr}, {"NI", r.ni, x.ni}, {"VIRT", r.virt, x.virt},
+			{"RES", r.res, x.res}, {"S", r.s, x.s}, {"TIME+", r.time, x.time}, {"COMMAND", topComm(r.cmd), topComm(x.cmd)},
+		}, func() bool { return false })
+	}
+	for pid, x := range rec {
+		if _, ok := real[pid]; ok {
+			continue
+		}
+		if procChurn(db, pid, rep.SampleTS, next) {
+			res.ChurnExtra++
+		} else {
+			res.Extra++
+			res.example("top extra pid %d: %s", pid, x.cmd)
+		}
+	}
 	return res, nil
 }

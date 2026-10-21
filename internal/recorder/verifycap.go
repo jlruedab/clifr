@@ -25,6 +25,7 @@ var verifyCommands = [][]string{
 	{"df"},
 	{"mount"},
 	{"ps", "aux"},
+	{"top", "-b", "-n", "1", "-w", "512"}, // wide: command names are not cut
 	{"ps", "-ef"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed

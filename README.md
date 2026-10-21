@@ -8,8 +8,9 @@ old file names (`sosv-stats.json`, `sosv.db`).*
 `clifrd` continuously records which processes existed, which TCP
 connections and open files each one held, when short-lived processes started
 and exited, and the system-wide counters, as Parquet files. The `clifr` CLI
-then reconstructs `ps aux`, `ss -tanp`, `lsof -n -P`, `uptime`, `vmstat`,
-`mpstat` and `iostat` for a past moment or time range, and lists process
+then reconstructs `ps aux`, `top -b`, `ss -tanp`, `lsof -n -P`, `uptime`,
+`vmstat`, `mpstat` and `iostat` (and more: `clifr help`) for a past moment or
+time range, and lists process
 lifetimes, OOM kills and mount changes.
 
 Tools like sar, atop and PCP record metrics and process statistics, but not
@@ -217,6 +218,8 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "ps -ef"
     clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"
     clifr --since yesterday --until today "ps aux"
+    clifr --at "02:45" "top -b -n 1"
+    clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
     clifr --at "13:28" "ss -ltn"
     clifr --since "2026-10-12 13:00" --until "2026-10-12 14:00" "ss -tanp"
@@ -255,6 +258,14 @@ A command can also be given unquoted after clifr's options
   `KEY:WIDTH`, `KEY=HEADING`), with procps's headings, widths and overflow.
   Over a range (aux or -e): one row per command with first and last seen,
   runs, peak %CPU and RSS.
+- `top -b [-n 1] [-c] [-i] [-w COLUMNS] [-o FIELD] [-p PIDS] [-u USER]`:
+  procps-ng 4's batch output. The summary comes from the system sample at or
+  before T, the processes from the process sample at or before it, with
+  %CPU over the interval since the sample before (top's own first screen
+  covers a fraction of a second). Not recorded: the number of users (left
+  out of the first line), SHR (`-`) and the scheduling policy (PR is 20 +
+  NI, never `rt`). Over a range: one report per sample with `--samples`
+  (`-n` and `-d` as top's).
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
@@ -476,6 +487,13 @@ rewrite their whole command line, and 3 in State, as `ss` shows. Since
 schema 2 the recording keeps where argv[0] ends: in a 70 s recording with 3
 checkpoints `netstat -tanp` matched 154 of 154 rows, 99.35% exact (one
 sampled Send-Q).
+
+`top -b -n 1 -w 512` (2026-10-21, a 2-minute recording with 4 checkpoints
+on the test machine): 2,102 of 2,102 process rows matched, 83.7% exact in
+USER, PR, NI, VIRT, RES, S, TIME+ and COMMAND. PR differed in 304 rows, all
+real-time or other non-default scheduling (`rt`, -51, -2: not recorded);
+RES and TIME+ in about 25 each (top ran about 350 ms after the sample);
+the task counts and memory lines matched.
 
 Against the real tools at the busy load (2026-10-13,
 `accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10

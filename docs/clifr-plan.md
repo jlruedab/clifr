@@ -174,6 +174,33 @@ Missing from the spec:
   `/metrics` with new collectors (net interfaces, pressure), encryption of
   bundles/pushes. Sized when the phase starts (needs sos-vault's ingestion API).
 
+### Phase 8 — Command coverage (`docs/sosv_derivable_commands.csv`)
+Agreed with the user on 2026-10-21; one step at a time, report and wait.
+- **Step 1, from data already recorded** (no recorder or format change, ~1
+  week): `top -b -n 1` (done 2026-10-21) (summary lines; PID USER PR NI VIRT RES S %CPU %MEM
+  TIME+ COMMAND; PR = 20 + NI, SHR unknown until step 3, %CPU over the sample
+  interval), `date [--utc]`, `pstree -lp`, `ps` forest (`f`), `ss -s`,
+  `df -a -l -x`, `findmnt` (tree from mount paths), `hostname` (as recorded
+  at start), `last -F reboot` (boots within the recording).
+- **Step 2, the CSV's priority items** (new tables, ~2–3 weeks): `netstat -s
+  [-6]`, `nstat -zas` (/proc/net/snmp, snmp6, netstat per system sample);
+  `ip -s -d link` (/proc/net/dev + netlink); `ip addr`, `ip route [-6]`,
+  `ip rule` (netlink notifications, list at start then changes); `dmesg [-T]`
+  (/dev/kmsg; decision needed: the unit's `ProtectKernelLogs=yes`, and
+  redaction); `systemctl list-units [--all|--failed]` (D-Bus unit signals;
+  decision needed: a D-Bus dependency or a minimal client of our own).
+- **Step 3, process fields** (benchmark after): policy, real-time priority,
+  faults, context switches (stat/status, already read), RssFile+RssShmem
+  (top SHR), wchan, SELinux context, cgroup path → exact `top`, `ps alxwww`,
+  `pidstat`, `ps auxZww`, `systemd-cgls`, container ids for docker/podman.
+- **Step 4, change-only snapshots:** uname/hostname changes, /proc/swaps,
+  modules, sysctl, locks, sysvipc, NUMA, slabinfo, nf_conntrack stats,
+  mountstats, NFS counters, netns, neighbours, lsblk sizes and holders,
+  file-system labels.
+- Not possible: lsof's brief opens and mmaps, individual threads (ps -L/m).
+- Every recorder addition bumps the schema version; steps 2–4 end with a
+  benchmark rerun; every command gets a ground-truth or `clifr verify` check.
+
 Rough total for phases 1–6: 7–10 weeks of work plus the unattended runs.
 
 ## Critical files
