@@ -318,6 +318,11 @@ chooses one; a line on stderr says when a style other than current is used.
   interval; over a range, between process samples. Only processes with
   activity unless named with `-p`; processes that started and ended
   between two samples are not in it. Recorded since 2026-10-22.
+- `containers [-q] [--no-trunc]` (clifr only): the containers whose
+  processes were seen, known by their cgroups (docker, podman, containerd,
+  CRI-O): id, runtime, start, processes and the earliest one; over a range
+  first and last seen. Names, images and states are the runtime's and are
+  not recorded; a container without processes is not seen.
 - `systemd-cgls [-l] [-k]`: the process tree by control group, as
   systemd-cgls prints it without arguments (cgroups in cgroupfs order,
   delegated ones marked, command lines cut to `$COLUMNS` or 80 unless

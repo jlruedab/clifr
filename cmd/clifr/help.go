@@ -21,8 +21,8 @@ Supported commands:
   ps, top, pstree, pidstat, lsof, ss, netstat, vmstat, mpstat, iostat, free,
   uptime, df, mount, findmnt, date, hostname, uname, last, nstat, ip, dmesg,
   systemctl, systemd-cgls
-  events, life, oom, mounts (clifr only: timeline, process lifetimes, OOM
-  kills, mount table)
+  events, life, oom, mounts, containers (clifr only: timeline, process
+  lifetimes, OOM kills, mount table, containers by their cgroups)
   Run "clifr help COMMAND" to see which options are supported for recorded
   data. Unsupported options are rejected with an error.
 

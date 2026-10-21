@@ -761,3 +761,62 @@ func cglsTool() *tool {
 		},
 	}
 }
+
+func containersTool() *tool {
+	return &tool{
+		name: "containers", synopsis: "[-q] [--no-trunc]",
+		about: "clifr only: containers found from their processes' cgroups (docker, podman, containerd, CRI-O)",
+		opts: []opt{
+			{short: 'q', help: "container ids only"},
+			{long: "no-trunc", help: "the whole 64-character id"},
+		},
+		window: true,
+		notes: []string{
+			"A container is known by the cgroup of its processes (docker-ID.scope, libpod-ID.scope,",
+			"cri-containerd-ID.scope, crio-ID.scope, or the cgroupfs driver's /docker/ID): its id and runtime",
+			"only. Names, images, ports and states are the runtime's and are not recorded; a container",
+			"without processes (created, exited) is not seen. PID and COMMAND: its earliest process.",
+			"--at: the containers with processes at the sample at or before T, STARTED = their first",
+			"process's start. --since: every container with processes in the range, with first and last",
+			"seen (running: processes still alive at the end). Processes only seen through exec/exit events",
+			"have no cgroup and do not count. Recorded since 2026-10-22.",
+		},
+		examples: []string{`clifr --at "02:45" containers`, `clifr --since yesterday --until today "containers --no-trunc"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("containers: unexpected argument %q", p.pos[0])
+			}
+			return func() error {
+				var cs []query.Container
+				if c.w.IsRange() {
+					var err error
+					if cs, err = query.ContainersBetween(c.db, c.w.From, c.w.To); err != nil {
+						return err
+					}
+					c.header("containers with processes between %s and %s", query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+				} else {
+					var s int64
+					var err error
+					if cs, s, err = query.ContainersAt(c.db, c.w.At); err != nil {
+						return err
+					}
+					c.header("containers at %s, from the processes of the sample at %s", query.FormatMS(c.w.At), query.FormatMS(s))
+				}
+				return c.emit(cs, func(int) rowMeta { return rowMeta{From: c.w.From, To: c.w.To, TS: c.w.At} },
+					func(w io.Writer) {
+						if p.has("q") {
+							for _, x := range cs {
+								id := x.ID
+								if !p.has("no-trunc") {
+									id = id[:12]
+								}
+								fmt.Fprintln(w, id)
+							}
+							return
+						}
+						query.PrintContainers(w, cs, c.w.IsRange(), p.has("no-trunc"))
+					})
+			}, nil
+		},
+	}
+}

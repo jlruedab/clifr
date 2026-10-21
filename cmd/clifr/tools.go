@@ -87,6 +87,7 @@ func init() {
 	addTool(freeTool())
 	addTool(netstatTool())
 	addTool(eventsTool())
+	addTool(containersTool())
 	addTool(mountTool())
 	addTool(dfTool())
 	addTool(findmntTool())
