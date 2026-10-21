@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -187,7 +187,12 @@ wait for the user's go-ahead.
   guest_ticks, blkio_ticks, rss_stat_kb (stat's approximate RSS: pidstat's; rss_kb is statm's,
   ps's and top's) at every sample, wait_ns (schedstat run delay) by the I/O rule,
   `processes.ruid` (real uid: pidstat's UID). comm and ppid are updated whenever stat shows a
-  change (renames), the rest of the process row on fd walks and execs.
+  change (renames), the rest of the process row on fd walks and execs. `processes.cmdline_pad`:
+  NUL bytes after the command line (1 normally; more when a process rewrote its arguments:
+  systemd-cgls counts them). `cgroups` table (path in systemd's hierarchy, `delegate`: systemd's
+  trusted.delegate/user.delegate xattr) written when a run first sees a path (a process's cgroup
+  or an ancestor) and hourly; loaded whole. Sibling cgroups are listed in kernfs order (the
+  kernel's name hash, `query.kernfsHash`), so the directory tree itself is not recorded.
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 8 since
   2026-10-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|

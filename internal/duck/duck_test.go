@@ -48,9 +48,9 @@ func batches() []*store.Batch {
 				LastSeen: p64(1700), Ended: p64(1700), Source: "ebpf", Exe: "/bin/sh", ExecTS: p64(1600), ExitTS: p64(1700), ExitCode: pint(3)}},
 			ProcUpdates: []store.ProcUpdate{{ID: 101, UID: 5, PPID: 1, Comm: "srv", Cmdline: "srv -y", Source: "sample", Exe: "/usr/bin/srv", ExecTS: 1900,
 				Label: "unconfined", Cgroup: "0::/system.slice/srv.service", RUID: 7}},
-			ProcExits:   []store.ProcExit{{ID: 101, OOMKilled: true}},
-			OOMEvents:   []store.OOMEvent{{TS: 1950, PID: 10, StartTime: 900, Comm: "srv", RSSKB: 4000, Snapshot: true}},
-			Stats:       []store.StatRow{{TS: 2000, Source: "ebpf_exec", Events: 7, Dropped: 1}},
+			ProcExits: []store.ProcExit{{ID: 101, OOMKilled: true}},
+			OOMEvents: []store.OOMEvent{{TS: 1950, PID: 10, StartTime: 900, Comm: "srv", RSSKB: 4000, Snapshot: true}},
+			Stats:     []store.StatRow{{TS: 2000, Source: "ebpf_exec", Events: 7, Dropped: 1}},
 			TCPConns: []store.TCPConn{
 				{ID: 501, PID: 10, StartTime: 900, FD: 5, Inode: 777, Family: 4, LAddr: ip("127.0.0.1"), LPort: 4000, RAddr: ip("127.0.0.2"),
 					RPort: 80, Direction: store.DirActive, OpenTS: 1500, FirstState: 2, Source: store.SrcEBPF, LastSeen: 1500},

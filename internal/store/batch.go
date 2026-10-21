@@ -25,9 +25,12 @@ type ProcRow struct {
 	OOMKilled        bool
 	// Read from /proc when the process is first sampled, at its exec and on
 	// fd walks (schema 8); empty for event-only processes.
-	Label  string // /proc/<pid>/attr/current (ps -Z)
-	RUID   int    // real uid (pidstat); the effective one (UID) when not read from /proc
-	Cgroup string // /proc/<pid>/cgroup
+	Label string // /proc/<pid>/attr/current (ps -Z)
+	RUID  int    // real uid (pidstat); the effective one (UID) when not read from /proc
+	// NUL bytes after the command line in /proc/<pid>/cmdline (normally 1;
+	// 0: unknown, an event-only process).
+	CmdlinePad int
+	Cgroup     string // /proc/<pid>/cgroup
 }
 
 // ProcUpdate changes slow-moving attributes (re-read at exec or fd walks).
@@ -41,6 +44,7 @@ type ProcUpdate struct {
 	ExecTS        int64 // 0: no exec seen
 	Label, Cgroup string
 	RUID          int
+	CmdlinePad    int
 }
 
 // ProcExit records how a process ended (an exit event or an OOM kill); nil
@@ -359,6 +363,16 @@ type UnitRow struct {
 	JobType                                         string
 }
 
+// CgroupRow is a cgroup of the hierarchy systemd uses (procfs.SystemdCgroup):
+// written the first time a run sees it (as a process's cgroup or an
+// ancestor of one) and again every NetSnapshotMS. Delegate: systemd's
+// trusted.delegate or user.delegate attribute (systemd-cgls marks it).
+type CgroupRow struct {
+	TS       int64
+	Path     string
+	Delegate bool
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -456,6 +470,7 @@ type Batch struct {
 	Routing     []RoutingRow
 	Kmsg        []KmsgRow
 	Units       []UnitRow
+	Cgroups     []CgroupRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -466,5 +481,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups)
 }

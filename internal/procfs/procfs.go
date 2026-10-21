@@ -155,7 +155,7 @@ type Stat struct {
 	Priority   int // top's PR: 20 + nice, or -1 - rt_priority (-100: "rt")
 	Processor  int // CPU it last ran on
 	RTPriority int
-	Policy     int // SCHED_*: 0 other, 1 fifo, 2 rr, 3 batch, 5 idle, 6 deadline
+	Policy     int    // SCHED_*: 0 other, 1 fifo, 2 rr, 3 batch, 5 idle, 6 deadline
 	BlkioTicks uint64 // delay waiting for block I/O (delay accounting; else 0)
 	GuestTime  uint64 // ticks running a virtual CPU (included in Utime)
 }
@@ -285,7 +285,19 @@ func ParseStatus(b []byte) (Status, error) {
 // ReadCmdline returns the command line with its arguments joined by spaces,
 // and the length of argv[0] in it (where the first NUL was).
 func (f FS) ReadCmdline(pid int) (cmd string, argv0 int, err error) {
-	err = f.readPID(pid, "cmdline", func(b []byte) error { cmd, argv0 = ParseCmdline(b), Argv0Len(b); return nil })
+	cmd, argv0, _, err = f.ReadCmdlinePad(pid)
+	return
+}
+
+// ReadCmdlinePad is ReadCmdline plus the number of NUL bytes after the
+// last argument: 1 normally, more when a process rewrote its arguments in
+// place and padded them (postgres, sshd). systemd-cgls counts them.
+func (f FS) ReadCmdlinePad(pid int) (cmd string, argv0, pad int, err error) {
+	err = f.readPID(pid, "cmdline", func(b []byte) error {
+		cmd, argv0 = ParseCmdline(b), Argv0Len(b)
+		pad = len(b) - len(bytes.TrimRight(b, "\x00"))
+		return nil
+	})
 	return
 }
 
@@ -460,6 +472,25 @@ func (f FS) ReadLabel(pid int) (l string, err error) {
 func (f FS) ReadCgroup(pid int) (c string, err error) {
 	err = f.readPID(pid, "cgroup", func(b []byte) error { c = strings.TrimRight(string(b), "\n"); return nil })
 	return
+}
+
+// SystemdCgroup picks from /proc/<pid>/cgroup the path in the hierarchy
+// systemd uses (what systemd-cgls shows): name=systemd's on cgroup v1 and
+// hybrid systems, else the unified one ("0::/path"). v1 is true for the
+// former (its directory is /sys/fs/cgroup/systemd, else /sys/fs/cgroup).
+func SystemdCgroup(cgroup string) (path string, v1, ok bool) {
+	for _, l := range strings.Split(cgroup, "\n") {
+		_, rest, _ := strings.Cut(l, ":")
+		ctl, p, found := strings.Cut(rest, ":")
+		switch {
+		case !found:
+		case ctl == "name=systemd":
+			return p, true, true
+		case ctl == "" && strings.HasPrefix(l, "0:"):
+			path, ok = p, true
+		}
+	}
+	return path, false, ok
 }
 
 // ReadBootID returns /proc/sys/kernel/random/boot_id, which changes at

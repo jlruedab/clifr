@@ -12,7 +12,9 @@ import (
 func TestPidstat(t *testing.T) {
 	base := int64(1_790_000_000_000)
 	tk := func(s int64) int64 { return s * procfs.ClockTicks }
-	sys := func(ts, up int64) []store.SysSample { return []store.SysSample{{TS: ts, UptimeMS: up, MemTotal: 1_000_000}} }
+	sys := func(ts, up int64) []store.SysSample {
+		return []store.SysSample{{TS: ts, UptimeMS: up, MemTotal: 1_000_000}}
+	}
 	proc := store.ProcRow{ID: 1, PID: 100, StartTime: base - 60_000, PPID: 1, UID: 0, RUID: 1000, Comm: "sudo",
 		Cmdline: "sudo -i", FirstSeen: base, Source: "sample"}
 	idle := store.ProcRow{ID: 2, PID: 200, StartTime: base - 60_000, PPID: 1, Comm: "idle", FirstSeen: base, Source: "sample"}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -713,6 +714,49 @@ func systemctlTool() *tool {
 				st := query.StyleAt(c.db, c.w.At)
 				return c.emit(units, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 					func(w io.Writer) { query.PrintListUnits(w, units, o, st) })
+			}, nil
+		},
+	}
+}
+
+func cglsTool() *tool {
+	return &tool{
+		name: "systemd-cgls", synopsis: "[-l] [-k] [--no-pager]",
+		about: "processes by control group, as systemd-cgls prints the tree",
+		opts: []opt{
+			{short: 'l', long: "full", help: "do not shorten command lines"},
+			{short: 'k', help: "include kernel threads"},
+			{long: "no-pager", help: "accepted (clifr pages with --pager)"},
+		},
+		window: true,
+		notes: []string{
+			"The processes of the sample at or before T in their systemd cgroup (name=systemd's on cgroup v1),",
+			"read when clifrd first sampled them and at every fd walk: a process moved to another cgroup in",
+			"between shows where it was. Processes only seen through exec/exit events are not listed. Siblings",
+			"in cgroupfs order (the kernel's name hash, which systemd-cgls shows unsorted); delegated cgroups",
+			"marked with an ellipsis (their trusted.delegate or user.delegate attribute, recorded). Without -l,",
+			"lines fit $COLUMNS (80 when unset, as systemd-cgls into a pipe). Recorded since 2026-10-22.",
+		},
+		examples: []string{`clifr --at "02:45" "systemd-cgls"`, `clifr --at "02:45" "systemd-cgls -l"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("systemd-cgls: only the whole tree is supported, not %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("systemd-cgls: needs --at")
+			}
+			o := query.CglsOptions{Full: p.has("full"), Kernel: p.has("k"), ASCII: !query.LocaleUTF8(), Columns: 80}
+			if n, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && n > 0 {
+				o.Columns = n
+			}
+			return func() error {
+				procs, delegated, s, err := query.CglsAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				c.header("systemd-cgls at %s, from the sample at %s", query.FormatMS(c.w.At), query.FormatMS(s))
+				return c.emit(procs, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: s} },
+					func(w io.Writer) { query.PrintCgls(w, procs, delegated, o) })
 			}, nil
 		},
 	}

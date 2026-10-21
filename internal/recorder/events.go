@@ -475,6 +475,7 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 					u.Comm, u.Cmdline, u.Argv0Len, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.Argv0Len,
 						ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
 					u.Label = r.readLabel(ev.pid, u.Label) // an exec can change it (SELinux transitions)
+					u.CmdlinePad = 1                       // a new argument area
 					if u != e.upd {
 						e.upd = u
 						b.ProcUpdates = append(b.ProcUpdates, u)

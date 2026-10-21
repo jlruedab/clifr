@@ -101,6 +101,7 @@ func addSystemTools() {
 	addTool(unameTool())
 	addTool(dmesgTool())
 	addTool(systemctlTool())
+	addTool(cglsTool())
 	addTool(lastTool())
 	addTool(nstatTool())
 	addTool(ipTool())

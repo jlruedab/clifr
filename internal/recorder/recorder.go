@@ -86,6 +86,8 @@ type Recorder struct {
 	gen   uint64
 	procs map[procKey]*procEntry
 	ids   map[string]int64 // next id per table
+	// cgroups: when each systemd cgroup path was last written (cgroups.go).
+	cgroups map[string]int64
 
 	listSockets func() ([]sockdiag.Socket, error)
 	sockSource  string // "sock_diag" or "proc_net"
@@ -136,7 +138,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
-		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}}
+		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]int64{}}
 	r.initSockets()
 	if r.cfg.FDFullEvery == 0 {
 		r.cfg.FDFullEvery = 5
@@ -554,7 +556,7 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 				continue
 			}
 		} else if refresh {
-			r.refreshProc(e, st, status, haveStatus, b)
+			r.refreshProc(e, st, status, haveStatus, ts, b)
 		} else if st.Comm != e.upd.Comm || st.PPID != e.upd.PPID {
 			// A rename (prctl PR_SET_NAME, as browsers do for their
 			// processes) or a reparenting: both are in stat, read anyway.
@@ -611,19 +613,20 @@ func (r *Recorder) dropClosedProcs() {
 }
 
 func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts int64, b *store.Batch) *procEntry {
-	cmd, argv0, err := r.readCmdline(key.pid)
+	cmd, argv0, pad, err := r.readCmdlinePad(key.pid)
 	if err != nil {
 		return nil
 	}
 	label, cgroup := r.readLabel(key.pid, ""), r.readCgroup(key.pid, "")
+	r.noteCgroup(cgroup, ts, b)
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
-		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
+		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, CmdlinePad: pad, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
 			Label: label, Cgroup: cgroup}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
-		PPID: st.PPID, UID: status.UID, RUID: status.RUID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
+		PPID: st.PPID, UID: status.UID, RUID: status.RUID, CmdlinePad: pad, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
@@ -655,17 +658,18 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 // setproctitle, uid via setuid, ppid via reparenting, the cgroup when a
 // process is moved, the label). It runs on fd-walk samples only, to keep the
 // per-interval cost low.
-func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Status, haveStatus bool, b *store.Batch) {
+func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Status, haveStatus bool, ts int64, b *store.Batch) {
 	u := e.upd
 	u.PPID, u.Comm = st.PPID, st.Comm
 	if haveStatus {
 		u.UID, u.RUID = status.UID, status.RUID
 	}
 	u.Label, u.Cgroup = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup)
+	r.noteCgroup(u.Cgroup, ts, b)
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
-	if cmd, argv0, err := r.readCmdline(e.key.pid); err == nil && cmd != "" {
-		u.Cmdline, u.Argv0Len = cmd, argv0
+	if cmd, argv0, pad, err := r.readCmdlinePad(e.key.pid); err == nil && cmd != "" {
+		u.Cmdline, u.Argv0Len, u.CmdlinePad = cmd, argv0, pad
 	}
 	if u != e.upd {
 		e.upd = u

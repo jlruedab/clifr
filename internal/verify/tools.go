@@ -42,6 +42,8 @@ func init() {
 	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and name (which set its place)"
 	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
 	ignoredFields["ps alxwww"] = "the work-item suffix of kernel worker names"
+	ignoredFields["systemd-cgls --no-pager"] = "none; compared: each process's cgroup and command line, each cgroup's delegation mark and place among the siblings both have"
+	ignoredFields["systemd-cgls --no-pager -l"] = ignoredFields["systemd-cgls --no-pager"]
 	ignoredFields["ps auxZww"] = "everything but LABEL (the rest is compared by ps aux)"
 	ignoredFields["pidstat -h -u -r -d -w -p ALL"] = "CPU (the one the process last ran on changes all the time); the work-item suffix of kernel worker names; averages match within 0.01, VSZ and RSS exactly"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
@@ -383,6 +385,134 @@ func comparePidstat(db *store.DB, snap snapshot) (Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// ---- systemd-cgls ----
+
+type cglsTree struct {
+	procs  map[int][2]string   // pid -> cgroup, command
+	groups map[string]string   // path -> "delegated" or ""
+	kids   map[string][]string // path -> children in printed order
+}
+
+// parseCgls reads systemd-cgls's tree (ASCII glyphs: "|-", "`-", "| ",
+// "  "): each line's depth is its prefix length / 2; a cgroup line holds a
+// name (" ..." when delegated), a process line a PID and its command.
+func parseCgls(out string) cglsTree {
+	t := cglsTree{procs: map[int][2]string{}, groups: map[string]string{"/": ""}, kids: map[string][]string{}}
+	stack := []string{"/"} // stack[d]: the cgroup at depth d
+	for _, l := range strings.Split(out, "\n") {
+		i := strings.Index(l, "|-")
+		if j := strings.Index(l, "`-"); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
+		if i < 0 || i%2 != 0 {
+			continue
+		}
+		depth, rest := i/2, l[i+2:]
+		if depth+1 > len(stack) {
+			continue
+		}
+		parent := stack[depth]
+		if f := strings.Fields(rest); len(f) > 0 {
+			if pid, err := strconv.Atoi(f[0]); err == nil && strings.HasPrefix(strings.TrimLeft(rest, " "), f[0]+" ") {
+				t.procs[pid] = [2]string{parent, strings.TrimPrefix(strings.TrimLeft(rest, " "), f[0]+" ")}
+				continue
+			}
+		}
+		name, mark := rest, ""
+		if n, ok := strings.CutSuffix(rest, " ..."); ok {
+			name, mark = n, "delegated"
+		}
+		p := strings.TrimSuffix(parent, "/") + "/" + name
+		t.groups[p] = mark
+		t.kids[parent] = append(t.kids[parent], p)
+		stack = append(stack[:depth+1], p)
+	}
+	return t
+}
+
+func compareCgls(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	procs, delegated, s, err := query.CglsAt(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	full := strings.HasSuffix(snap.cmd, " -l")
+	next := nextSample(db, s, false)
+	real := parseCgls(snap.output)
+	rec := parseCgls(render(func(sb *strings.Builder) {
+		query.PrintCgls(sb, procs, delegated, query.CglsOptions{Full: full, ASCII: true, Columns: 80})
+	}))
+	for pid := range snap.ignore {
+		if _, ok := real.procs[pid]; ok {
+			res.Ignored["recorder/tool processes"]++
+		}
+		delete(real.procs, pid)
+		delete(rec.procs, pid)
+	}
+	res.Real, res.Recon = len(real.procs)+len(real.groups), len(rec.procs)+len(rec.groups)
+	for pid, r := range real.procs {
+		x, ok := rec.procs[pid]
+		switch {
+		case ok:
+			res.Matched++
+			res.compare("systemd-cgls pid "+strconv.Itoa(pid), []fieldPair{{"cgroup", r[0], x[0]}, {"command", r[1], x[1]}},
+				func() bool { return false })
+		case procChurn(db, pid, s, next):
+			res.ChurnMissing++
+		default:
+			res.Missing++
+			res.example("systemd-cgls missing pid %d in %s: %s", pid, r[0], r[1])
+		}
+	}
+	for pid, x := range rec.procs {
+		if _, ok := real.procs[pid]; !ok {
+			if procChurn(db, pid, s, next) {
+				res.ChurnExtra++
+			} else {
+				res.Extra++
+				res.example("systemd-cgls extra pid %d in %s: %s", pid, x[0], x[1])
+			}
+		}
+	}
+	// Cgroups: the delegation mark, and the place among the siblings both
+	// sides list (a cgroup on one side only is churn: its processes came or
+	// went, which the process rows count).
+	for p, mark := range real.groups {
+		x, ok := rec.groups[p]
+		if !ok {
+			res.ChurnMissing++
+			continue
+		}
+		res.Matched++
+		res.compare("systemd-cgls cgroup "+p, []fieldPair{{"delegated", mark, x},
+			{"place", placeIn(real, rec, p), placeIn(rec, real, p)}}, func() bool { return false })
+	}
+	for p := range rec.groups {
+		if _, ok := real.groups[p]; !ok {
+			res.ChurnExtra++
+		}
+	}
+	return res, nil
+}
+
+// placeIn is p's place among its siblings in t that other lists too.
+func placeIn(t, other cglsTree, p string) string {
+	parent := p[:strings.LastIndex(p, "/")]
+	if parent == "" {
+		parent = "/"
+	}
+	n := 0
+	for _, k := range t.kids[parent] {
+		if k == p {
+			return strconv.Itoa(n)
+		}
+		if _, ok := other.groups[k]; ok {
+			n++
+		}
+	}
+	return "?"
 }
 
 // ---- netstat -tanp ----

@@ -26,31 +26,32 @@ type sampleRow struct {
 }
 
 type processRow struct {
-	ID        int64  `parquet:"id"`
-	PID       int32  `parquet:"pid"`
-	StartTime int64  `parquet:"start_time"`
-	PPID      int32  `parquet:"ppid"`
-	UID       int32  `parquet:"uid"`
-	Comm      string `parquet:"comm,dict"`
-	Cmdline   string `parquet:"cmdline,dict"`
-	Argv0Len  int32  `parquet:"argv0_len"` // 0: unknown (recordings before schema 2 have no column: NULL)
-	TTY       int32  `parquet:"tty"`
-	SID       int32  `parquet:"sid"`
-	PGRP      int32  `parquet:"pgrp"`
-	Locked    int32  `parquet:"locked"`
-	FirstSeen int64  `parquet:"first_seen"`
-	LastSeen  int64  `parquet:"last_seen,optional"`
-	Ended     int64  `parquet:"ended,optional"`
-	Source    string `parquet:"source,dict"`
-	Exe       string `parquet:"exe,dict"`
-	ExecTS    int64  `parquet:"exec_ts,optional"`
-	ExitTS    int64  `parquet:"exit_ts,optional"`
-	ExitCode  *int32 `parquet:"exit_code,optional"`
-	Signal    *int32 `parquet:"signal,optional"`
-	OOMKilled int32  `parquet:"oom_killed"`
-	Label     string `parquet:"label,dict"` // schema 8
-	Cgroup    string `parquet:"cgroup,dict"`
-	RUID      int32  `parquet:"ruid"`
+	ID         int64  `parquet:"id"`
+	PID        int32  `parquet:"pid"`
+	StartTime  int64  `parquet:"start_time"`
+	PPID       int32  `parquet:"ppid"`
+	UID        int32  `parquet:"uid"`
+	Comm       string `parquet:"comm,dict"`
+	Cmdline    string `parquet:"cmdline,dict"`
+	Argv0Len   int32  `parquet:"argv0_len"` // 0: unknown (recordings before schema 2 have no column: NULL)
+	TTY        int32  `parquet:"tty"`
+	SID        int32  `parquet:"sid"`
+	PGRP       int32  `parquet:"pgrp"`
+	Locked     int32  `parquet:"locked"`
+	FirstSeen  int64  `parquet:"first_seen"`
+	LastSeen   int64  `parquet:"last_seen,optional"`
+	Ended      int64  `parquet:"ended,optional"`
+	Source     string `parquet:"source,dict"`
+	Exe        string `parquet:"exe,dict"`
+	ExecTS     int64  `parquet:"exec_ts,optional"`
+	ExitTS     int64  `parquet:"exit_ts,optional"`
+	ExitCode   *int32 `parquet:"exit_code,optional"`
+	Signal     *int32 `parquet:"signal,optional"`
+	OOMKilled  int32  `parquet:"oom_killed"`
+	Label      string `parquet:"label,dict"` // schema 8
+	Cgroup     string `parquet:"cgroup,dict"`
+	RUID       int32  `parquet:"ruid"`
+	CmdlinePad int32  `parquet:"cmdline_pad"`
 }
 
 type procSampleRow struct {
@@ -361,7 +362,7 @@ func processOf(p store.ProcRow) processRow {
 		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
-		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID)}
+		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), CmdlinePad: int32(p.CmdlinePad)}
 }
 
 func i32p(p *int) *int32 {
@@ -653,6 +654,12 @@ type kmsgRow struct {
 	Msg    string `parquet:"msg"`
 	BootUS int64  `parquet:"boot_us"`
 	SuspUS int64  `parquet:"susp_us"`
+}
+
+type cgroupRow struct {
+	TS       int64  `parquet:"ts"`
+	Path     string `parquet:"path,dict"`
+	Delegate int32  `parquet:"delegate"`
 }
 
 type unitRow struct {

@@ -68,10 +68,16 @@ func (r Redactor) Cmdline(cmd string, argv0 int) (string, int) {
 
 // readCmdline is procfs ReadCmdline with the command line redacted.
 func (r *Recorder) readCmdline(pid int) (string, int, error) {
-	cmd, argv0, err := r.fs.ReadCmdline(pid)
+	cmd, argv0, _, err := r.readCmdlinePad(pid)
+	return cmd, argv0, err
+}
+
+// readCmdlinePad also returns the trailing NULs (procfs.ReadCmdlinePad).
+func (r *Recorder) readCmdlinePad(pid int) (string, int, int, error) {
+	cmd, argv0, pad, err := r.fs.ReadCmdlinePad(pid)
 	if err != nil {
-		return cmd, argv0, err
+		return cmd, argv0, pad, err
 	}
 	cmd, argv0 = r.redact.Cmdline(cmd, argv0)
-	return cmd, argv0, nil
+	return cmd, argv0, pad, nil
 }
