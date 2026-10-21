@@ -385,19 +385,20 @@ func nstatTool() *tool {
 
 func ipTool() *tool {
 	return &tool{
-		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]  |  [-o] [-d] [-4|-6] address [show] [[dev] NAME]",
-		about: "network interfaces and their addresses, as iproute2 ip prints them",
+		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]  |  [-o] [-d] [-4|-6] address [show] [[dev] NAME]  |  [-4|-6] [-d] route [show] [table ID|all]  |  [-4|-6] rule [list]",
+		about: "network interfaces, addresses, routes and rules, as iproute2 ip prints them",
 		opts: []opt{
 			{short: 's', long: "stats", help: "link: statistics (twice: also the error counters)"},
 			{short: 'd', long: "details", help: "details (each interface type's own parameters are not reconstructed)"},
 			{short: 'o', long: "oneline", help: "address: one line per address"},
-			{short: '4', help: "address: IPv4 only"},
-			{short: '6', help: "address: IPv6 only"},
+			{short: '4', help: "IPv4 only (route and rule: the default)"},
+			{short: '6', help: "IPv6 only"},
 		},
 		window: true,
 		notes: []string{
-			"link: the interfaces at the system sample at or before T; address: those interfaces and the",
-			"addresses at T (clifrd records each address change as the kernel announces it). Recorded since",
+			"link: the interfaces at the system sample at or before T; address, route, rule: as they were at",
+			"T (clifrd records each change as the kernel announces it, and the kernel's order of routes and",
+			"rules about a second after changes). Recorded since",
 			"2026-10-21, printed in iproute2 6.19's layout. -d prints the generic attributes and an",
 			"interface's type (bridge, bond, vlan, ...) but not that type's parameters.",
 			"--since: one report per sample with --samples.",
@@ -418,12 +419,19 @@ func prepareIP(p parsed, c *runCtx) (func() error, error) {
 		obj = "link"
 	case strings.HasPrefix("address", args[0]):
 		obj = "address"
+	case strings.HasPrefix("route", args[0]):
+		obj = "route"
+	case strings.HasPrefix("rule", args[0]):
+		obj = "rule"
 	default:
-		return nil, fmt.Errorf("ip: object %q is not supported (link, address)", args[0])
+		return nil, fmt.Errorf("ip: object %q is not supported (link, address, route, rule)", args[0])
 	}
 	args = args[1:]
-	if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst") {
+	if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst" || args[0] == "ls") {
 		args = args[1:]
+	}
+	if obj == "route" || obj == "rule" {
+		return prepareIPRouting(p, c, obj, args)
 	}
 	dev := ""
 	switch {
@@ -488,6 +496,108 @@ func prepareIP(p parsed, c *runCtx) (func() error, error) {
 				query.PrintIPLink(w, r.Links, lo)
 			} else {
 				query.PrintIPAddr(w, r.Links, r.Addrs, ao)
+			}
+		}
+	}
+	return func() error {
+		v := view[report]{name: "ip " + obj, at: at, key: func(*report) string { return obj },
+			same: func(a, b *report) bool { return true }, print: print}
+		if ok, err := rangeView(c, v); ok {
+			return err
+		}
+		reps, meta, err := at(c.w.At)
+		if err != nil {
+			return err
+		}
+		return c.emit(reps, func(i int) rowMeta { return meta(&reps[i]) }, func(w io.Writer) { print(w, reps) })
+	}, nil
+}
+
+// prepareIPRouting: ip [-4|-6] [-d] route [show] [table ID|all] and ip
+// [-4|-6] rule [list].
+func prepareIPRouting(p parsed, c *runCtx, obj string, args []string) (func() error, error) {
+	if p.has("stats") || p.has("oneline") {
+		return nil, fmt.Errorf("ip %s: -s and -o are not supported", obj)
+	}
+	o := query.IPRouteOptions{Table: 254, Details: p.has("details")}
+	switch {
+	case p.has("4") && p.has("6"):
+		return nil, errors.New("ip: use -4 or -6, not both")
+	case p.has("6"):
+		o.Family = 10
+	case p.has("4"):
+		o.Family = 2
+	}
+	switch {
+	case obj == "route" && len(args) == 2 && args[0] == "table":
+		switch args[1] {
+		case "all":
+			o.Table = 0
+		case "main":
+			o.Table = 254
+		case "local":
+			o.Table = 255
+		case "default":
+			o.Table = 253
+		default:
+			n, err := strconv.Atoi(args[1])
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("ip route: table %q: give all, main, local, default or a number", args[1])
+			}
+			o.Table = n
+		}
+	case len(args) > 0:
+		return nil, fmt.Errorf("ip %s: unsupported arguments %q", obj, strings.Join(args, " "))
+	}
+	// ip's default family is IPv4, except for routes of all tables, which
+	// lists both.
+	if o.Family == 0 && (obj == "rule" || o.Table != 0) {
+		o.Family = 2
+	}
+	if c.g.changes {
+		return nil, errors.New("ip: --changes is not supported; use --samples")
+	}
+	if c.w.IsRange() && !c.g.samples {
+		return nil, errors.New("ip: a range needs --samples (one report per sample)")
+	}
+	type report struct {
+		TS    int64              `json:"ts_ms"`
+		Rows  []store.RoutingRow `json:"-"`
+		names map[int]string
+		Lines []string `json:"lines"`
+	}
+	at := func(t int64) ([]report, func(*report) rowMeta, error) {
+		rows, err := query.RoutingAt(c.db, t, obj)
+		if err != nil {
+			return nil, nil, err
+		}
+		names := map[int]string{}
+		if links, _, err := query.LinksAt(c.db, t); err == nil {
+			for _, l := range links {
+				names[l.Index] = l.Name
+			}
+		}
+		r := report{TS: t, Rows: rows, names: names}
+		var sb strings.Builder
+		if obj == "route" {
+			query.PrintIPRoute(&sb, rows, o, func(i int) string {
+				if n, ok := names[i]; ok {
+					return n
+				}
+				return fmt.Sprintf("if%d", i)
+			}, t)
+		} else {
+			query.PrintIPRule(&sb, rows, o.Family, o.Details)
+		}
+		if s := strings.TrimSuffix(sb.String(), "\n"); s != "" {
+			r.Lines = strings.Split(s, "\n")
+		}
+		return []report{r}, func(*report) rowMeta { return rowMeta{TS: t} }, nil
+	}
+	print := func(w io.Writer, reps []report) {
+		for _, r := range reps {
+			for _, l := range r.Lines {
+				fmt.Fprintln(w, l)
 			}
 		}
 	}

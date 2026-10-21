@@ -195,25 +195,5 @@ var ErrOverflow = errors.New("rtnetlink: notifications lost")
 // Fd is the socket, to poll for notifications.
 func (m *Monitor) Fd() int { return m.fd }
 
-// Read returns the addresses among the notifications waiting, without
-// blocking (none: nil).
-func (m *Monitor) Read(buf []byte) (addrs []Addr, err error) {
-	n, _, err := unix.Recvfrom(m.fd, buf, unix.MSG_DONTWAIT)
-	switch {
-	case errors.Is(err, unix.EAGAIN):
-		return nil, nil
-	case errors.Is(err, unix.ENOBUFS):
-		return nil, ErrOverflow
-	case err != nil:
-		return nil, err
-	}
-	_, err = messages(buf[:n], func(typ uint16, b []byte) {
-		if a, ok := parseAddr(typ, b); ok {
-			addrs = append(addrs, a)
-		}
-	})
-	return addrs, err
-}
-
 // Close ends the subscription.
 func (m *Monitor) Close() error { return unix.Close(m.fd) }

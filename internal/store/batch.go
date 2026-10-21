@@ -296,6 +296,17 @@ type AddrRow struct {
 	Metric, Proto, Valid, Preferred int64
 }
 
+// RoutingRow is a route or a policy routing rule (Kind "route", "rule") as
+// the kernel sent it: Msg is the rtnetlink body (struct rtmsg or
+// fib_rule_hdr and attributes), parsed when printed. Action and Seq as in
+// AddrRow; Key identifies it across changes.
+type RoutingRow struct {
+	TS                int64
+	Kind, Action, Key string
+	Seq, Family       int
+	Msg               []byte
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -390,6 +401,7 @@ type Batch struct {
 	NetCounters []NetCounter
 	Links       []LinkRow
 	Addrs       []AddrRow
+	Routing     []RoutingRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -400,5 +412,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing)
 }

@@ -11,27 +11,32 @@ import (
 	"clifr/internal/store"
 )
 
-// netWatch records the interface addresses: a snapshot at the start, every
-// store.NetSnapshotMS and after lost notifications, and in between each
-// change the kernel announces, at the time it does.
+// netWatch records the interface addresses, routes and policy routing rules:
+// a snapshot at the start, every store.NetSnapshotMS and after lost
+// notifications, and in between each change the kernel announces, at the
+// time it does. Routes and rules are also dumped again about a second after
+// changes (at most every routeRedumpMS), so the kernel's order of them (which
+// ip prints) is recorded too; not when there are more than routeRedumpMax
+// routes, where a dump costs too much to repeat.
 type netWatch struct {
-	mu   sync.Mutex
-	rows []store.AddrRow
-	seq  int // orders the changes of one millisecond
+	mu      sync.Mutex
+	addrs   []store.AddrRow
+	routing []store.RoutingRow
+	seq     int // orders the changes of one millisecond
+	routes  int // routes in the last dump
 }
 
-func (w *netWatch) take() []store.AddrRow {
+const (
+	routeRedumpMS  = 10_000
+	routeRedumpMax = 50_000
+)
+
+func (w *netWatch) take() ([]store.AddrRow, []store.RoutingRow) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	out := w.rows
-	w.rows = nil
-	return out
-}
-
-func (w *netWatch) add(rows ...store.AddrRow) {
-	w.mu.Lock()
-	w.rows = append(w.rows, rows...)
-	w.mu.Unlock()
+	a, r := w.addrs, w.routing
+	w.addrs, w.routing = nil, nil
+	return a, r
 }
 
 func addrRow(ts int64, action string, seq int, a *rtnl.Addr) store.AddrRow {
@@ -41,8 +46,22 @@ func addrRow(ts int64, action string, seq int, a *rtnl.Addr) store.AddrRow {
 		Valid: a.Valid, Preferred: a.Preferred}
 }
 
-// snapshot writes every address as "present".
-func (w *netWatch) snapshot() error {
+func routingRow(ts int64, action string, seq int, m *rtnl.Message) store.RoutingRow {
+	r := store.RoutingRow{TS: ts, Action: action, Seq: seq, Msg: m.Body}
+	if len(m.Body) > 0 {
+		r.Family = int(m.Body[0])
+	}
+	switch m.Type {
+	case rtnl.RTMNewRoute, rtnl.RTMDelRoute:
+		r.Kind, r.Key = "route", rtnl.RouteKey(m.Body)
+	default:
+		r.Kind, r.Key = "rule", rtnl.RuleKey(m.Body)
+	}
+	return r
+}
+
+// snapshotAddrs writes every address as "present".
+func (w *netWatch) snapshotAddrs() error {
 	addrs, err := rtnl.DumpAddrs()
 	if err != nil {
 		return err
@@ -52,34 +71,84 @@ func (w *netWatch) snapshot() error {
 	for i := range addrs {
 		rows[i] = addrRow(ts, "present", i, &addrs[i])
 	}
-	w.add(rows...)
+	w.mu.Lock()
+	w.addrs = append(w.addrs, rows...)
+	w.mu.Unlock()
 	return nil
 }
 
-// startNet subscribes to address changes and takes the first snapshot.
+// snapshotRouting writes every route and rule, IPv4 and IPv6, as "present".
+func (w *netWatch) snapshotRouting() error {
+	var all []rtnl.Message
+	routes := 0
+	for _, dump := range []func(int) ([]rtnl.Message, error){rtnl.DumpRoutes, rtnl.DumpRules} {
+		for _, fam := range []int{unix.AF_INET, unix.AF_INET6} {
+			m, err := dump(fam)
+			if err != nil {
+				return err
+			}
+			all = append(all, m...)
+			if len(m) > 0 && m[0].Type == rtnl.RTMNewRoute {
+				routes += len(m)
+			}
+		}
+	}
+	ts := time.Now().UnixMilli()
+	rows := make([]store.RoutingRow, len(all))
+	for i := range all {
+		rows[i] = routingRow(ts, "present", i, &all[i])
+	}
+	w.mu.Lock()
+	w.routing = append(w.routing, rows...)
+	w.routes = routes
+	w.mu.Unlock()
+	return nil
+}
+
+// startNet subscribes to address, route and rule changes and takes the
+// first snapshots.
 func (r *Recorder) startNet(done <-chan struct{}) (stop func()) {
 	if r.fs.Root != "/proc" {
 		return nil // fixtures: netlink would describe this machine
 	}
-	mon, err := rtnl.NewMonitor(rtnl.GroupIPv4Addr | rtnl.GroupIPv6Addr)
+	mon, err := rtnl.NewMonitor(rtnl.GroupIPv4Addr | rtnl.GroupIPv6Addr | rtnl.GroupIPv4Route | rtnl.GroupIPv6Route |
+		rtnl.GroupIPv4Rule | rtnl.GroupIPv6Rule)
 	if err != nil {
-		r.log.Warnf("address changes not recorded: %v", err)
+		r.log.Warnf("address and route changes not recorded: %v", err)
 		return nil
 	}
 	w := &netWatch{}
-	if err := w.snapshot(); err != nil { // after subscribing: no change is missed in between
+	// After subscribing: no change is missed in between.
+	if err := w.snapshotAddrs(); err != nil {
 		mon.Close()
 		r.log.Warnf("addresses not recorded: %v", err)
 		return nil
+	}
+	if err := w.snapshotRouting(); err != nil {
+		r.log.Warnf("routes and rules: %v", err)
 	}
 	r.net = w
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 1<<16)
+		buf := make([]byte, 1<<20)
 		fds := []unix.PollFd{{Fd: int32(mon.Fd()), Events: unix.POLLIN}}
-		last := time.Now()
+		last, lastRouting := time.Now(), time.Now()
+		var redump time.Time // when routes and rules are to be dumped again (zero: not due)
+		snapshot := func(addrs, routing bool) {
+			if addrs {
+				if err := w.snapshotAddrs(); err != nil {
+					r.log.Errorf("address snapshot: %v", err)
+				}
+			}
+			if routing {
+				if err := w.snapshotRouting(); err != nil {
+					r.log.Errorf("route snapshot: %v", err)
+				}
+				lastRouting, redump = time.Now(), time.Time{}
+			}
+		}
 		for {
 			select {
 			case <-done:
@@ -87,38 +156,54 @@ func (r *Recorder) startNet(done <-chan struct{}) (stop func()) {
 			default:
 			}
 			if time.Since(last) >= store.NetSnapshotMS*time.Millisecond {
-				if err := w.snapshot(); err != nil {
-					r.log.Errorf("address snapshot: %v", err)
-				}
+				snapshot(true, true)
 				last = time.Now()
 			}
-			if n, err := unix.Poll(fds, 1000); err != nil && err != unix.EINTR {
-				r.log.Errorf("address watch: %v", err)
+			if !redump.IsZero() && time.Now().After(redump) {
+				snapshot(false, true)
+			}
+			if n, err := unix.Poll(fds, 500); err != nil && err != unix.EINTR {
+				r.log.Errorf("network watch: %v", err)
 				return
 			} else if n <= 0 {
 				continue
 			}
-			addrs, err := mon.Read(buf)
+			addrs, routing, err := mon.ReadMessages(buf)
 			switch {
 			case errors.Is(err, rtnl.ErrOverflow):
-				r.log.Warnf("address changes lost (kernel buffer overflow): taking a new snapshot")
-				if err := w.snapshot(); err != nil {
-					r.log.Errorf("address snapshot: %v", err)
-				}
+				r.log.Warnf("address or route changes lost (kernel buffer overflow): taking new snapshots")
+				snapshot(true, true)
 				last = time.Now()
 				continue
 			case err != nil:
-				r.log.Errorf("address watch: %v", err)
+				r.log.Errorf("network watch: %v", err)
 				return
 			}
 			ts := time.Now().UnixMilli()
+			w.mu.Lock()
 			for i := range addrs {
 				action := "add"
 				if addrs[i].Deleted {
 					action = "del"
 				}
 				w.seq++
-				w.add(addrRow(ts, action, w.seq, &addrs[i]))
+				w.addrs = append(w.addrs, addrRow(ts, action, w.seq, &addrs[i]))
+			}
+			for i := range routing {
+				action := "add"
+				if routing[i].Type == rtnl.RTMDelRoute || routing[i].Type == rtnl.RTMDelRule {
+					action = "del"
+				}
+				w.seq++
+				w.routing = append(w.routing, routingRow(ts, action, w.seq, &routing[i]))
+			}
+			small := w.routes <= routeRedumpMax
+			w.mu.Unlock()
+			if len(routing) > 0 && small && redump.IsZero() {
+				redump = time.Now().Add(time.Second)
+				if earliest := lastRouting.Add(routeRedumpMS * time.Millisecond); earliest.After(redump) {
+					redump = earliest
+				}
 			}
 		}
 	}()

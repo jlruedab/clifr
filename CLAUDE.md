@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -160,6 +160,10 @@ wait for the user's go-ahead.
   at start, every `store.NetSnapshotMS` (1 h) and after ENOBUFS (`seq` = dump order); `add`/`del`
   rows from RTM_NEWADDR/DELADDR notifications at receive time (`seq` orders one ms). A moment =
   the last snapshot before it plus the changes after (`query.AddrsAt`); lifetimes counted down.
+- `routing` (schema 5): routes and rules as raw rtnetlink messages (`msg`, parsed when printed:
+  `query/iproute.go`, `iprule.go`), `kind` route|rule, `key` (`rtnl.RouteKey`/`RuleKey`) for
+  changes; same present/add/del scheme as `addrs`, plus a re-dump ~1 s after changes (at most
+  every 10 s, not above 50,000 routes) so the kernel's order is recorded.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).

@@ -609,3 +609,13 @@ func addrOf(a *store.AddrRow) addrRow {
 		Broadcast: a.Broadcast, Anycast: a.Anycast, Multicast: a.Multicast, Label: a.Label, Metric: a.Metric,
 		Proto: a.Proto, Valid: a.Valid, Preferred: a.Preferred}
 }
+
+type routingRow struct {
+	TS     int64  `parquet:"ts"`
+	Kind   string `parquet:"kind,dict"`
+	Action string `parquet:"action,dict"`
+	Key    string `parquet:"key"`
+	Seq    int32  `parquet:"seq"`
+	Family int32  `parquet:"family"`
+	Msg    []byte `parquet:"msg"`
+}

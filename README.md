@@ -230,6 +230,8 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "netstat -s"
     clifr --at "02:45" "ip -s -d link"
     clifr --at "02:45" "ip -o addr"
+    clifr --at "02:45" "ip route show table all"
+    clifr --at "02:45" "ip -6 rule list"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -338,6 +340,16 @@ chooses one; a line on stderr says when a style other than current is used.
   every hour and after lost notifications, so a change is placed at the
   moment it happened, not at the next sample. With `-6` the interface lines
   are the kernel's IPv6 view, as iproute2 prints them.
+- `ip [-4|-6] [-d] route [show] [table ID|all]` and `ip [-4|-6] rule
+  [list]`: the routes and policy rules at T, in the kernel's order, as
+  iproute2 prints them (types, gateways, tables, protocols, scopes, metrics,
+  flags, route metrics, multipath nexthops; expiring routes counted down).
+  clifrd keeps each route's and rule's netlink message as the kernel sent
+  it, records every change as it is announced, and dumps the tables again
+  about a second after changes (at most every 10 s; not above 50,000 routes)
+  so the order is right within seconds. Table names other than local, main
+  and default print as numbers (a host's /etc/iproute2/rt_tables is not
+  recorded); MPLS and other encapsulations are recorded but not printed.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

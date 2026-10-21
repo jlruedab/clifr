@@ -192,7 +192,7 @@ func (l *loader) load(table string) error {
 			err := l.loadTransitions(empty, from, to)
 			l.debug(table, t0)
 			return err
-		case "addrs":
+		case "addrs", "routing":
 			// A snapshot of every address is written every NetSnapshotMS.
 			first := from - store.NetSnapshotMS - 60_000
 			files = l.filesIn(table, first, to)

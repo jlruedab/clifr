@@ -25,6 +25,10 @@ func init() {
 	ignoredFields["ip -s -d link"] = "each interface type's own parameters (bridge, bond, vlan, ...: not reconstructed); counters that moved within 1% or 100 count as churn-changed"
 	ignoredFields["ip -d address"] = "each interface type's own parameters; numbers that moved within 1% or 100 count as churn-changed"
 	ignoredFields["ip -o addr"] = "none; lifetimes that counted down by up to 5 s count as churn-changed"
+	ignoredFields["ip route show table all"] = "none; an expiring route's time left within 5 s"
+	ignoredFields["ip -6 route show table all"] = ignoredFields["ip route show table all"]
+	ignoredFields["ip -4 rule list"] = "none"
+	ignoredFields["ip -6 rule list"] = "none"
 	ignoredFields["netstat -s"] = "none; counters that moved within 1% or 10 count as churn-changed"
 	ignoredFields["netstat -s -6"] = ignoredFields["netstat -s"]
 	ignoredFields["nstat -zas"] = "the rate column (nstat's own history); values that moved within 1% or 10 count as churn-changed"
@@ -1041,6 +1045,101 @@ func compareIPAddrOneLine(db *store.DB, snap snapshot) (Result, error) {
 		if _, ok := real[k]; !ok {
 			res.Extra++
 			res.example("%s extra %s", snap.cmd, k)
+		}
+	}
+	return res, nil
+}
+
+// ---- ip route show table all, ip rule list ----
+
+var expiresRe = regexp.MustCompile(`expires (\d+)sec`)
+
+// compareIPRouting compares routes or rules line by line (an expiring
+// route's time left within 5 s) and in order.
+func compareIPRouting(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	kind, family := "route", 0
+	if strings.Contains(snap.cmd, " rule") {
+		kind, family = "rule", 2
+	}
+	if strings.Contains(snap.cmd, "-6") {
+		family = 10
+	}
+	rows, err := query.RoutingAt(db, snap.ts, kind)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	names := map[int]string{}
+	if links, _, err := query.LinksAt(db, snap.ts); err == nil {
+		for _, l := range links {
+			names[l.Index] = l.Name
+		}
+	}
+	text := render(func(sb *strings.Builder) {
+		if kind == "route" {
+			query.PrintIPRoute(sb, rows, query.IPRouteOptions{Family: family}, func(i int) string {
+				if n, ok := names[i]; ok {
+					return n
+				}
+				return fmt.Sprintf("if%d", i)
+			}, snap.ts)
+		} else {
+			query.PrintIPRule(sb, rows, family, false)
+		}
+	})
+	index := func(out string) (map[string]int, map[string]string) {
+		at, line := map[string]int{}, map[string]string{}
+		for i, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if l = strings.TrimRight(l, " "); l == "" {
+				continue
+			}
+			k := expiresRe.ReplaceAllString(l, "expires N")
+			for n := 2; ; n++ { // the same line twice: keep both
+				if _, dup := at[k]; !dup {
+					break
+				}
+				k = fmt.Sprintf("%s #%d", expiresRe.ReplaceAllString(l, "expires N"), n)
+			}
+			at[k], line[k] = i, l
+		}
+		return at, line
+	}
+	ra, rl := index(snap.output)
+	xa, xl := index(text)
+	res.Real, res.Recon = len(ra), len(xa)
+	var common []string
+	for k, r := range rl {
+		x, ok := xl[k]
+		if !ok {
+			res.Missing++
+			res.example("%s missing %q", snap.cmd, r)
+			continue
+		}
+		res.Matched++
+		common = append(common, k)
+		rm, xm := expiresRe.FindStringSubmatch(r), expiresRe.FindStringSubmatch(x)
+		close := rm == nil || near(rm[1], xm[1], 0, 5)
+		res.compare(snap.cmd, []fieldPair{{"line", r, x}}, func() bool { return close })
+	}
+	for k, x := range xl {
+		if _, ok := rl[k]; !ok {
+			res.Extra++
+			res.example("%s extra %q", snap.cmd, x)
+		}
+	}
+	// The order of the lines both have.
+	sortBy := func(pos map[string]int) []string {
+		s := append([]string(nil), common...)
+		sort.Slice(s, func(i, j int) bool { return pos[s[i]] < pos[s[j]] })
+		return s
+	}
+	ro, xo := sortBy(ra), sortBy(xa)
+	for i := range ro {
+		if ro[i] != xo[i] {
+			res.FieldDiffs["order"]++
+			res.example("%s order: real %q, clifr %q at place %d", snap.cmd, rl[ro[i]], xl[xo[i]], i+1)
+			break
 		}
 	}
 	return res, nil

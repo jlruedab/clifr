@@ -191,7 +191,9 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   `ip -s -d link` (rtnetlink; done 2026-10-21 without each interface type's
   own parameters, the user's choice; their raw attributes are recorded);
   `ip -o addr`, `ip -d address` (done 2026-10-21: address changes from
-  rtnetlink notifications, hourly snapshots); `ip addr`, `ip route [-6]`,
+  rtnetlink notifications, hourly snapshots); `ip route show table all`
+  (`-6`), `ip rule list` (`-4`/`-6`) (done 2026-10-21: raw messages, changes
+  and a re-dump after them); `ip addr`, `ip route [-6]`,
   `ip rule` (netlink notifications, list at start then changes); `dmesg [-T]`
   (/dev/kmsg; the user decided 2026-10-21: record it, relax the unit's
   `ProtectKernelLogs`, apply the `--redact` patterns to the messages);

@@ -418,7 +418,8 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	r.sampleSystem(ts, &b) // first: its counters belong to ts
 	nev := r.applyEvents(ts, &b)
 	if r.net != nil {
-		b.Addrs = append(b.Addrs, r.net.take()...)
+		addrs, routing := r.net.take()
+		b.Addrs, b.Routing = append(b.Addrs, addrs...), append(b.Routing, routing...)
 	}
 	if r.mounts != nil {
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
