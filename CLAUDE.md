@@ -240,7 +240,11 @@ v2:
    single runs at the busy load 282 / 330 MiB avg / max with 256M, 326 / 379 with 384M
    (429 / 488 in batch 1133); 348 MiB max with 100,000 connections (561). Rerun after phase 3
    (2026-10-19, busy-, scaling-, report-20261019-1620): 1.84% of one core, 285 / 332 MiB at the
-   busy load, all 15 scaling points within budget, no measurable pgbench impact.
+   busy load, all 15 scaling points within budget, no measurable pgbench impact. Rerun after
+   phase 8 step 2 (2026-10-22, busy-, scaling-, report-20261021-2027): 1.86% of one core,
+   285 / 323 MiB, all 15 scaling points within budget; pgbench latency +1 µs average, +2 µs
+   p99 (1–2%), now measurable because the no-recorder runs were steadier (±0.000 ms against
+   ±0.008): say "about 1 µs (1–2%) added latency", not "no measurable impact".
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
    mpstat|iostat`; `clifr verify` compares them. No user count for `uptime`. About 0.2 ms of

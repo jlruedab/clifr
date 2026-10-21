@@ -200,7 +200,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   2026-10-21: schema 6 `kmsg`, CAP_SYSLOG in the unit);
   `systemctl list-units [--all|--failed]` (D-Bus unit signals; the user
   approved `github.com/godbus/dbus/v5` on 2026-10-21; done 2026-10-21: schema 7
-  `units`, private socket, signals then a ListUnits diff). Step 2 is complete.
+  `units`, private socket, signals then a ListUnits diff). Step 2 is complete;
+  benchmark batch 20261021-2027: cost unchanged (1.86% of one core, 285 / 323 MiB).
 - **Step 3, process fields** (benchmark after): policy, real-time priority,
   faults, context switches (stat/status, already read), RssFile+RssShmem
   (top SHR), wchan, SELinux context, cgroup path → exact `top`, `ps alxwww`,
