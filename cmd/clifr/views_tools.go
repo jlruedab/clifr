@@ -12,7 +12,7 @@ import (
 // The range views (--samples, --changes, diff) of the commands that show a
 // moment: their snapshot, row key and what counts as a change.
 
-func psView(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) view[query.PSRow] {
+func psView(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat, forest bool) view[query.PSRow] {
 	return view[query.PSRow]{
 		name: "ps",
 		at: func(t int64) ([]query.PSRow, func(*query.PSRow) rowMeta, error) {
@@ -38,6 +38,9 @@ func psView(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) view[query
 			return a.Command == b.Command && a.User == b.User && a.PPID == b.PPID && a.TTY == b.TTY
 		},
 		print: func(w io.Writer, rows []query.PSRow) {
+			if forest {
+				rows = query.PSForest(rows)
+			}
 			if f == nil {
 				query.PrintPS(w, rows)
 			} else {

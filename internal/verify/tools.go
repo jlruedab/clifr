@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -19,6 +20,8 @@ func init() {
 	ignoredFields["netstat -tanp"] = "none"
 	ignoredFields["df"] = "none; sizes match within 1% or 1 MiB, Use% within 1"
 	ignoredFields["mount"] = "none"
+	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and its place in the tree"
+	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
 		"SHR (not recorded), the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
 		"the work-item suffix of kernel worker names; task counts within 3, memory within 2%"
@@ -539,6 +542,132 @@ func compareTop(db *store.DB, snap snapshot) (Result, error) {
 		} else {
 			res.Extra++
 			res.example("top extra pid %d: %s", pid, x.cmd)
+		}
+	}
+	return res, nil
+}
+
+// ---- pstree -lpT and ps auxfwww: the tree ----
+
+var pstreeTok = regexp.MustCompile(`([^\s(]|\([^\d])*\((\d+)\)`)
+
+// parsePstree reads each process's parent from pstree -p's layout: a child's
+// name starts 3 columns ("---", "-+-", " |-", " `-") after its parent's ends,
+// and the parent is the latest process ending in that column.
+func parsePstree(out string) (parent map[int]int, order []int) {
+	parent = map[int]int{}
+	endAt := map[int]int{} // column after a name -> its pid
+	for _, l := range strings.Split(out, "\n") {
+		for _, m := range pstreeTok.FindAllStringSubmatchIndex(l, -1) {
+			start, end := m[0], m[1]
+			for start < end && strings.ContainsRune("-+|` ", rune(l[start])) {
+				start++
+			}
+			pid, _ := strconv.Atoi(l[m[4]:m[5]])
+			if p, ok := endAt[start-3]; ok && start > 0 {
+				parent[pid] = p
+			} else {
+				parent[pid] = 0
+			}
+			endAt[end] = pid
+			order = append(order, pid)
+		}
+	}
+	return parent, order
+}
+
+var forestPrefix = regexp.MustCompile(`^(?: \\_ | \|  |    )*`)
+
+// parseForest reads ps auxf: each PID's tree prefix, kernel worker names
+// cut to their base (the prefix is the part of COMMAND before the name).
+func parseForest(out string) map[int]string {
+	m := map[int]string{}
+	for _, l := range strings.Split(out, "\n")[1:] {
+		f := strings.Fields(l)
+		if len(f) < 11 {
+			continue
+		}
+		pid, err := strconv.Atoi(f[1])
+		if err != nil {
+			continue
+		}
+		cmd := l
+		for i := 0; i < 10; i++ {
+			cmd = strings.TrimLeft(cmd, " ")
+			cmd = cmd[strings.IndexByte(cmd, ' ')+1:]
+		}
+		m[pid] = forestPrefix.FindString(cmd)
+	}
+	return m
+}
+
+// compareTree compares pstree -lpT (each process's parent and the order of
+// the processes) or ps auxfwww (each process's tree prefix).
+func compareTree(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, s, err := query.PSAt(db, snap.ts)
+	if err != nil {
+		return res, err
+	}
+	next := nextSample(db, s, false)
+	real, rec := map[int]string{}, map[int]string{}
+	if snap.cmd == "pstree -lpT" {
+		lines, _ := query.Pstree(rows, query.PstreeFormat{Root: 1, Long: true})
+		rp, ro := parsePstree(snap.output)
+		cp, co := parsePstree(strings.Join(lines, "\n"))
+		// The order: a process's position among the processes both list.
+		rank := func(order []int, other map[int]int) map[int]int {
+			m, n := map[int]int{}, 0
+			for _, pid := range order {
+				if _, ok := other[pid]; ok && !snap.ignore[pid] && !snap.ignore[other[pid]] {
+					m[pid] = n
+					n++
+				}
+			}
+			return m
+		}
+		rr, cr := rank(ro, cp), rank(co, rp)
+		for pid, p := range rp {
+			real[pid] = fmt.Sprintf("parent %d, place %d", p, rr[pid])
+		}
+		for pid, p := range cp {
+			rec[pid] = fmt.Sprintf("parent %d, place %d", p, cr[pid])
+		}
+	} else {
+		real = parseForest(snap.output)
+		rec = parseForest(render(func(sb *strings.Builder) { query.PrintPS(sb, query.PSForest(rows)) }))
+	}
+	for pid := range snap.ignore {
+		if _, ok := real[pid]; ok {
+			res.Ignored["recorder/tool processes"]++
+		}
+		delete(real, pid)
+		delete(rec, pid)
+	}
+	res.Real, res.Recon = len(real), len(rec)
+	for pid, r := range real {
+		x, ok := rec[pid]
+		if !ok {
+			if procChurn(db, pid, s, next) {
+				res.ChurnMissing++
+			} else {
+				res.Missing++
+				res.example("%s missing pid %d", snap.cmd, pid)
+			}
+			continue
+		}
+		res.Matched++
+		res.compare(snap.cmd+" pid "+strconv.Itoa(pid), []fieldPair{{"TREE", r, x}},
+			func() bool { return false })
+	}
+	for pid := range rec {
+		if _, ok := real[pid]; !ok {
+			if procChurn(db, pid, s, next) {
+				res.ChurnExtra++
+			} else {
+				res.Extra++
+				res.example("%s extra pid %d", snap.cmd, pid)
+			}
 		}
 	}
 	return res, nil

@@ -94,6 +94,7 @@ func addSystemTools() {
 			})
 		},
 	})
+	addTool(dateTool())
 }
 
 // prepareSys reads INTERVAL [COUNT], chooses the spans and runs print.

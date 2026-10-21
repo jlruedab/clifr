@@ -53,6 +53,7 @@ func addTool(t *tool) {
 func init() {
 	addTool(psTool())
 	addTool(topTool())
+	addTool(pstreeTool())
 	addTool(&tool{
 		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER]",
 		about: "TCP and UDP sockets",

@@ -18,8 +18,8 @@ Usage:
   clifr help COMMAND
 
 Supported commands:
-  ps, top, lsof, ss, netstat, vmstat, mpstat, iostat, free, uptime, df,
-  mount
+  ps, top, pstree, lsof, ss, netstat, vmstat, mpstat, iostat, free, uptime,
+  df, mount, date
   events, life, oom, mounts (clifr only: timeline, process lifetimes, OOM
   kills, mount table)
   Run "clifr help COMMAND" to see which options are supported for recorded

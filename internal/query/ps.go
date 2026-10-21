@@ -44,6 +44,7 @@ type PSRow struct {
 	permille  uint64 // %CPU in tenths
 	nowMS     int64  // the sample's time
 	startDisp int64  // start time as ps computes it (btime in whole seconds)
+	forest    string // ps f: the tree prefix of COMMAND (PSForest)
 }
 
 type procAt struct {
@@ -223,7 +224,7 @@ func PrintPS(w io.Writer, rows []PSRow) {
 		"USER", "PID", "%CPU", "%MEM", "VSZ", "RSS", "TTY", "STAT", "START", "TIME", "COMMAND")
 	for _, r := range rows {
 		fmt.Fprintf(w, "%-8s %7d %4s %4s %6d %5d %-8s %-4s %5s %6s %s\n",
-			r.User, r.PID, r.CPU, r.Mem, r.VSZ, r.RSS, r.TTY, r.Stat, r.Start, r.Time, r.Command)
+			r.User, r.PID, r.CPU, r.Mem, r.VSZ, r.RSS, r.TTY, r.Stat, r.Start, r.Time, r.forest+r.Command)
 	}
 }
 

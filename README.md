@@ -218,7 +218,10 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "ps -ef"
     clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"
     clifr --since yesterday --until today "ps aux"
+    clifr --at "02:45" "ps auxfwww"
+    clifr --at "02:45" "pstree -lp"
     clifr --at "02:45" "top -b -n 1"
+    clifr --at "02:45" "date --utc"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
     clifr --at "13:28" "ss -ltn"
@@ -257,7 +260,14 @@ A command can also be given unquoted after clifr's options
   c, ni, nlwp, s, stat, lstart, start, stime, etime, etimes, time, tty;
   `KEY:WIDTH`, `KEY=HEADING`), with procps's headings, widths and overflow.
   Over a range (aux or -e): one row per command with first and last seen,
-  runs, peak %CPU and RSS.
+  runs, peak %CPU and RSS. `ps auxf` draws the process tree in COMMAND as
+  procps does (init's children at the top level, kthreadd's tree first).
+- `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
+  recorded, so the tree is the one `-T` prints (`-p` is required: without it
+  pstree merges identical subtrees). Over a range: one tree per sample with
+  `--samples`.
+- `date [-u|--utc] [-R]`: the moment asked for, in GNU date's C-locale
+  format.
 - `top -b [-n 1] [-c] [-i] [-w COLUMNS] [-o FIELD] [-p PIDS] [-u USER]`:
   procps-ng 4's batch output. The summary comes from the system sample at or
   before T, the processes from the process sample at or before it, with
@@ -493,7 +503,9 @@ on the test machine): 2,102 of 2,102 process rows matched, 83.7% exact in
 USER, PR, NI, VIRT, RES, S, TIME+ and COMMAND. PR differed in 304 rows, all
 real-time or other non-default scheduling (`rt`, -51, -2: not recorded);
 RES and TIME+ in about 25 each (top ran about 350 ms after the sample);
-the task counts and memory lines matched.
+the task counts and memory lines matched. In a second such recording
+`pstree -lpT` placed 836 of 836 processes under the right parent in the
+right order, and `ps auxfwww` drew the same tree prefix for 2,094 of 2,094.
 
 Against the real tools at the busy load (2026-10-13,
 `accuracy-busy-20261013-2044`): 20 minutes, the real commands captured at 10

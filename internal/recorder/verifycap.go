@@ -26,6 +26,8 @@ var verifyCommands = [][]string{
 	{"mount"},
 	{"ps", "aux"},
 	{"top", "-b", "-n", "1", "-w", "512"}, // wide: command names are not cut
+	{"pstree", "-lpT"},                    // psmisc; skipped where it is not installed
+	{"ps", "auxfwww"},
 	{"ps", "-ef"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed

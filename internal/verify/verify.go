@@ -131,6 +131,8 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = comparePSEF(db, s)
 		case "top -b -n 1 -w 512":
 			res, err = compareTop(db, s)
+		case "pstree -lpT", "ps auxfwww":
+			res, err = compareTree(db, s)
 		case "netstat -tanp":
 			if !events {
 				continue // compared only with TCP from events
@@ -766,8 +768,8 @@ func printResult(w io.Writer, r Result, examples bool) {
 // compared lists the commands in report order; laterCommands are those added
 // after older recordings were made, listed only when present.
 var (
-	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512"}
-	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512")
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww")
 )
 
 func Print(w io.Writer, rep *Report, verbose bool) {

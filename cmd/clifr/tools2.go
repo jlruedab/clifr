@@ -11,7 +11,7 @@ import (
 	"clifr/internal/query"
 )
 
-var bsdPS = regexp.MustCompile(`^[auxw]+$`)
+var bsdPS = regexp.MustCompile(`^[auxwf]+$`)
 
 // splitList splits ps/lsof lists: "1,2 3" and repeated options.
 func splitList(vals []string) []string {
@@ -24,7 +24,7 @@ func splitList(vals []string) []string {
 
 func psTool() *tool {
 	return &tool{
-		name: "ps", diff: true, synopsis: "aux | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
+		name: "ps", diff: true, synopsis: "aux[f] | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
 		about: "processes and their CPU, memory, state and command line",
 		opts: []opt{
 			{short: 'e', help: "every process"},
@@ -37,7 +37,8 @@ func psTool() *tool {
 		},
 		window: true,
 		notes: []string{
-			"BSD form: aux (w, ww accepted: lines are never cut). Without -f or -o: PID TTY TIME CMD.",
+			"BSD form: aux (w, ww accepted: lines are never cut; f: the process tree in COMMAND, as procps",
+			"draws it). Without -f or -o: PID TTY TIME CMD.",
 			"--at: the processes alive at T with their values from the sample at or before T (sampled);",
 			"processes only seen through exec/exit events show \"-\" for sampled values.",
 			"--since: every process seen in the range, identical commands collapsed, with first/last",
@@ -54,9 +55,13 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 	if len(p.pos) > 0 {
 		if dash || len(p.pos) != 1 || !bsdPS.MatchString(p.pos[0]) || !strings.Contains(p.pos[0], "a") ||
 			!strings.Contains(p.pos[0], "u") || !strings.Contains(p.pos[0], "x") {
-			return nil, errors.New(`ps: the BSD form supported is "ps aux"; other forms use -e, -p, -u or -C (see: clifr help ps)`)
+			return nil, errors.New(`ps: the BSD form supported is "ps aux" (with f for the tree); other forms use -e, -p, -u or -C (see: clifr help ps)`)
 		}
-		return func() error { return runPS(c, nil, nil) }, nil
+		forest := strings.Contains(p.pos[0], "f")
+		if forest && c.w.IsRange() && !c.g.samples && !c.g.changes {
+			return nil, errors.New("ps: f (the tree) needs --at, --samples or --changes, not the range summary")
+		}
+		return func() error { return runPS(c, nil, nil, forest) }, nil
 	}
 	all := p.has("e") || p.has("A")
 	pids, users, names := splitList(p.all["p"]), splitList(p.all["u"]), splitList(p.all["C"])
@@ -105,12 +110,12 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 			return false
 		}
 	}
-	return func() error { return runPS(c, sel, f) }, nil
+	return func() error { return runPS(c, sel, f, false) }, nil
 }
 
 // runPS prints ps at a moment (aux when f is nil) or the range summary.
-func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
-	if ok, err := rangeView(c, psView(c, sel, f)); ok {
+func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat, forest bool) error {
+	if ok, err := rangeView(c, psView(c, sel, f, forest)); ok {
 		return err
 	}
 	db, w := c.db, c.w
@@ -137,6 +142,9 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat) error {
 			}
 		}
 		rows = kept
+	}
+	if forest {
+		rows = query.PSForest(rows)
 	}
 	c.header("ps at %s, reconstructed from sample at %s (%d processes)", query.FormatMS(w.At), query.FormatMS(s), len(rows))
 	// OOM kills soon after T are not in the sample; point them out.

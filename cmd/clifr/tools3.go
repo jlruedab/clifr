@@ -1,0 +1,148 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"time"
+
+	"clifr/internal/query"
+)
+
+func pstreeTool() *tool {
+	return &tool{
+		name: "pstree", synopsis: "-p [-l] [-T] [-n] [-A|-U] [PID]",
+		about: "the process tree, as psmisc pstree prints it",
+		opts: []opt{
+			{short: 'p', help: "show PIDs (required: without it pstree merges identical subtrees, not reconstructed)"},
+			{short: 'l', help: "long lines: none is cut (otherwise at 132 columns, ending in +)"},
+			{short: 'T', help: "hide threads (always: threads are not recorded)"},
+			{short: 'n', help: "sort children by PID instead of by name"},
+			{short: 'A', help: "ASCII line drawing (the default)"},
+			{short: 'U', help: "UTF-8 line drawing"},
+		},
+		window: true,
+		notes: []string{
+			"--at: the processes alive at T (as ps aux shows them), from PID 1 or the PID given.",
+			"Threads are not recorded: the tree is pstree's with -T, without {thread}(TID) entries.",
+			"--since: one tree per sample with --samples.",
+		},
+		examples: []string{`clifr --at "02:45" "pstree -lp"`, `clifr --at "02:45" "pstree -lpT 4242"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if !p.has("p") {
+				return nil, errors.New("pstree: add -p: without it pstree merges identical subtrees (N*[...]), which clifr does not reconstruct")
+			}
+			if p.has("A") && p.has("U") {
+				return nil, errors.New("pstree: use -A or -U, not both")
+			}
+			f := query.PstreeFormat{Root: 1, SortPID: p.has("n"), Unicode: p.has("U"), Long: p.has("l")}
+			switch {
+			case len(p.pos) > 1:
+				return nil, fmt.Errorf("pstree: unexpected argument %q", p.pos[1])
+			case len(p.pos) == 1:
+				n, err := strconv.Atoi(p.pos[0])
+				if err != nil || n <= 0 {
+					return nil, fmt.Errorf("pstree: bad PID %q (user names are not supported)", p.pos[0])
+				}
+				f.Root = n
+			}
+			if c.g.changes {
+				return nil, errors.New("pstree: --changes is not supported; use --samples, or ps aux f with --changes")
+			}
+			if c.w.IsRange() && !c.g.samples {
+				return nil, errors.New("pstree: a range needs --samples (one tree per sample)")
+			}
+			if !p.has("T") {
+				c.header("pstree: threads are not recorded; shown as with -T")
+			}
+			return func() error {
+				at := func(t int64) ([]pstreeLine, func(*pstreeLine) rowMeta, error) {
+					rows, s, err := query.PSAt(c.db, t)
+					if err != nil {
+						return nil, nil, err
+					}
+					lines, ok := query.Pstree(rows, f)
+					if !ok {
+						return nil, nil, fmt.Errorf("pstree: no process %d at %s", f.Root, query.FormatMS(t))
+					}
+					out := make([]pstreeLine, len(lines))
+					for i, l := range lines {
+						out[i] = pstreeLine{Line: l}
+					}
+					return out, func(*pstreeLine) rowMeta { return rowMeta{TS: t, SampleTS: s} }, nil
+				}
+				v := view[pstreeLine]{name: "pstree", at: at,
+					key:  func(l *pstreeLine) string { return l.Line },
+					same: func(a, b *pstreeLine) bool { return true },
+					print: func(w io.Writer, lines []pstreeLine) {
+						for _, l := range lines {
+							fmt.Fprintln(w, l.Line)
+						}
+					}}
+				if ok, err := rangeView(c, v); ok {
+					return err
+				}
+				lines, meta, err := at(c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit(lines, func(i int) rowMeta { return meta(&lines[i]) }, func(w io.Writer) { v.print(w, lines) })
+			}, nil
+		},
+	}
+}
+
+// pstreeLine is one line of the tree (--json: one object per line).
+type pstreeLine struct {
+	Line string `json:"line"`
+}
+
+func dateTool() *tool {
+	return &tool{
+		name: "date", synopsis: "[-u|--utc|--universal] [-R]",
+		about: "the moment asked for, as date prints it",
+		opts: []opt{
+			{short: 'u', long: "utc", help: "in UTC"},
+			{long: "universal", help: "in UTC (the same as -u)"},
+			{short: 'R', long: "rfc-email", help: "RFC 5322 format: Wed, 21 Oct 2026 14:06:24 +1030"},
+		},
+		window: true,
+		notes: []string{
+			"--at T prints T itself (exact), in GNU date's C-locale format, in the time zone of --tz",
+			"(default: local time) or UTC with -u.",
+		},
+		examples: []string{`clifr --at "02:45" date`, `clifr --at "02:45" "date --utc"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("date: unexpected argument %q (+FORMAT and setting the date are not supported)", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("date: needs --at")
+			}
+			utc := p.has("utc") || p.has("universal")
+			return func() error {
+				t := time.UnixMilli(c.w.At)
+				if utc {
+					t = t.UTC()
+				}
+				s := dateText(t, p.has("rfc-email"))
+				return c.emit(dateRow{Date: s}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { fmt.Fprintln(w, s) })
+			}, nil
+		},
+	}
+}
+
+type dateRow struct {
+	Date string `json:"date"`
+}
+
+// dateText is GNU date's output in the C locale ("Wed Oct 21 14:06:24 ACDT
+// 2026", the day padded with a space), or with rfc its -R format.
+func dateText(t time.Time, rfc bool) string {
+	if rfc {
+		return t.Format("Mon, 02 Jan 2006 15:04:05 -0700")
+	}
+	return t.Format("Mon Jan _2 15:04:05 MST 2006")
+}

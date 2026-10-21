@@ -106,3 +106,24 @@ func TestPagerJumpMidnight(t *testing.T) {
 		t.Errorf("g 00:01 on the 23:59 page: page %d, want 3", p.cur)
 	}
 }
+
+func TestDateText(t *testing.T) {
+	adl, err := time.LoadLocation("Australia/Adelaide")
+	if err != nil {
+		t.Skip(err)
+	}
+	ts := time.Date(2026, 10, 1, 9, 5, 7, 0, adl)
+	for _, c := range []struct {
+		t    time.Time
+		rfc  bool
+		want string
+	}{
+		{ts, false, "Thu Oct  1 09:05:07 ACST 2026"},
+		{ts.UTC(), false, "Wed Sep 30 23:35:07 UTC 2026"},
+		{ts, true, "Thu, 01 Oct 2026 09:05:07 +0930"},
+	} {
+		if got := dateText(c.t, c.rfc); got != c.want {
+			t.Errorf("got %q, want %q", got, c.want)
+		}
+	}
+}
