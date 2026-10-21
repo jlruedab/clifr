@@ -229,6 +229,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "nstat -zas"
     clifr --at "02:45" "netstat -s"
     clifr --at "02:45" "ip -s -d link"
+    clifr --at "02:45" "ip -o addr"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -330,6 +331,13 @@ chooses one; a line on stderr says when a style other than current is used.
   type (`-d` prints "bridge", "bond", "vlan", ... without them), XDP
   programs, VF information. Checked: every interface 100% here (iproute2
   6.19) and in the VMs (6.2, 6.17, 5.15; only lo and one NIC there).
+- `ip [-o] [-d] [-4|-6] address [show] [[dev] NAME]`: the interfaces as above
+  (without what only `ip link` shows) and their addresses at T, lifetimes
+  counted down to T. clifrd follows address changes as the kernel announces
+  them (rtnetlink notifications) and writes all addresses at its start,
+  every hour and after lost notifications, so a change is placed at the
+  moment it happened, not at the next sample. With `-6` the interface lines
+  are the kernel's IPv6 view, as iproute2 prints them.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

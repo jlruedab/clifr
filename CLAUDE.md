@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -156,6 +156,10 @@ wait for the user's go-ahead.
   it), the raw per-type data (`info_data`, `slave_data`: not printed yet) and rtnl_link_stats64;
   a row when anything changed, all every 5 min, `gone` = 1 when it went away. Not with
   `--proc-root` fixtures.
+- `addrs` (schema 5): interface addresses from rtnetlink (`recorder/netwatch.go`): `present` rows
+  at start, every `store.NetSnapshotMS` (1 h) and after ENOBUFS (`seq` = dump order); `add`/`del`
+  rows from RTM_NEWADDR/DELADDR notifications at receive time (`seq` orders one ms). A moment =
+  the last snapshot before it plus the changes after (`query.AddrsAt`); lifetimes counted down.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).

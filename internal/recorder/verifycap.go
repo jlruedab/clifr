@@ -27,6 +27,8 @@ var verifyCommands = [][]string{
 	{"netstat", "-s"}, // net-tools; skipped where it is not installed
 	{"netstat", "-s", "-6"},
 	{"ip", "-s", "-d", "link"},
+	{"ip", "-o", "addr"},
+	{"ip", "-d", "address"},
 	{"uname", "-a"},
 	{"df"},
 	{"df", "-al", "-x", "autofs"},

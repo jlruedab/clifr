@@ -207,6 +207,7 @@ type Store struct {
 	disks       []diskRow
 	netCounters []netCounterRow
 	links       []linkRow
+	ifAddrs     []addrRow
 	fs          []fsRow
 	trans       []tcpTransRow
 	keyframes   rowBuf[store.KeyframeRow]
@@ -233,7 +234,7 @@ type Store struct {
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
 	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
-	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "meta"}
+	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "addrs", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
 var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "fds_held", "tcp_conns"}
@@ -350,6 +351,9 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, d := range b.Disks {
 		s.disks = append(s.disks, diskOf(d))
+	}
+	for i := range b.Addrs {
+		s.ifAddrs = append(s.ifAddrs, addrOf(&b.Addrs[i]))
 	}
 	for i := range b.Links {
 		s.links = append(s.links, linkOf(&b.Links[i]))
@@ -486,6 +490,7 @@ func (s *Store) Flush() error {
 	part("fs_samples", len(s.fs), func(p string) error { return writeFile(p, s.fs) })
 	part("net_counters", len(s.netCounters), func(p string) error { return writeFile(p, s.netCounters) })
 	part("links", len(s.links), func(p string) error { return writeFile(p, s.links) })
+	part("addrs", len(s.ifAddrs), func(p string) error { return writeFile(p, s.ifAddrs) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
 	if err := errors.Join(errs...); err != nil {
 		return err // keep the buffers; the next flush retries
@@ -507,7 +512,7 @@ func (s *Store) Flush() error {
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
 	s.keyframes, s.reconcile, s.mounts = rowBuf[store.KeyframeRow]{}, nil, nil
-	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0]
+	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links, s.ifAddrs = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0], s.ifAddrs[:0]
 	s.conns.reset()
 	s.held.reset()
 	s.procs.reset()
@@ -822,7 +827,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow], "fs_samples": merge[fsRow],
-	"net_counters": merge[netCounterRow], "links": merge[linkRow], "meta": merge[metaRow],
+	"net_counters": merge[netCounterRow], "links": merge[linkRow], "addrs": merge[addrRow], "meta": merge[metaRow],
 }
 
 // merge streams the rows of parts into out (atomically replaced).
@@ -957,5 +962,6 @@ var emptyWriters = map[string]func(string) error{
 	"fs_samples":       func(p string) error { return writeFile[fsRow](p, nil) },
 	"net_counters":     func(p string) error { return writeFile[netCounterRow](p, nil) },
 	"links":            func(p string) error { return writeFile[linkRow](p, nil) },
+	"addrs":            func(p string) error { return writeFile[addrRow](p, nil) },
 	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },
 }

@@ -192,6 +192,11 @@ func (l *loader) load(table string) error {
 			err := l.loadTransitions(empty, from, to)
 			l.debug(table, t0)
 			return err
+		case "addrs":
+			// A snapshot of every address is written every NetSnapshotMS.
+			first := from - store.NetSnapshotMS - 60_000
+			files = l.filesIn(table, first, to)
+			where = fmt.Sprintf(` WHERE ts >= %d AND ts <= %d`, first, to)
 		case "net_counters", "links":
 			// Every counter is written at least every NetCountersFullMS.
 			first := from - store.NetCountersFullMS - 60_000

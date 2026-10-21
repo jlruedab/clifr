@@ -98,6 +98,7 @@ type Recorder struct {
 	fdWalks      uint64      // full fd walks so far
 	redact       Redactor
 	mounts       *mountWatch
+	net          *netWatch // interface addresses
 	fsUsage      fsUsage
 	lostReported int
 	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
@@ -268,6 +269,11 @@ func (r *Recorder) Run(ctx context.Context) error {
 		defer stop()
 		defer close(mountsDone)
 	}
+	netDone := make(chan struct{})
+	if stop := r.startNet(netDone); stop != nil {
+		defer stop()
+		defer close(netDone)
+	}
 	tcpDone := make(chan struct{})
 	if stop, err := r.startTCPMode(tcpDone); err != nil {
 		return err
@@ -411,6 +417,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	t0 := time.Now()
 	r.sampleSystem(ts, &b) // first: its counters belong to ts
 	nev := r.applyEvents(ts, &b)
+	if r.net != nil {
+		b.Addrs = append(b.Addrs, r.net.take()...)
+	}
 	if r.mounts != nil {
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
 		b.FSSamples = append(b.FSSamples, r.fsUsage.take()...)

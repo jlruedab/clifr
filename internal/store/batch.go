@@ -279,6 +279,27 @@ type LinkRow struct {
 	Stats                                 [25]int64 // rtnl_link_stats64, rx_packets .. rx_otherhost_dropped
 }
 
+// AddrRow is one interface address (rtnl.Addr): Action "present" for the
+// addresses of a snapshot (at a run's start, every NetSnapshotMS and after
+// lost notifications; Seq: their order), "add" for a new or changed one and
+// "del" for one removed, at the time the kernel announced it. Valid and
+// Preferred are the lifetimes left at TS, in seconds (0xffffffff: forever).
+type AddrRow struct {
+	TS                              int64
+	Action                          string
+	Seq                             int
+	Family, PrefixLen, Scope, Index int
+	Flags                           int64
+	Local, Address                  []byte
+	Broadcast, Anycast, Multicast   []byte
+	Label                           string
+	Metric, Proto, Valid, Preferred int64
+}
+
+// NetSnapshotMS: how often the addresses (later routes and rules) are
+// written whole between their change notifications.
+const NetSnapshotMS = 60 * 60 * 1000
+
 // NetCountersFullMS: how often every protocol counter is written, so a moment
 // needs only the rows of the 5 minutes before it.
 const NetCountersFullMS = 5 * 60 * 1000
@@ -368,6 +389,7 @@ type Batch struct {
 	Disks       []DiskSample
 	NetCounters []NetCounter
 	Links       []LinkRow
+	Addrs       []AddrRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -378,5 +400,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs)
 }

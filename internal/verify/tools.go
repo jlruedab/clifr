@@ -23,6 +23,8 @@ func init() {
 	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
 	ignoredFields["uname -a"] = "none"
 	ignoredFields["ip -s -d link"] = "each interface type's own parameters (bridge, bond, vlan, ...: not reconstructed); counters that moved within 1% or 100 count as churn-changed"
+	ignoredFields["ip -d address"] = "each interface type's own parameters; numbers that moved within 1% or 100 count as churn-changed"
+	ignoredFields["ip -o addr"] = "none; lifetimes that counted down by up to 5 s count as churn-changed"
 	ignoredFields["netstat -s"] = "none; counters that moved within 1% or 10 count as churn-changed"
 	ignoredFields["netstat -s -6"] = ignoredFields["netstat -s"]
 	ignoredFields["nstat -zas"] = "the rate column (nstat's own history); values that moved within 1% or 10 count as churn-changed"
@@ -926,6 +928,8 @@ func kindLine(l string) string {
 	return "    " + f[0]
 }
 
+// compareIPLink compares ip -s -d link or ip -d address interface by
+// interface.
 func compareIPLink(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
 	links, _, err := query.LinksAt(db, snap.ts)
@@ -933,9 +937,20 @@ func compareIPLink(db *store.DB, snap snapshot) (Result, error) {
 		res.example("%s: %v", snap.cmd, err)
 		return res, nil
 	}
+	var addrs []store.AddrRow
+	if snap.cmd == "ip -d address" {
+		if addrs, err = query.AddrsAt(db, snap.ts); err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+	}
 	real := parseIPLink(snap.output)
 	rec := parseIPLink(render(func(sb *strings.Builder) {
-		query.PrintIPLink(sb, links, query.IPLinkOptions{Stats: 1, Details: true})
+		if snap.cmd == "ip -d address" {
+			query.PrintIPAddr(sb, links, addrs, query.IPAddrOptions{Details: true})
+		} else {
+			query.PrintIPLink(sb, links, query.IPLinkOptions{Stats: 1, Details: true})
+		}
 	}))
 	res.Real, res.Recon = len(real), len(rec)
 	for name, rl := range real {
@@ -968,12 +983,64 @@ func compareIPLink(db *store.DB, snap snapshot) (Result, error) {
 				}
 			}
 		}
-		res.compare("ip link "+name, fields, func() bool { return close })
+		res.compare(snap.cmd+" "+name, fields, func() bool { return close })
 	}
 	for name := range rec {
 		if _, ok := real[name]; !ok {
 			res.Extra++
 			res.example("ip link extra %s", name)
+		}
+	}
+	return res, nil
+}
+
+// compareIPAddrOneLine compares ip -o addr line by line, keyed by interface,
+// family and address; lifetimes may have counted down a little.
+func compareIPAddrOneLine(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	links, _, err := query.LinksAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	addrs, err := query.AddrsAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	parse := func(out string) map[string]string {
+		m := map[string]string{}
+		for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if f := strings.Fields(l); len(f) >= 4 {
+				m[f[1]+" "+f[2]+" "+f[3]] = strings.TrimRight(l, " ")
+			}
+		}
+		return m
+	}
+	real := parse(snap.output)
+	rec := parse(render(func(sb *strings.Builder) { query.PrintIPAddr(sb, links, addrs, query.IPAddrOptions{OneLine: true}) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for k, r := range real {
+		x, ok := rec[k]
+		if !ok {
+			res.Missing++
+			res.example("%s missing %s", snap.cmd, k)
+			continue
+		}
+		res.Matched++
+		close := numRe.ReplaceAllString(r, "N") == numRe.ReplaceAllString(x, "N")
+		rn, xn := numRe.FindAllString(r, -1), numRe.FindAllString(x, -1)
+		for i := range rn {
+			if close && !near(rn[i], xn[i], 0, 5) {
+				close = false
+			}
+		}
+		res.compare(snap.cmd+" "+k, []fieldPair{{"line", r, x}}, func() bool { return close })
+	}
+	for k := range rec {
+		if _, ok := real[k]; !ok {
+			res.Extra++
+			res.example("%s extra %s", snap.cmd, k)
 		}
 	}
 	return res, nil

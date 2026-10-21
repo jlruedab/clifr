@@ -64,10 +64,16 @@ func LinksAt(db *store.DB, t int64) ([]store.LinkRow, int64, error) {
 }
 
 // IPLinkOptions: ip's -s (count), -d, and the device asked for ("" all).
+// Addr: the link part of ip address, which leaves out what only ip link
+// shows (mode, addrgenmode, statistics).
 type IPLinkOptions struct {
 	Stats   int
 	Details bool
 	Dev     string
+	Addr    bool
+	family  bool                           // ip -4/-6 address: no link/ line unless -d
+	inet6   bool                           // ip -6 address: the kernel's IPv6 view of a link (name, flags, mtu, state, address)
+	after   func(io.Writer, store.LinkRow) // ip address: the link's addresses
 }
 
 // IFF_* flags in the order iproute2 prints them.
@@ -163,6 +169,32 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 		if l.MTU >= 0 {
 			fmt.Fprintf(&b, "mtu %d ", l.MTU)
 		}
+		if o.inet6 {
+			// The AF_INET6 link dump has no qdisc, master, mode, group, queue
+			// length (ip asks with an ioctl) or broadcast address.
+			if l.OperState >= 0 && int(l.OperState) < len(operStates) {
+				fmt.Fprintf(&b, "state %s ", operStates[l.OperState])
+			}
+			if l.TxQLen > 0 {
+				fmt.Fprintf(&b, "qlen %d", l.TxQLen)
+			}
+			if o.Details {
+				t, ok := arphrd[l.Type]
+				if !ok {
+					t = fmt.Sprintf("[%d]", l.Type)
+				}
+				fmt.Fprintf(&b, "\n    link/%s ", t)
+				if len(l.Address) > 0 {
+					b.WriteString(llAddr(l.Address, l.Type))
+				}
+			}
+			b.WriteString("\n")
+			io.WriteString(w, b.String())
+			if o.after != nil {
+				o.after(w, l)
+			}
+			continue
+		}
 		if l.Qdisc != "" {
 			fmt.Fprintf(&b, "qdisc %s ", l.Qdisc)
 		}
@@ -180,7 +212,7 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 				fmt.Fprintf(&b, "state %#x ", l.OperState)
 			}
 		}
-		if l.LinkMode >= 0 {
+		if l.LinkMode >= 0 && !o.Addr {
 			if m := []string{"DEFAULT", "DORMANT"}; int(l.LinkMode) < len(m) {
 				fmt.Fprintf(&b, "mode %s ", m[l.LinkMode])
 			} else {
@@ -197,24 +229,26 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 		if l.TxQLen > 0 {
 			fmt.Fprintf(&b, "qlen %d", l.TxQLen)
 		}
-		t, ok := arphrd[l.Type]
-		if !ok {
-			t = fmt.Sprintf("[%d]", l.Type)
-		}
-		fmt.Fprintf(&b, "\n    link/%s ", t)
-		if len(l.Address) > 0 {
-			b.WriteString(llAddr(l.Address, l.Type))
-		}
-		if len(l.Broadcast) > 0 {
-			if l.Flags&iffPtP != 0 {
-				b.WriteString(" peer ")
-			} else {
-				b.WriteString(" brd ")
+		if !o.family || o.Details {
+			t, ok := arphrd[l.Type]
+			if !ok {
+				t = fmt.Sprintf("[%d]", l.Type)
 			}
-			b.WriteString(llAddr(l.Broadcast, l.Type))
-		}
-		if len(l.PermAddress) > 0 && string(l.PermAddress) != string(l.Address) {
-			b.WriteString(" permaddr " + llAddr(l.PermAddress, l.Type))
+			fmt.Fprintf(&b, "\n    link/%s ", t)
+			if len(l.Address) > 0 {
+				b.WriteString(llAddr(l.Address, l.Type))
+			}
+			if len(l.Broadcast) > 0 {
+				if l.Flags&iffPtP != 0 {
+					b.WriteString(" peer ")
+				} else {
+					b.WriteString(" brd ")
+				}
+				b.WriteString(llAddr(l.Broadcast, l.Type))
+			}
+			if len(l.PermAddress) > 0 && string(l.PermAddress) != string(l.Address) {
+				b.WriteString(" permaddr " + llAddr(l.PermAddress, l.Type))
+			}
 		}
 		if l.LinkNetnsID >= 0 {
 			fmt.Fprintf(&b, " link-netnsid %d", l.LinkNetnsID)
@@ -241,7 +275,7 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 			if l.SlaveKind != "" {
 				fmt.Fprintf(&b, "\n    %s_slave ", l.SlaveKind)
 			}
-			if l.AddrGenMode >= 0 {
+			if l.AddrGenMode >= 0 && !o.Addr {
 				modes := []string{"eui64", "none", "stable_secret", "random"}
 				if int(l.AddrGenMode) < len(modes) {
 					fmt.Fprintf(&b, "addrgenmode %s ", modes[l.AddrGenMode])
@@ -274,10 +308,10 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 				fmt.Fprintf(&b, "parentdev %s ", l.ParentDev)
 			}
 		}
-		if l.Alias != "" {
+		if l.Alias != "" && (!o.Addr || o.Details) {
 			fmt.Fprintf(&b, "\n    alias %s", l.Alias)
 		}
-		if o.Stats > 0 && l.HasStats {
+		if o.Stats > 0 && l.HasStats && !o.Addr {
 			b.WriteString("\n")
 			printLinkStats(&b, l.Stats, l.CarrierChanges, o.Stats)
 		}
@@ -288,6 +322,9 @@ func PrintIPLink(w io.Writer, links []store.LinkRow, o IPLinkOptions) {
 		}
 		b.WriteString("\n")
 		io.WriteString(w, b.String())
+		if o.after != nil {
+			o.after(w, l)
+		}
 	}
 }
 

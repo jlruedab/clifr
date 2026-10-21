@@ -385,73 +385,122 @@ func nstatTool() *tool {
 
 func ipTool() *tool {
 	return &tool{
-		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]",
-		about: "network interfaces, as iproute2 ip prints them",
+		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]  |  [-o] [-d] [-4|-6] address [show] [[dev] NAME]",
+		about: "network interfaces and their addresses, as iproute2 ip prints them",
 		opts: []opt{
-			{short: 's', long: "stats", help: "statistics (twice: also the error counters)"},
+			{short: 's', long: "stats", help: "link: statistics (twice: also the error counters)"},
 			{short: 'd', long: "details", help: "details (each interface type's own parameters are not reconstructed)"},
+			{short: 'o', long: "oneline", help: "address: one line per address"},
+			{short: '4', help: "address: IPv4 only"},
+			{short: '6', help: "address: IPv6 only"},
 		},
 		window: true,
 		notes: []string{
-			"link: the interfaces at the system sample at or before T (recorded since 2026-10-21), in",
-			"iproute2 6.19's layout. -d prints the generic attributes and an interface's type (bridge,",
-			"bond, vlan, ...) but not that type's parameters.",
+			"link: the interfaces at the system sample at or before T; address: those interfaces and the",
+			"addresses at T (clifrd records each address change as the kernel announces it). Recorded since",
+			"2026-10-21, printed in iproute2 6.19's layout. -d prints the generic attributes and an",
+			"interface's type (bridge, bond, vlan, ...) but not that type's parameters.",
 			"--since: one report per sample with --samples.",
 		},
-		examples: []string{`clifr --at "02:45" "ip -s -d link"`, `clifr --at "02:45" "ip -s -s link show eth0"`},
-		prepare: func(p parsed, c *runCtx) (func() error, error) {
-			args := p.pos
-			if len(args) == 0 || !strings.HasPrefix("link", args[0]) {
-				return nil, errors.New(`ip: only "ip [-s] [-d] link [show] [DEV]" is supported so far`)
-			}
-			args = args[1:]
-			if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst") {
-				args = args[1:]
-			}
-			o := query.IPLinkOptions{Stats: len(p.all["stats"]), Details: p.has("details")}
-			switch {
-			case len(args) == 2 && args[0] == "dev":
-				o.Dev = args[1]
-			case len(args) == 1 && args[0] != "dev":
-				o.Dev = args[0]
-			case len(args) > 0:
-				return nil, fmt.Errorf("ip link: unsupported arguments %q (only [dev] NAME)", strings.Join(args, " "))
-			}
-			if c.g.changes {
-				return nil, errors.New("ip: --changes is not supported; use --samples")
-			}
-			if c.w.IsRange() && !c.g.samples {
-				return nil, errors.New("ip: a range needs --samples (one report per sample)")
-			}
-			return func() error {
-				v := view[store.LinkRow]{
-					name: "ip link",
-					at: func(t int64) ([]store.LinkRow, func(*store.LinkRow) rowMeta, error) {
-						links, s, err := query.LinksAt(c.db, t)
-						if err == nil && o.Dev != "" {
-							found := false
-							for _, l := range links {
-								found = found || l.Name == o.Dev
-							}
-							if !found {
-								err = fmt.Errorf("ip link: device %q does not exist at %s", o.Dev, query.FormatMS(t))
-							}
-						}
-						return links, func(*store.LinkRow) rowMeta { return rowMeta{TS: t, SampleTS: s} }, err
-					},
-					key:   func(l *store.LinkRow) string { return l.Name },
-					same:  func(a, b *store.LinkRow) bool { return true },
-					print: func(w io.Writer, links []store.LinkRow) { query.PrintIPLink(w, links, o) },
-				}
-				if ok, err := rangeView(c, v); ok {
-					return err
-				}
-				links, meta, err := v.at(c.w.At)
-				if err != nil {
-					return err
-				}
-				return c.emit(links, func(i int) rowMeta { return meta(&links[i]) }, func(w io.Writer) { v.print(w, links) })
-			}, nil
-		},
+		examples: []string{`clifr --at "02:45" "ip -s -d link"`, `clifr --at "02:45" "ip -o addr"`, `clifr --at "02:45" "ip -d address show dev eth0"`},
+		prepare:  prepareIP,
 	}
+}
+
+func prepareIP(p parsed, c *runCtx) (func() error, error) {
+	args := p.pos
+	if len(args) == 0 {
+		return nil, errors.New(`ip: give an object: link or address`)
+	}
+	obj := ""
+	switch {
+	case strings.HasPrefix("link", args[0]):
+		obj = "link"
+	case strings.HasPrefix("address", args[0]):
+		obj = "address"
+	default:
+		return nil, fmt.Errorf("ip: object %q is not supported (link, address)", args[0])
+	}
+	args = args[1:]
+	if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst") {
+		args = args[1:]
+	}
+	dev := ""
+	switch {
+	case len(args) == 2 && args[0] == "dev":
+		dev = args[1]
+	case len(args) == 1 && args[0] != "dev":
+		dev = args[0]
+	case len(args) > 0:
+		return nil, fmt.Errorf("ip %s: unsupported arguments %q (only [dev] NAME)", obj, strings.Join(args, " "))
+	}
+	if obj == "link" && (p.has("oneline") || p.has("4") || p.has("6")) {
+		return nil, errors.New("ip link: -o, -4 and -6 are supported with address only")
+	}
+	if obj == "address" && p.has("stats") {
+		return nil, errors.New("ip address: -s is supported with link only")
+	}
+	if c.g.changes {
+		return nil, errors.New("ip: --changes is not supported; use --samples")
+	}
+	if c.w.IsRange() && !c.g.samples {
+		return nil, errors.New("ip: a range needs --samples (one report per sample)")
+	}
+	ao := query.IPAddrOptions{OneLine: p.has("oneline"), Details: p.has("details"), Dev: dev}
+	switch {
+	case p.has("4") && p.has("6"):
+		return nil, errors.New("ip: use -4 or -6, not both")
+	case p.has("4"):
+		ao.Family = 2
+	case p.has("6"):
+		ao.Family = 10
+	}
+	lo := query.IPLinkOptions{Stats: len(p.all["stats"]), Details: p.has("details"), Dev: dev}
+	type report struct {
+		Links []store.LinkRow `json:"links"`
+		Addrs []store.AddrRow `json:"addresses,omitempty"`
+	}
+	at := func(t int64) ([]report, func(*report) rowMeta, error) {
+		links, s, err := query.LinksAt(c.db, t)
+		if err != nil {
+			return nil, nil, err
+		}
+		if dev != "" {
+			found := false
+			for _, l := range links {
+				found = found || l.Name == dev
+			}
+			if !found {
+				return nil, nil, fmt.Errorf("ip %s: device %q does not exist at %s", obj, dev, query.FormatMS(t))
+			}
+		}
+		r := report{Links: links}
+		if obj == "address" {
+			if r.Addrs, err = query.AddrsAt(c.db, t); err != nil {
+				return nil, nil, err
+			}
+		}
+		return []report{r}, func(*report) rowMeta { return rowMeta{TS: t, SampleTS: s} }, nil
+	}
+	print := func(w io.Writer, reps []report) {
+		for _, r := range reps {
+			if obj == "link" {
+				query.PrintIPLink(w, r.Links, lo)
+			} else {
+				query.PrintIPAddr(w, r.Links, r.Addrs, ao)
+			}
+		}
+	}
+	return func() error {
+		v := view[report]{name: "ip " + obj, at: at, key: func(*report) string { return obj },
+			same: func(a, b *report) bool { return true }, print: print}
+		if ok, err := rangeView(c, v); ok {
+			return err
+		}
+		reps, meta, err := at(c.w.At)
+		if err != nil {
+			return err
+		}
+		return c.emit(reps, func(i int) rowMeta { return meta(&reps[i]) }, func(w io.Writer) { print(w, reps) })
+	}, nil
 }

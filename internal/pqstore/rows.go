@@ -581,3 +581,31 @@ func linkOf(l *store.LinkRow) linkRow {
 		Name: l.Name, Qdisc: l.Qdisc, Alias: l.Alias, Kind: l.Kind, SlaveKind: l.SlaveKind, PhysPortName: l.PhysPortName, ParentBus: l.ParentBus, ParentDev: l.ParentDev, AltNames: l.AltNames, MTU: l.MTU, Master: l.Master, Link: l.Link, LinkNetnsID: l.LinkNetnsID, OperState: l.OperState, LinkMode: l.LinkMode, Group: l.Group, TxQLen: l.TxQLen, Promiscuity: l.Promiscuity, Allmulti: l.Allmulti, MinMTU: l.MinMTU, MaxMTU: l.MaxMTU, NetnsImmutable: l.NetnsImmutable, AddrGenMode: l.AddrGenMode, NumTxQueues: l.NumTxQueues, NumRxQueues: l.NumRxQueues, GSOMaxSize: l.GSOMaxSize, GSOMaxSegs: l.GSOMaxSegs, TSOMaxSize: l.TSOMaxSize, TSOMaxSegs: l.TSOMaxSegs, GROMaxSize: l.GROMaxSize, GSOIPv4MaxSize: l.GSOIPv4MaxSize, GROIPv4MaxSize: l.GROIPv4MaxSize, ProtoDown: l.ProtoDown, CarrierChanges: l.CarrierChanges, Address: l.Address, Broadcast: l.Broadcast, PermAddress: l.PermAddress, PhysPortID: l.PhysPortID, PhysSwitchID: l.PhysSwitchID, InfoData: l.InfoData, SlaveData: l.SlaveData,
 		S0: l.Stats[0], S1: l.Stats[1], S2: l.Stats[2], S3: l.Stats[3], S4: l.Stats[4], S5: l.Stats[5], S6: l.Stats[6], S7: l.Stats[7], S8: l.Stats[8], S9: l.Stats[9], S10: l.Stats[10], S11: l.Stats[11], S12: l.Stats[12], S13: l.Stats[13], S14: l.Stats[14], S15: l.Stats[15], S16: l.Stats[16], S17: l.Stats[17], S18: l.Stats[18], S19: l.Stats[19], S20: l.Stats[20], S21: l.Stats[21], S22: l.Stats[22], S23: l.Stats[23], S24: l.Stats[24]}
 }
+
+type addrRow struct {
+	TS        int64  `parquet:"ts"`
+	Action    string `parquet:"action,dict"`
+	Seq       int32  `parquet:"seq"`
+	Family    int32  `parquet:"family"`
+	PrefixLen int32  `parquet:"prefixlen"`
+	Scope     int32  `parquet:"scope"`
+	Index     int32  `parquet:"ifindex"`
+	Flags     int64  `parquet:"flags"`
+	Local     []byte `parquet:"local"`
+	Address   []byte `parquet:"address"`
+	Broadcast []byte `parquet:"broadcast"`
+	Anycast   []byte `parquet:"anycast"`
+	Multicast []byte `parquet:"multicast"`
+	Label     string `parquet:"label,dict"`
+	Metric    int64  `parquet:"metric"`
+	Proto     int64  `parquet:"proto"`
+	Valid     int64  `parquet:"valid_lft"`
+	Preferred int64  `parquet:"preferred_lft"`
+}
+
+func addrOf(a *store.AddrRow) addrRow {
+	return addrRow{TS: a.TS, Action: a.Action, Seq: int32(a.Seq), Family: int32(a.Family), PrefixLen: int32(a.PrefixLen),
+		Scope: int32(a.Scope), Index: int32(a.Index), Flags: a.Flags, Local: a.Local, Address: a.Address,
+		Broadcast: a.Broadcast, Anycast: a.Anycast, Multicast: a.Multicast, Label: a.Label, Metric: a.Metric,
+		Proto: a.Proto, Valid: a.Valid, Preferred: a.Preferred}
+}
