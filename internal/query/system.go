@@ -28,9 +28,19 @@ type Span struct{ From, To int64 }
 // samples in it that are at least step apart; a reboot between two samples
 // yields no span.
 func SysSpans(db *store.DB, w Window, stepMS int64) ([]Span, error) {
+	return spans(db, w, stepMS, "")
+}
+
+// ProcSpans are SysSpans at process samples only (every one has a system
+// sample too): the reports of pidstat.
+func ProcSpans(db *store.DB, w Window, stepMS int64) ([]Span, error) {
+	return spans(db, w, stepMS, ` AND ts IN (SELECT ts FROM samples WHERE skipped = 0)`)
+}
+
+func spans(db *store.DB, w Window, stepMS int64, only string) ([]Span, error) {
 	if !w.IsRange() {
 		var ts sql.NullInt64
-		if err := db.QueryRow(`SELECT MAX(ts) FROM sys_samples WHERE ts <= ?`, w.At).Scan(&ts); err != nil {
+		if err := db.QueryRow(`SELECT MAX(ts) FROM sys_samples WHERE ts <= ?`+only, w.At).Scan(&ts); err != nil {
 			return nil, err
 		}
 		if !ts.Valid {
@@ -38,7 +48,7 @@ func SysSpans(db *store.DB, w Window, stepMS int64) ([]Span, error) {
 		}
 		return []Span{{0, ts.Int64}}, nil
 	}
-	rows, err := db.Query(`SELECT ts, uptime_ms FROM sys_samples WHERE ts BETWEEN ? AND ? ORDER BY ts`, w.From, w.To)
+	rows, err := db.Query(`SELECT ts, uptime_ms FROM sys_samples WHERE ts BETWEEN ? AND ?`+only+` ORDER BY ts`, w.From, w.To)
 	if err != nil {
 		return nil, err
 	}

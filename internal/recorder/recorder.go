@@ -168,6 +168,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
 		"flush_interval_s": fmt.Sprint(cfg.Parquet.FlushInterval.Seconds()),
 		"sys_interval_s":   fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()), "redact_patterns": strconv.Itoa(len(redact)),
+		"proc_io": strconv.FormatBool(cfg.ProcIO),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
 			return nil, err
@@ -554,6 +555,13 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			}
 		} else if refresh {
 			r.refreshProc(e, st, status, haveStatus, b)
+		} else if st.Comm != e.upd.Comm || st.PPID != e.upd.PPID {
+			// A rename (prctl PR_SET_NAME, as browsers do for their
+			// processes) or a reparenting: both are in stat, read anyway.
+			u := e.upd
+			u.Comm, u.PPID = st.Comm, st.PPID
+			e.upd = u
+			b.ProcUpdates = append(b.ProcUpdates, u)
 		}
 		e.gen = r.gen
 		e.last = ts
@@ -567,7 +575,8 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			VSZKB: int64(st.VSize / 1024), Threads: st.NumThreads,
 			MinFlt: int64(st.MinFlt), MajFlt: int64(st.MajFlt), ShrKB: shr * int64(pageKB),
 			Priority: st.Priority, Policy: st.Policy, RTPriority: st.RTPriority, CPU: st.Processor,
-			PSFlags: int(st.Flags>>6) & 7}
+			PSFlags: int(st.Flags>>6) & 7, STimeTicks: int64(st.Stime), GuestTicks: int64(st.GuestTime),
+			BlkioTicks: int64(st.BlkioTicks), RSSStatKB: st.RSS * int64(pageKB)}
 		r.sampleRun(e, &s, fresh, status, haveStatus)
 		if !e.hasSamp || !sameProcSample(e.sample, s) {
 			b.ProcSamples = append(b.ProcSamples, s)
@@ -608,13 +617,13 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 	}
 	label, cgroup := r.readLabel(key.pid, ""), r.readCgroup(key.pid, "")
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
-		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
+		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
 			Label: label, Cgroup: cgroup}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
-		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
+		PPID: st.PPID, UID: status.UID, RUID: status.RUID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
@@ -650,7 +659,7 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 	u := e.upd
 	u.PPID, u.Comm = st.PPID, st.Comm
 	if haveStatus {
-		u.UID = status.UID
+		u.UID, u.RUID = status.UID, status.RUID
 	}
 	u.Label, u.Cgroup = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup)
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
@@ -665,12 +674,12 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 }
 
 // sampleRun fills what changes only while the process runs: context
-// switches (from status), wchan and the I/O counters (/proc/<pid>/io), read
+// switches (from status), wchan, the run-queue wait and the I/O counters (/proc/<pid>/io), read
 // when fresh, else the previous sample's.
 func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, status procfs.Status, haveStatus bool) {
 	p := e.sample
 	if !fresh {
-		s.VolCtx, s.NonVolCtx, s.Wchan = p.VolCtx, p.NonVolCtx, p.Wchan
+		s.VolCtx, s.NonVolCtx, s.Wchan, s.WaitNS = p.VolCtx, p.NonVolCtx, p.Wchan, p.WaitNS
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
 		return
 	}
@@ -679,6 +688,9 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	}
 	if w, err := r.fs.ReadWchan(e.key.pid); err == nil {
 		s.Wchan = w
+	}
+	if ns, err := r.fs.ReadRunDelay(e.key.pid); err == nil {
+		s.WaitNS = ns
 	}
 	if !r.cfg.ProcIO {
 		return

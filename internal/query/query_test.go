@@ -83,7 +83,9 @@ func TestFmtAddrDual(t *testing.T) {
 }
 
 func TestPSStartByDay(t *testing.T) {
-	at := func(y int, m time.Month, d, h, min int) int64 { return time.Date(y, m, d, h, min, 0, 0, time.Local).UnixMilli() }
+	at := func(y int, m time.Month, d, h, min int) int64 {
+		return time.Date(y, m, d, h, min, 0, 0, time.Local).UnixMilli()
+	}
 	now := at(2026, 10, 22, 8, 20)
 	for start, want := range map[int64]string{
 		at(2026, 10, 22, 0, 5):   "00:05",

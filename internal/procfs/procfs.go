@@ -156,6 +156,8 @@ type Stat struct {
 	Processor  int // CPU it last ran on
 	RTPriority int
 	Policy     int // SCHED_*: 0 other, 1 fifo, 2 rr, 3 batch, 5 idle, 6 deadline
+	BlkioTicks uint64 // delay waiting for block I/O (delay accounting; else 0)
+	GuestTime  uint64 // ticks running a virtual CPU (included in Utime)
 }
 
 func (f FS) ReadStat(pid int) (st Stat, err error) {
@@ -206,6 +208,10 @@ func ParseStat(b []byte) (Stat, error) {
 		s.RTPriority = atoi(field(40))
 		s.Policy = atoi(field(41))
 	}
+	if len(rest) >= 41 { // fields 42-43 since Linux 2.6.18 / 2.6.24
+		s.BlkioTicks = atou(field(42))
+		s.GuestTime = atou(field(43))
+	}
 	return s, nil
 }
 
@@ -229,6 +235,7 @@ func ParseStatm(b []byte) (size, resident, shared int64, err error) {
 // Status holds the fields of /proc/<pid>/status that clifr uses.
 type Status struct {
 	UID    int // effective uid, what `ps aux` shows as USER
+	RUID   int // real uid (pidstat's UID)
 	Tgid   int // process id; differs from the pid for threads
 	VmLckK int64
 	// Context switches of the whole process (all threads): voluntary
@@ -251,7 +258,7 @@ func ParseStatus(b []byte) (Status, error) {
 		case strings.HasPrefix(line, "Uid:"):
 			fs := strings.Fields(line[4:])
 			if len(fs) >= 2 {
-				s.UID = atoi(fs[1])
+				s.RUID, s.UID = atoi(fs[0]), atoi(fs[1])
 				found = true
 			}
 		case strings.HasPrefix(line, "Tgid:"):
@@ -410,6 +417,20 @@ func (f FS) ReadIO(pid int) (io IO, err error) {
 				io.CancelledWrite = n
 			}
 		}
+		return nil
+	})
+	return
+}
+
+// ReadRunDelay returns the time the process has waited on a run queue, in
+// ns (the second number of /proc/<pid>/schedstat: pidstat's %wait).
+func (f FS) ReadRunDelay(pid int) (ns int64, err error) {
+	err = f.readPID(pid, "schedstat", func(b []byte) error {
+		fs := strings.Fields(string(b))
+		if len(fs) < 2 {
+			return errShort
+		}
+		ns = int64(atou(fs[1]))
 		return nil
 	})
 	return

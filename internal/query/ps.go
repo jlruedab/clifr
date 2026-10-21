@@ -78,6 +78,8 @@ type procAt struct {
 	prio, policy, rtPrio, psr      sql.NullInt64
 	volCtx, nonVolCtx              sql.NullInt64
 	wchan, label, cgroup           sql.NullString
+	stime, guest, blkio, rssStat   sql.NullInt64
+	waitNS, cancelled, ruid        sql.NullInt64
 }
 
 // processesAt returns processes alive at t: those alive at sample s (with
@@ -89,7 +91,8 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb,
 		       x.rchar, x.wchar, x.read_bytes, x.write_bytes,
 		       x.min_flt, x.maj_flt, x.shr_kb, x.ps_flags, x.priority, x.policy, x.rt_priority, x.processor,
-		       x.vol_ctx, x.nonvol_ctx, x.wchan, p.label, p.cgroup
+		       x.vol_ctx, x.nonvol_ctx, x.wchan, p.label, p.cgroup,
+		       x.stime_ticks, x.guest_ticks, x.blkio_ticks, x.rss_stat_kb, x.wait_ns, x.cancelled_write_bytes, p.ruid
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
 		     AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
@@ -109,7 +112,8 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 			&p.comm, &p.cmdline, &p.source, &p.state, &p.nice, &p.tpgid, &p.threads, &p.cpuTicks,
 			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes,
 			&p.minFlt, &p.majFlt, &p.shrKB, &p.psFlags, &p.prio, &p.policy, &p.rtPrio, &p.psr,
-			&p.volCtx, &p.nonVolCtx, &p.wchan, &p.label, &p.cgroup); err != nil {
+			&p.volCtx, &p.nonVolCtx, &p.wchan, &p.label, &p.cgroup,
+			&p.stime, &p.guest, &p.blkio, &p.rssStat, &p.waitNS, &p.cancelled, &p.ruid); err != nil {
 			return nil, err
 		}
 		p.locked = locked == 1

@@ -312,6 +312,12 @@ chooses one; a line on stderr says when a style other than current is used.
   FSTYPE OPTIONS. The parent mount is not recorded: the tree uses the mount
   on the longest prefix of each path, which differs from findmnt only for a
   mount made under a path that was later mounted over.
+- `pidstat [-u] [-r] [-d] [-w] [-h] [-l] [-p PIDS|ALL] [-C REGEX]
+  [INTERVAL [COUNT]]`: sysstat 12's reports (without its first line, as
+  mpstat). At T: since boot, over the uptime, as pidstat prints without an
+  interval; over a range, between process samples. Only processes with
+  activity unless named with `-p`; processes that started and ended
+  between two samples are not in it. Recorded since 2026-10-22.
 - `top -b [-n 1] [-c] [-i] [-w COLUMNS] [-o FIELD] [-p PIDS] [-u USER]`:
   procps-ng 4's batch output. The summary comes from the system sample at or
   before T, the processes from the process sample at or before it, with

@@ -29,7 +29,7 @@ func TestReadStatWeirdComm(t *testing.T) {
 	}
 	want := Stat{PID: 4242, Comm: "my (weird) prog", State: 'R', PPID: 1, PGRP: 4242, Session: 4242,
 		TTY: 34816, TPGID: 4242, Utime: 512, Stime: 256, Nice: -5, NumThreads: 4, StartTime: 360000,
-		VSize: 1048576, RSS: 256, Flags: 4194304, MinFlt: 1, MajFlt: 3, Priority: 20, Processor: 1, RTPriority: 5, Policy: 1}
+		VSize: 1048576, RSS: 256, Flags: 4194304, MinFlt: 1, MajFlt: 3, Priority: 20, Processor: 1, RTPriority: 5, Policy: 1, BlkioTicks: 2, GuestTime: 7}
 	if s != want {
 		t.Fatalf("got  %+v\nwant %+v", s, want)
 	}
@@ -51,7 +51,7 @@ func TestStatusCmdlineStatm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.UID != 1001 || st.VmLckK != 16 || st.VolCtx != 120 || st.NonVolCtx != 7 {
+	if st.UID != 1001 || st.RUID != 1000 || st.VmLckK != 16 || st.VolCtx != 120 || st.NonVolCtx != 7 {
 		t.Errorf("status = %+v, want euid 1001, VmLck 16, context switches 120 and 7", st)
 	}
 	cmd, argv0, _ := fixture.ReadCmdline(4242)

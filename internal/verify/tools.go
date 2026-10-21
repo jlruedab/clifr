@@ -43,6 +43,7 @@ func init() {
 	ignoredFields["ps auxfwww"] = "everything but the tree prefix of COMMAND (the rest is compared by ps aux)"
 	ignoredFields["ps alxwww"] = "the work-item suffix of kernel worker names"
 	ignoredFields["ps auxZww"] = "everything but LABEL (the rest is compared by ps aux)"
+	ignoredFields["pidstat -h -u -r -d -w -p ALL"] = "CPU (the one the process last ran on changes all the time); the work-item suffix of kernel worker names; averages match within 0.01, VSZ and RSS exactly"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
 		"the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
 		"the work-item suffix of kernel worker names; task counts within 3, memory within 2%"
@@ -286,6 +287,99 @@ func comparePSFormat(db *store.DB, snap snapshot, f query.PSFormat, parse func(s
 		} else {
 			res.Extra++
 			res.example("%s extra pid %d: %v", snap.cmd, pid, x)
+		}
+	}
+	return res, nil
+}
+
+// ---- pidstat ----
+
+var pidstatHeads = []string{"UID", "PID", "%usr", "%system", "%guest", "%wait", "%CPU", "CPU", "minflt/s", "majflt/s",
+	"VSZ", "RSS", "%MEM", "kB_rd/s", "kB_wr/s", "kB_ccwr/s", "iodelay", "cswch/s", "nvcswch/s"}
+
+// parsePidstat reads pidstat -h -u -r -d -w lines: the time, the columns
+// of pidstatHeads, then Command.
+func parsePidstat(out string) map[int]map[string]string {
+	m := map[int]map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Fields(l)
+		if len(f) < len(pidstatHeads)+2 || f[0] == "#" || f[0] == "Linux" {
+			continue
+		}
+		pid, err := strconv.Atoi(f[2])
+		if err != nil {
+			continue
+		}
+		row := map[string]string{"Command": topComm(strings.Join(f[len(pidstatHeads)+1:], " "))}
+		for i, h := range pidstatHeads {
+			row[h] = f[i+1]
+		}
+		m[pid] = row
+	}
+	return m
+}
+
+func comparePidstat(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	acts := []int{query.PidCPU, query.PidMem, query.PidIO, query.PidCtx}
+	spans, err := query.ProcSpans(db, query.Window{At: snap.ts}, 0)
+	if err != nil {
+		return res, err
+	}
+	rows, err := query.Pidstat(db, spans, acts, query.PidstatSelect{All: true})
+	if err != nil {
+		return res, err
+	}
+	s := spans[0].To
+	next := nextSample(db, s, false)
+	real := parsePidstat(snap.output)
+	rec := parsePidstat(render(func(sb *strings.Builder) { query.PrintPidstat(sb, rows, acts, true) }))
+	for pid := range snap.ignore {
+		if _, ok := real[pid]; ok {
+			res.Ignored["recorder/tool processes"]++
+		}
+		delete(real, pid)
+		delete(rec, pid)
+	}
+	res.Real, res.Recon = len(real), len(rec)
+	for pid, r := range real {
+		x, ok := rec[pid]
+		if !ok {
+			if procChurn(db, pid, s, next) {
+				res.ChurnMissing++
+			} else {
+				res.Missing++
+				res.example("pidstat missing pid %d: %v", pid, r["Command"])
+			}
+			continue
+		}
+		res.Matched++
+		var pairs []fieldPair
+		for _, h := range append(pidstatHeads, "Command") {
+			a, b := r[h], x[h]
+			if h == "CPU" {
+				continue
+			}
+			if strings.Contains(a, ".") { // an average: within 0.01
+				fa, ea := strconv.ParseFloat(a, 64)
+				fb, eb := strconv.ParseFloat(b, 64)
+				if ea == nil && eb == nil && fa-fb <= 0.0101 && fb-fa <= 0.0101 {
+					b = a
+				}
+			}
+			pairs = append(pairs, fieldPair{h, a, b})
+		}
+		res.compare("pidstat pid "+strconv.Itoa(pid), pairs, func() bool { return false })
+	}
+	for pid, x := range rec {
+		if _, ok := real[pid]; ok {
+			continue
+		}
+		if procChurn(db, pid, s, next) {
+			res.ChurnExtra++
+		} else {
+			res.Extra++
+			res.example("pidstat extra pid %d: %v", pid, x["Command"])
 		}
 	}
 	return res, nil

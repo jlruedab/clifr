@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 
 	"clifr/internal/query"
@@ -94,6 +95,7 @@ func addSystemTools() {
 			})
 		},
 	})
+	addTool(pidstatTool(common))
 	addTool(dateTool())
 	addTool(hostnameTool())
 	addTool(unameTool())
@@ -132,7 +134,11 @@ func prepareSys(name string, p parsed, c *runCtx, print func([]query.Span) error
 		return nil, fmt.Errorf("%s: --changes is not available for %s; use --samples", name, name)
 	}
 	return func() error {
-		spans, err := query.SysSpans(c.db, c.w, every)
+		spanOf := query.SysSpans
+		if name == "pidstat" {
+			spanOf = query.ProcSpans
+		}
+		spans, err := spanOf(c.db, c.w, every)
 		if err != nil {
 			return err
 		}
@@ -171,4 +177,66 @@ func spanMeta(spans []query.Span, ts int64, row any, exact ...string) rowMeta {
 		}
 	}
 	return m
+}
+
+func pidstatTool(common []string) *tool {
+	return &tool{
+		name: "pidstat", synopsis: "[-u] [-r] [-d] [-w] [-h] [-l] [-p PIDS|ALL] [-C REGEX] [INTERVAL [COUNT]]",
+		about: "CPU, memory, I/O and context switches by process",
+		opts: []opt{
+			{short: 'u', help: "CPU (the default report)"},
+			{short: 'r', help: "page faults and memory"},
+			{short: 'd', help: "I/O (kB read, written, cancelled; block I/O delay)"},
+			{short: 'w', help: "context switches"},
+			{short: 'h', help: "every report on one line per process"},
+			{short: 'l', help: "the command line instead of the name"},
+			{short: 'p', arg: "PIDS", help: "these processes, even without activity (comma separated, or ALL)"},
+			{short: 'C', arg: "REGEX", help: "processes whose command name matches"},
+		},
+		window: true,
+		notes: append(common,
+			"Processes are reported from the process samples (every --interval): a span ends at one, and",
+			"processes that started and ended between two samples are not in it. Without -p, only processes",
+			"with activity in the span, as pidstat. %wait from the run-queue time, iodelay from delay",
+			"accounting (0 unless the kernel's task_delayacct is on). Recorded since 2026-10-22."),
+		examples: []string{`clifr --at "02:45" "pidstat -u -r"`, `clifr --since "02:00" --until "02:10" "pidstat -d 60"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			var acts []int
+			for i, f := range []string{"u", "r", "d", "w"} {
+				if p.has(f) {
+					acts = append(acts, i)
+				}
+			}
+			if len(acts) == 0 {
+				acts = []int{query.PidCPU}
+			}
+			sel := query.PidstatSelect{CmdLine: p.has("l")}
+			for _, v := range splitList(p.all["p"]) {
+				if v == "ALL" {
+					sel.All = true
+					continue
+				}
+				pid, err := strconv.Atoi(v)
+				if err != nil || pid <= 0 {
+					return nil, fmt.Errorf("pidstat: bad PID %q", v)
+				}
+				sel.PIDs = append(sel.PIDs, pid)
+			}
+			if re := p.all["C"]; len(re) > 0 {
+				var err error
+				if sel.Comm, err = regexp.Compile(re[len(re)-1]); err != nil {
+					return nil, fmt.Errorf("pidstat: -C: %v", err)
+				}
+			}
+			return prepareSys("pidstat", p, c, func(spans []query.Span) error {
+				rows, err := query.Pidstat(c.db, spans, acts, sel)
+				if err != nil {
+					return err
+				}
+				return c.emit(rows, func(i int) rowMeta {
+					return spanMeta(spans, rows[i].TS, rows[i], "uid", "pid", "command", "comm")
+				}, func(w io.Writer) { query.PrintPidstat(w, rows, acts, p.has("h")) })
+			})
+		},
+	}
 }

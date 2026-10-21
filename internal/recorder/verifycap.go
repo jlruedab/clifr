@@ -50,6 +50,7 @@ var verifyCommands = [][]string{
 	{"ps", "-ef"},
 	{"ps", "alxwww"},
 	{"ps", "auxZww"},
+	{"pidstat", "-h", "-u", "-r", "-d", "-w", "-p", "ALL"}, // sysstat; skipped where it is not installed
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million
