@@ -378,7 +378,7 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 			pe.attrs = store.ProcUpdate{PPID: st.PPID, Comm: st.Comm, Source: srcEBPF}
 			pe.tty, pe.sid, pe.pgrp = st.TTY, st.Session, st.PGRP
 			pe.attrs.Cmdline, pe.attrs.Argv0Len, _ = r.readCmdline(e.PID)
-			if _, res, err := r.fs.ReadStatm(e.PID); err == nil {
+			if _, res, _, err := r.fs.ReadStatm(e.PID); err == nil {
 				pe.rssKB = res * int64(pageKB)
 			}
 		}
@@ -474,6 +474,7 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 					u := e.upd
 					u.Comm, u.Cmdline, u.Argv0Len, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.Argv0Len,
 						ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
+					u.Label = r.readLabel(ev.pid, u.Label) // an exec can change it (SELinux transitions)
 					if u != e.upd {
 						e.upd = u
 						b.ProcUpdates = append(b.ProcUpdates, u)

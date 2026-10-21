@@ -17,9 +17,10 @@ import (
 // SchemaVersion is the version of the recorded data, stored in meta as
 // schema_version. 1: recordings before 2026-10-19 (no key); 2: argv0_len,
 // host identity and time zone; 3 (2026-10-21): sockstat columns in
-// sys_samples, uname in meta; 4: net_counters; 5: links, addrs, routing; 6: kmsg; 7: units.
-// Readers refuse versions newer than theirs.
-const SchemaVersion = 7
+// sys_samples, uname in meta; 4: net_counters; 5: links, addrs, routing; 6: kmsg; 7: units;
+// 8: process fields (faults, scheduling, SHR, context switches, wchan,
+// label, cgroup). Readers refuse versions newer than theirs.
+const SchemaVersion = 8
 
 type DB struct {
 	*sql.DB

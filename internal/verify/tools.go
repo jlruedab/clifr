@@ -457,7 +457,7 @@ func compareMount(db *store.DB, snap snapshot) (Result, error) {
 
 // ---- top -b -n 1 ----
 
-type topLine struct{ user, pr, ni, virt, res, s, time, cmd string }
+type topLine struct{ user, pr, ni, virt, res, shr, s, time, cmd string }
 
 // parseTop reads top's summary (Tasks, MiB Mem, MiB Swap as "Tasks: total"
 // -> value) and its process lines by PID. COMMAND is the rest of the line.
@@ -492,7 +492,7 @@ func parseTop(out string) (sysTable, map[int]topLine) {
 			cmd = strings.TrimLeft(cmd, " ")
 			cmd = cmd[strings.IndexByte(cmd, ' ')+1:]
 		}
-		procs[pid] = topLine{user: f[1], pr: f[2], ni: f[3], virt: f[4], res: f[5], s: f[7], time: f[10],
+		procs[pid] = topLine{user: f[1], pr: f[2], ni: f[3], virt: f[4], res: f[5], shr: f[6], s: f[7], time: f[10],
 			cmd: strings.TrimLeft(cmd, " ")}
 	}
 	return sum, procs
@@ -555,10 +555,14 @@ func compareTop(db *store.DB, snap snapshot) (Result, error) {
 			continue
 		}
 		res.Matched++
-		res.compare("top pid "+strconv.Itoa(pid), []fieldPair{
+		fields := []fieldPair{
 			{"USER", r.user, x.user}, {"PR", r.pr, x.pr}, {"NI", r.ni, x.ni}, {"VIRT", r.virt, x.virt},
 			{"RES", r.res, x.res}, {"S", r.s, x.s}, {"TIME+", r.time, x.time}, {"COMMAND", topComm(r.cmd), topComm(x.cmd)},
-		}, func() bool { return false })
+		}
+		if x.shr != "-" { // recorded since schema 8
+			fields = append(fields, fieldPair{"SHR", r.shr, x.shr})
+		}
+		res.compare("top pid "+strconv.Itoa(pid), fields, func() bool { return false })
 	}
 	for pid, x := range rec {
 		if _, ok := real[pid]; ok {

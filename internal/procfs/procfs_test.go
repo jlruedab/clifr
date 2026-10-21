@@ -29,7 +29,7 @@ func TestReadStatWeirdComm(t *testing.T) {
 	}
 	want := Stat{PID: 4242, Comm: "my (weird) prog", State: 'R', PPID: 1, PGRP: 4242, Session: 4242,
 		TTY: 34816, TPGID: 4242, Utime: 512, Stime: 256, Nice: -5, NumThreads: 4, StartTime: 360000,
-		VSize: 1048576, RSS: 256}
+		VSize: 1048576, RSS: 256, MinFlt: 1, MajFlt: 3, Priority: 20, Processor: 1, RTPriority: 5, Policy: 1}
 	if s != want {
 		t.Fatalf("got  %+v\nwant %+v", s, want)
 	}
@@ -51,8 +51,8 @@ func TestStatusCmdlineStatm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.UID != 1001 || st.VmLckK != 16 {
-		t.Errorf("status = %+v, want euid 1001 and VmLck 16", st)
+	if st.UID != 1001 || st.VmLckK != 16 || st.VolCtx != 120 || st.NonVolCtx != 7 {
+		t.Errorf("status = %+v, want euid 1001, VmLck 16, context switches 120 and 7", st)
 	}
 	cmd, argv0, _ := fixture.ReadCmdline(4242)
 	if cmd != "./prog --flag a b" || argv0 != len("./prog") {
@@ -64,9 +64,21 @@ func TestStatusCmdlineStatm(t *testing.T) {
 	if cmd, _, _ := fixture.ReadCmdline(77); cmd != "" {
 		t.Errorf("kernel thread cmdline = %q", cmd)
 	}
-	size, res, err := fixture.ReadStatm(4242)
-	if err != nil || size != 256 || res != 260 {
-		t.Errorf("statm = %d %d %v", size, res, err)
+	size, res, shr, err := fixture.ReadStatm(4242)
+	if err != nil || size != 256 || res != 260 || shr != 10 {
+		t.Errorf("statm = %d %d %d %v", size, res, shr, err)
+	}
+	if w, err := fixture.ReadWchan(4242); w != "do_epoll_wait" {
+		t.Errorf("wchan = %q %v", w, err)
+	}
+	if l, err := fixture.ReadLabel(4242); l != "unconfined" {
+		t.Errorf("label = %q %v", l, err)
+	}
+	if c, err := fixture.ReadCgroup(4242); c != "0::/user.slice/user-1000.slice/session-2.scope" {
+		t.Errorf("cgroup = %q %v", c, err)
+	}
+	if _, err := fixture.ReadLabel(77); err == nil {
+		t.Errorf("label of a process without attr/current: no error")
 	}
 }
 

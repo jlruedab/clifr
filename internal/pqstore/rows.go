@@ -48,6 +48,8 @@ type processRow struct {
 	ExitCode  *int32 `parquet:"exit_code,optional"`
 	Signal    *int32 `parquet:"signal,optional"`
 	OOMKilled int32  `parquet:"oom_killed"`
+	Label     string `parquet:"label,dict"` // schema 8
+	Cgroup    string `parquet:"cgroup,dict"`
 }
 
 type procSampleRow struct {
@@ -66,6 +68,17 @@ type procSampleRow struct {
 	ReadBytes      int64 `parquet:"read_bytes"`
 	WriteBytes     int64 `parquet:"write_bytes"`
 	CancelledWrite int64 `parquet:"cancelled_write_bytes"`
+	// schema 8
+	MinFlt     int64  `parquet:"min_flt"`
+	MajFlt     int64  `parquet:"maj_flt"`
+	ShrKB      int64  `parquet:"shr_kb"`
+	Priority   int32  `parquet:"priority"`
+	Policy     int32  `parquet:"policy"`
+	RTPriority int32  `parquet:"rt_priority"`
+	CPU        int32  `parquet:"processor"`
+	VolCtx     int64  `parquet:"vol_ctx"`
+	NonVolCtx  int64  `parquet:"nonvol_ctx"`
+	Wchan      string `parquet:"wchan,dict"`
 }
 
 type socketRow struct {
@@ -341,7 +354,7 @@ func processOf(p store.ProcRow) processRow {
 		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
-		OOMKilled: b2i(p.OOMKilled)}
+		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup}
 }
 
 func i32p(p *int) *int32 {
@@ -354,7 +367,9 @@ func i32p(p *int) *int32 {
 func procSampleOf(p store.ProcSample) procSampleRow {
 	return procSampleRow{ProcID: p.ProcID, TS: p.TS, State: p.State, Nice: int32(p.Nice), TPGID: int32(p.TPGID),
 		CPUTicks: p.CPUTicks, RSSKB: p.RSSKB, VSZKB: p.VSZKB, Threads: int32(p.Threads),
-		RChar: p.RChar, WChar: p.WChar, ReadBytes: p.ReadBytes, WriteBytes: p.WriteBytes, CancelledWrite: p.CancelledWrite}
+		RChar: p.RChar, WChar: p.WChar, ReadBytes: p.ReadBytes, WriteBytes: p.WriteBytes, CancelledWrite: p.CancelledWrite,
+		MinFlt: p.MinFlt, MajFlt: p.MajFlt, ShrKB: p.ShrKB, Priority: int32(p.Priority), Policy: int32(p.Policy),
+		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
 }
 
 func socketOf(s store.SockRow) socketRow {

@@ -23,6 +23,10 @@ type ProcRow struct {
 	ExecTS, ExitTS   *int64
 	ExitCode, Signal *int
 	OOMKilled        bool
+	// Read from /proc when the process is first sampled, at its exec and on
+	// fd walks (schema 8); empty for event-only processes.
+	Label  string // /proc/<pid>/attr/current (ps -Z)
+	Cgroup string // /proc/<pid>/cgroup
 }
 
 // ProcUpdate changes slow-moving attributes (re-read at exec or fd walks).
@@ -34,6 +38,7 @@ type ProcUpdate struct {
 	Source        string
 	Exe           string
 	ExecTS        int64 // 0: no exec seen
+	Label, Cgroup string
 }
 
 // ProcExit records how a process ended (an exit event or an OOM kill); nil
@@ -237,6 +242,16 @@ type ProcSample struct {
 	Threads                int
 	// Cumulative I/O (/proc/<pid>/io); all 0 when not read.
 	RChar, WChar, ReadBytes, WriteBytes, CancelledWrite int64
+	// Schema 8. From stat and statm at every sample: page faults
+	// (cumulative), priority as top's PR, policy, real-time priority, the
+	// CPU it last ran on, shared memory (top's SHR).
+	MinFlt, MajFlt, ShrKB             int64
+	Priority, Policy, RTPriority, CPU int
+	// From status and wchan when the process used CPU since its last sample,
+	// and on fd-walk samples: context switches (cumulative) and the kernel
+	// function it waits in ("0": running).
+	VolCtx, NonVolCtx int64
+	Wchan             string
 }
 
 // NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named

@@ -149,6 +149,12 @@ type Stat struct {
 	StartTime  uint64 // clock ticks after boot
 	VSize      uint64 // bytes
 	RSS        int64  // pages
+	MinFlt     uint64
+	MajFlt     uint64
+	Priority   int // top's PR: 20 + nice, or -1 - rt_priority (-100: "rt")
+	Processor  int // CPU it last ran on
+	RTPriority int
+	Policy     int // SCHED_*: 0 other, 1 fifo, 2 rr, 3 batch, 5 idle, 6 deadline
 }
 
 func (f FS) ReadStat(pid int) (st Stat, err error) {
@@ -190,23 +196,32 @@ func ParseStat(b []byte) (Stat, error) {
 	s.StartTime = atou(field(22))
 	s.VSize = atou(field(23))
 	s.RSS = int64(atoi(field(24)))
+	s.MinFlt = atou(field(10))
+	s.MajFlt = atou(field(12))
+	s.Priority = atoi(field(18))
+	if len(rest) >= 39 { // fields 39-41 since Linux 2.5
+		s.Processor = atoi(field(39))
+		s.RTPriority = atoi(field(40))
+		s.Policy = atoi(field(41))
+	}
 	return s, nil
 }
 
-// ReadStatm returns total program size and resident set size in pages.
-// RSS comes from statm rather than stat: since kernel 6.2 the stat value is
-// an approximate per-CPU counter while statm (like ps) uses the exact sum.
-func (f FS) ReadStatm(pid int) (size, resident int64, err error) {
-	err = f.readPID(pid, "statm", func(b []byte) (err error) { size, resident, err = ParseStatm(b); return })
+// ReadStatm returns total program size, resident set size and its shared
+// part (file and shmem pages: top's SHR) in pages. RSS comes from statm
+// rather than stat: since kernel 6.2 the stat value is an approximate per-CPU
+// counter while statm (like ps) uses the exact sum.
+func (f FS) ReadStatm(pid int) (size, resident, shared int64, err error) {
+	err = f.readPID(pid, "statm", func(b []byte) (err error) { size, resident, shared, err = ParseStatm(b); return })
 	return
 }
 
-func ParseStatm(b []byte) (size, resident int64, err error) {
+func ParseStatm(b []byte) (size, resident, shared int64, err error) {
 	fs := strings.Fields(string(b))
-	if len(fs) < 2 {
-		return 0, 0, errShort
+	if len(fs) < 3 {
+		return 0, 0, 0, errShort
 	}
-	return int64(atoi(fs[0])), int64(atoi(fs[1])), nil
+	return int64(atoi(fs[0])), int64(atoi(fs[1])), int64(atoi(fs[2])), nil
 }
 
 // Status holds the fields of /proc/<pid>/status that clifr uses.
@@ -214,6 +229,9 @@ type Status struct {
 	UID    int // effective uid, what `ps aux` shows as USER
 	Tgid   int // process id; differs from the pid for threads
 	VmLckK int64
+	// Context switches of the whole process (all threads): voluntary
+	// (waits) and involuntary (preemptions).
+	VolCtx, NonVolCtx int64
 }
 
 func (f FS) ReadStatus(pid int) (st Status, err error) {
@@ -241,6 +259,10 @@ func ParseStatus(b []byte) (Status, error) {
 			if len(fs) >= 1 {
 				s.VmLckK = int64(atoi(fs[0]))
 			}
+		case strings.HasPrefix(line, "voluntary_ctxt_switches:"):
+			s.VolCtx = int64(atou(strings.TrimSpace(line[24:])))
+		case strings.HasPrefix(line, "nonvoluntary_ctxt_switches:"):
+			s.NonVolCtx = int64(atou(strings.TrimSpace(line[27:])))
 		}
 	}
 	if !found {
@@ -388,6 +410,32 @@ func (f FS) ReadIO(pid int) (io IO, err error) {
 		}
 		return nil
 	})
+	return
+}
+
+// ReadWchan returns /proc/<pid>/wchan: the kernel function the process
+// waits in, or "0" while it runs (Linux 5.16+: also for a process the
+// kernel cannot unwind).
+func (f FS) ReadWchan(pid int) (w string, err error) {
+	err = f.readPID(pid, "wchan", func(b []byte) error { w = string(b); return nil })
+	return
+}
+
+// ReadLabel returns the security label of the process
+// (/proc/<pid>/attr/current: SELinux context, AppArmor profile), what
+// ps -Z prints as LABEL; an error without a security module that has one.
+func (f FS) ReadLabel(pid int) (l string, err error) {
+	err = f.readPID(pid, "attr/current", func(b []byte) error {
+		l = strings.TrimRight(string(b), "\x00\n")
+		return nil
+	})
+	return
+}
+
+// ReadCgroup returns /proc/<pid>/cgroup without its final newline: one line
+// per hierarchy, "0::/path" on the unified hierarchy (cgroup v2).
+func (f FS) ReadCgroup(pid int) (c string, err error) {
+	err = f.readPID(pid, "cgroup", func(b []byte) error { c = strings.TrimRight(string(b), "\n"); return nil })
 	return
 }
 

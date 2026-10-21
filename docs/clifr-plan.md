@@ -178,7 +178,7 @@ Missing from the spec:
 Agreed with the user on 2026-10-21; one step at a time, report and wait.
 - **Step 1, from data already recorded** (no recorder or format change, ~1
   week): `top -b -n 1` (done 2026-10-21) (summary lines; PID USER PR NI VIRT RES S %CPU %MEM
-  TIME+ COMMAND; PR = 20 + NI, SHR unknown until step 3, %CPU over the sample
+  TIME+ COMMAND; PR and SHR recorded since step 3 (schema 8), %CPU over the sample
   interval), `date [--utc]`, `pstree -lp`, `ps` forest (`f`) (these three
   done 2026-10-21), `ss -s` (done 2026-10-21 with sockstat recorded: schema 3),
   `df -a -l -x`, `findmnt` (tree from mount paths), `hostname` (as recorded

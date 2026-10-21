@@ -311,8 +311,8 @@ chooses one; a line on stderr says when a style other than current is used.
   before T, the processes from the process sample at or before it, with
   %CPU over the interval since the sample before (top's own first screen
   covers a fraction of a second). Not recorded: the number of users (left
-  out of the first line), SHR (`-`) and the scheduling policy (PR is 20 +
-  NI, never `rt`). Over a range: one report per sample with `--samples`
+  out of the first line). Recordings before 2026-10-22 have no SHR (`-`)
+  and no priority (PR is 20 + NI, never `rt`). Over a range: one report per sample with `--samples`
   (`-n` and `-d` as top's).
 - `ss -s`: the counts of /proc/net/sockstat and sockstat6 at the system
   sample at or before T (recorded since schema 3), estab (ESTABLISHED and

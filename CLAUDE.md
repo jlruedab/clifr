@@ -178,8 +178,14 @@ wait for the user's go-ahead.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 7 since
-  2026-10-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+- Process fields (schema 8): `proc_samples` min_flt, maj_flt, priority (stat field 18: top's PR,
+  -100 = "rt"), policy, rt_priority, processor (stat) and shr_kb (statm: top's SHR) at every
+  sample; vol_ctx, nonvol_ctx (status) and wchan ("0" = running) by the same rule as the I/O
+  columns. `processes.label` (attr/current) and `cgroup` (/proc/<pid>/cgroup, all lines) when
+  first sampled, on fd walks, the label also at an exec; empty for event-only processes. NULL in
+  older recordings (top then prints PR as 20 + NI and SHR as "-").
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 8 since
+  2026-10-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

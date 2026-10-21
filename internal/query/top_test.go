@@ -32,14 +32,14 @@ func topDB(t *testing.T) *store.DB {
 		&store.Batch{Sample: store.Sample{TS: base}, Sys: s1, CPUs: c1,
 			ProcInserts: []store.ProcRow{p(1, 100, "busy", base-60_000), p(2, 200, "idle", base-60_000), p(3, 300, "dead", base-60_000)},
 			ProcSamples: []store.ProcSample{
-				{ProcID: 1, TS: base, State: "R", CPUTicks: tk(10), RSSKB: 102_400, VSZKB: 20_000_000},
-				{ProcID: 2, TS: base, State: "S", Nice: 5, CPUTicks: tk(1), RSSKB: 1024, VSZKB: 4096},
-				{ProcID: 3, TS: base, State: "Z"}}},
+				{ProcID: 1, TS: base, State: "R", CPUTicks: tk(10), RSSKB: 102_400, VSZKB: 20_000_000, Priority: -100, Policy: 1, RTPriority: 99, ShrKB: 51_200},
+				{ProcID: 2, TS: base, State: "S", Nice: 5, CPUTicks: tk(1), RSSKB: 1024, VSZKB: 4096, Priority: 25, ShrKB: 512},
+				{ProcID: 3, TS: base, State: "Z", Priority: 20}}},
 		&store.Batch{Sample: store.Sample{TS: base + 30_000}, Sys: s2, CPUs: c2,
 			ProcInserts: []store.ProcRow{p(4, 400, "new", base+20_000)},
 			ProcSamples: []store.ProcSample{
-				{ProcID: 1, TS: base + 30_000, State: "R", CPUTicks: tk(16), RSSKB: 102_400, VSZKB: 20_000_000},
-				{ProcID: 4, TS: base + 30_000, State: "S", CPUTicks: tk(1), RSSKB: 2048, VSZKB: 8192}}},
+				{ProcID: 1, TS: base + 30_000, State: "R", CPUTicks: tk(16), RSSKB: 102_400, VSZKB: 20_000_000, Priority: -100, Policy: 1, RTPriority: 99, ShrKB: 51_200},
+				{ProcID: 4, TS: base + 30_000, State: "S", CPUTicks: tk(1), RSSKB: 2048, VSZKB: 8192, Priority: 20, ShrKB: 1024}}},
 		&store.Batch{Sample: store.Sample{TS: base + 40_000},
 			ProcInserts: []store.ProcRow{{ID: 5, PID: 500, StartTime: base + 35_000, PPID: 1, Comm: "brief",
 				FirstSeen: base + 35_000, Source: "ebpf"}}})
@@ -74,7 +74,7 @@ func TestTopAt(t *testing.T) {
 	if got := strings.Join(order, " "); got != "busy new idle dead brief" {
 		t.Errorf("order %q, want by %%CPU then PID, unsampled last", got)
 	}
-	if r := byPID[100]; r.CPU != 20 || r.Mem < 9.7 || r.Mem > 9.8 || r.TimeCS != 1600 || r.PR != 20 {
+	if r := byPID[100]; r.CPU != 20 || r.Mem < 9.7 || r.Mem > 9.8 || r.TimeCS != 1600 || r.PR != -100 || r.ShrKB != 51_200 {
 		t.Errorf("busy: %+v (6 s of CPU in 30 s = 20%%)", r)
 	}
 	if r := byPID[400]; r.CPU != 10 { // started 10 s before the sample, 1 s of CPU
@@ -98,7 +98,7 @@ func TestTopAt(t *testing.T) {
 		"MiB Swap:   2048.0 total,   2048.0 free,      0.0 used.    768.0 avail Mem",
 		"",
 		"    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND",
-		"    100 root      20   0   19.1g 102400      - R  20.0   9.8   0:16.00 busy",
+		"    100 root      rt   0   19.1g 102400  51200 R  20.0   9.8   0:16.00 busy",
 	} {
 		if !strings.HasPrefix(lines[i], want) {
 			t.Errorf("line %d: %q, want %q", i, lines[i], want)

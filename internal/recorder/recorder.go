@@ -530,26 +530,44 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			continue // vanished, or unreadable: skip silently
 		}
 		key := procKey{pid: pid, start: r.boot + int64(st.StartTime)*1000/procfs.ClockTicks}
+		ticks := int64(st.Utime + st.Stime)
 		e := r.procs[key]
+		// What changes only while a process runs is re-read when it used
+		// CPU since its last sample, when it is new and on fd-walk samples;
+		// otherwise the previous values stand (cumulative counters: a
+		// skipped read only delays an update).
+		fresh := e == nil || refresh || !e.hasSamp || ticks != e.sample.CPUTicks
+		var status procfs.Status
+		haveStatus := false
+		if fresh {
+			var err error
+			status, err = r.fs.ReadStatus(pid)
+			haveStatus = err == nil
+		}
 		if e == nil {
-			e = r.newProc(key, st, ts, b)
+			if !haveStatus {
+				continue
+			}
+			e = r.newProc(key, st, status, ts, b)
 			if e == nil {
 				continue
 			}
 		} else if refresh {
-			r.refreshProc(e, st, b)
+			r.refreshProc(e, st, status, haveStatus, b)
 		}
 		e.gen = r.gen
 		e.last = ts
 		n++
-		rss := st.RSS
-		if _, res, err := r.fs.ReadStatm(pid); err == nil {
-			rss = res
+		rss, shr := st.RSS, int64(0)
+		if _, res, sh, err := r.fs.ReadStatm(pid); err == nil {
+			rss, shr = res, sh
 		}
 		s := store.ProcSample{ProcID: e.id, TS: ts, State: string(st.State), Nice: st.Nice, TPGID: st.TPGID,
-			CPUTicks: int64(st.Utime + st.Stime), RSSKB: rss * int64(pageKB),
-			VSZKB: int64(st.VSize / 1024), Threads: st.NumThreads}
-		r.sampleIO(e, &s, refresh)
+			CPUTicks: ticks, RSSKB: rss * int64(pageKB),
+			VSZKB: int64(st.VSize / 1024), Threads: st.NumThreads,
+			MinFlt: int64(st.MinFlt), MajFlt: int64(st.MajFlt), ShrKB: shr * int64(pageKB),
+			Priority: st.Priority, Policy: st.Policy, RTPriority: st.RTPriority, CPU: st.Processor}
+		r.sampleRun(e, &s, fresh, status, haveStatus)
 		if !e.hasSamp || !sameProcSample(e.sample, s) {
 			b.ProcSamples = append(b.ProcSamples, s)
 			e.sample, e.hasSamp = s, true
@@ -582,23 +600,21 @@ func (r *Recorder) dropClosedProcs() {
 	}
 }
 
-func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch) *procEntry {
-	status, err := r.fs.ReadStatus(key.pid)
-	if err != nil {
-		return nil
-	}
+func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts int64, b *store.Batch) *procEntry {
 	cmd, argv0, err := r.readCmdline(key.pid)
 	if err != nil {
 		return nil
 	}
+	label, cgroup := r.readLabel(key.pid, ""), r.readCgroup(key.pid, "")
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
-		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample"}}
+		upd: store.ProcUpdate{UID: status.UID, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
+			Label: label, Cgroup: cgroup}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
 		PPID: st.PPID, UID: status.UID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
-		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample"}
+		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
 			// Seen first as a zombie: its exec event has the command line.
@@ -626,14 +642,16 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, ts int64, b *store.Batch
 }
 
 // refreshProc re-reads attributes that rarely change (cmdline via
-// setproctitle, uid via setuid, ppid via reparenting). It runs on fd-walk
-// samples only, to keep the per-interval cost to one read of stat.
-func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
+// setproctitle, uid via setuid, ppid via reparenting, the cgroup when a
+// process is moved, the label). It runs on fd-walk samples only, to keep the
+// per-interval cost low.
+func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Status, haveStatus bool, b *store.Batch) {
 	u := e.upd
 	u.PPID, u.Comm = st.PPID, st.Comm
-	if status, err := r.fs.ReadStatus(e.key.pid); err == nil {
+	if haveStatus {
 		u.UID = status.UID
 	}
+	u.Label, u.Cgroup = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup)
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
 	if cmd, argv0, err := r.readCmdline(e.key.pid); err == nil && cmd != "" {
@@ -645,22 +663,44 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, b *store.Batch) {
 	}
 }
 
-// sampleIO fills the I/O counters: read from /proc/<pid>/io for a new
-// process, one that used CPU since its last sample, and on every fd-walk
-// sample; otherwise the previous values stand (they are cumulative, so a
-// skipped read only delays an update).
-func (r *Recorder) sampleIO(e *procEntry, s *store.ProcSample, refresh bool) {
-	if !r.cfg.ProcIO {
+// sampleRun fills what changes only while the process runs: context
+// switches (from status), wchan and the I/O counters (/proc/<pid>/io), read
+// when fresh, else the previous sample's.
+func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, status procfs.Status, haveStatus bool) {
+	p := e.sample
+	if !fresh {
+		s.VolCtx, s.NonVolCtx, s.Wchan = p.VolCtx, p.NonVolCtx, p.Wchan
+		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
 		return
 	}
-	if e.hasSamp && !refresh && s.CPUTicks == e.sample.CPUTicks {
-		p := e.sample
-		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
+	if haveStatus {
+		s.VolCtx, s.NonVolCtx = status.VolCtx, status.NonVolCtx
+	}
+	if w, err := r.fs.ReadWchan(e.key.pid); err == nil {
+		s.Wchan = w
+	}
+	if !r.cfg.ProcIO {
 		return
 	}
 	if io, err := r.fs.ReadIO(e.key.pid); err == nil {
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = io.RChar, io.WChar, io.ReadBytes, io.WriteBytes, io.CancelledWrite
 	}
+}
+
+// readLabel and readCgroup return the process's security label and cgroup,
+// or old when they cannot be read (gone, or no security module).
+func (r *Recorder) readLabel(pid int, old string) string {
+	if l, err := r.fs.ReadLabel(pid); err == nil {
+		return l
+	}
+	return old
+}
+
+func (r *Recorder) readCgroup(pid int, old string) string {
+	if c, err := r.fs.ReadCgroup(pid); err == nil {
+		return c
+	}
+	return old
 }
 
 func sameProcSample(a, b store.ProcSample) bool {

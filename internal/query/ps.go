@@ -58,6 +58,11 @@ type procAt struct {
 	cpuTicks, rssKB, vszKB sql.NullInt64
 	rchar, wchar, rbytes   sql.NullInt64
 	wbytes                 sql.NullInt64
+	// Schema 8 (NULL in older recordings).
+	minFlt, majFlt, shrKB     sql.NullInt64
+	prio, policy, rtPrio, psr sql.NullInt64
+	volCtx, nonVolCtx         sql.NullInt64
+	wchan, label, cgroup      sql.NullString
 }
 
 // processesAt returns processes alive at t: those alive at sample s (with
@@ -67,7 +72,9 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 	rows, err := db.Query(`
 		SELECT p.id, p.pid, p.ppid, p.uid, p.start_time, p.tty, p.sid, p.pgrp, p.locked, p.comm,
 		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb,
-		       x.rchar, x.wchar, x.read_bytes, x.write_bytes
+		       x.rchar, x.wchar, x.read_bytes, x.write_bytes,
+		       x.min_flt, x.maj_flt, x.shr_kb, x.priority, x.policy, x.rt_priority, x.processor,
+		       x.vol_ctx, x.nonvol_ctx, x.wchan, p.label, p.cgroup
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
 		     AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
@@ -85,7 +92,9 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		var locked int
 		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.uid, &p.startMS, &p.tty, &p.sid, &p.pgrp, &locked,
 			&p.comm, &p.cmdline, &p.source, &p.state, &p.nice, &p.tpgid, &p.threads, &p.cpuTicks,
-			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes); err != nil {
+			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes,
+			&p.minFlt, &p.majFlt, &p.shrKB, &p.prio, &p.policy, &p.rtPrio, &p.psr,
+			&p.volCtx, &p.nonVolCtx, &p.wchan, &p.label, &p.cgroup); err != nil {
 			return nil, err
 		}
 		p.locked = locked == 1
@@ -205,15 +214,15 @@ func psStat(p procAt) string {
 	return b.String()
 }
 
-// psStart formats START like procps: HH:MM within 24h, MonDD within a year,
-// otherwise the year.
+// psStart formats START (STIME) like procps: HH:MM on the same day, MonDD
+// in the same year, otherwise the year.
 func psStart(startMS, nowMS int64) string {
-	t := time.UnixMilli(startMS)
-	ago := time.Duration(nowMS-startMS) * time.Millisecond
+	// procps's pr_stime: by local calendar day, not by age.
+	t, now := time.UnixMilli(startMS), time.UnixMilli(nowMS)
 	switch {
-	case ago > 365*24*time.Hour:
+	case t.Year() != now.Year():
 		return t.Format(" 2006")
-	case ago > 24*time.Hour:
+	case t.YearDay() != now.YearDay():
 		return t.Format("Jan02")
 	}
 	return t.Format("15:04")

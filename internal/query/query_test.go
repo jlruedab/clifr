@@ -3,6 +3,7 @@ package query
 import (
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestSockFilter(t *testing.T) {
@@ -76,6 +77,21 @@ func TestFmtAddrDual(t *testing.T) {
 	} {
 		if got := fmtAddrDual(c.a, c.ifname, c.v6only); got != c.want {
 			t.Errorf("fmtAddrDual(%v, %q, %v) = %q, want %q", c.a, c.ifname, c.v6only, got, c.want)
+		}
+	}
+}
+
+func TestPSStartByDay(t *testing.T) {
+	at := func(y int, m time.Month, d, h, min int) int64 { return time.Date(y, m, d, h, min, 0, 0, time.Local).UnixMilli() }
+	now := at(2026, 10, 22, 8, 20)
+	for start, want := range map[int64]string{
+		at(2026, 10, 22, 0, 5):   "00:05",
+		at(2026, 10, 21, 8, 48):  "Oct21", // 23.5 hours ago, but yesterday
+		at(2026, 1, 3, 9, 0):     "Jan03",
+		at(2025, 12, 31, 23, 59): " 2025",
+	} {
+		if got := psStart(start, now); got != want {
+			t.Errorf("psStart(%s) = %q, want %q", time.UnixMilli(start), got, want)
 		}
 	}
 }

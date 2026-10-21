@@ -63,10 +63,9 @@ type TopMem struct {
 	Available int64 `json:"available_kb"`
 }
 
-// TopRow is one process line. PR is 20 + NI: the scheduling policy is not
-// recorded, so a real-time process shows its nice-based priority, not "rt".
-// SHR is not recorded. Sampled false: only seen through exec/exit events,
-// no values.
+// TopRow is one process line. PR is the kernel's priority (-100: "rt");
+// recordings before schema 8 have no priority (PR = 20 + NI) and no SHR
+// (ShrKB -1). Sampled false: only seen through exec/exit events, no values.
 type TopRow struct {
 	PID     int     `json:"pid"`
 	User    string  `json:"user"`
@@ -74,6 +73,7 @@ type TopRow struct {
 	NI      int     `json:"ni"`
 	VirtKB  int64   `json:"virt_kb"`
 	ResKB   int64   `json:"res_kb"`
+	ShrKB   int64   `json:"shr_kb"`
 	S       string  `json:"s"`
 	CPU     float64 `json:"pcpu"`
 	Mem     float64 `json:"pmem"`
@@ -147,8 +147,11 @@ func TopAt(db *store.DB, t int64) (TopReport, error) {
 
 	for _, p := range procs {
 		r := TopRow{PID: p.pid, User: UserName(p.uid, false), NI: int(p.nice.Int64), PR: 20 + int(p.nice.Int64),
-			VirtKB: p.vszKB.Int64, ResKB: p.rssKB.Int64, Comm: p.comm, UID: p.uid, StartMS: p.startMS, S: "-",
+			VirtKB: p.vszKB.Int64, ResKB: p.rssKB.Int64, ShrKB: -1, Comm: p.comm, UID: p.uid, StartMS: p.startMS, S: "-",
 			Command: commandOf(p.cmdline, p.comm, p.state.String), Sampled: p.state.Valid}
+		if p.prio.Valid {
+			r.PR, r.ShrKB = int(p.prio.Int64), p.shrKB.Int64
+		}
 		rep.Tasks.Total++
 		if !p.state.Valid {
 			rep.Tasks.Sleeping++
@@ -229,7 +232,9 @@ func SortTop(rows []TopRow, field string) {
 			return b.PID - a.PID
 		case "USER":
 			return strings.Compare(b.User, a.User)
-		case "PR", "NI":
+		case "PR":
+			return a.PR - b.PR
+		case "NI":
 			return a.NI - b.NI
 		case "VIRT":
 			return cmp64(a.VirtKB, b.VirtKB)
@@ -279,7 +284,7 @@ type TopFormat struct {
 }
 
 // PrintTop prints the report like procps-ng 4 top -b -n 1 (without the
-// number of users, which is not recorded; SHR as "-").
+// number of users, which is not recorded).
 func PrintTop(w io.Writer, r TopReport, f TopFormat) {
 	min := r.Uptime.UptimeS / 60
 	days, hours, min := min/1440, min/60%24, min%60
@@ -331,8 +336,15 @@ func PrintTop(w io.Writer, r TopReport, f TopFormat) {
 			line(fmt.Sprintf("%7d %-8s %3s %3s %7s %6s %6s %s %5s %5s %9s %s", p.PID, user, "-", "-", "-", "-", "-", "-", "-", "-", "-", cmd))
 			continue
 		}
-		line(fmt.Sprintf("%7d %-8s %3d %3d %7s %6s %6s %s %5.1f %5.1f %9s %s", p.PID, user, p.PR, p.NI,
-			topMem(p.VirtKB, 7), topMem(p.ResKB, 6), "-", p.S, p.CPU, p.Mem, topTime(p.TimeCS), cmd))
+		pr, shr := strconv.Itoa(p.PR), "-"
+		if p.PR == -100 {
+			pr = "rt"
+		}
+		if p.ShrKB >= 0 {
+			shr = topMem(p.ShrKB, 6)
+		}
+		line(fmt.Sprintf("%7d %-8s %3s %3d %7s %6s %6s %s %5.1f %5.1f %9s %s", p.PID, user, pr, p.NI,
+			topMem(p.VirtKB, 7), topMem(p.ResKB, 6), shr, p.S, p.CPU, p.Mem, topTime(p.TimeCS), cmd))
 	}
 }
 
