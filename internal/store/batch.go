@@ -239,6 +239,21 @@ type ProcSample struct {
 	RChar, WChar, ReadBytes, WriteBytes, CancelledWrite int64
 }
 
+// NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named
+// as nstat names it, at its position in those files. Written when it
+// changed, and all of them at a run's first sample and every
+// NetCountersFullMS.
+type NetCounter struct {
+	TS    int64
+	Pos   int
+	Name  string
+	Value int64
+}
+
+// NetCountersFullMS: how often every protocol counter is written, so a moment
+// needs only the rows of the 5 minutes before it.
+const NetCountersFullMS = 5 * 60 * 1000
+
 // Close ends a time range. Ended is only used for processes.
 type Close struct {
 	ID       int64
@@ -322,6 +337,7 @@ type Batch struct {
 	Sys         []SysSample // one per system sample (several when the system interval is shorter)
 	CPUs        []CPUSample
 	Disks       []DiskSample
+	NetCounters []NetCounter
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -332,5 +348,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters)
 }

@@ -19,7 +19,7 @@ Usage:
 
 Supported commands:
   ps, top, pstree, lsof, ss, netstat, vmstat, mpstat, iostat, free, uptime,
-  df, mount, findmnt, date, hostname, uname, last
+  df, mount, findmnt, date, hostname, uname, last, nstat
   events, life, oom, mounts (clifr only: timeline, process lifetimes, OOM
   kills, mount table)
   Run "clifr help COMMAND" to see which options are supported for recorded

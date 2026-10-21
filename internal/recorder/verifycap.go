@@ -23,6 +23,7 @@ var verifyCommands = [][]string{
 	{"iostat", "-dx"},
 	{"free"},
 	{"ss", "-s"},
+	{"nstat", "-zas"}, // iproute2; -s: no history file written
 	{"uname", "-a"},
 	{"df"},
 	{"df", "-al", "-x", "autofs"},

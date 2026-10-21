@@ -336,3 +336,48 @@ func lastTool() *tool {
 		},
 	}
 }
+
+func nstatTool() *tool {
+	return &tool{
+		name: "nstat", synopsis: "-a [-z] [-s]  |  [-z] [-s] (with --since)",
+		about: "kernel protocol counters (/proc/net/snmp, netstat, snmp6), as iproute2 nstat prints them",
+		opts: []opt{
+			{short: 'a', long: "ignore", help: "absolute values since boot (required with --at)"},
+			{short: 'z', long: "zeros", help: "also the counters that are 0"},
+			{short: 's', long: "noupdate", help: "accepted (clifr keeps no history file)"},
+		},
+		window: true,
+		notes: []string{
+			"--at with -a: the values at the system sample at or before T. --since without -a: the increase",
+			"from the start of the range to its end, with the rate per second (what nstat shows since its",
+			"last run). Recorded since 2026-10-21 (schema 4).",
+		},
+		examples: []string{`clifr --at "02:45" "nstat -zas"`, `clifr --since "02:00" --until "02:05" nstat`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("nstat: unexpected argument %q (counter patterns are not supported)", p.pos[0])
+			}
+			if !c.w.IsRange() && !p.has("ignore") {
+				return nil, errors.New("nstat: with --at add -a (values since boot); for increases give a range with --since")
+			}
+			if c.w.IsRange() && p.has("ignore") {
+				return nil, errors.New("nstat: -a needs --at; over a range nstat shows the increase")
+			}
+			return func() error {
+				rows, from, to, err := query.Nstat(c.db, c.w, p.has("zeros"))
+				if err != nil {
+					return err
+				}
+				if c.w.IsRange() {
+					c.header("nstat: increase from the system sample at %s to the one at %s", query.FormatMS(from), query.FormatMS(to))
+				} else {
+					c.header("nstat at %s: since boot, from the system sample at %s", query.FormatMS(c.w.At), query.FormatMS(to))
+				}
+				return c.emit(rows, func(int) rowMeta {
+					return rowMeta{TS: c.w.At, SampleTS: to, From: from, To: to, Sampled: []string{"value", "rate"}}
+				},
+					func(w io.Writer) { query.PrintNstat(w, rows) })
+			}, nil
+		},
+	}
+}

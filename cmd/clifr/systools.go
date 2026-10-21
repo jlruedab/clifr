@@ -98,6 +98,7 @@ func addSystemTools() {
 	addTool(hostnameTool())
 	addTool(unameTool())
 	addTool(lastTool())
+	addTool(nstatTool())
 }
 
 // prepareSys reads INTERVAL [COUNT], chooses the spans and runs print.

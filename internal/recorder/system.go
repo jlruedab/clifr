@@ -13,6 +13,9 @@ type sysSampler struct {
 	warned map[string]bool
 	part   map[string]bool // disk name -> is a partition
 	sysfs  bool            // /sys describes the recorded machine
+	// Protocol counters as last written, and when all of them were.
+	netLast map[string]int64
+	netFull int64
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -78,6 +81,18 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.Raw6InUse, row.Frag6InUse, row.Frag6Memory = int64(k.Raw6InUse), int64(k.Frag6InUse), int64(k.Frag6Memory)
 	}
 	b.Sys = append(b.Sys, *row)
+	if c, err := r.fs.ReadNetCounters(); !fail("net/snmp", err) {
+		full := s.netLast == nil || ts-s.netFull >= store.NetCountersFullMS
+		if full {
+			s.netLast, s.netFull = map[string]int64{}, ts
+		}
+		for i, n := range c {
+			if v, ok := s.netLast[n.Name]; full || !ok || v != n.Value {
+				b.NetCounters = append(b.NetCounters, store.NetCounter{TS: ts, Pos: i, Name: n.Name, Value: n.Value})
+				s.netLast[n.Name] = n.Value
+			}
+		}
+	}
 	disks, err := r.fs.ReadDiskStats()
 	if fail("diskstats", err) {
 		return

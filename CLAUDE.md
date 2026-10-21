@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -146,6 +146,10 @@ wait for the user's go-ahead.
   `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--sys-interval`. `uptime` has no user count.
+- `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
+  `pos` = file order), at system samples, written when changed and all every
+  `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
+  (`internal/duck` loads that window).
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).

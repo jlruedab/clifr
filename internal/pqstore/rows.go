@@ -487,3 +487,10 @@ func diskOf(d store.DiskSample) diskRow {
 	return diskRow{TS: d.TS, Major: int32(d.Major), Minor: int32(d.Minor), Name: d.Name, Part: int32(b2i(d.Part)),
 		RdIOs: d.V[0], RdMerges: d.V[1], RdSectors: d.V[2], RdTicks: d.V[3], WrIOs: d.V[4], WrMerges: d.V[5], WrSectors: d.V[6], WrTicks: d.V[7], DcIOs: d.V[8], DcMerges: d.V[9], DcSectors: d.V[10], DcTicks: d.V[11], InFlight: d.V[12], IOTicks: d.V[13], TimeInQueue: d.V[14], FlIOs: d.V[15], FlTicks: d.V[16]}
 }
+
+type netCounterRow struct {
+	TS    int64  `parquet:"ts"`
+	Pos   int32  `parquet:"pos"`
+	Name  string `parquet:"name,dict"`
+	Value int64  `parquet:"value"`
+}

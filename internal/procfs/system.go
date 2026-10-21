@@ -321,3 +321,50 @@ func (f FS) ReadSockStat() (SockStat, error) {
 	}
 	return s, nil
 }
+
+// NetCounter is one protocol counter of /proc/net/snmp, netstat or snmp6,
+// named as nstat names them ("IpInReceives", "TcpExtListenDrops",
+// "Ip6InReceives").
+type NetCounter struct {
+	Name  string
+	Value int64
+}
+
+// ReadNetCounters reads every counter of /proc/net/snmp and netstat (a
+// header line of names and a line of values per protocol) and snmp6 (a name
+// and a value per line), in file order. A missing file is left out.
+func (f FS) ReadNetCounters() ([]NetCounter, error) {
+	var out []NetCounter
+	pairs := func(b []byte) {
+		lines := bytes.Split(b, []byte("\n"))
+		for i := 0; i+1 < len(lines); i += 2 {
+			hk, hv, ok1 := bytes.Cut(lines[i], []byte(":"))
+			vk, vv, ok2 := bytes.Cut(lines[i+1], []byte(":"))
+			if !ok1 || !ok2 || !bytes.Equal(hk, vk) {
+				continue
+			}
+			names, vals := fields(hv, nil), fields(vv, nil)
+			for j := 0; j < len(names) && j < len(vals); j++ {
+				v, _ := strconv.ParseInt(string(vals[j]), 10, 64)
+				out = append(out, NetCounter{Name: string(hk) + string(names[j]), Value: v})
+			}
+		}
+	}
+	b, err := os.ReadFile(f.path("net/snmp"))
+	if err != nil {
+		return nil, err
+	}
+	pairs(b)
+	if b, err := os.ReadFile(f.path("net/netstat")); err == nil {
+		pairs(b)
+	}
+	if b, err := os.ReadFile(f.path("net/snmp6")); err == nil {
+		for _, l := range bytes.Split(b, []byte("\n")) {
+			if fs := fields(l, nil); len(fs) == 2 {
+				v, _ := strconv.ParseInt(string(fs[1]), 10, 64)
+				out = append(out, NetCounter{Name: string(fs[0]), Value: v})
+			}
+		}
+	}
+	return out, nil
+}

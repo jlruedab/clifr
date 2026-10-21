@@ -10,7 +10,8 @@ import (
 
 // SSSummary is ss -s: the socket counts of /proc/net/sockstat and sockstat6
 // at the system sample at or before t, and the established connections
-// (TCP's CurrEstab: ESTABLISHED and CLOSE-WAIT) at t from the TCP records.
+// (TCP's CurrEstab: ESTABLISHED and CLOSE-WAIT): recorded with the protocol
+// counters, else counted at t from the TCP records.
 type SSSummary struct {
 	SampleTS                         int64                       `json:"sample_ts_ms"`
 	Total                            int64                       `json:"total"`
@@ -37,6 +38,14 @@ func SSSummaryAt(db *store.DB, t int64) (SSSummary, error) {
 		return s, err
 	}
 	s.Total = used.Int64
+	// iproute2 reads estab from /proc/net/snmp (Tcp CurrEstab), recorded
+	// since schema 4; before, it is counted from the TCP records.
+	if c, _, err := netCountersAt(db, t); err == nil {
+		if v, ok := c["TcpCurrEstab"]; ok {
+			s.Estab = v.Value
+			return s.finish(), nil
+		}
+	}
 	var rows []SSRow
 	if TCPFromEvents(db) {
 		rows, _, err = ConnsAt(db, t, "tcp", SockFilter{})
@@ -54,6 +63,11 @@ func SSSummaryAt(db *store.DB, t int64) (SSSummary, error) {
 			s.Estab++
 		}
 	}
+	return s.finish(), nil
+}
+
+// finish computes the derived counts and the JSON maps.
+func (s SSSummary) finish() SSSummary {
 	// iproute2: TCP is alloc + tw; closed is alloc minus the hashed (inuse)
 	// sockets that are not in time-wait.
 	s.Closed = s.TCP - (s.TCP4 + s.TCP6 - s.TW)
@@ -62,7 +76,7 @@ func SSSummaryAt(db *store.DB, t int64) (SSSummary, error) {
 	for _, l := range s.lines() {
 		s.Transport[l.name] = map[string]int64{"total": l.v4 + l.v6, "ip": l.v4, "ipv6": l.v6}
 	}
-	return s, nil
+	return s
 }
 
 type ssLine struct {

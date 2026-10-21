@@ -22,6 +22,7 @@ func init() {
 	ignoredFields["df -al -x autofs"] = ignoredFields["df"]
 	ignoredFields["findmnt"] = "none; the whole line (tree, source, type, options)"
 	ignoredFields["uname -a"] = "none"
+	ignoredFields["nstat -zas"] = "the rate column (nstat's own history); values that moved within 1% or 10 count as churn-changed"
 	ignoredFields["ss -s"] = "none; counts within 5% or 3 (sockets come and go between the sample and the run)"
 	ignoredFields["mount"] = "none"
 	ignoredFields["pstree -lpT"] = "none; compared: each process's parent and name (which set its place)"
@@ -787,5 +788,50 @@ func compareSSSummary(db *store.DB, snap snapshot) (Result, error) {
 			res.Exact++
 		}
 	}
+	return res, nil
+}
+
+// ---- nstat -zas ----
+
+// parseNstat reads nstat's counters by name, with their place.
+func parseNstat(out string) map[string]dfLine {
+	m := map[string]dfLine{}
+	for _, l := range strings.Split(out, "\n") {
+		f := strings.Fields(l)
+		if len(f) == 3 && !strings.HasPrefix(f[0], "#") {
+			m[f[0]] = dfLine{size: f[1], pos: len(m)}
+		}
+	}
+	return m
+}
+
+func compareNstat(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	rows, _, _, err := query.Nstat(db, query.Window{At: snap.ts}, true)
+	if err != nil {
+		res.example("nstat: %v", err)
+		return res, nil
+	}
+	real := parseNstat(snap.output)
+	rec := parseNstat(render(func(sb *strings.Builder) { query.PrintNstat(sb, rows) }))
+	res.Real, res.Recon = len(real), len(rec)
+	for name, r := range real {
+		x, ok := rec[name]
+		if !ok {
+			res.Missing++
+			res.example("nstat missing %s", name)
+			continue
+		}
+		res.Matched++
+		// Counters keep moving between the sample and the run.
+		res.compare("nstat "+name, []fieldPair{{"value", r.size, x.size}}, func() bool { return near(r.size, x.size, 0.01, 10) })
+	}
+	for name := range rec {
+		if _, ok := real[name]; !ok {
+			res.Extra++
+			res.example("nstat extra %s", name)
+		}
+	}
+	res.compareOrder("nstat", rankOf(real), rankOf(rec))
 	return res, nil
 }

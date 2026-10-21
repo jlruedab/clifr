@@ -226,6 +226,8 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "ss -s"
     clifr --at "02:45" "uname -a"
     clifr --at now "last -F reboot"
+    clifr --at "02:45" "nstat -zas"
+    clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
     clifr --at "2026-10-12 13:28:34" "ss -tanp dport = :5432 and dst 10.0.0.0/24"
@@ -307,7 +309,13 @@ chooses one; a line on stderr says when a style other than current is used.
   (`-n` and `-d` as top's).
 - `ss -s`: the counts of /proc/net/sockstat and sockstat6 at the system
   sample at or before T (recorded since schema 3), estab (ESTABLISHED and
-  CLOSE-WAIT) from the TCP records at T.
+  CLOSE-WAIT) from /proc/net/snmp (since schema 4; before, counted from the
+  TCP records at T).
+- `nstat -a [-z]` at a moment: every protocol counter of /proc/net/snmp,
+  netstat and snmp6 since boot, as recorded at the system sample at or
+  before T (clifrd writes a counter when it changes, and all of them every
+  5 minutes; since schema 4). Over a range, `nstat [-z]` shows each
+  counter's increase from the start to the end and its rate per second.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
