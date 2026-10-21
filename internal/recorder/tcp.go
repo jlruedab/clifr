@@ -99,6 +99,7 @@ type tcpTracker struct {
 	lastKeyframe time.Time
 	keyframes    int
 	finTimeout   int64 // ms, the FIN_WAIT2 time-wait length
+	twInferred   int64 // time-wait starts inferred from the close (cumulative)
 	pendingDump  []sockdiag.Socket
 	pendingInode map[uint64]bool
 	dumpStart    int64
@@ -231,6 +232,9 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	defer t.mu.Unlock()
 	for name, v := range progs { // cumulative, like the event counts
 		t.received[statBPFRuns+name], t.received[statBPFNS+name] = int64(v[0]), int64(v[1])
+	}
+	if t.twInferred > 0 {
+		t.received["tcp_time_wait_inferred"] = t.twInferred
 	}
 	var out []store.StatRow
 	seen := map[string]bool{}
@@ -372,6 +376,7 @@ func (r *Recorder) drainTCP() {
 				c.row.Retransmits += uint32(e.Retransmits)
 				add16(&c.row.ResetsSent, uint32(e.ResetsSent))
 				add16(&c.row.ResetsReceived, uint32(e.ResetsReceived))
+				t.inferTimeWait(c, e.Old, ts)
 				t.finish(c, e.SK, ts, e.Old)
 			}
 		case bpftcp.Accept, bpftcp.AcceptFD:
@@ -423,6 +428,20 @@ func (r *Recorder) drainTCP() {
 			}
 		}
 	}
+}
+
+// inferTimeWait: a close from FIN_WAIT2 or CLOSING without a reset is the
+// kernel's tcp_time_wait (it closes the socket right after it made the
+// time-wait one), so the time-wait start was missed: RHEL 8 sometimes skips
+// that kprobe (another tracing program was running on the CPU). The state
+// taken is TIME_WAIT, what such closes show here; a keyframe corrects it.
+func (t *tcpTracker) inferTimeWait(c *tconn, old int, ts int64) {
+	if c.lingerState != 0 || old != bpftcp.FinWait2 && old != bpftcp.Closing ||
+		c.row.ResetsSent != 0 || c.row.ResetsReceived != 0 {
+		return
+	}
+	c.lingerState, c.lingerTS = bpftcp.TimeWait, ts
+	t.twInferred++
 }
 
 // finish closes a connection at ts; final is its last state before TCP_CLOSE.

@@ -99,7 +99,9 @@ wait for the user's go-ahead.
   per-program scratch slots); the recorder closes a connection whose close was missed
   when its sock pointer is reused (`tcp_close_missed` guard event); `recorder_stats` has
   `tcp_missed_runs` / `ebpf_missed_runs` (dropped). OOM, the syscall fd hooks and the
-  reset/retransmit counters are still classic tracepoints.
+  reset/retransmit counters are still classic tracepoints. A missed time-wait start
+  (RHEL 8's kprobe) is inferred: a CLOSE from FIN_WAIT2/CLOSING without resets means
+  tcp_time_wait ran (`tcp_time_wait_inferred` in `recorder_stats`).
 - Kernel differences found in VMs (2026-10-20; keep reading through CO-RE): RHEL 8's
   `sk_protocol` is a bitfield (`BPF_CORE_READ_BITFIELD_PROBED`) and `inet_sock_set_state`'s
   protocol one byte; RHEL 8 keeps the old `pid_type` order (PID, PGID, SID, TGID:

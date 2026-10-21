@@ -86,8 +86,7 @@ deletes the recording. License field: to be decided.
 Tested kernels (packages in KVM guests, 2026-10-20, `packaging/vm.sh`):
 Rocky Linux 8.10 (4.18, SELinux enforcing), AlmaLinux 9.8 (5.14, enforcing),
 Ubuntu 22.04.5 (5.15), and this machine's 7.0: `--test-ebpf` 21/21 in all
-three attach modes, e2e and the small ground truth pass (43/43; on RHEL 8 a
-missed time-wait start in some runs, see Limitations), the service records
+three attach modes, e2e and the small ground truth pass (43/43), the service records
 with no SELinux denials (clifrd runs unconfined: no policy module is needed).
 
 Kernel: Linux with BTF at `/sys/kernel/btf/vmlinux` (RHEL 8.2+/9, Ubuntu
@@ -635,10 +634,14 @@ continuous eBPF tracer, not a metrics exporter.
   killer sends just before (their `oom:mark_victim` tracepoint has no RSS
   fields): within 0.5% of the kernel's "Killed process" line in the VM
   runs; with the classic fallback programs (no `tp_btf`) it is unknown (0).
-- **RHEL 8 loses about one time-wait start in 1000 connections** in half
-  the ground-truth runs: its TCP hooks are kprobes, which the kernel skips
-  while another BPF program runs on that CPU. The keyframe adopts the
-  time-wait socket (reconciliation counts it).
+- **RHEL 8 misses about one time-wait start in 1000 connections** in some
+  ground-truth runs: its TCP hooks are kprobes, which the kernel skips while
+  another BPF program runs on that CPU. The recorder infers it: a close from
+  FIN_WAIT2 or CLOSING without a reset means the kernel made a time-wait
+  socket (`recorder_stats` source `tcp_time_wait_inferred`; state
+  TIME_WAIT, corrected by the next keyframe). If a reset in FIN_WAIT2 was
+  missed too, `ss` shows a time-wait socket that did not exist for up to
+  60 s.
 
 - **CPU is just under the 2% budget at the busy load**: 1.84% of one core
   on average (runs of 1.7–2.1%), with a few `budget_exceeded` events; an hourly

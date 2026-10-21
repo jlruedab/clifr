@@ -342,3 +342,50 @@ func TestLocalPort(t *testing.T) {
 		}
 	}
 }
+
+// A close from FIN_WAIT2 or CLOSING without a time-wait start (the kernel
+// skipped that program) still leaves a time-wait socket; with a reset it
+// does not, and a reported start is kept as it is.
+func TestTimeWaitInferred(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	conn := func(sk uint64, port int, last int) []bpftcp.Event {
+		return []bpftcp.Event{
+			tcpEvent(sk, 7, 2, "127.0.0.1", 0, "127.0.0.2", 80),
+			tcpEvent(sk, 2, 1, "127.0.0.1", port, "127.0.0.2", 80),
+			tcpEvent(sk, 1, 4, "127.0.0.1", port, "127.0.0.2", 80),
+			tcpEvent(sk, 4, last, "127.0.0.1", port, "127.0.0.2", 80),
+		}
+	}
+	closeEv := func(sk uint64, port, old int) bpftcp.Event {
+		return tcpEvent(sk, old, 7, "127.0.0.1", port, "127.0.0.2", 80)
+	}
+	reset := closeEv(3, 40002, bpftcp.FinWait2)
+	reset.ResetsReceived = 1
+	var q []bpftcp.Event
+	q = append(append(q, conn(1, 40000, bpftcp.FinWait2)...), closeEv(1, 40000, bpftcp.FinWait2))
+	q = append(append(q, conn(2, 40001, bpftcp.Closing)...), closeEv(2, 40001, bpftcp.Closing))
+	q = append(append(q, conn(3, 40002, bpftcp.FinWait2)...), reset)
+	q = append(append(q, conn(4, 40003, bpftcp.FinWait2)...),
+		bpftcp.Event{Kind: bpftcp.TimeWaitStart, SK: 4, New: bpftcp.FinWait2}, closeEv(4, 40003, bpftcp.FinWait2))
+	r.tcp.queue = q
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	if len(b.TCPConns) != 4 {
+		t.Fatalf("want 4 connections, got %+v", b.TCPConns)
+	}
+	for _, c := range b.TCPConns {
+		want := map[uint16]uint8{40000: bpftcp.TimeWait, 40001: bpftcp.TimeWait, 40002: 0, 40003: bpftcp.FinWait2}[c.LPort]
+		if c.CloseTS == 0 || c.LingerState != want || (want == 0) != (c.LingerUntil == 0) {
+			t.Errorf("port %d: linger state %d until %d, want state %d", c.LPort, c.LingerState, c.LingerUntil, want)
+		}
+		if want == bpftcp.TimeWait && c.LingerUntil-c.CloseTS != timeWaitMS {
+			t.Errorf("port %d: time-wait until %d, closed %d", c.LPort, c.LingerUntil, c.CloseTS)
+		}
+	}
+	if r.tcp.twInferred != 2 {
+		t.Errorf("%d time-wait starts inferred, want 2", r.tcp.twInferred)
+	}
+}

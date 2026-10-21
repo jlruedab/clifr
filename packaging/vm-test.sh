@@ -20,11 +20,18 @@ if ! command -v clifrd >/dev/null; then
 		apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$T"/pkg/*.deb lsof sysstat sosreport >/dev/null 2>&1
 	fi
 	usermod -aG clifr tester
-	# Nothing is on disk before the first flush (5 min by default).
-	t0=$(date +%s)
-	until [ "$(clifr --plain --at -5s "ps aux" 2>/dev/null | wc -l)" -gt 50 ] || [ $(($(date +%s) - t0)) -gt 400 ]; do sleep 10; done
-	echo "   first data readable after $(($(date +%s) - t0)) s"
+elif $rhel; then # a VM kept from an earlier test: upgrade to these packages
+	dnf -q -y install "$T"/pkg/*.rpm >/dev/null 2>&1 && systemctl restart clifrd
+else
+	DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$T"/pkg/*.deb >/dev/null 2>&1 && systemctl restart clifrd
 fi
+# Nothing of the new run is on disk before its first flush (5 min by
+# default); until then the latest moment is the old run's shutdown, when
+# its connections were closed.
+t0=$(date +%s)
+recorded_to() { date -d "$(clifr info 2>/dev/null | awk '/^Recording:/ {print $5, $6}')" +%s 2>/dev/null || echo 0; }
+until [ "$(recorded_to)" -gt "$t0" ] || [ $(($(date +%s) - t0)) -gt 400 ]; do sleep 10; done
+echo "   first data of this run readable after $(($(date +%s) - t0)) s"
 command -v clifrd >/dev/null && ok "packages installed: $(clifrd --version)" || bad "packages not installed"
 
 if has service; then
@@ -35,8 +42,9 @@ if has service; then
 	end=$(clifr info 2>/dev/null | awk '/^Recording:/ {print $5, $6}')
 	n=$(clifr --plain --at "$end" "ps aux" 2>/dev/null | wc -l)
 	[ "$n" -gt 50 ] && ok "clifr ps aux from the service's recording: $n lines" || bad "clifr ps aux: $n lines"
-	n=$(su - tester -c "clifr --plain --at '$end' 'ss -tan'" 2>/dev/null | wc -l)
-	[ "$n" -gt 1 ] && ok "clifr as a member of the clifr group: ss -tan $n lines" || bad "clifr as the clifr group: $n lines"
+	out=$(su - tester -c "clifr --plain --at '$end' 'ss -tan'" 2>&1)
+	n=$(echo "$out" | grep -vc '^#')
+	[ "$n" -gt 1 ] && ok "clifr as a member of the clifr group: ss -tan $n lines" || bad "clifr as the clifr group at $end: $(echo "$out" | tail -3)"
 	stat -c '%a %U:%G %n' /var/lib/clifr
 	if $rhel; then
 		d=$(grep -c 'avc: *denied.*clifrd' /var/log/audit/audit.log 2>/dev/null)
