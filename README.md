@@ -421,7 +421,10 @@ free disk and validate every run. Keep the machine otherwise idle.
 5. **Accuracy against the real tools** (20 minutes): record under load with
    checkpoints, then `clifr verify`. `bench/accuracy.sh --profile busy`.
 6. **Real server** (optional): `bench/passive.sh start|status|stop` records
-   for 24 h with no generated load, under the shipped unit's limits.
+   for 24 h with no generated load, with the `[Service]` settings of
+   `deploy/clifrd.service` (limits, capabilities, sandbox; read from the unit
+   at start, `CAP_SYS_ADMIN` added before Linux 5.8). `start` prints the event
+   sources the recorder got (eBPF or the fallbacks).
 
 How it measures:
 

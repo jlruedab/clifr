@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Real-server mode: measure the recorder's cost on a real (non-test) server.
 # No load is generated. The recorder runs as a transient systemd service with
-# the same limits and sandbox as deploy/clifrd.service, plus a 5 s cgroup
-# sampler; both survive logout. Run as root.
+# the limits and sandbox of deploy/clifrd.service (read from the unit at
+# start), plus a 5 s cgroup sampler; both survive logout. Run as root.
 #
 #   sudo bench/passive.sh start [--duration 24h] [--interval 30s]
 #                               [--fd-interval 120s] [--out DIR] [--min-free-gb 1.5]
@@ -21,11 +21,13 @@
 #         a real server it is the flight record.
 #
 # Safety on a production server:
-#   - The recorder runs with CPUQuota=5%, MemoryMax=768M, Nice=10,
-#     IOSchedulingClass=idle, ProtectSystem=strict (writable: DIR only),
-#     NoNewPrivileges and only CAP_SYS_PTRACE, CAP_DAC_READ_SEARCH and
-#     CAP_NET_ADMIN. Its own guard rail (2% CPU budget) lengthens the fd
-#     interval if needed. CPUQuota=5% allows 5 ms of CPU per 100 ms, so
+#   - The recorder runs with every [Service] setting of deploy/clifrd.service
+#     (CPUQuota=5%, MemoryMax=768M, Nice=10, IOSchedulingClass=idle, its
+#     capabilities, ProtectSystem=strict and the other protections) except
+#     how it is started, restarted and where it writes: DIR only. On kernels
+#     before 5.8 (no CAP_BPF/CAP_PERFMON) CAP_SYS_ADMIN is added for eBPF, as
+#     the unit's comment says. Its own guard rail (2% CPU budget) lengthens
+#     the fd interval if needed. CPUQuota=5% allows 5 ms of CPU per 100 ms, so
 #     each sample's burst of work is throttled (cgroup.csv nr_throttled,
 #     throttled_us) and takes longer in wall time; the average CPU is still
 #     the true cost as long as it stays well below 5%.
@@ -69,6 +71,23 @@ seconds() {
     esac
 }
 
+# unit_props: the [Service] settings of deploy/clifrd.service as systemd-run
+# -p arguments, without the ones about starting, restarting and the state
+# directory (the results directory replaces it). Before Linux 5.8 eBPF
+# needs CAP_SYS_ADMIN.
+unit_props() {
+    local line k v old=false
+    [[ $(printf '%s\n' 5.8 "$(uname -r)" | sort -V | head -1) != 5.8 ]] && old=true
+    while IFS= read -r line; do
+        k=${line%%=*} v=${line#*=}
+        case $k in
+        Type | ExecStart | Restart | RestartSec | StateDirectory | StateDirectoryMode | Group) continue ;;
+        CapabilityBoundingSet) $old && v="$v CAP_SYS_ADMIN" ;;
+        esac
+        printf '%s\n' "-p" "$k=$v"
+    done < <(awk '/^\[/ {s = ($0 == "[Service]")} s && /^[A-Za-z]+=/' "$ROOT/deploy/clifrd.service")
+}
+
 start() {
     check_common clifr clifrd benchtool
     systemctl is-active -q $REC && die "already running (results: $(cat $STATE 2>/dev/null)); use stop first"
@@ -90,14 +109,13 @@ start() {
     } >"$OUT/machine.env"
     systemctl reset-failed $REC $SAMP 2>/dev/null || true
 
-    # Same limits and sandbox as deploy/clifrd.service.
+    # The limits and sandbox of deploy/clifrd.service.
+    local props
+    mapfile -t props < <(unit_props)
+    ((${#props[@]})) || die "no [Service] settings read from deploy/clifrd.service"
+    printf '%s %s\n' "${props[@]}" | sed 's/^-p /  /' >"$OUT/unit-props.txt"
     systemd-run --quiet --unit=$REC --description="clifr recorder (passive benchmark)" \
-        -p CPUAccounting=yes -p MemoryAccounting=yes -p IOAccounting=yes \
-        -p CPUQuota=5% -p MemoryMax=768M -p Nice=10 -p IOSchedulingClass=idle \
-        -p "CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN" \
-        -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=read-only \
-        -p "ReadWritePaths=$OUT" -p ProtectKernelTunables=yes -p ProtectKernelModules=yes \
-        -p ProtectControlGroups=yes -p "RestrictAddressFamilies=AF_NETLINK AF_UNIX" \
+        "${props[@]}" -p "ReadWritePaths=$OUT" \
         -p StandardOutput=append:"$OUT/recorder.log" -p StandardError=append:"$OUT/recorder.log" \
         "$BIN/clifrd" --config /dev/null --data-dir "$OUT/data" --interval "$INTERVAL" --fd-interval "$FD_INTERVAL" \
         --duration "$DURATION"
@@ -110,6 +128,11 @@ start() {
     echo "$OUT" >$STATE
     sleep 2
     systemctl is-active -q $REC || { tail -5 "$OUT/recorder.log"; die "recorder did not start"; }
+    # What the recorder could use inside the sandbox: eBPF, or the fallbacks
+    # (logged once its event sources are set up, a few seconds after start).
+    local i
+    for i in $(seq 1 30); do grep -q "TCP:" "$OUT/recorder.log" && break; sleep 1; done
+    grep -E "process events:|TCP:|open files:" "$OUT/recorder.log" | sed 's/^/    /' || true
     log "recording for $DURATION; results in $OUT"
     log "check: sudo bench/passive.sh status    finish: sudo bench/passive.sh stop"
 }
