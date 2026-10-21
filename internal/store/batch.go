@@ -324,6 +324,18 @@ type KmsgRow struct {
 	BootUS, SuspUS int64
 }
 
+// UnitRow is a systemd unit as ListUnits returns it: Action "present" (a
+// snapshot of every loaded unit, Seq its place), "change" (a new unit, or
+// one whose values changed) or "gone" (no longer loaded).
+type UnitRow struct {
+	TS                                              int64
+	Action                                          string
+	Seq                                             int
+	Name, Description, Load, Active, Sub, Following string
+	JobID                                           int64
+	JobType                                         string
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -420,6 +432,7 @@ type Batch struct {
 	Addrs       []AddrRow
 	Routing     []RoutingRow
 	Kmsg        []KmsgRow
+	Units       []UnitRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -430,5 +443,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units)
 }

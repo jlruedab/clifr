@@ -98,7 +98,7 @@ Kernel: Linux with BTF at `/sys/kernel/btf/vmlinux` (RHEL 8.2+/9, Ubuntu
 llvm-18, libbpf-dev).
 
 Dependencies: `cilium/ebpf`, `parquet-go/parquet-go`, `duckdb/duckdb-go` (CLI
-only), `golang.org/x/sys`.
+only), `godbus/dbus/v5` (pure Go: systemd's units), `golang.org/x/sys`.
 
 ## Recording
 
@@ -233,6 +233,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "02:45" "ip route show table all"
     clifr --at "02:45" "ip -6 rule list"
     clifr --at "02:45" "dmesg -T"
+    clifr --at "02:45" "systemctl list-units --failed"
     clifr --since "02:00" --until "02:05" nstat
     clifr --at "02:45" "df -aliT -x autofs"
     clifr --since "02:00" --until "02:10" --samples "top -b -c -o %MEM"
@@ -360,6 +361,15 @@ chooses one; a line on stderr says when a style other than current is used.
   2.37 and 2.41 each differently). The buffer's oldest record is noted at
   most 10 s after records arrive, so right after a burst the oldest lines
   may still be listed although the kernel had dropped them.
+- `systemctl [list-units] [-a] [--failed] [--state=S] [-t TYPE] [--plain]
+  [--no-legend] [PATTERN...]`: systemd's loaded units at T. clifrd lists
+  them over systemd's private socket (as systemctl does as root; else the
+  system bus) at the start, hourly, and a fraction of a second after
+  systemd signals a change (at most every second), so a unit that failed
+  and was restarted within that second may be missed. Printed as the
+  recorded host's systemd prints them (239 on RHEL 8, 249/252 on Ubuntu
+  22.04 and RHEL 9, 258 and later), with `*` and `->` instead of `●` and
+  `→` when clifr's locale is not UTF-8, as systemctl decides it.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

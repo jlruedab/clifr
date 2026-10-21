@@ -27,6 +27,9 @@ func init() {
 	ignoredFields["ip -o addr"] = "none; lifetimes that counted down by up to 5 s count as churn-changed"
 	ignoredFields["ip route show table all"] = "none; an expiring route's time left within 5 s"
 	ignoredFields["ip -6 route show table all"] = ignoredFields["ip route show table all"]
+	ignoredFields["systemctl list-units --no-pager"] = "none"
+	ignoredFields["systemctl list-units --all --no-pager"] = "none"
+	ignoredFields["systemctl list-units --failed --no-pager"] = "none"
 	ignoredFields["dmesg"] = "none"
 	ignoredFields["dmesg -T"] = "none"
 	ignoredFields["ip -4 rule list"] = "none"
@@ -1159,7 +1162,7 @@ func compareDmesg(db *store.DB, snap snapshot) (Result, error) {
 	}
 	st := query.StyleAt(db, snap.ts)
 	text := render(func(sb *strings.Builder) {
-		query.PrintDmesg(sb, recs, query.DmesgOptions{Ctime: strings.Contains(snap.cmd, "-T")}, st)
+		query.PrintDmesg(sb, recs, query.DmesgOptions{Ctime: strings.Contains(snap.cmd, "-T"), ASCII: true}, st) // LC_ALL=C
 	})
 	compareLines(&res, snap.cmd, snap.output, text)
 	return res, nil
@@ -1216,4 +1219,24 @@ func compareLines(res *Result, cmd, real, recon string) {
 			break
 		}
 	}
+}
+
+// ---- systemctl list-units ----
+
+// compareListUnits compares systemctl list-units line by line and in order.
+func compareListUnits(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	units, err := query.UnitsAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	// The captures run with LC_ALL=C.
+	o := query.ListUnitsOptions{All: strings.Contains(snap.cmd, "--all"), ASCII: true}
+	if strings.Contains(snap.cmd, "--failed") {
+		o.States = []string{"failed"}
+	}
+	text := render(func(sb *strings.Builder) { query.PrintListUnits(sb, units, o, query.StyleAt(db, snap.ts)) })
+	compareLines(&res, snap.cmd, snap.output, text)
+	return res, nil
 }

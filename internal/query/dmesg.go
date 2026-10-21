@@ -96,9 +96,11 @@ func kmsgQuery(db *store.DB, where string, args []any, bootUS, suspUS int64) ([]
 	return out, rows.Err()
 }
 
-// DmesgOptions: -T (ctime), -t (no time), -x (decode).
+// DmesgOptions: -T (ctime), -t (no time), -x (decode); ASCII: a locale
+// without UTF-8 (bytes above 0x7f are escaped).
 type DmesgOptions struct {
 	Ctime, NoTime, Decode bool
+	ASCII                 bool
 }
 
 var (
@@ -166,7 +168,7 @@ func PrintDmesg(w io.Writer, recs []Kmsg, o DmesgOptions, st ToolStyle) {
 			b.WriteString(s)
 			indent += len(s)
 		}
-		safeWrite(&b, msg, indent)
+		safeWrite(&b, msg, indent, o.ASCII)
 		b.WriteString("\n")
 	}
 	io.WriteString(w, b.String())
@@ -203,12 +205,15 @@ func unhex(c byte) byte {
 	return c - 'A' + 10
 }
 
-// safeWrite is dmesg's safe_fwrite in a UTF-8 locale: what is not printable
-// (nor space) as \xNN per byte; a line break followed by more text indented
-// under the message.
-func safeWrite(b *strings.Builder, s string, indent int) {
+// safeWrite is dmesg's safe_fwrite: what is not printable (nor space) as
+// \xNN per byte (in an ASCII locale every byte above 0x7f); a line break
+// followed by more text indented under the message.
+func safeWrite(b *strings.Builder, s string, indent int, ascii bool) {
 	for i := 0; i < len(s); {
 		r, n := utf8.DecodeRuneInString(s[i:])
+		if ascii && s[i] >= 0x80 {
+			r, n = utf8.RuneError, 1
+		}
 		switch {
 		case s[i] == 0, r == utf8.RuneError && n <= 1, !unicode.IsPrint(r) && !unicode.IsSpace(r):
 			for _, c := range []byte(s[i : i+max(n, 1)]) {

@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -58,6 +58,7 @@ wait for the user's go-ahead.
 - `internal/bpftcp/` — eBPF TCP events: `tcpevents.bpf.c` (state changes with owners,
   accept fds, app close, time-wait start/end, retransmits/resets); objects for amd64 and arm64.
 - `internal/cnproc/` — kernel proc connector (fork/exec/exit events), the fallback.
+- `internal/sdunits/` — systemd units over D-Bus (ListUnits, Subscribe).
 - `internal/rtnl/` — rtnetlink reads (network interfaces; later addresses, routes, rules).
 - `internal/store/` — `Backend` interface, the per-sample `Batch` and its rows, `DB` (a
   recording loaded into DuckDB). `internal/testrec/` — small recordings for tests (Parquet,
@@ -168,11 +169,16 @@ wait for the user's go-ahead.
   escapes it, redacted; `boot_id`) read as written (`recorder/kmsg.go`; at start the whole buffer
   again: readers keep one row per boot and seq), and `ring` rows (oldest seq in the buffer,
   realtime-boottime and boottime-monotonic in µs for dmesg -T) at start and at most every 10 s
-  while records arrive. Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`).
+  while records arrive. Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`, and
+  `DeviceAllow=/dev/kmsg r`: ProtectClock's device allow list excludes it otherwise).
+- `units` (schema 7): systemd's loaded units (`internal/sdunits`, godbus/dbus over
+  /run/systemd/private, else the system bus; `recorder/unitwatch.go`): `present` snapshot at
+  start, hourly and after reconnecting (systemd closes the socket on daemon-reexec); `change`/
+  `gone` rows from a ListUnits diff 200 ms after a signal, at most every second.
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 6 since
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 7 since
   2026-10-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),

@@ -637,7 +637,8 @@ func dmesgTool() *tool {
 			if len(p.pos) > 0 {
 				return nil, fmt.Errorf("dmesg: unexpected argument %q", p.pos[0])
 			}
-			o := query.DmesgOptions{Ctime: p.has("ctime"), NoTime: p.has("notime"), Decode: p.has("decode")}
+			o := query.DmesgOptions{Ctime: p.has("ctime"), NoTime: p.has("notime"), Decode: p.has("decode"),
+				ASCII: !query.LocaleUTF8()}
 			return func() error {
 				var recs []query.Kmsg
 				var err error
@@ -654,6 +655,64 @@ func dmesgTool() *tool {
 				st := query.StyleAt(c.db, ts)
 				return c.emit(recs, func(i int) rowMeta { return rowMeta{TS: recs[i].TS} },
 					func(w io.Writer) { query.PrintDmesg(w, recs, o, st) })
+			}, nil
+		},
+	}
+}
+
+func systemctlTool() *tool {
+	return &tool{
+		name: "systemctl", synopsis: "[list-units] [-a] [--failed] [--state=STATE,...] [-t TYPE,...] [--plain] [--no-legend] [PATTERN...]",
+		about: "systemd's loaded units, as systemctl list-units prints them",
+		opts: []opt{
+			{short: 'a', long: "all", help: "also inactive units and units following others"},
+			{long: "failed", help: "failed units only (--state=failed)"},
+			{long: "state", arg: "STATE", help: "units in these load, active or sub states (comma-separated)"},
+			{short: 't', long: "type", arg: "TYPE", help: "units of these types (comma-separated: service, socket, ...)"},
+			{long: "plain", help: "no status column"},
+			{long: "no-legend", help: "no header and legend"},
+			{long: "no-pager", help: "accepted (clifr pages with --pager)"},
+			{short: 'l', long: "full", help: "accepted (nothing is shortened)"},
+		},
+		window: true,
+		notes: []string{
+			"The units at T: clifrd lists them over systemd's private socket (or the system bus) at the start,",
+			"hourly and a fraction of a second after systemd signals a change (at most every second); recorded",
+			"since schema 7. Printed as the recorded host's systemd prints them into a pipe (RHEL 8's 239, RHEL",
+			"9's 252 and Ubuntu 22.04's 249, or 258 and later); with * and -> for its circle and arrow when clifr's",
+			"locale is not UTF-8, as systemctl decides it.",
+		},
+		examples: []string{`clifr --at "02:45" "systemctl list-units --failed"`, `clifr --at "02:45" "systemctl -a -t service"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			args := p.pos
+			if len(args) > 0 && args[0] == "list-units" {
+				args = args[1:]
+			} else if len(args) > 0 && !strings.ContainsAny(args[0], "*?[.") {
+				return nil, fmt.Errorf("systemctl: only list-units is supported, not %q", args[0])
+			}
+			split := func(k string) []string {
+				var out []string
+				for _, v := range p.all[k] {
+					out = append(out, strings.Split(v, ",")...)
+				}
+				return out
+			}
+			o := query.ListUnitsOptions{All: p.has("all"), Plain: p.has("plain"), NoLegend: p.has("no-legend"),
+				States: split("state"), Types: split("type"), Pattern: args, ASCII: !query.LocaleUTF8()}
+			if p.has("failed") {
+				o.States = append(o.States, "failed")
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("systemctl: needs --at")
+			}
+			return func() error {
+				units, err := query.UnitsAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				st := query.StyleAt(c.db, c.w.At)
+				return c.emit(units, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintListUnits(w, units, o, st) })
 			}, nil
 		},
 	}

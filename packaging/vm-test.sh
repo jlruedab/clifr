@@ -44,6 +44,8 @@ if has service; then
 	[ "$n" -gt 50 ] && ok "clifr ps aux from the service's recording: $n lines" || bad "clifr ps aux: $n lines"
 	n=$(clifr --plain --at "$end" dmesg 2>/dev/null | grep -vc '^#')
 	[ "$n" -gt 10 ] && ok "clifr dmesg from the service's recording: $n lines" || bad "clifr dmesg: $n lines (the kernel log is not recorded)"
+	n=$(clifr --plain --at "$end" "systemctl list-units" 2>/dev/null | grep -c '\.service ')
+	[ "$n" -gt 10 ] && ok "clifr systemctl list-units from the service's recording: $n services" || bad "clifr systemctl list-units: $n services (systemd units are not recorded)"
 	out=$(su - tester -c "clifr --plain --at '$end' 'ss -tan'" 2>&1)
 	n=$(echo "$out" | grep -vc '^#')
 	[ "$n" -gt 1 ] && ok "clifr as a member of the clifr group: ss -tan $n lines" || bad "clifr as the clifr group at $end: $(echo "$out" | tail -3)"

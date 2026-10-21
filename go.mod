@@ -7,6 +7,7 @@ toolchain go1.26.8
 require (
 	github.com/cilium/ebpf v0.22.0
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/klauspost/compress v1.18.3
 	github.com/parquet-go/parquet-go v0.32.0
 	golang.org/x/sys v0.43.0

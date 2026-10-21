@@ -210,6 +210,7 @@ type Store struct {
 	ifAddrs     []addrRow
 	routing     []routingRow
 	kmsg        []kmsgRow
+	units       []unitRow
 	fs          []fsRow
 	trans       []tcpTransRow
 	keyframes   rowBuf[store.KeyframeRow]
@@ -236,7 +237,7 @@ type Store struct {
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
 	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
-	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "addrs", "routing", "kmsg", "meta"}
+	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "addrs", "routing", "kmsg", "units", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
 var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "fds_held", "tcp_conns"}
@@ -353,6 +354,11 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, d := range b.Disks {
 		s.disks = append(s.disks, diskOf(d))
+	}
+	for _, u := range b.Units {
+		s.units = append(s.units, unitRow{TS: u.TS, Action: u.Action, Seq: int32(u.Seq), Name: u.Name,
+			Description: u.Description, Load: u.Load, Active: u.Active, Sub: u.Sub, Following: u.Following,
+			JobID: u.JobID, JobType: u.JobType})
 	}
 	for _, k := range b.Kmsg {
 		s.kmsg = append(s.kmsg, kmsgRow{TS: k.TS, BootID: k.BootID, Kind: k.Kind, Seq: k.Seq, Prio: int32(k.Prio),
@@ -503,6 +509,7 @@ func (s *Store) Flush() error {
 	part("addrs", len(s.ifAddrs), func(p string) error { return writeFile(p, s.ifAddrs) })
 	part("routing", len(s.routing), func(p string) error { return writeFile(p, s.routing) })
 	part("kmsg", len(s.kmsg), func(p string) error { return writeFile(p, s.kmsg) })
+	part("units", len(s.units), func(p string) error { return writeFile(p, s.units) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
 	if err := errors.Join(errs...); err != nil {
 		return err // keep the buffers; the next flush retries
@@ -524,7 +531,7 @@ func (s *Store) Flush() error {
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
 	s.keyframes, s.reconcile, s.mounts = rowBuf[store.KeyframeRow]{}, nil, nil
-	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links, s.ifAddrs, s.routing, s.kmsg = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0], s.ifAddrs[:0], s.routing[:0], s.kmsg[:0]
+	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links, s.ifAddrs, s.routing, s.kmsg, s.units = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0], s.ifAddrs[:0], s.routing[:0], s.kmsg[:0], s.units[:0]
 	s.conns.reset()
 	s.held.reset()
 	s.procs.reset()
@@ -839,7 +846,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow], "fs_samples": merge[fsRow],
-	"net_counters": merge[netCounterRow], "links": merge[linkRow], "addrs": merge[addrRow], "routing": merge[routingRow], "kmsg": merge[kmsgRow], "meta": merge[metaRow],
+	"net_counters": merge[netCounterRow], "links": merge[linkRow], "addrs": merge[addrRow], "routing": merge[routingRow], "kmsg": merge[kmsgRow], "units": merge[unitRow], "meta": merge[metaRow],
 }
 
 // merge streams the rows of parts into out (atomically replaced).
@@ -977,5 +984,6 @@ var emptyWriters = map[string]func(string) error{
 	"addrs":            func(p string) error { return writeFile[addrRow](p, nil) },
 	"routing":          func(p string) error { return writeFile[routingRow](p, nil) },
 	"kmsg":             func(p string) error { return writeFile[kmsgRow](p, nil) },
+	"units":            func(p string) error { return writeFile[unitRow](p, nil) },
 	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },
 }

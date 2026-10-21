@@ -632,3 +632,17 @@ type kmsgRow struct {
 	BootUS int64  `parquet:"boot_us"`
 	SuspUS int64  `parquet:"susp_us"`
 }
+
+type unitRow struct {
+	TS          int64  `parquet:"ts"`
+	Action      string `parquet:"action,dict"`
+	Seq         int32  `parquet:"seq"`
+	Name        string `parquet:"name,dict"`
+	Description string `parquet:"description,dict"`
+	Load        string `parquet:"load,dict"`
+	Active      string `parquet:"active,dict"`
+	Sub         string `parquet:"sub,dict"`
+	Following   string `parquet:"following,dict"`
+	JobID       int64  `parquet:"job_id"`
+	JobType     string `parquet:"job_type,dict"`
+}

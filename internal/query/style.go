@@ -1,6 +1,7 @@
 package query
 
 import (
+	"os"
 	"slices"
 	"strings"
 
@@ -33,6 +34,10 @@ type ToolStyle struct {
 	// printed (2.41; older versions leave it out).
 	DmesgTime   string
 	DmesgCaller bool
+	// SystemdList: systemctl list-units' layout: "239" (its own printf
+	// columns), "249" (the table, legend "LOAD   = ..."; also 252), "" (258
+	// and later: "Legend: LOAD   → ...").
+	SystemdList string
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -45,10 +50,10 @@ var Styles = map[string]ToolStyle{
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
-		DmesgTime: "2.32"},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37"},
+		DmesgTime: "2.32", SystemdList: "239"},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249"},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
-		DmesgTime: "2.37"},
+		DmesgTime: "2.37", SystemdList: "249"},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded
@@ -108,4 +113,17 @@ func unixState(name string) string {
 		}
 	}
 	return name
+}
+
+// LocaleUTF8 is whether the tools would print UTF-8 in clifr's environment,
+// as systemd decides it: the first of LC_ALL, LC_CTYPE and LANG that is set
+// names a UTF-8 locale, or none is set (the C locale, taken as UTF-8).
+func LocaleUTF8() bool {
+	for _, k := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		if v := os.Getenv(k); v != "" {
+			v = strings.ToLower(v)
+			return strings.Contains(v, "utf-8") || strings.Contains(v, "utf8")
+		}
+	}
+	return true
 }
