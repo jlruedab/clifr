@@ -260,7 +260,11 @@ v2:
    phase 8 step 2 (2026-10-22, busy-, scaling-, report-20261021-2027): 1.86% of one core,
    285 / 323 MiB, all 15 scaling points within budget; pgbench latency +1 µs average, +2 µs
    p99 (1–2%), now measurable because the no-recorder runs were steadier (±0.000 ms against
-   ±0.008): say "about 1 µs (1–2%) added latency", not "no measurable impact".
+   ±0.008): say "about 1 µs (1–2%) added latency", not "no measurable impact". Rerun after
+   phase 8 step 3 (2026-10-23, busy-, scaling-, report-20261022-1900): 1.85% of one core,
+   286 / 329 MiB, all 15 scaling points within budget; pgbench +1 µs average (within noise),
+   +3 µs p99; fd-walk samples about 45 ms longer (283 against 238 ms p50: the new per-process
+   reads), other samples about 2 ms.
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
    mpstat|iostat`; `clifr verify` compares them. No user count for `uptime`. About 0.2 ms of

@@ -206,6 +206,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
   faults, context switches (stat/status, already read), RssFile+RssShmem
   (top SHR), wchan, SELinux context, cgroup path → exact `top`, `ps alxwww`,
   `pidstat`, `ps auxZww`, `systemd-cgls`, container ids for docker/podman.
+  Step 3 is complete (2026-10-22); benchmark batch 20261022-1900: cost unchanged
+  (1.85% of one core, 286 / 329 MiB), fd-walk samples about 45 ms longer.
 - **Step 4, change-only snapshots:** uname/hostname changes, /proc/swaps,
   modules, sysctl, locks, sysvipc, NUMA, slabinfo, nf_conntrack stats,
   mountstats, NFS counters, netns, neighbours, lsblk sizes and holders,
