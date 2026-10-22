@@ -750,13 +750,14 @@ func cglsTool() *tool {
 				o.Columns = n
 			}
 			return func() error {
-				procs, delegated, s, err := query.CglsAt(c.db, c.w.At)
+				procs, info, s, err := query.CglsAt(c.db, c.w.At)
 				if err != nil {
 					return err
 				}
+				o.Style = query.StyleAt(c.db, s).SystemdCgls
 				c.header("systemd-cgls at %s, from the sample at %s", query.FormatMS(c.w.At), query.FormatMS(s))
 				return c.emit(procs, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: s} },
-					func(w io.Writer) { query.PrintCgls(w, procs, delegated, o) })
+					func(w io.Writer) { query.PrintCgls(w, procs, info, o) })
 			}, nil
 		},
 	}

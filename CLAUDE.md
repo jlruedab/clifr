@@ -190,15 +190,16 @@ wait for the user's go-ahead.
   change (renames), the rest of the process row on fd walks and execs. `processes.cmdline_pad`:
   NUL bytes after the command line (1 normally; more when a process rewrote its arguments:
   systemd-cgls counts them). `cgroups` table (path in systemd's hierarchy, `delegate`: systemd's
-  trusted.delegate/user.delegate xattr) written when a run first sees a path (a process's cgroup
-  or an ancestor) and hourly; loaded whole. Sibling cgroups are listed in kernfs order (the
+  trusted.delegate/user.delegate xattr, `cgroup_id` (the directory's inode: systemd 252 prints
+  it), `xattrs` (user.*/trusted.* as name=value lines)) written when a run first sees a path (a
+  process's cgroup or an ancestor), when its inode changes (recreated) and hourly; loaded whole. Sibling cgroups are listed in kernfs order (the
   kernel's name hash, `query.kernfsHash`), so the directory tree itself is not recorded.
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 8 since
   2026-10-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,
-  df, lsof, vmstat and iostat as the recorded distribution's tool versions do (rhel-8, rhel-9,
+  df, lsof, vmstat, iostat and systemd-cgls as the recorded distribution's tool versions do (rhel-8, rhel-9,
   ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. Per-run values (hostname, uname,
   boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
   latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL

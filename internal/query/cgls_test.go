@@ -50,7 +50,7 @@ func TestPrintCgls(t *testing.T) {
 		{PID: 99, Cgroup: "/system.slice/ssh.service", Command: "sshd", pad: 1},
 	}
 	var b strings.Builder
-	PrintCgls(&b, procs, map[string]bool{"/user.slice/user-1000.slice/user@1000.service": true}, CglsOptions{ASCII: true, Columns: 80})
+	PrintCgls(&b, procs, map[string]CgroupInfo{"/user.slice/user-1000.slice/user@1000.service": {Delegate: true}}, CglsOptions{ASCII: true, Columns: 80})
 	got := b.String()
 	for _, l := range []string{"CGroup /:\n-.slice\n", "user@1000.service ...\n", "    |- 99 sshd\n", "    `-812 sshd: /usr/sbin/sshd -D\n"} {
 		if !strings.Contains(got, l) {
@@ -59,5 +59,43 @@ func TestPrintCgls(t *testing.T) {
 	}
 	if strings.Contains(got, "kthreadd") {
 		t.Errorf("kernel thread without -k:\n%s", got)
+	}
+}
+
+func TestPrintCglsStyles(t *testing.T) {
+	procs := []CglsProc{{PID: 736, Cgroup: "/user.slice/user-1000.slice/user@1000.service/init.scope", Command: "/lib/systemd/systemd --user", pad: 1}}
+	info := map[string]CgroupInfo{
+		"/user.slice": {ID: 1396, Xattrs: "user.invocation_id=409e\ntrusted.invocation_id=409e\n"},
+		"/user.slice/user-1000.slice/user@1000.service": {Delegate: true, ID: 5432},
+	}
+	for style, want := range map[string]string{
+		"239": "Control group /:\n-.slice\n`-user.slice\n  `-user-1000.slice\n    `-user@1000.service\n",
+		"249": "Control group /:\n-.slice\n`-user.slice \n  `-user-1000.slice \n    `-user@1000.service ...\n",
+		"252": "Control group /:\n-.slice\n`-user.slice (#1396)\n  -> user.invocation_id: 409e\n  -> trusted.invocation_id: 409e\n" +
+			"  `-user-1000.slice\n    `-user@1000.service ... (#5432)\n",
+		"": "CGroup /:\n-.slice\n`-user.slice\n  `-user-1000.slice\n    `-user@1000.service ...\n",
+	} {
+		var b strings.Builder
+		PrintCgls(&b, procs, info, CglsOptions{ASCII: true, Columns: 80, Style: style})
+		if !strings.HasPrefix(b.String(), want) {
+			t.Errorf("style %q:\n%s\nwant prefix:\n%s", style, b.String(), want)
+		}
+	}
+}
+
+func TestCglsCommand239(t *testing.T) {
+	for _, c := range []struct {
+		cmd  string
+		room int
+		want string
+	}{
+		{"/usr/sbin/rngd -f --fill-watermark=0 -x pkcs11 -x nist -x qrypt -D jitter", 70, "/usr/sbin/rngd -f --fill-watermark=0 -x pkcs11 -x nist -x qrypt -D..."},
+		{"sshd: tester [priv]", 60, "sshd: tester [priv]"},
+		{"/sbin/agetty -o -p -- \\u --noclear tty1 linux", -1, "/sbin/agetty -o -p -- \\u --noclear tty1 linux"},
+		{"bash -c echo a;\n\t\tsudo b\n", -1, "bash -c echo a; sudo b"},
+	} {
+		if got := cglsCommand239(c.cmd, c.room); got != c.want {
+			t.Errorf("%q room %d: %q, want %q", c.cmd, c.room, got, c.want)
+		}
 	}
 }

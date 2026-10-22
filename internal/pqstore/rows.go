@@ -660,6 +660,8 @@ type cgroupRow struct {
 	TS       int64  `parquet:"ts"`
 	Path     string `parquet:"path,dict"`
 	Delegate int32  `parquet:"delegate"`
+	ID       int64  `parquet:"cgroup_id"`
+	Xattrs   string `parquet:"xattrs"`
 }
 
 type unitRow struct {

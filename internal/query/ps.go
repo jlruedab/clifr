@@ -140,11 +140,10 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	if bms := metaInt(db, "boot_ms"); bms > 0 {
 		skew = bms - metaInt(db, "boot_time")*1000
 	}
-	strip := StyleAt(db, s).PsWchanStrip
 	out := make([]PSRow, 0, len(procs))
 	for _, p := range procs {
 		r := psRow(p, s, memKB)
-		r.Wchan = psWchan(r.Wchan, strip)
+		r.Wchan = psWchan(r.Wchan)
 		r.Start = psStart(p.startMS-skew, s)
 		r.startDisp = p.startMS - skew
 		r.ElapsedS = max(t-p.startMS, 0) / 1000
@@ -195,18 +194,11 @@ func psRow(p procAt, now, memKB int64) PSRow {
 	return r
 }
 
-// psWchan is WCHAN as ps prints it: "-" while running or unknown, without
-// leading underscores; procps 3.3 strips a leading "do_" or "sys_" instead
-// when there is one.
-func psWchan(w string, strip bool) string {
+// psWchan is WCHAN as ps prints it (procps 3.3 and 4): "-" while running or
+// unknown, without leading underscores.
+func psWchan(w string) string {
 	if w == "" || w == "0" {
 		return "-"
-	}
-	switch {
-	case strip && strings.HasPrefix(w, "sys_"):
-		return w[4:]
-	case strip && strings.HasPrefix(w, "do_"):
-		return w[3:]
 	}
 	return strings.TrimLeft(w, "_")
 }

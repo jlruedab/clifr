@@ -361,7 +361,7 @@ func (s *Store) Write(b *store.Batch) error {
 		s.disks = append(s.disks, diskOf(d))
 	}
 	for _, c := range b.Cgroups {
-		s.cgroups = append(s.cgroups, cgroupRow{TS: c.TS, Path: c.Path, Delegate: b2i(c.Delegate)})
+		s.cgroups = append(s.cgroups, cgroupRow{TS: c.TS, Path: c.Path, Delegate: b2i(c.Delegate), ID: c.ID, Xattrs: c.Xattrs})
 	}
 	for _, u := range b.Units {
 		s.units = append(s.units, unitRow{TS: u.TS, Action: u.Action, Seq: int32(u.Seq), Name: u.Name,

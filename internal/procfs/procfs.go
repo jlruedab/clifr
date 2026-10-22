@@ -238,8 +238,9 @@ type Status struct {
 	RUID   int // real uid (pidstat's UID)
 	Tgid   int // process id; differs from the pid for threads
 	VmLckK int64
-	// Context switches of the whole process (all threads): voluntary
-	// (waits) and involuntary (preemptions).
+	// Context switches of the main thread (status reports the task's own,
+	// not the other threads'): voluntary (waits) and involuntary
+	// (preemptions), what pidstat -w shows.
 	VolCtx, NonVolCtx int64
 }
 

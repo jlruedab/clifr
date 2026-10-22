@@ -327,7 +327,9 @@ chooses one; a line on stderr says when a style other than current is used.
   systemd-cgls prints it without arguments (cgroups in cgroupfs order,
   delegated ones marked, command lines cut to `$COLUMNS` or 80 unless
   `-l`). A process's cgroup is read when it is first sampled and at every
-  fd walk. Recorded since 2026-10-22.
+  fd walk. As the recorded systemd prints it: 239 (RHEL 8) and 249
+  (Ubuntu 22.04) "Control group /:", 252 (RHEL 9) also each cgroup's id
+  and `user.*`/`trusted.*` attributes. Recorded since 2026-10-22.
 - `top -b [-n 1] [-c] [-i] [-w COLUMNS] [-o FIELD] [-p PIDS] [-u USER]`:
   procps-ng 4's batch output. The summary comes from the system sample at or
   before T, the processes from the process sample at or before it, with

@@ -87,7 +87,7 @@ type Recorder struct {
 	procs map[procKey]*procEntry
 	ids   map[string]int64 // next id per table
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
-	cgroups map[string]int64
+	cgroups map[string]cgroupSeen
 
 	listSockets func() ([]sockdiag.Socket, error)
 	sockSource  string // "sock_diag" or "proc_net"
@@ -138,7 +138,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
-		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]int64{}}
+		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]cgroupSeen{}}
 	r.initSockets()
 	if r.cfg.FDFullEvery == 0 {
 		r.cfg.FDFullEvery = 5

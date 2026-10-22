@@ -38,10 +38,11 @@ type ToolStyle struct {
 	// columns), "249" (the table, legend "LOAD   = ..."; also 252), "" (258
 	// and later: "Legend: LOAD   → ...").
 	SystemdList string
-	// PsWchanStrip: procps-ng 3.3 (ps WCHAN) drops a leading "do_" or "sys_"
-	// from the kernel function's name (both versions drop leading
-	// underscores).
-	PsWchanStrip bool
+	// SystemdCgls: systemd-cgls's layout: "239" (header "Control group /:",
+	// no delegation mark), "249" (the same, a space after each cgroup name),
+	// "252" (also each cgroup's id and its user./trusted. attributes), ""
+	// (258 and later: "CGroup /:", delegated cgroups marked).
+	SystemdCgls string
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -54,10 +55,10 @@ var Styles = map[string]ToolStyle{
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
-		DmesgTime: "2.32", SystemdList: "239", PsWchanStrip: true},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", PsWchanStrip: true},
+		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239"},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252"},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
-		DmesgTime: "2.37", SystemdList: "249", PsWchanStrip: true},
+		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249"},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

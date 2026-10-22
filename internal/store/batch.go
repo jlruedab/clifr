@@ -365,12 +365,17 @@ type UnitRow struct {
 
 // CgroupRow is a cgroup of the hierarchy systemd uses (procfs.SystemdCgroup):
 // written the first time a run sees it (as a process's cgroup or an
-// ancestor of one) and again every NetSnapshotMS. Delegate: systemd's
-// trusted.delegate or user.delegate attribute (systemd-cgls marks it).
+// ancestor of one), again every NetSnapshotMS and when the cgroup was
+// recreated (a new ID). Delegate: systemd's trusted.delegate or
+// user.delegate attribute (systemd-cgls marks it). ID: the cgroup's id (its
+// inode); Xattrs: its user.* and trusted.* attributes as "name=value" lines
+// in the kernel's order (systemd 252's systemd-cgls prints both).
 type CgroupRow struct {
 	TS       int64
 	Path     string
 	Delegate bool
+	ID       int64
+	Xattrs   string
 }
 
 // NetSnapshotMS: how often the addresses (later routes and rules) are

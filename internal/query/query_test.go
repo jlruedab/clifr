@@ -102,12 +102,12 @@ func TestPSStartByDay(t *testing.T) {
 func TestPSLongAndLabel(t *testing.T) {
 	rows := []PSRow{
 		{PID: 1, UIDNum: 0, Nice: 0, VSZ: 28816, RSS: 19564, Stat: "Ss", TTY: "?", Time: "0:10", args: "/sbin/init",
-			CPU: "0.0", Mem: "0.0", Known: true, Flags: 4, Priority: 20, Wchan: psWchan("ep_poll", false), Label: "unconfined"},
+			CPU: "0.0", Mem: "0.0", Known: true, Flags: 4, Priority: 20, Wchan: psWchan("ep_poll"), Label: "unconfined"},
 		{PID: 18, PPID: 2, Stat: "S", TTY: "?", Time: "0:09", args: "[migration/0]", CPU: "0.0", Mem: "0.0",
-			Known: true, Flags: 1, Priority: -100, Policy: 1, RTPriority: 99, Wchan: psWchan("smpboot_thread_fn", false),
+			Known: true, Flags: 1, Priority: -100, Policy: 1, RTPriority: 99, Wchan: psWchan("smpboot_thread_fn"),
 			Label: "/usr/sbin/cupsd (enforce)"},
 		{PID: 9266, Nice: 19, Stat: "SN", TTY: "?", Time: "0:00", args: "idle", CPU: "0.0", Mem: "0.0",
-			Known: true, Policy: 5, Wchan: psWchan("__skb_wait_for_more_packets", false)},
+			Known: true, Policy: 5, Wchan: psWchan("__skb_wait_for_more_packets")},
 	}
 	var b strings.Builder
 	PrintPSFormat(&b, rows, PSLong)
@@ -130,7 +130,7 @@ func TestPSLongAndLabel(t *testing.T) {
 	if got := strings.Split(b.String(), "\n")[2]; !strings.HasPrefix(got, "/usr/sbin/cupsd (enforce)       root          18") {
 		t.Errorf("ps auxZ line %q", got)
 	}
-	if psWchan("do_wait", true) != "wait" || psWchan("do_wait", false) != "do_wait" || psWchan("0", false) != "-" {
+	if psWchan("do_wait") != "do_wait" || psWchan("__x64_sys_poll") != "x64_sys_poll" || psWchan("0") != "-" {
 		t.Errorf("psWchan")
 	}
 }

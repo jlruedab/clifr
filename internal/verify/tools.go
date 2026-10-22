@@ -45,7 +45,7 @@ func init() {
 	ignoredFields["systemd-cgls --no-pager"] = "none; compared: each process's cgroup and command line, each cgroup's delegation mark and place among the siblings both have"
 	ignoredFields["systemd-cgls --no-pager -l"] = ignoredFields["systemd-cgls --no-pager"]
 	ignoredFields["ps auxZww"] = "everything but LABEL (the rest is compared by ps aux)"
-	ignoredFields["pidstat -h -u -r -d -w -p ALL"] = "CPU (the one the process last ran on changes all the time); the work-item suffix of kernel worker names; averages match within 0.01, VSZ and RSS exactly"
+	ignoredFields["pidstat -h -u -r -d -w -p ALL"] = "CPU (the one the process last ran on changes all the time); the work-item suffix of kernel worker names; averages match within 0.01 or 1%, VSZ and RSS exactly"
 	ignoredFields["top -b -n 1 -w 512"] = "%CPU (top measures a fraction of a second, clifr the sample interval), %MEM (derived from RES), " +
 		"the %Cpu(s) line (the same reason as %CPU), the first line (compared by uptime); " +
 		"the work-item suffix of kernel worker names; task counts within 3, memory within 2%"
@@ -365,7 +365,9 @@ func comparePidstat(db *store.DB, snap snapshot) (Result, error) {
 			if strings.Contains(a, ".") { // an average: within 0.01
 				fa, ea := strconv.ParseFloat(a, 64)
 				fb, eb := strconv.ParseFloat(b, 64)
-				if ea == nil && eb == nil && fa-fb <= 0.0101 && fb-fa <= 0.0101 {
+				// The averages are since boot: on a young system they still
+				// move during the gap.
+				if tol := max(0.0101, fa/100); ea == nil && eb == nil && fa-fb <= tol && fb-fa <= tol {
 					b = a
 				}
 			}
@@ -392,16 +394,26 @@ func comparePidstat(db *store.DB, snap snapshot) (Result, error) {
 type cglsTree struct {
 	procs  map[int][2]string   // pid -> cgroup, command
 	groups map[string]string   // path -> "delegated" or ""
+	ids    map[string]string   // path -> its "(#ID)" (systemd 252)
+	attrs  map[string]string   // path -> its "-> name: value" lines (252)
 	kids   map[string][]string // path -> children in printed order
 }
+
+var cglsID = regexp.MustCompile(` \(#\d+\)$`)
 
 // parseCgls reads systemd-cgls's tree (ASCII glyphs: "|-", "`-", "| ",
 // "  "): each line's depth is its prefix length / 2; a cgroup line holds a
 // name (" ..." when delegated), a process line a PID and its command.
 func parseCgls(out string) cglsTree {
-	t := cglsTree{procs: map[int][2]string{}, groups: map[string]string{"/": ""}, kids: map[string][]string{}}
+	t := cglsTree{procs: map[int][2]string{}, groups: map[string]string{"/": ""}, ids: map[string]string{},
+		attrs: map[string]string{}, kids: map[string][]string{}}
 	stack := []string{"/"} // stack[d]: the cgroup at depth d
+	last := ""
 	for _, l := range strings.Split(out, "\n") {
+		if _, attr, ok := strings.Cut(l, "-> "); ok && !strings.Contains(l, "|-") && !strings.Contains(l, "`-") {
+			t.attrs[last] += attr + "\n"
+			continue
+		}
 		i := strings.Index(l, "|-")
 		if j := strings.Index(l, "`-"); j >= 0 && (i < 0 || j < i) {
 			i = j
@@ -420,12 +432,16 @@ func parseCgls(out string) cglsTree {
 				continue
 			}
 		}
-		name, mark := rest, ""
-		if n, ok := strings.CutSuffix(rest, " ..."); ok {
+		name, mark, id := rest, "", ""
+		if m := cglsID.FindString(name); m != "" {
+			name, id = strings.TrimSuffix(name, m), m
+		}
+		if n, ok := strings.CutSuffix(name, " ..."); ok {
 			name, mark = n, "delegated"
 		}
+		name = strings.TrimRight(name, " ") // systemd 249: a space after each name
 		p := strings.TrimSuffix(parent, "/") + "/" + name
-		t.groups[p] = mark
+		t.groups[p], t.ids[p], last = mark, id, p
 		t.kids[parent] = append(t.kids[parent], p)
 		stack = append(stack[:depth+1], p)
 	}
@@ -434,7 +450,7 @@ func parseCgls(out string) cglsTree {
 
 func compareCgls(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
-	procs, delegated, s, err := query.CglsAt(db, snap.ts)
+	procs, info, s, err := query.CglsAt(db, snap.ts)
 	if err != nil {
 		return res, err
 	}
@@ -442,7 +458,7 @@ func compareCgls(db *store.DB, snap snapshot) (Result, error) {
 	next := nextSample(db, s, false)
 	real := parseCgls(snap.output)
 	rec := parseCgls(render(func(sb *strings.Builder) {
-		query.PrintCgls(sb, procs, delegated, query.CglsOptions{Full: full, ASCII: true, Columns: 80})
+		query.PrintCgls(sb, procs, info, query.CglsOptions{Full: full, ASCII: true, Columns: 80, Style: query.StyleAt(db, s).SystemdCgls})
 	}))
 	for pid := range snap.ignore {
 		if _, ok := real.procs[pid]; ok {
@@ -487,7 +503,8 @@ func compareCgls(db *store.DB, snap snapshot) (Result, error) {
 		}
 		res.Matched++
 		res.compare("systemd-cgls cgroup "+p, []fieldPair{{"delegated", mark, x},
-			{"place", placeIn(real, rec, p), placeIn(rec, real, p)}}, func() bool { return false })
+			{"place", placeIn(real, rec, p), placeIn(rec, real, p)},
+			{"id", real.ids[p], rec.ids[p]}, {"attributes", real.attrs[p], rec.attrs[p]}}, func() bool { return false })
 	}
 	for p := range rec.groups {
 		if _, ok := real.groups[p]; !ok {
