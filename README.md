@@ -706,30 +706,33 @@ before, which also took the recorder to 947 MiB).
 
 ### Cost at the busy load
 
-Three runs of 15 minutes each (2026-10-22, `report-20261022-1900`, commit
-`6712c7e`: after step 3 of phase 8, which added process fields: faults,
-scheduling, context switches, wait channels, cgroups and security labels).
-The 2026-10-21 batch (`report-20261021-2027`, commit `85092b5`, after
-step 2: protocol counters, interfaces, addresses, routes, the kernel log
-and systemd units) is in brackets; v1 was last measured in the 2026-10-19
-batch (`report-20261019-1620`) and has since been removed.
+Three runs of 15 minutes each (2026-10-23, `report-20261023-2100`, commit
+`bcd589e`: after step 4 of phase 8, which added swap, modules, block
+devices, neighbours, locks, System V IPC, sysctl, slab caches, NUMA,
+conntrack and NFS counters). The 2026-10-22 batch (`report-20261022-1900`,
+commit `6712c7e`, after step 3: process fields) is in brackets; v1 was last
+measured in the 2026-10-19 batch (`report-20261019-1620`) and has since
+been removed.
 
 | Metric | clifr, default (B) | v1 (batch 1620) | atop 30 s |
 |---|---:|---:|---:|
-| CPU, % of one core | 1.85 ± 0.05 (1.86) | 10.9 ± 0.41 | 0.53 ± 0.02 |
-| CPU, % of the machine | 0.08 (0.08) | 0.49 | 0.02 |
-| Memory (anonymous), average | 286 MiB (285) | 151 MiB | 26 MiB |
-| Memory (anonymous), max | 329 MiB (323) | 182 MiB | 33 MiB |
-| Data kept per day | 4.05 GiB (4.01) | 18.03 GiB | 0.32 GiB |
-| Written to disk per day | 11.5 GiB (12.1) | 301 GiB | 0.74 GiB |
+| CPU, % of one core | 1.90 ± 0.05 (1.85) | 10.9 ± 0.41 | 0.51 ± 0.01 |
+| CPU, % of the machine | 0.09 (0.08) | 0.49 | 0.02 |
+| Memory (anonymous), average | 287 MiB (286) | 151 MiB | 27 MiB |
+| Memory (anonymous), max | 335 MiB (329) | 182 MiB | 32 MiB |
+| Data kept per day | 4.06 GiB (4.05) | 18.03 GiB | 0.32 GiB |
+| Written to disk per day | 11.5 GiB (11.5) | 301 GiB | 0.73 GiB |
 
-The aggressive configuration (10 s / 60 s) used 2.87% (2.53; one of its
-three runs is high in both batches), the conservative one (60 s / 300 s)
-1.63% (1.61). The guard rail recorded one `budget_exceeded` event in each
-default run and kept the fd interval at 2 minutes. What steps 2 and 3
-added cost nothing measurable on average; step 3's per-process reads make
-the samples with an fd walk about 45 ms longer (283 against 238 ms median),
-the others about 2 ms.
+The aggressive configuration (10 s / 60 s) used 2.94% (2.87; one of its
+three runs is high in every batch), the conservative one (60 s / 300 s)
+1.69% (1.63). The guard rail recorded one or two `budget_exceeded` events
+in each default run and kept the fd interval at 2 minutes. Step 4 added
+about 0.05 points: its reads at every system sample take about 0.3 ms
+together, those once a minute about 15 ms (block devices 6.6, sysctl 5.4,
+slabinfo 3 ms), which lengthens every other 30 s sample by that much (the
+samples without an fd walk 71 against 57.5 ms median; with one 300 against
+283 ms). Step 3's per-process reads made the samples with an fd walk about
+45 ms longer (283 against 238 ms), the others about 2 ms.
 Memory is about a third lower than in the 2026-10-17 batch: rows held in
 memory are pointer-free and the heap target is 256M (see Limitations). What
 phase 3 added (three times as many system-counter samples, `/proc/<pid>/io`
@@ -741,15 +744,16 @@ against no recorder:
 
 | Metric | No recorder | Difference | 95% interval |
 |---|---:|---:|---|
-| Transactions per second | 80,010 | −5 | −52 to +41, within noise |
-| Latency average | 0.071 ms | +0.001 ms | −0.000 to +0.002, within noise |
-| Latency p99 | 0.119 ms | +0.003 ms | +0.001 to +0.006, measurable |
-| Latency p99.9 | 0.172 ms | +0.030 ms | −0.027 to +0.088, within noise |
+| Transactions per second | 80,007 | −8 | −19 to +2, within noise |
+| Latency average | 0.070 ms | +0.000 ms | −0.001 to +0.002, within noise |
+| Latency p99 | 0.116 ms | +0.001 ms | −0.002 to +0.004, within noise |
+| Latency p99.9 | 0.177 ms | −0.001 ms | −0.054 to +0.052, within noise |
 
-The clifr configurations added about 1 µs to the average latency (0.5–1.4%)
-and 1–3 µs to p99 (1.1–2.8%; measurable only for the default one in this
-batch, for all three in the 2026-10-21 one); atop added nothing measurable.
-The machine's CPU use rose by 0.3–0.4 points, about 7–9% of one core, more
+The clifr configurations added up to about 1 µs to the average latency
+(0–1%) and up to 2 µs to p99 (0–1.7%), all within noise in this batch;
+p99 was measurable for the default configuration on 2026-10-22 (+3 µs,
+2.8%) and for all three on 2026-10-21 (+2 µs); atop added nothing
+measurable. The machine's CPU use rose by 0.3–0.6 points, about 7–13% of one core, more
 than the recorder's own 1.9%: most likely the eBPF programs, whose time is
 charged to the processes they observe (not measured separately in these
 runs). The 2026-10-19 and 2026-10-17 batches showed no measurable change,
@@ -764,25 +768,25 @@ and p99.9 by 0.121 ms, both measurable.
 One dimension varied at a time, no workload, guard rail off, 7 minutes per
 point. The budget is 2% of one core.
 
-2026-10-22 (`scaling-20261022-1900`); the 2026-10-21 batch
-(`scaling-20261021-2027`) is in brackets.
+2026-10-23 (`scaling-20261023-2100`); the 2026-10-22 batch
+(`scaling-20261022-1900`) is in brackets.
 
 | Point | Recorder CPU | eBPF programs | Memory max |
 |---|---:|---:|---:|
-| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.51–0.53% (0.48–0.50%) | 0.04–0.05% | 174–208 MiB (178–209) |
-| 10,000 processes | 1.07% (0.97%) | 0.04% | 262 MiB (237) |
-| 200,000 open files | 0.81% (0.81%) | 0.05% | 272 MiB (268) |
-| 100,000 connections | 0.97% (0.89%) | 0.07% | 360 MiB (360) |
-| 10 spawns/s | 0.49% (0.47%) | 0.03% | 222 MiB (237) |
-| 200 spawns/s | 0.64% (0.61%) | 0.13% | 241 MiB (229) |
-| 100 new connections/s | 1.06% (1.01%) | 0.23% | 259 MiB (246) |
-| 500 new connections/s | 1.58% (1.56%) | 0.90% | 327 MiB (313) |
+| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.56–0.57% (0.51–0.53%) | 0.04% | 198–213 MiB (174–208) |
+| 10,000 processes | 1.09% (1.07%) | 0.04% | 249 MiB (262) |
+| 200,000 open files | 0.86% (0.81%) | 0.04% | 276 MiB (272) |
+| 100,000 connections | 0.95% (0.97%) | 0.07% | 366 MiB (360) |
+| 10 spawns/s | 0.53% (0.49%) | 0.03% | 233 MiB (222) |
+| 200 spawns/s | 0.70% (0.64%) | 0.14% | 222 MiB (241) |
+| 100 new connections/s | 1.12% (1.06%) | 0.22% | 255 MiB (259) |
+| 500 new connections/s | 1.64% (1.58%) | 0.94% | 318 MiB (327) |
 
-All 15 points fit the 2% budget, as in the 2026-10-21, 2026-10-19 and
-2026-10-17 batches (1 of 15 on 2026-10-12). CPU is 0.02–0.10 points higher
-than on 2026-10-21, most at 10,000 processes (step 3's per-process reads;
-its fd-walk sample 569 against 467 ms); memory is the same within noise,
-and peak memory 20–35% lower than on 2026-10-17.
+All 15 points fit the 2% budget, as in every batch since 2026-10-17 (1 of
+15 on 2026-10-12). CPU is 0.00–0.06 points higher than on 2026-10-22 (step
+4's reads); the samples without an fd walk are 15–17 ms longer at every
+point (the once-a-minute reads); memory is the same within noise, and peak
+memory 20–35% lower than on 2026-10-17.
 The eBPF programs run inside the observed processes' own kernel paths, so
 their time is charged to those processes and is not part of the recorder's
 CPU figure.

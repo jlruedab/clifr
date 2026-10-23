@@ -211,7 +211,8 @@ Agreed with the user on 2026-10-21; one step at a time, report and wait.
 - **Step 4, change-only snapshots:** uname/hostname changes, /proc/swaps,
   modules, sysctl, locks, sysvipc, NUMA, slabinfo, nf_conntrack stats,
   mountstats, NFS counters, netns, neighbours, lsblk sizes and holders,
-  file-system labels.
+  file-system labels. Step 4 is complete (2026-10-23); benchmark batch
+  20261023-2100: 1.90% of one core (+0.05), 287 / 335 MiB, pgbench within noise.
 - Not possible: lsof's brief opens and mmaps, individual threads (ps -L/m).
 - Every recorder addition bumps the schema version; steps 2–4 end with a
   benchmark rerun; every command gets a ground-truth or `clifr verify` check.
