@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -241,6 +241,12 @@ wait for the user's go-ahead.
   [-c] [-z]` (numactl 2.0.19's table code; without options the compatibility output; `NumastatOld`:
   before 2.0.15, fixed rows and "Token X not in hash table." lines). Values are
   as of that read: verify compares their numbers with a tolerance.
+- `snapshots` sources (a minute) "conntrack" (`rtnl.ConntrackStats`: ctnetlink's per-CPU counters,
+  asked only while nf_conntrack_netlink is loaded: the request would load it), "rpc/nfs" and
+  "rpc/nfsd" (/proc/net/rpc), "mountstats" (the NFS sections of /proc/self/mountstats):
+  `conntrack -S` (`ConntrackOld`: conntrack-tools before 1.4.7 stop at search_restart), `nfsstat`
+  (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a port of mountstats.py;
+  `Mountstats233`: RHEL 8's 2.3.3).
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|

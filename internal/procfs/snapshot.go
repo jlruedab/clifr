@@ -34,6 +34,9 @@ var SnapSources = []SnapSource{
 	{Name: "sysvipc/shm", Path: []string{"sysvipc", "shm"}, Key: secondField},
 	// Most of its lines change all the time: once a minute.
 	{Name: "slabinfo", Path: []string{"slabinfo"}, Key: slabName, EveryMS: 60_000},
+	// NFS client and server counters (nfsstat): absent without NFS.
+	{Name: "rpc/nfs", Path: []string{"net", "rpc", "nfs"}, Key: firstField, EveryMS: 60_000},
+	{Name: "rpc/nfsd", Path: []string{"net", "rpc", "nfsd"}, Key: firstField, EveryMS: 60_000},
 }
 
 // slabName keys /proc/slabinfo lines by cache name (the version line and

@@ -69,6 +69,10 @@ var verifyCommands = [][]string{
 	{"slabtop", "-o"}, // procps; needs root (it is)
 	{"numastat"},      // numactl; skipped where it is not installed
 	{"numastat", "-m"},
+	{"conntrack", "-S"}, // conntrack-tools; skipped where it is not installed
+	{"nfsstat"},         // nfs-utils; likewise
+	{"mountstats"},
+	{"mountstats", "-x"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

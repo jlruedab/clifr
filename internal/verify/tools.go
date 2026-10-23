@@ -1838,6 +1838,16 @@ func compareNumbers(db *store.DB, snap snapshot) (Result, error) {
 			}
 			return ""
 		}
+	} else if snap.cmd == "conntrack -S" {
+		cpus, err := query.ConntrackAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) {
+			query.PrintConntrackStats(sb, cpus, query.StyleAt(db, snap.ts).ConntrackOld)
+		})
+		key = func(f []string) string { return f[0] } // cpu=N; the values name=N
 	} else {
 		nodes, err := query.NUMAAt(db, snap.ts)
 		if err != nil {
@@ -1886,8 +1896,17 @@ func compareNumbers(db *store.DB, snap snapshot) (Result, error) {
 				fields = append(fields, fieldPair{strconv.Itoa(i), r[i], ""})
 				continue
 			}
-			a, errA := strconv.ParseFloat(strings.TrimRight(r[i], "%K"), 64)
-			b, errB := strconv.ParseFloat(strings.TrimRight(x[i], "%K"), 64)
+			rv, xv := r[i], x[i]
+			if rn, rnum, ok := strings.Cut(rv, "="); ok { // conntrack: name=value
+				xn, xnum, _ := strings.Cut(xv, "=")
+				if rn != xn {
+					fields = append(fields, fieldPair{strconv.Itoa(i), r[i], x[i]})
+					continue
+				}
+				rv, xv = rnum, xnum
+			}
+			a, errA := strconv.ParseFloat(strings.TrimRight(rv, "%K"), 64)
+			b, errB := strconv.ParseFloat(strings.TrimRight(xv, "%K"), 64)
 			exact := snap.cmd == "slabtop -o" && (i == 3 || i == 5) // OBJ SIZE, OBJ/SLAB
 			if errA == nil && errB == nil && !exact {
 				if d := a - b; d > tol*max(a, b, 1) || -d > tol*max(a, b, 1) {
@@ -1906,6 +1925,76 @@ func compareNumbers(db *store.DB, snap snapshot) (Result, error) {
 			res.Extra++
 			res.example("%s extra %s", snap.cmd, strings.Join(rec[k], " "))
 		}
+	}
+	return res, nil
+}
+
+// ---- nfsstat, mountstats ----
+
+// compareNFS compares nfsstat and mountstats line by line: words exactly,
+// numbers within 5% (clifrd reads the files once a minute).
+func compareNFS(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	var text string
+	st := query.StyleAt(db, snap.ts)
+	if snap.cmd == "nfsstat" {
+		stats, err := query.NFSStatsAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) { query.PrintNFSStat(sb, stats, query.NFSStatOptions{}) })
+	} else {
+		mounts, err := query.MountstatsAt(db, snap.ts, !st.Mountstats233)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		o := query.MountstatsOptions{Xprt: snap.cmd == "mountstats -x", V233: st.Mountstats233}
+		text = render(func(sb *strings.Builder) { query.PrintMountstats(sb, mounts, o) })
+	}
+	lines := func(s string) []string {
+		var out []string
+		for _, l := range strings.Split(s, "\n") {
+			if strings.TrimSpace(l) != "" {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	real, rec := lines(snap.output), lines(text)
+	res.Real, res.Recon = len(real), len(rec)
+	for i, r := range real {
+		if i >= len(rec) {
+			res.Missing++
+			res.example("%s missing %q", snap.cmd, r)
+			continue
+		}
+		res.Matched++
+		rw, xw := strings.Fields(r), strings.Fields(rec[i])
+		var diff []fieldPair
+		if len(rw) != len(xw) {
+			diff = append(diff, fieldPair{"line " + strconv.Itoa(i+1), r, rec[i]})
+		} else {
+			for j := range rw {
+				a, errA := strconv.ParseFloat(strings.Trim(rw[j], "%()"), 64)
+				b, errB := strconv.ParseFloat(strings.Trim(xw[j], "%()"), 64)
+				if errA == nil && errB == nil {
+					if d := a - b; d > 0.05*max(a, b, 1) || -d > 0.05*max(a, b, 1) {
+						diff = append(diff, fieldPair{"line " + strconv.Itoa(i+1), r, rec[i]})
+						break
+					}
+				} else if rw[j] != xw[j] {
+					diff = append(diff, fieldPair{"line " + strconv.Itoa(i+1), r, rec[i]})
+					break
+				}
+			}
+		}
+		res.compare(snap.cmd, diff, func() bool { return false })
+	}
+	for i := len(real); i < len(rec); i++ {
+		res.Extra++
+		res.example("%s extra %q", snap.cmd, rec[i])
 	}
 	return res, nil
 }

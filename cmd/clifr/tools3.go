@@ -1220,3 +1220,180 @@ func numastatTool() *tool {
 		},
 	}
 }
+
+func conntrackTool() *tool {
+	return &tool{
+		name: "conntrack", synopsis: "-S | -C",
+		about: "connection tracking statistics, as conntrack-tools' conntrack prints them",
+		opts: []opt{
+			{short: 'S', long: "stats", help: "per-CPU counters"},
+			{short: 'C', long: "count", help: "number of tracked connections"},
+		},
+		window: true,
+		notes: []string{
+			"-S: the per-CPU counters clifrd asked ctnetlink for at or before T (every minute, only while",
+			"nf_conntrack_netlink is loaded: clifrd does not load kernel modules; recorded since schema 9).",
+			"-C: net.netfilter.nf_conntrack_count from the sysctl read. The table itself (-L) is not recorded.",
+		},
+		examples: []string{`clifr --at "02:45" "conntrack -S"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 || p.has("stats") == p.has("count") {
+				return nil, errors.New("conntrack: only -S or -C (the connection table is not recorded)")
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("conntrack: needs --at")
+			}
+			return func() error {
+				if p.has("count") {
+					lines, err := query.SysctlAt(c.db, c.w.At)
+					if err != nil {
+						return err
+					}
+					for _, l := range lines {
+						if l.Name == "net.netfilter.nf_conntrack_count" {
+							return c.emit([]query.SysctlLine{l}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+								func(w io.Writer) { fmt.Fprintln(w, l.Value) })
+						}
+					}
+					return errors.New("conntrack: connection tracking was not loaded")
+				}
+				cpus, err := query.ConntrackAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				if len(cpus) == 0 {
+					return errors.New("conntrack: nf_conntrack_netlink was not loaded (clifrd does not load it)")
+				}
+				old := query.StyleAt(c.db, c.w.At).ConntrackOld
+				return c.emit(cpus, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintConntrackStats(w, cpus, old) })
+			}, nil
+		},
+	}
+}
+
+func nfsstatTool() *tool {
+	return &tool{
+		name: "nfsstat", synopsis: "[-s] [-c] [-n] [-r] [-o all|net|rpc|nfs|rc|fh|io|ra] [-2|-3|-4] [-l] [-v] | -m",
+		about: "NFS client and server statistics, as nfs-utils' nfsstat prints them",
+		opts: []opt{
+			{short: 's', long: "server", help: "server statistics only"},
+			{short: 'c', long: "client", help: "client statistics only"},
+			{short: 'n', long: "nfs", help: "NFS calls only"},
+			{short: 'r', long: "rpc", help: "RPC statistics only"},
+			{short: 'o', arg: "FACILITY", help: "all, net, rpc, nfs, rc, fh, io or ra"},
+			{short: '2', help: "NFS version 2"}, {short: '3', help: "NFS version 3"}, {short: '4', help: "NFS version 4"},
+			{short: 'l', long: "list", help: "list form"},
+			{short: 'v', long: "verbose", help: "everything (-o all)"},
+			{short: 'm', long: "mounts", help: "the NFS mounts and their options"},
+		},
+		window: true,
+		notes: []string{
+			"/proc/net/rpc/nfs and nfsd as clifrd last read them at or before T (every minute; recorded since",
+			"schema 9); -m: the mount table at T.",
+		},
+		examples: []string{`clifr --at "02:45" nfsstat`, `clifr --at "02:45" "nfsstat -o all"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("nfsstat: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("nfsstat: needs --at")
+			}
+			o := query.NFSStatOptions{Server: p.has("server"), Client: p.has("client"), Calls: p.has("nfs"), RPC: p.has("rpc"),
+				V2: p.has("2"), V3: p.has("3"), V4: p.has("4"), List: p.has("list")}
+			for _, f := range p.all["o"] {
+				switch f {
+				case "all":
+					o.Calls, o.RPC, o.Net, o.RC, o.FH, o.IO, o.RA = true, true, true, true, true, true, true
+				case "nfs":
+					o.Calls = true
+				case "rpc":
+					o.RPC = true
+				case "net":
+					o.Net = true
+				case "rc":
+					o.RC = true
+				case "fh":
+					o.FH = true
+				case "io":
+					o.IO = true
+				case "ra":
+					o.RA = true
+				default:
+					return nil, fmt.Errorf("nfsstat: unknown category: %s", f)
+				}
+			}
+			if p.has("verbose") {
+				o.Server, o.Client = true, true
+				o.Calls, o.RPC, o.Net, o.RC, o.FH, o.IO, o.RA = true, true, true, true, true, true, true
+			}
+			return func() error {
+				if p.has("mounts") {
+					mounts, err := query.MountsAt(c.db, c.w.At)
+					if err != nil {
+						return err
+					}
+					return c.emit(mounts, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+						func(w io.Writer) { query.PrintNFSMounts(w, mounts) })
+				}
+				st, err := query.NFSStatsAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				var perr error
+				err = c.emit([]*query.NFSStats{st}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { perr = query.PrintNFSStat(w, st, o) })
+				if perr != nil {
+					return perr
+				}
+				return err
+			}, nil
+		},
+	}
+}
+
+func mountstatsTool() *tool {
+	return &tool{
+		name: "mountstats", synopsis: "[-n|-r|-x|-R] [MOUNTPOINT...]",
+		about: "per-mount NFS statistics, as nfs-utils' mountstats prints them",
+		opts: []opt{
+			{short: 'n', long: "nfs", help: "NFS statistics only"},
+			{short: 'r', long: "rpc", help: "RPC statistics only"},
+			{short: 'x', long: "xprt", help: "transport statistics only"},
+			{short: 'R', long: "raw", help: "as /proc/self/mountstats"},
+		},
+		window: true,
+		notes: []string{
+			"The NFS mounts of /proc/self/mountstats as clifrd last read it at or before T (every minute; clifrd's",
+			"mount namespace; recorded since schema 9), in the recorded host's nfs-utils layout (RHEL 8's 2.3.3",
+			"has no mount age and no error counts).",
+		},
+		examples: []string{`clifr --at "02:45" mountstats`, `clifr --at "02:45" "mountstats -r /data"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if c.w.IsRange() {
+				return nil, errors.New("mountstats: needs --at")
+			}
+			n := 0
+			for _, k := range []string{"nfs", "rpc", "xprt", "raw"} {
+				if p.has(k) {
+					n++
+				}
+			}
+			if n > 1 {
+				return nil, errors.New("mountstats: -n, -r, -x and -R exclude each other")
+			}
+			return func() error {
+				st := query.StyleAt(c.db, c.w.At)
+				mounts, err := query.MountstatsAt(c.db, c.w.At, !st.Mountstats233)
+				if err != nil {
+					return err
+				}
+				o := query.MountstatsOptions{NFS: p.has("nfs"), RPC: p.has("rpc"), Xprt: p.has("xprt"), Raw: p.has("raw"),
+					MountPoints: p.pos, V233: st.Mountstats233}
+				return c.emit(mounts, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintMountstats(w, mounts, o) })
+			}, nil
+		},
+	}
+}

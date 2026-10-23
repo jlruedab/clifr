@@ -427,6 +427,12 @@ chooses one; a line on stderr says when a style other than current is used.
   NUMA nodes' numastat, meminfo and huge pages as clifrd last read them
   (every minute; since schema 9), as procps (3.3 or 4.0) and numactl
   print them. Values move within that minute.
+- `conntrack -S|-C`, `nfsstat [-s] [-c] [-o ...] [-l] [-m]` and `mountstats
+  [-n|-r|-x|-R] [MOUNTPOINT...]`: ctnetlink's per-CPU counters (only while
+  nf_conntrack_netlink is loaded: clifrd does not load modules),
+  /proc/net/rpc/nfs and nfsd, and the NFS mounts of /proc/self/mountstats,
+  as clifrd last read them (every minute; since schema 9), in the recorded
+  host's conntrack-tools and nfs-utils layouts.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

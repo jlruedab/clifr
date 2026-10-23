@@ -21,7 +21,24 @@ type snapReader struct {
 // machineSnaps are read only on the real /proc (they describe this
 // machine, not a fixture).
 var machineSnaps = []snapReader{{"netns", readNetns, 0}, {"locks", readLocks, 0}, {"sysctl", readSysctl, sysctlReadMS},
-	{"numa", readNUMA, sysctlReadMS}}
+	{"numa", readNUMA, sysctlReadMS}, {"conntrack", readConntrack, sysctlReadMS},
+	{"mountstats", readMountstats, sysctlReadMS}}
+
+// readConntrack is ctnetlink's per-CPU counters (conntrack -S): "cpu
+// type=value ..." per CPU, nothing when nf_conntrack_netlink is not loaded.
+func readConntrack() ([]procfs.SnapLine, error) {
+	stats, _, err := rtnl.ConntrackStats()
+	out := make([]procfs.SnapLine, 0, len(stats))
+	for _, c := range stats {
+		cpu := strconv.Itoa(c.CPU)
+		line := cpu
+		for _, a := range c.Attrs {
+			line += " " + strconv.FormatUint(uint64(a[0]), 10) + "=" + strconv.FormatUint(uint64(a[1]), 10)
+		}
+		out = append(out, procfs.SnapLine{Key: cpu, Line: line})
+	}
+	return out, err
+}
 
 // sysctlReadMS: how often /proc/sys is read (some 1,600 files: 6-12 ms).
 const sysctlReadMS = 60_000

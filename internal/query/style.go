@@ -63,6 +63,12 @@ type ToolStyle struct {
 	Slabtop3 bool
 	// NumastatOld: numactl before 2.0.15 (numastat "20130723"): fixed rows.
 	NumastatOld bool
+	// ConntrackOld: conntrack-tools before 1.4.7 (RHEL 8's 1.4.4, Ubuntu
+	// 22.04's 1.4.6): the counters past search_restart named "(null)".
+	ConntrackOld bool
+	// Mountstats233: nfs-utils 2.3.3's mountstats (RHEL 8): no mount age,
+	// no error counts, per-op lists not padded.
+	Mountstats233 bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -76,11 +82,11 @@ var Styles = map[string]ToolStyle{
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
-		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true},
+		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true},
 	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
-		NumastatOld: true},
+		NumastatOld: true, ConntrackOld: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded
