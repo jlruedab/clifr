@@ -71,9 +71,11 @@ func (w *unitWatch) record(c *sdunits.Conn, snapshot bool) error {
 	return nil
 }
 
-// startUnits connects to systemd and records its units until done. When
-// the connection closes (systemd re-executes itself on upgrades), it
-// connects again and takes a new snapshot.
+// startUnits records systemd's units until done. It connects in the
+// background (systemd may not answer for a while: the recorder does not
+// wait for it), every 5 s until that works; when the connection closes
+// (systemd re-executes itself on upgrades), it connects again and takes a
+// new snapshot.
 func (r *Recorder) startUnits(done <-chan struct{}) (stop func()) {
 	if r.fs.Root != "/proc" {
 		return nil // fixtures: systemd is this machine's
@@ -94,21 +96,22 @@ func (r *Recorder) startUnits(done <-chan struct{}) (stop func()) {
 		}
 		return c, signals, nil
 	}
-	c, signals, err := connect()
-	if err != nil {
-		r.log.Warnf("systemd units not recorded: %v", err)
-		return nil
-	}
 	r.units = w
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		c, signals, err := connect()
+		if err != nil {
+			r.log.Warnf("systemd units not recorded yet: %v (trying again every 5 s)", err)
+			c = nil
+		}
 		defer func() {
 			if c != nil {
 				c.Close()
 			}
 		}()
+		connected := c != nil
 		lastSnap, lastList := time.Now(), time.Now()
 		var due <-chan time.Time // a listing is due (nil: no change signalled)
 		tick := time.NewTicker(5 * time.Second)
@@ -144,7 +147,12 @@ func (r *Recorder) startUnits(done <-chan struct{}) (stop func()) {
 						c = nil
 						continue
 					}
-					r.log.Printf("systemd units: connected again")
+					if connected {
+						r.log.Printf("systemd units: connected again")
+					} else {
+						r.log.Printf("systemd units: connected")
+					}
+					connected = true
 					lastSnap, lastList = time.Now(), time.Now()
 				case time.Since(lastSnap) >= store.NetSnapshotMS*time.Millisecond:
 					if err := w.record(c, true); err != nil {
