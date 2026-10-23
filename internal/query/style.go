@@ -52,6 +52,12 @@ type ToolStyle struct {
 	// IPNeighOld: iproute2 5.15's ip neigh: a space before each field
 	// after the link-layer address instead of after it (no trailing space).
 	IPNeighOld bool
+	// LslocksOld: util-linux before 2.41: an OFD lock's holder is not
+	// looked up (pid -1, "(undefined)", the mount point and "..." as path).
+	LslocksOld bool
+	// LslocksZeroSize: util-linux 2.32's lslocks prints an empty file's
+	// size as 0B.
+	LslocksZeroSize bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -64,10 +70,11 @@ var Styles = map[string]ToolStyle{
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
-		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252"},
+		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
+		LslocksZeroSize: true},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
-		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true},
+		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

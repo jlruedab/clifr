@@ -1725,3 +1725,29 @@ func compareIPNeigh(db *store.DB, snap snapshot) (Result, error) {
 	}
 	return res, nil
 }
+
+// ---- lslocks, ipcs ----
+
+// compareLocksIPC compares lslocks and ipcs [-u] line by line.
+func compareLocksIPC(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	var text string
+	if snap.cmd == "lslocks" {
+		st := query.StyleAt(db, snap.ts)
+		locks, err := query.LocksAt(db, snap.ts, st.LslocksOld)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) { query.PrintLslocks(sb, locks, false, false, st.LslocksZeroSize) })
+	} else {
+		ipc, err := query.IPCAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) { query.PrintIPCS(sb, ipc, query.IPCSOptions{Summary: snap.cmd == "ipcs -u"}) })
+	}
+	compareLines(&res, snap.cmd, snap.output, text)
+	return res, nil
+}

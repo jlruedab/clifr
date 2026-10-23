@@ -28,6 +28,18 @@ var SnapSources = []SnapSource{
 	{Name: "swaps", Path: []string{"swaps"}, Key: firstField},
 	{Name: "modules", Path: []string{"modules"}, Key: firstField},
 	{Name: "hostname", Path: []string{"sys", "kernel", "hostname"}},
+	{Name: "sysvipc/msg", Path: []string{"sysvipc", "msg"}, Key: secondField},
+	{Name: "sysvipc/sem", Path: []string{"sysvipc", "sem"}, Key: secondField},
+	{Name: "sysvipc/shm", Path: []string{"sysvipc", "shm"}, Key: secondField},
+}
+
+// secondField keys /proc/sysvipc lines by their id (the header: "id").
+func secondField(line string) string {
+	f := strings.Fields(line)
+	if len(f) < 2 {
+		return ""
+	}
+	return f[1]
 }
 
 func firstField(line string) string {

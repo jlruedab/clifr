@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -223,6 +223,13 @@ wait for the user's go-ahead.
   `ip -s neigh` counts them on to T. `snapshots` source "netns": /run/netns in directory order
   with each namespace's id (RTM_GETNSID; "name id", -1 none). `IPNeighOld` (ubuntu-22.04):
   iproute2 5.15 separates fields with a leading space.
+- `snapshots` sources "sysvipc/msg|sem|shm" (keyed by id; `ipcs`, `ipcs -u` sums them) and
+  "locks" (`recorder/locks.go`): each /proc/locks line plus what lslocks resolves at run time, as
+  "line\tpath\tsize\tholder pid\tholder comm": the path and size through the holder's fds
+  (lslocks' get_filename_sz: first fd but 0 on the inode; cached per pid and inode, then only
+  the fd re-stat'ed) and an OFD lock's holder from every process's fdinfo "lock:" lines (util-linux
+  2.41; scanned only when the OFD lock lines change). lslocks lists /proc/locks in reverse;
+  `LslocksOld` (before 2.41): OFD locks -1 "(undefined)" with the fallback path (mount point...).
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|

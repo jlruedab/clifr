@@ -18,7 +18,7 @@ type snapReader struct {
 
 // machineSnaps are read only on the real /proc (they describe this
 // machine, not a fixture).
-var machineSnaps = []snapReader{{"netns", readNetns}}
+var machineSnaps = []snapReader{{"netns", readNetns}, {"locks", readLocks}}
 
 // readNetns lists /run/netns as ip netns does: in directory order, each
 // name with the id this namespace gives it ("name id", -1 for none).

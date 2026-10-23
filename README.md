@@ -414,6 +414,12 @@ chooses one; a line on stderr says when a style other than current is used.
   FSAVAIL and FSUSE% from the last statfs sample. RHEL 8's 2.32 shows one
   MOUNTPOINT and `-f` without FSVER, FSAVAIL and FSUSE%. `mount -l` adds
   the labels.
+- `lslocks [-b] [-n]`: /proc/locks at the last system sample (since schema
+  9), in lslocks' order, with each locked file's path and size as clifrd
+  found them through the holder's fds, and an OFD lock's holder (util-linux
+  2.41; older ones print -1 "(undefined)"); commands from the process
+  sample. `ipcs [-q] [-m] [-s] [-u]`: /proc/sysvipc likewise; owners named
+  by the users of the machine running clifr.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

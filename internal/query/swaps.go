@@ -173,3 +173,16 @@ func utilHuman(bytes int64) string {
 	s := fmt.Sprintf("%d.%02d", dec, frac)
 	return strings.TrimSuffix(s, "0") + string(letter)
 }
+
+// scolsWidth is a libsmartcols column's width without a terminal: its
+// widest cell, at least its header's; an absolute width hint (>= 1) widens
+// it only when the data are as wide as the header.
+func scolsWidth(head, data, hint int) int {
+	switch {
+	case data < head:
+		return head
+	case hint >= 1 && data < hint && head < hint:
+		return hint
+	}
+	return data
+}

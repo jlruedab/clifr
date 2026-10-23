@@ -62,6 +62,9 @@ var verifyCommands = [][]string{
 	{"ip", "neigh"},
 	{"ip", "-s", "-s", "neigh"},
 	{"ip", "netns"},
+	{"lslocks"},
+	{"ipcs"},
+	{"ipcs", "-u"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

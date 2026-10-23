@@ -105,6 +105,8 @@ func addSystemTools() {
 	addTool(swaponTool())
 	addTool(lsmodTool())
 	addTool(lsblkTool())
+	addTool(lslocksTool())
+	addTool(ipcsTool())
 	addTool(lastTool())
 	addTool(nstatTool())
 	addTool(ipTool())

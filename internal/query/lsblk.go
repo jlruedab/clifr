@@ -397,14 +397,7 @@ func PrintLsblk(w io.Writer, roots []*BlockDev, o LsblkOptions) {
 				}
 			}
 		}
-		switch {
-		case data < head:
-			width[i] = head
-		case c.hint >= 1 && data < c.hint && head < c.hint:
-			width[i] = c.hint
-		default:
-			width[i] = data
-		}
+		width[i] = scolsWidth(head, data, c.hint)
 	}
 	print := func(cells []string) {
 		var b strings.Builder

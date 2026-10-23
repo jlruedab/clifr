@@ -1004,3 +1004,78 @@ func prepareIPNeigh(p parsed, c *runCtx, obj string, args []string) (func() erro
 		return c.emit(ns, func(int) rowMeta { return rowMeta{TS: t} }, func(w io.Writer) { query.PrintIPNeigh(w, ns, links, o, t) })
 	}, nil
 }
+
+func lslocksTool() *tool {
+	return &tool{
+		name: "lslocks", synopsis: "[-b] [-n]",
+		about: "the file locks, as util-linux lslocks prints them",
+		opts: []opt{
+			{short: 'b', long: "bytes", help: "sizes in bytes"},
+			{short: 'n', long: "noheadings", help: "no header line"},
+		},
+		window: true,
+		notes: []string{
+			"/proc/locks at the last system sample at or before T (recorded since schema 9), with the path and",
+			"size of each locked file as clifrd found them through the holder's fds, and the holder of an OFD",
+			"lock from fdinfo (shown by util-linux 2.41; older versions print -1 \"(undefined)\"). Commands",
+			"from the process sample at or before T.",
+		},
+		examples: []string{`clifr --at "02:45" lslocks`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("lslocks: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("lslocks: needs --at")
+			}
+			return func() error {
+				st := query.StyleAt(c.db, c.w.At)
+				locks, err := query.LocksAt(c.db, c.w.At, st.LslocksOld)
+				if err != nil {
+					return err
+				}
+				return c.emit(locks, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) {
+						query.PrintLslocks(w, locks, p.has("bytes"), p.has("noheadings"), st.LslocksZeroSize)
+					})
+			}, nil
+		},
+	}
+}
+
+func ipcsTool() *tool {
+	return &tool{
+		name: "ipcs", synopsis: "[-q] [-m] [-s] [-a] [-u]",
+		about: "System V message queues, shared memory and semaphores, as util-linux ipcs prints them",
+		opts: []opt{
+			{short: 'q', long: "queues", help: "message queues"},
+			{short: 'm', long: "shmems", help: "shared memory segments"},
+			{short: 's', long: "semaphores", help: "semaphore arrays"},
+			{short: 'a', long: "all", help: "all three (the default)"},
+			{short: 'u', long: "summary", help: "status summary"},
+		},
+		window: true,
+		notes: []string{
+			"/proc/sysvipc at the last system sample at or before T (recorded since schema 9). Owners are",
+			"named by the users of the machine running clifr.",
+		},
+		examples: []string{`clifr --at "02:45" ipcs`, `clifr --at "02:45" "ipcs -m -u"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("ipcs: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("ipcs: needs --at")
+			}
+			o := query.IPCSOptions{Msg: p.has("queues"), Shm: p.has("shmems"), Sem: p.has("semaphores"), Summary: p.has("summary")}
+			return func() error {
+				ipc, err := query.IPCAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit([]*query.IPC{ipc}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintIPCS(w, ipc, o) })
+			}, nil
+		},
+	}
+}
