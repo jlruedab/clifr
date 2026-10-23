@@ -1145,3 +1145,78 @@ func sysctlTool() *tool {
 		},
 	}
 }
+
+func slabtopTool() *tool {
+	return &tool{
+		name: "slabtop", synopsis: "-o",
+		about:  "the kernel's slab caches, as procps slabtop -o prints them",
+		opts:   []opt{{short: 'o', long: "once", help: "print once (the only mode for recorded data)"}},
+		window: true,
+		notes: []string{
+			"/proc/slabinfo as clifrd last read it at or before T (every minute; recorded since schema 9),",
+			"sorted by number of objects as the recorded host's procps does (3.3 and 4.0 order equal caches",
+			"differently).",
+		},
+		examples: []string{`clifr --at "02:45" "slabtop -o"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("slabtop: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("slabtop: needs --at")
+			}
+			return func() error {
+				slabs, _, err := query.SlabsAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				v3 := query.StyleAt(c.db, c.w.At).Slabtop3
+				return c.emit(slabs, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintSlabtop(w, slabs, v3) })
+			}, nil
+		},
+	}
+}
+
+func numastatTool() *tool {
+	return &tool{
+		name: "numastat", synopsis: "[-m] [-n] [-c] [-z]",
+		about: "per-node NUMA statistics and memory, as numactl's numastat prints them",
+		opts: []opt{
+			{short: 'm', long: "meminfo", help: "per-node memory (meminfo) in MB"},
+			{short: 'n', long: "numastat", help: "the numastat counters in MB"},
+			{short: 'c', long: "compress", help: "narrow columns, no decimals"},
+			{short: 'z', long: "zero-filter", help: "leave out rows and columns that are all zero"},
+		},
+		window: true,
+		notes: []string{
+			"/sys/devices/system/node as clifrd last read it at or before T (every minute; recorded since",
+			"schema 9), in numastat 2.0.19's layout; without options the counters as numastat prints them",
+			"for compatibility. Per-process statistics (-p) are not recorded.",
+		},
+		examples: []string{`clifr --at "02:45" numastat`, `clifr --at "02:45" "numastat -m"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("numastat: unexpected argument %q (processes are not supported)", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("numastat: needs --at")
+			}
+			o := query.NumastatOptions{Meminfo: p.has("meminfo"), Numastat: p.has("numastat"), Compress: p.has("compress"),
+				NoZero: p.has("zero-filter")}
+			if (o.Compress || o.NoZero) && !o.Meminfo && !o.Numastat {
+				o.Numastat = true // any option leaves the compatibility output
+			}
+			return func() error {
+				nodes, err := query.NUMAAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				page := query.PageBytes(c.db)
+				o.Old = query.StyleAt(c.db, c.w.At).NumastatOld
+				return c.emit(nodes, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintNumastat(w, nodes, o, page) })
+			}, nil
+		},
+	}
+}

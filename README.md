@@ -423,6 +423,10 @@ chooses one; a line on stderr says when a style other than current is used.
 - `sysctl -a | NAME... [-n] [-N] [-e] [-r REGEX]`: /proc/sys as clifrd last
   read it (every minute; since schema 9), walked and printed as procps'
   sysctl -a does; counters that change all the time are as of that read.
+- `slabtop -o` and `numastat [-m] [-n] [-c] [-z]`: /proc/slabinfo and the
+  NUMA nodes' numastat, meminfo and huge pages as clifrd last read them
+  (every minute; since schema 9), as procps (3.3 or 4.0) and numactl
+  print them. Values move within that minute.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

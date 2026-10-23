@@ -18,9 +18,10 @@ type SnapLine struct {
 // a line so that a change can be written alone; lines it gives no key (""),
 // such as headers, are keyed by their position ("#0", "#1", ...).
 type SnapSource struct {
-	Name string   // the snapshots table's source column
-	Path []string // under the proc root
-	Key  func(line string) string
+	Name    string   // the snapshots table's source column
+	Path    []string // under the proc root
+	Key     func(line string) string
+	EveryMS int64 // read every EveryMS (0: at every system sample)
 }
 
 // SnapSources are the files of phase 8 step 4 read at system samples.
@@ -31,6 +32,17 @@ var SnapSources = []SnapSource{
 	{Name: "sysvipc/msg", Path: []string{"sysvipc", "msg"}, Key: secondField},
 	{Name: "sysvipc/sem", Path: []string{"sysvipc", "sem"}, Key: secondField},
 	{Name: "sysvipc/shm", Path: []string{"sysvipc", "shm"}, Key: secondField},
+	// Most of its lines change all the time: once a minute.
+	{Name: "slabinfo", Path: []string{"slabinfo"}, Key: slabName, EveryMS: 60_000},
+}
+
+// slabName keys /proc/slabinfo lines by cache name (the version line and
+// the "# name" header by position).
+func slabName(line string) string {
+	if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "slabinfo ") {
+		return ""
+	}
+	return firstField(line)
 }
 
 // secondField keys /proc/sysvipc lines by their id (the header: "id").

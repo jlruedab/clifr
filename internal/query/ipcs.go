@@ -19,10 +19,7 @@ type IPC struct {
 // IPCAt returns /proc/sysvipc/{msg,sem,shm} at the system sample at or
 // before t.
 func IPCAt(db *store.DB, t int64) (*IPC, error) {
-	out := &IPC{pageBytes: 4096}
-	if kb := metaInt(db, "page_kb"); kb > 0 {
-		out.pageBytes = kb * 1024
-	}
+	out := &IPC{pageBytes: PageBytes(db)}
 	for _, src := range []struct {
 		name string
 		dst  *[]map[string]int64
@@ -134,4 +131,12 @@ func PrintIPCS(w io.Writer, ipc *IPC, o IPCSOptions) {
 		}
 		fmt.Fprintln(w)
 	}
+}
+
+// PageBytes is the recorded host's page size (4096 if not recorded).
+func PageBytes(db *store.DB) int64 {
+	if kb := metaInt(db, "page_kb"); kb > 0 {
+		return kb * 1024
+	}
+	return 4096
 }

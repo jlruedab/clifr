@@ -1806,3 +1806,106 @@ func compareSysctl(db *store.DB, snap snapshot) (Result, error) {
 	}
 	return res, nil
 }
+
+// ---- slabtop -o, numastat ----
+
+// compareNumbers compares slabtop -o (by cache) and numastat (by row): text
+// exactly, numbers within a tolerance, as clifrd reads slabinfo and the
+// NUMA nodes once a minute (slabtop: 5%; numastat: 2%); slabtop's object
+// size and objects per slab exactly. The summary lines of slabtop and the
+// order of its caches are not compared (both follow counts that change).
+func compareNumbers(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	var text string
+	tol := 0.02
+	key := func(f []string) string {
+		if f[0] == "Token" { // numastat before 2.0.15: "Token X not in hash table."
+			return strings.Join(f, " ")
+		}
+		return f[0]
+	}
+	if snap.cmd == "slabtop -o" {
+		tol = 0.05
+		slabs, _, err := query.SlabsAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) { query.PrintSlabtop(sb, slabs, query.StyleAt(db, snap.ts).Slabtop3) })
+		key = func(f []string) string {
+			if len(f) == 8 && strings.HasSuffix(f[2], "%") {
+				return f[7]
+			}
+			return ""
+		}
+	} else {
+		nodes, err := query.NUMAAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) {
+			o := query.NumastatOptions{Meminfo: snap.cmd == "numastat -m", Old: query.StyleAt(db, snap.ts).NumastatOld}
+			query.PrintNumastat(sb, nodes, o, query.PageBytes(db))
+		})
+	}
+	index := func(out string) (map[string][]string, []string) {
+		m := map[string][]string{}
+		var keys []string
+		for _, l := range strings.Split(out, "\n") {
+			f := strings.Fields(l)
+			if len(f) < 2 {
+				continue
+			}
+			k := key(f)
+			if k == "" {
+				continue
+			}
+			if _, dup := m[k]; !dup {
+				keys = append(keys, k)
+			}
+			m[k] = f
+		}
+		return m, keys
+	}
+	real, rk := index(snap.output)
+	rec, xk := index(text)
+	res.Real, res.Recon = len(rk), len(xk)
+	for _, k := range rk {
+		x, ok := rec[k]
+		if !ok {
+			res.Missing++
+			res.example("%s missing %s", snap.cmd, strings.Join(real[k], " "))
+			continue
+		}
+		res.Matched++
+		r := real[k]
+		var fields []fieldPair
+		for i := range r {
+			if i >= len(x) {
+				fields = append(fields, fieldPair{strconv.Itoa(i), r[i], ""})
+				continue
+			}
+			a, errA := strconv.ParseFloat(strings.TrimRight(r[i], "%K"), 64)
+			b, errB := strconv.ParseFloat(strings.TrimRight(x[i], "%K"), 64)
+			exact := snap.cmd == "slabtop -o" && (i == 3 || i == 5) // OBJ SIZE, OBJ/SLAB
+			if errA == nil && errB == nil && !exact {
+				if d := a - b; d > tol*max(a, b, 1) || -d > tol*max(a, b, 1) {
+					fields = append(fields, fieldPair{strconv.Itoa(i), r[i], x[i]})
+				}
+				continue
+			}
+			if r[i] != x[i] {
+				fields = append(fields, fieldPair{strconv.Itoa(i), r[i], x[i]})
+			}
+		}
+		res.compare(snap.cmd+" "+k, fields, func() bool { return false })
+	}
+	for _, k := range xk {
+		if _, ok := real[k]; !ok {
+			res.Extra++
+			res.example("%s extra %s", snap.cmd, strings.Join(rec[k], " "))
+		}
+	}
+	return res, nil
+}

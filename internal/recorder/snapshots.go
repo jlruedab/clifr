@@ -20,7 +20,8 @@ type snapReader struct {
 
 // machineSnaps are read only on the real /proc (they describe this
 // machine, not a fixture).
-var machineSnaps = []snapReader{{"netns", readNetns, 0}, {"locks", readLocks, 0}, {"sysctl", readSysctl, sysctlReadMS}}
+var machineSnaps = []snapReader{{"netns", readNetns, 0}, {"locks", readLocks, 0}, {"sysctl", readSysctl, sysctlReadMS},
+	{"numa", readNUMA, sysctlReadMS}}
 
 // sysctlReadMS: how often /proc/sys is read (some 1,600 files: 6-12 ms).
 const sysctlReadMS = 60_000
@@ -67,7 +68,7 @@ func (r *Recorder) sampleSnapshots(ts int64, b *store.Batch, fail func(string, e
 	}
 	sources := make([]snapReader, 0, len(procfs.SnapSources)+len(machineSnaps))
 	for _, src := range procfs.SnapSources {
-		sources = append(sources, snapReader{src.Name, func() ([]procfs.SnapLine, error) { return r.fs.ReadSnap(src) }, 0})
+		sources = append(sources, snapReader{src.Name, func() ([]procfs.SnapLine, error) { return r.fs.ReadSnap(src) }, src.EveryMS})
 	}
 	if s.sysfs {
 		sources = append(sources, machineSnaps...)

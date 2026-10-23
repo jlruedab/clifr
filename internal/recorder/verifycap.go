@@ -66,6 +66,9 @@ var verifyCommands = [][]string{
 	{"ipcs"},
 	{"ipcs", "-u"},
 	{"sysctl", "-a"},
+	{"slabtop", "-o"}, // procps; needs root (it is)
+	{"numastat"},      // numactl; skipped where it is not installed
+	{"numastat", "-m"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

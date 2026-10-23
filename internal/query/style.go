@@ -58,6 +58,11 @@ type ToolStyle struct {
 	// LslocksZeroSize: util-linux 2.32's lslocks prints an empty file's
 	// size as 0B.
 	LslocksZeroSize bool
+	// Slabtop3: procps 3.3's slabtop: its own merge sort (equal caches in
+	// another order) and USE computed as 100 * (float)a / b.
+	Slabtop3 bool
+	// NumastatOld: numactl before 2.0.15 (numastat "20130723"): fixed rows.
+	NumastatOld bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -71,10 +76,11 @@ var Styles = map[string]ToolStyle{
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
-		LslocksZeroSize: true},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true},
+		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
-		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true},
+		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
+		NumastatOld: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded
