@@ -65,6 +65,7 @@ var verifyCommands = [][]string{
 	{"lslocks"},
 	{"ipcs"},
 	{"ipcs", "-u"},
+	{"sysctl", "-a"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

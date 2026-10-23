@@ -1751,3 +1751,58 @@ func compareLocksIPC(db *store.DB, snap snapshot) (Result, error) {
 	compareLines(&res, snap.cmd, snap.output, text)
 	return res, nil
 }
+
+// ---- sysctl -a ----
+
+// sysctlVolatile are parameters that change all the time: a different
+// value is churn (clifrd reads /proc/sys once a minute).
+var sysctlVolatile = regexp.MustCompile(`^(fs\.(dentry-state|file-nr|inode-nr|inode-state|quota\.)|kernel\.random\.(entropy_avail|uuid)|kernel\.ns_last_pid|kernel\.pty\.nr|net\.netfilter\.nf_conntrack_count|kernel\.sched_domain\..*\.max_newidle_lb_cost$)`)
+
+// compareSysctl compares sysctl -a by parameter (a file's lines in order).
+func compareSysctl(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	lines, err := query.SysctlAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	index := func(ls []query.SysctlLine) (map[string]string, []string) {
+		m := map[string]string{}
+		var keys []string
+		for _, l := range ls {
+			if _, ok := m[l.Name]; !ok {
+				keys = append(keys, l.Name)
+				m[l.Name] = l.Value
+			} else {
+				m[l.Name] += "\n" + l.Value
+			}
+		}
+		return m, keys
+	}
+	var realLines []query.SysctlLine
+	for _, l := range strings.Split(strings.TrimRight(snap.output, "\n"), "\n") {
+		if name, value, ok := strings.Cut(l, " = "); ok {
+			realLines = append(realLines, query.SysctlLine{Name: name, Value: value})
+		}
+	}
+	real, rk := index(realLines)
+	rec, xk := index(lines)
+	res.Real, res.Recon = len(rk), len(xk)
+	for _, k := range rk {
+		x, ok := rec[k]
+		if !ok {
+			res.Missing++
+			res.example("sysctl -a missing %s = %s", k, real[k])
+			continue
+		}
+		res.Matched++
+		res.compare("sysctl "+k, []fieldPair{{"value", real[k], x}}, func() bool { return sysctlVolatile.MatchString(k) })
+	}
+	for _, k := range xk {
+		if _, ok := real[k]; !ok {
+			res.Extra++
+			res.example("sysctl -a extra %s = %s", k, rec[k])
+		}
+	}
+	return res, nil
+}

@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -230,6 +230,11 @@ wait for the user's go-ahead.
   the fd re-stat'ed) and an OFD lock's holder from every process's fdinfo "lock:" lines (util-linux
   2.41; scanned only when the OFD lock lines change). lslocks lists /proc/locks in reverse;
   `LslocksOld` (before 2.41): OFD locks -1 "(undefined)" with the fallback path (mount point...).
+- `snapshots` source "sysctl" (`recorder/sysctl.go`), read every minute (`snapReader.everyMS`; a read
+  is 8-10 ms for ~1,600 files with raw syscalls): /proc/sys walked as procps' sysctl -a (3.3 and 4.0
+  alike: directory order, deprecated names and unreadable files skipped, each line of a file as
+  "name = line" with '.' and '/' swapped), keyed by name. Its whole copies come at the first read
+  after 5 min, so `internal/duck` loads `snapshots` (and `blockdevs`) a minute further back.
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|

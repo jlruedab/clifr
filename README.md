@@ -420,6 +420,9 @@ chooses one; a line on stderr says when a style other than current is used.
   2.41; older ones print -1 "(undefined)"); commands from the process
   sample. `ipcs [-q] [-m] [-s] [-u]`: /proc/sysvipc likewise; owners named
   by the users of the machine running clifr.
+- `sysctl -a | NAME... [-n] [-N] [-e] [-r REGEX]`: /proc/sys as clifrd last
+  read it (every minute; since schema 9), walked and printed as procps'
+  sysctl -a does; counters that change all the time are as of that read.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

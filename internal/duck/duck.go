@@ -204,9 +204,10 @@ func (l *loader) load(table string) error {
 			where = fmt.Sprintf(` WHERE ts <= %d`, to)
 		case "net_counters", "links", "snapshots", "blockdevs", "neighs":
 			// Every counter (line) is written at least every NetCountersFullMS;
-			// block devices at the first read after that (a minute apart).
+			// block devices and sysctl at the first read after that (a minute
+			// apart).
 			first := from - store.NetCountersFullMS - 60_000
-			if table == "blockdevs" {
+			if table == "blockdevs" || table == "snapshots" {
 				first -= 60_000
 			}
 			files = l.filesIn(table, first, to)

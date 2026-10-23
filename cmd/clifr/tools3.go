@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -1075,6 +1076,71 @@ func ipcsTool() *tool {
 				}
 				return c.emit([]*query.IPC{ipc}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 					func(w io.Writer) { query.PrintIPCS(w, ipc, o) })
+			}, nil
+		},
+	}
+}
+
+func sysctlTool() *tool {
+	return &tool{
+		name: "sysctl", synopsis: "-a | NAME... [-n] [-N] [-e] [-r REGEX]",
+		about: "kernel parameters, as procps sysctl prints them",
+		opts: []opt{
+			{short: 'a', long: "all", help: "every parameter"},
+			{short: 'A', help: "the same as -a"},
+			{short: 'X', help: "the same as -a"},
+			{short: 'n', long: "values", help: "values only"},
+			{short: 'N', long: "names", help: "names only"},
+			{short: 'e', long: "ignore", help: "no error for unknown names"},
+			{short: 'r', long: "pattern", arg: "REGEX", help: "only names matching REGEX"},
+		},
+		window: true,
+		notes: []string{
+			"/proc/sys as clifrd last read it at or before T (every minute; recorded since schema 9), walked",
+			"and printed as sysctl -a does. Counters that change all the time (fs.dentry-state,",
+			"kernel.random.*) are as of that read. Setting values is not supported.",
+		},
+		examples: []string{`clifr --at "02:45" "sysctl -a"`, `clifr --at "02:45" "sysctl net.ipv4.ip_forward vm.swappiness"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			o := query.SysctlOptions{Values: p.has("values"), Names: p.has("names"), IgnoreUnknown: p.has("ignore")}
+			all := p.has("all") || p.has("A") || p.has("X")
+			for _, k := range p.pos {
+				if strings.Contains(k, "=") {
+					return nil, fmt.Errorf("sysctl: %q: setting values is not supported", k)
+				}
+			}
+			switch {
+			case all && len(p.pos) > 0:
+				return nil, errors.New("sysctl: give -a or names, not both")
+			case !all && len(p.pos) == 0:
+				return nil, errors.New("sysctl: give -a or the names of parameters")
+			case !all:
+				o.Keys = p.pos
+			}
+			if v, ok := p.set["pattern"]; ok {
+				re, err := regexp.Compile(v)
+				if err != nil {
+					return nil, fmt.Errorf("sysctl: -r: %v", err)
+				}
+				o.Pattern = re
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("sysctl: needs --at")
+			}
+			return func() error {
+				lines, err := query.SysctlAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				sel, err := query.SelectSysctl(lines, o)
+				if err != nil && len(sel) == 0 {
+					return err
+				}
+				perr := c.emit(sel, func(int) rowMeta { return rowMeta{TS: c.w.At} }, func(w io.Writer) { query.PrintSysctl(w, sel, o) })
+				if err != nil {
+					return err
+				}
+				return perr
 			}, nil
 		},
 	}
