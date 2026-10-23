@@ -1085,7 +1085,7 @@ func compareUname(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
 	at := func(k string) string { return query.MetaAt(db, k, snap.ts) }
 	m := at("uname_machine")
-	rec := strings.Join([]string{at("uname_sysname"), at("hostname"), at("uname_release"), at("uname_version"), m, m, m, "GNU/Linux"}, " ")
+	rec := strings.Join([]string{at("uname_sysname"), query.HostnameAt(db, snap.ts), at("uname_release"), at("uname_version"), m, m, m, "GNU/Linux"}, " ")
 	real := strings.TrimSpace(snap.output)
 	res.Real, res.Recon, res.Matched = 1, 1, 1
 	res.compare("uname -a", []fieldPair{{"LINE", real, rec}}, func() bool { return false })
@@ -1579,6 +1579,41 @@ func compareListUnits(db *store.DB, snap snapshot) (Result, error) {
 		o.States = []string{"failed"}
 	}
 	text := render(func(sb *strings.Builder) { query.PrintListUnits(sb, units, o, query.StyleAt(db, snap.ts)) })
+	compareLines(&res, snap.cmd, snap.output, text)
+	return res, nil
+}
+
+// ---- swapon, lsmod (snapshots) ----
+
+// compareSnapshotTool compares the commands printed from the snapshots
+// table line by line.
+func compareSnapshotTool(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	var text string
+	var err error
+	switch snap.cmd {
+	case "lsmod":
+		var mods []query.Module
+		if mods, err = query.ModulesAt(db, snap.ts); err == nil {
+			text = render(func(sb *strings.Builder) { query.PrintLsmod(sb, mods) })
+		}
+	default:
+		var swaps []query.Swap
+		var raw []string
+		if swaps, raw, err = query.SwapsAt(db, snap.ts); err == nil {
+			text = render(func(sb *strings.Builder) {
+				if snap.cmd == "swapon --summary" {
+					query.PrintSwapSummary(sb, swaps, raw, query.StyleAt(db, snap.ts).SwapSummaryOwn)
+				} else {
+					query.PrintSwapon(sb, swaps, query.SwapColumns, false, false, false)
+				}
+			})
+		}
+	}
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
 	compareLines(&res, snap.cmd, snap.output, text)
 	return res, nil
 }

@@ -378,6 +378,19 @@ type CgroupRow struct {
 	Xattrs   string
 }
 
+// SnapshotRow is one line of a file recorded whole (procfs.SnapSources) at
+// a system sample. Full rows: the whole file, written at a run's first
+// read, every NetCountersFullMS and whenever its lines' keys or their order
+// changed (a file without lines: one Full row with Pos -1). Otherwise only
+// the lines that changed, at the position of the last full copy.
+type SnapshotRow struct {
+	TS          int64
+	Source, Key string
+	Pos         int
+	Full        bool
+	Line        string
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -476,6 +489,7 @@ type Batch struct {
 	Kmsg        []KmsgRow
 	Units       []UnitRow
 	Cgroups     []CgroupRow
+	Snapshots   []SnapshotRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -486,5 +500,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups) + len(b.Snapshots)
 }

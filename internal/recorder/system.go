@@ -21,6 +21,7 @@ type sysSampler struct {
 	// Network interfaces likewise (by ifindex; the row without TS).
 	linkLast map[int]store.LinkRow
 	linkFull int64
+	snaps    map[string]*snapState // by source
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -103,6 +104,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 			}
 		}
 	}
+	r.sampleSnapshots(ts, b, fail)
 	disks, err := r.fs.ReadDiskStats()
 	if fail("diskstats", err) {
 		return

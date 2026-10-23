@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -174,7 +174,10 @@ wait for the user's go-ahead.
 - `units` (schema 7): systemd's loaded units (`internal/sdunits`, godbus/dbus over
   /run/systemd/private, else the system bus; `recorder/unitwatch.go`): `present` snapshot at
   start, hourly and after reconnecting (systemd closes the socket on daemon-reexec); `change`/
-  `gone` rows from a ListUnits diff 200 ms after a signal, at most every second.
+  `gone` rows from a ListUnits diff 200 ms after a signal, at most every second. Connected in the
+  background (retried every 5 s) and every D-Bus call bounded by `sdunits.Timeout` (10 s): right
+  after a restart systemd may not answer, and a call without a timeout once stopped the recorder
+  from starting at all (2026-10-23, RHEL 8 and 9 VMs).
 - `proc_samples` I/O columns (schema 2): rchar, wchar, read_bytes, write_bytes,
   cancelled_write_bytes from /proc/<pid>/io, re-read only when the process used CPU since its
   last sample and on fd-walk samples (cumulative: a skipped read only delays the update).
@@ -194,12 +197,20 @@ wait for the user's go-ahead.
   it), `xattrs` (user.*/trusted.* as name=value lines)) written when a run first sees a path (a
   process's cgroup or an ancestor), when its inode changes (recreated) and hourly; loaded whole. Sibling cgroups are listed in kernfs order (the
   kernel's name hash, `query.kernfsHash`), so the directory tree itself is not recorded.
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 8 since
-  2026-10-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+- `snapshots` (schema 9): files read whole at system samples, one row per line
+  (`procfs.SnapSources`: swaps, modules, hostname; `key` = the line's first field, else "#n"):
+  `whole` = 1 rows are the whole file, written at a run's first read, every
+  `store.NetCountersFullMS` and whenever the keys or their order changed (an empty file: one row
+  with pos -1); otherwise only changed lines. `query.FileAt` = the last whole copy plus the
+  changes after it. The CLI parses the lines when printing. lsmod lists a module's users in
+  kernfs order (`/sys/module/*/holders`), computed from the names; `hostname` and `uname -n`
+  use the recorded host name (a change while clifrd runs), the run's meta before schema 9.
+- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
+  2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,
-  df, lsof, vmstat, iostat and systemd-cgls as the recorded distribution's tool versions do (rhel-8, rhel-9,
+  df, lsof, vmstat, iostat, systemd-cgls and swapon --summary as the recorded distribution's tool versions do (rhel-8, rhel-9,
   ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. Per-run values (hostname, uname,
   boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
   latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL

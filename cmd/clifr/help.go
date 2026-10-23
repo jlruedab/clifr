@@ -20,7 +20,7 @@ Usage:
 Supported commands:
   ps, top, pstree, pidstat, lsof, ss, netstat, vmstat, mpstat, iostat, free,
   uptime, df, mount, findmnt, date, hostname, uname, last, nstat, ip, dmesg,
-  systemctl, systemd-cgls
+  systemctl, systemd-cgls, swapon, lsmod
   events, life, oom, mounts, containers (clifr only: timeline, process
   lifetimes, OOM kills, mount table, containers by their cgroups)
   Run "clifr help COMMAND" to see which options are supported for recorded
@@ -127,7 +127,10 @@ func helpTool(name string) error {
 				names = append(names, "--"+o.long)
 			}
 			n := strings.Join(names, ", ")
-			if o.arg != "" {
+			switch {
+			case o.optional:
+				n += "[=" + o.arg + "]"
+			case o.arg != "":
 				n += " " + o.arg
 			}
 			fmt.Fprintf(&b, "  %-22s %s\n", n, o.help)

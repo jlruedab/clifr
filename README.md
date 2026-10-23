@@ -300,8 +300,9 @@ chooses one; a line on stderr says when a style other than current is used.
   pstree merges identical subtrees). Over a range: one tree per sample with
   `--samples`.
 - `date [-u|--utc] [-R]`: the moment asked for, in GNU date's C-locale
-  format. `hostname [-s]`: the name when the clifrd run covering the moment
-  started (later changes and `-f` are not recorded). `uname [-asnrvmpio]`:
+  format. `hostname [-s]`: the name at the last system sample (since
+  schema 9; before, when the clifrd run started; `-f` is not recorded).
+  `uname [-asnrvmpio]`:
   the kernel the run covering the moment recorded (since schema 3; `-p` and
   `-i` print the machine, as RHEL's and Debian's coreutils do). `last [-F]
   reboot`: the boots within the recording, newest "still running"; an
@@ -394,6 +395,11 @@ chooses one; a line on stderr says when a style other than current is used.
   recorded host's systemd prints them (239 on RHEL 8, 249/252 on Ubuntu
   22.04 and RHEL 9, 258 and later), with `*` and `->` instead of `●` and
   `→` when clifr's locale is not UTF-8, as systemctl decides it.
+- `swapon [--show[=COLUMNS]] [--bytes] [--noheadings] [--raw]` and
+  `swapon --summary`: /proc/swaps at the last system sample (since schema
+  9), as util-linux prints it (`--show` prints nothing without swap areas;
+  UUID and LABEL are not recorded). `lsmod`: /proc/modules likewise, as
+  kmod prints it, each module's users in the order sysfs lists them.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.

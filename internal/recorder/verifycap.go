@@ -53,6 +53,9 @@ var verifyCommands = [][]string{
 	{"pidstat", "-h", "-u", "-r", "-d", "-w", "-p", "ALL"}, // sysstat; skipped where it is not installed
 	{"systemd-cgls", "--no-pager"},
 	{"systemd-cgls", "--no-pager", "-l"},
+	{"swapon", "--show"},
+	{"swapon", "--summary"},
+	{"lsmod"},
 	{"ss", "-tanp"},
 	{"netstat", "-tanp"}, // net-tools; skipped where it is not installed
 	// -K i: no per-thread rows. They repeat the process's rows (a million

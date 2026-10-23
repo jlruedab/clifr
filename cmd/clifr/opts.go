@@ -12,6 +12,9 @@ type opt struct {
 	long  string // name after "--", or ""
 	arg   string // name of its argument, "" for a switch
 	help  string
+	// optional: the argument is given only as "--long=value" (getopt's
+	// optional_argument); without it the value is "".
+	optional bool
 }
 
 func (o opt) key() string {
@@ -58,7 +61,7 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 			switch {
 			case o.arg == "" && hasVal:
 				return p, fmt.Errorf("%s: --%s takes no argument", tool, name)
-			case o.arg != "" && !hasVal:
+			case o.arg != "" && !hasVal && !o.optional:
 				if i+1 == len(args) {
 					return p, fmt.Errorf("%s: --%s needs %s", tool, name, o.arg)
 				}
@@ -72,7 +75,7 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 				if !ok {
 					return p, unsupported("-" + string(a[j]))
 				}
-				if o.arg == "" {
+				if o.arg == "" || o.optional {
 					p.add(o.key(), "")
 					continue
 				}

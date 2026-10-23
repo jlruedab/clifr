@@ -43,6 +43,9 @@ type ToolStyle struct {
 	// "252" (also each cgroup's id and its user./trusted. attributes), ""
 	// (258 and later: "CGroup /:", delegated cgroups marked).
 	SystemdCgls string
+	// SwapSummaryOwn: util-linux 2.32's swapon --summary prints its own
+	// columns ("%-39s\t%-8s\t%d\t%d\t%d"), not /proc/swaps.
+	SwapSummaryOwn bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -55,7 +58,7 @@ var Styles = map[string]ToolStyle{
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
-		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239"},
+		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true},
 	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252"},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249"},

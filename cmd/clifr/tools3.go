@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -202,13 +203,13 @@ func findmntTool() *tool {
 func hostnameTool() *tool {
 	return &tool{
 		name: "hostname", synopsis: "[-s]",
-		about: "the host name, as clifrd recorded it when it started",
+		about: "the host name, as clifrd recorded it",
 		opts: []opt{
 			{short: 's', long: "short", help: "up to the first dot"},
 		},
 		window: true,
 		notes: []string{
-			"The name the kernel had when the clifrd run covering T started; a later change is not recorded.",
+			"The name the kernel had at the last system sample at or before T (before schema 9: when the run started).",
 			"-f (the FQDN, from DNS) is not recorded.",
 		},
 		examples: []string{`clifr --at "02:45" hostname`},
@@ -220,7 +221,7 @@ func hostnameTool() *tool {
 				return nil, errors.New("hostname: needs --at")
 			}
 			return func() error {
-				h := query.MetaAt(c.db, "hostname", c.w.At)
+				h := query.HostnameAt(c.db, c.w.At)
 				if h == "" {
 					return fmt.Errorf("hostname: not recorded at %s", query.FormatMS(c.w.At))
 				}
@@ -281,7 +282,7 @@ func unameTool() *tool {
 				if at("uname_release") == "" {
 					return fmt.Errorf("uname: not in this recording at %s (recorded since schema 3)", query.FormatMS(c.w.At))
 				}
-				vals := map[string]string{"kernel-name": at("uname_sysname"), "nodename": at("hostname"),
+				vals := map[string]string{"kernel-name": at("uname_sysname"), "nodename": query.HostnameAt(c.db, c.w.At),
 					"kernel-release": at("uname_release"), "kernel-version": at("uname_version"), "machine": machine,
 					"processor": machine, "hardware-platform": machine, "operating-system": "GNU/Linux"}
 				var out []string
@@ -817,6 +818,87 @@ func containersTool() *tool {
 						}
 						query.PrintContainers(w, cs, c.w.IsRange(), p.has("no-trunc"))
 					})
+			}, nil
+		},
+	}
+}
+
+func swaponTool() *tool {
+	return &tool{
+		name: "swapon", synopsis: "[--show[=COLUMNS]] [--bytes] [--noheadings] [--raw] | --summary",
+		about: "the swap areas, as util-linux swapon --show (the default) or --summary prints them",
+		opts: []opt{
+			{long: "show", arg: "COLUMNS", optional: true, help: "a table (the default); columns NAME, TYPE, SIZE, USED, PRIO"},
+			{short: 's', long: "summary", help: "/proc/swaps as it was"},
+			{long: "bytes", help: "sizes in bytes"},
+			{long: "noheadings", help: "no header line"},
+			{long: "raw", help: "no column alignment"},
+			{short: 'v', long: "verbose", help: "accepted (prints nothing more)"},
+		},
+		window: true,
+		notes: []string{
+			"/proc/swaps at the last system sample at or before T (recorded since schema 9). UUID and LABEL",
+			"are not recorded. --summary in the recorded host's util-linux layout (RHEL 8's 2.32 has its",
+			"own columns). Enabling or disabling swap is not supported.",
+		},
+		examples: []string{`clifr --at "02:45" swapon`, `clifr --at "02:45" "swapon --summary"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("swapon: unexpected argument %q (enabling swap is not supported)", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("swapon: needs --at")
+			}
+			cols := query.SwapColumns
+			if v := p.set["show"]; v != "" {
+				cols = nil
+				for _, col := range strings.Split(strings.ToUpper(v), ",") {
+					if !slices.Contains(query.SwapColumns, col) {
+						return nil, fmt.Errorf("swapon: unknown column %q (recorded: %s)", col, strings.Join(query.SwapColumns, ", "))
+					}
+					cols = append(cols, col)
+				}
+			}
+			return func() error {
+				swaps, raw, err := query.SwapsAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit(swaps, func(int) rowMeta { return rowMeta{TS: c.w.At} }, func(w io.Writer) {
+					if p.has("summary") {
+						query.PrintSwapSummary(w, swaps, raw, query.StyleAt(c.db, c.w.At).SwapSummaryOwn)
+						return
+					}
+					query.PrintSwapon(w, swaps, cols, p.has("bytes"), p.has("noheadings"), p.has("raw"))
+				})
+			}, nil
+		},
+	}
+}
+
+func lsmodTool() *tool {
+	return &tool{
+		name: "lsmod", about: "the loaded kernel modules, as kmod's lsmod prints them",
+		window: true,
+		notes: []string{
+			"/proc/modules at the last system sample at or before T (recorded since schema 9); the users of",
+			"each module in the order sysfs lists them, as lsmod reads them.",
+		},
+		examples: []string{`clifr --at "02:45" lsmod`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("lsmod: unexpected argument %q", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("lsmod: needs --at")
+			}
+			return func() error {
+				mods, err := query.ModulesAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				return c.emit(mods, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintLsmod(w, mods) })
 			}, nil
 		},
 	}

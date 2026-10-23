@@ -664,6 +664,15 @@ type cgroupRow struct {
 	Xattrs   string `parquet:"xattrs"`
 }
 
+type snapshotRow struct {
+	TS     int64  `parquet:"ts"`
+	Source string `parquet:"source,dict"`
+	Key    string `parquet:"key,dict"`
+	Pos    int32  `parquet:"pos"`
+	Full   int32  `parquet:"whole"`
+	Line   string `parquet:"line,dict"`
+}
+
 type unitRow struct {
 	TS          int64  `parquet:"ts"`
 	Action      string `parquet:"action,dict"`
