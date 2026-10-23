@@ -697,6 +697,27 @@ type blockDevRow struct {
 	UUID     string `parquet:"uuid,dict"`
 }
 
+type neighRow struct {
+	TS          int64  `parquet:"ts"`
+	Pos         int32  `parquet:"pos"`
+	Whole       int32  `parquet:"whole"`
+	Family      int32  `parquet:"family"`
+	Index       int32  `parquet:"ifindex"`
+	State       int32  `parquet:"state"`
+	Flags       int32  `parquet:"flags"`
+	Type        int32  `parquet:"type"`
+	ExtFlags    int64  `parquet:"ext_flags"`
+	Dst         []byte `parquet:"dst"`
+	LLAddr      []byte `parquet:"lladdr"`
+	HasLLAddr   int32  `parquet:"has_lladdr"`
+	Probes      int64  `parquet:"probes"`
+	Protocol    int64  `parquet:"protocol"`
+	ConfirmedMS int64  `parquet:"confirmed_ms"`
+	UsedMS      int64  `parquet:"used_ms"`
+	UpdatedMS   int64  `parquet:"updated_ms"`
+	RefCnt      int64  `parquet:"refcnt"`
+}
+
 type unitRow struct {
 	TS          int64  `parquet:"ts"`
 	Action      string `parquet:"action,dict"`

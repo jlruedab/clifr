@@ -28,6 +28,7 @@ type sysSampler struct {
 	blockFull  int64
 	blockRead  int64       // when they were last read
 	blockDirty atomic.Bool // a uevent reported a change (startUevents)
+	neighs     *neighState
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -96,6 +97,9 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	if s.sysfs { // rtnetlink describes this machine, not a --proc-root fixture
 		if links, err := rtnl.Dump(); !fail("rtnetlink links", err) {
 			s.addLinks(ts, links, b)
+		}
+		if ns, err := rtnl.DumpNeighs(); !fail("rtnetlink neighbours", err) {
+			s.addNeighs(ts, ns, b)
 		}
 	}
 	if c, err := r.fs.ReadNetCounters(); !fail("net/snmp", err) {

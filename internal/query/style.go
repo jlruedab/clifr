@@ -49,6 +49,9 @@ type ToolStyle struct {
 	// LsblkV232: util-linux 2.32's lsblk: one MOUNTPOINT (2.37: all of them,
 	// MOUNTPOINTS), -f without FSVER, FSAVAIL and FSUSE%.
 	LsblkV232 bool
+	// IPNeighOld: iproute2 5.15's ip neigh: a space before each field
+	// after the link-layer address instead of after it (no trailing space).
+	IPNeighOld bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -64,7 +67,7 @@ var Styles = map[string]ToolStyle{
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true},
 	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252"},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
-		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249"},
+		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

@@ -214,6 +214,7 @@ type Store struct {
 	cgroups     []cgroupRow
 	snapshots   []snapshotRow
 	blockDevs   []blockDevRow
+	neighs      []neighRow
 	fs          []fsRow
 	trans       []tcpTransRow
 	keyframes   rowBuf[store.KeyframeRow]
@@ -240,7 +241,7 @@ type Store struct {
 // Tables lists the table directories, in the order they are flushed.
 var Tables = []string{"samples", "processes", "proc_samples", "sockets", "sock_samples", "sock_owners",
 	"open_files", "fds_held", "mounts", "tcp_conns", "tcp_transitions", "tcp_keyframes", "reconcile",
-	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "addrs", "routing", "kmsg", "units", "cgroups", "snapshots", "blockdevs", "meta"}
+	"oom_events", "recorder_stats", "guard_events", "verify_snapshots", "sys_samples", "cpu_samples", "disk_samples", "fs_samples", "net_counters", "links", "addrs", "routing", "kmsg", "units", "cgroups", "snapshots", "blockdevs", "neighs", "meta"}
 
 // EntityTables have an open/ directory and are deduplicated by id on read.
 var EntityTables = []string{"processes", "sockets", "sock_owners", "open_files", "fds_held", "tcp_conns"}
@@ -370,6 +371,12 @@ func (s *Store) Write(b *store.Batch) error {
 			Hidden: b2i(d.Hidden), Maj: int32(d.Maj), Min: int32(d.Min), Size: d.Size, RO: int32(d.RO), RM: int32(d.RM),
 			SCSIType: int32(d.SCSIType), DMName: d.DMName, DMUUID: d.DMUUID, MDLevel: d.MDLevel, LoopFile: d.LoopFile,
 			Holders: d.Holders, Slaves: d.Slaves, FSType: d.FSType, FSVer: d.FSVer, Label: d.Label, UUID: d.UUID})
+	}
+	for _, n := range b.Neighs {
+		s.neighs = append(s.neighs, neighRow{TS: n.TS, Pos: int32(n.Pos), Whole: b2i(n.Whole), Family: int32(n.Family),
+			Index: int32(n.Index), State: int32(n.State), Flags: int32(n.Flags), Type: int32(n.Type), ExtFlags: n.ExtFlags,
+			Dst: n.Dst, LLAddr: n.LLAddr, HasLLAddr: b2i(n.HasLLAddr), Probes: n.Probes, Protocol: n.Protocol,
+			ConfirmedMS: n.ConfirmedMS, UsedMS: n.UsedMS, UpdatedMS: n.UpdatedMS, RefCnt: n.RefCnt})
 	}
 	for _, c := range b.Cgroups {
 		s.cgroups = append(s.cgroups, cgroupRow{TS: c.TS, Path: c.Path, Delegate: b2i(c.Delegate), ID: c.ID, Xattrs: c.Xattrs})
@@ -532,6 +539,7 @@ func (s *Store) Flush() error {
 	part("cgroups", len(s.cgroups), func(p string) error { return writeFile(p, s.cgroups) })
 	part("snapshots", len(s.snapshots), func(p string) error { return writeFile(p, s.snapshots) })
 	part("blockdevs", len(s.blockDevs), func(p string) error { return writeFile(p, s.blockDevs) })
+	part("neighs", len(s.neighs), func(p string) error { return writeFile(p, s.neighs) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
 	if err := errors.Join(errs...); err != nil {
 		return err // keep the buffers; the next flush retries
@@ -553,7 +561,7 @@ func (s *Store) Flush() error {
 	s.samples, s.guard, s.verify, s.meta, s.oom, s.stats = nil, nil, nil, nil, nil, nil
 	s.trans = s.trans[:0] // no pointers: keep the array
 	s.keyframes, s.reconcile, s.mounts = rowBuf[store.KeyframeRow]{}, nil, nil
-	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links, s.ifAddrs, s.routing, s.kmsg, s.units, s.cgroups, s.snapshots, s.blockDevs = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0], s.ifAddrs[:0], s.routing[:0], s.kmsg[:0], s.units[:0], s.cgroups[:0], s.snapshots[:0], s.blockDevs[:0]
+	s.sys, s.cpus, s.disks, s.fs, s.netCounters, s.links, s.ifAddrs, s.routing, s.kmsg, s.units, s.cgroups, s.snapshots, s.blockDevs, s.neighs = s.sys[:0], s.cpus[:0], s.disks[:0], s.fs[:0], s.netCounters[:0], s.links[:0], s.ifAddrs[:0], s.routing[:0], s.kmsg[:0], s.units[:0], s.cgroups[:0], s.snapshots[:0], s.blockDevs[:0], s.neighs[:0]
 	s.conns.reset()
 	s.held.reset()
 	s.procs.reset()
@@ -868,7 +876,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow], "fs_samples": merge[fsRow],
-	"net_counters": merge[netCounterRow], "links": merge[linkRow], "addrs": merge[addrRow], "routing": merge[routingRow], "kmsg": merge[kmsgRow], "units": merge[unitRow], "cgroups": merge[cgroupRow], "snapshots": merge[snapshotRow], "blockdevs": merge[blockDevRow], "meta": merge[metaRow],
+	"net_counters": merge[netCounterRow], "links": merge[linkRow], "addrs": merge[addrRow], "routing": merge[routingRow], "kmsg": merge[kmsgRow], "units": merge[unitRow], "cgroups": merge[cgroupRow], "snapshots": merge[snapshotRow], "blockdevs": merge[blockDevRow], "neighs": merge[neighRow], "meta": merge[metaRow],
 }
 
 // merge streams the rows of parts into out (atomically replaced).
@@ -1010,5 +1018,6 @@ var emptyWriters = map[string]func(string) error{
 	"cgroups":          func(p string) error { return writeFile[cgroupRow](p, nil) },
 	"snapshots":        func(p string) error { return writeFile[snapshotRow](p, nil) },
 	"blockdevs":        func(p string) error { return writeFile[blockDevRow](p, nil) },
+	"neighs":           func(p string) error { return writeFile[neighRow](p, nil) },
 	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },
 }

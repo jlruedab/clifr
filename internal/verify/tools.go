@@ -1640,3 +1640,88 @@ func compareLsblk(db *store.DB, snap snapshot) (Result, error) {
 	compareLines(&res, snap.cmd, snap.output, text)
 	return res, nil
 }
+
+// ---- ip neigh, ip netns ----
+
+// neighTimers are ip -s neigh's ages ("used 41/41/16") and what follows
+// them (6.x prints "probes" without a space before it).
+var neighTimers = regexp.MustCompile(`used (\d+)/(\d+)/(\d+)`)
+
+// compareIPNeigh compares ip [-s -s] neigh line by line (an entry's state
+// may change between the sample and the capture: churn), the ages within a
+// second; ip netns likewise.
+func compareIPNeigh(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	var text string
+	if snap.cmd == "ip netns" {
+		ns, err := query.NetnsAt(db, snap.ts)
+		if err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
+		text = render(func(sb *strings.Builder) { query.PrintIPNetns(sb, ns) })
+		compareLines(&res, snap.cmd, snap.output, text)
+		return res, nil
+	}
+	ns, ok, err := query.NeighsAt(db, snap.ts)
+	if err == nil && !ok {
+		err = fmt.Errorf("not recorded (schema 9)")
+	}
+	var links []store.LinkRow
+	if err == nil {
+		links, _, err = query.LinksAt(db, snap.ts)
+	}
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	o := query.IPNeighOptions{Stats: snap.cmd != "ip neigh", Old: query.StyleAt(db, snap.ts).IPNeighOld}
+	text = render(func(sb *strings.Builder) { query.PrintIPNeigh(sb, ns, links, o, snap.ts) })
+	index := func(out string) (map[string]string, []string) {
+		m := map[string]string{}
+		var keys []string
+		for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			f := strings.Fields(l)
+			if len(f) < 3 {
+				continue
+			}
+			k := f[0] + " " + f[2] // dst and device
+			if _, dup := m[k]; !dup {
+				keys = append(keys, k)
+			}
+			m[k] = l
+		}
+		return m, keys
+	}
+	real, rk := index(snap.output)
+	rec, xk := index(text)
+	res.Real, res.Recon = len(rk), len(xk)
+	for _, k := range rk {
+		x, found := rec[k]
+		if !found {
+			res.Missing++
+			res.example("%s missing %q", snap.cmd, real[k])
+			continue
+		}
+		res.Matched++
+		r := real[k]
+		rt, xt := neighTimers.FindStringSubmatch(r), neighTimers.FindStringSubmatch(x)
+		timers := true
+		if rt != nil && xt != nil {
+			for i := 1; i <= 3; i++ {
+				a, _ := strconv.Atoi(rt[i])
+				b, _ := strconv.Atoi(xt[i])
+				timers = timers && a-b <= 1 && b-a <= 1
+			}
+		}
+		rs, xs := neighTimers.ReplaceAllString(r, "used"), neighTimers.ReplaceAllString(x, "used")
+		res.compare(snap.cmd+" "+k, []fieldPair{{"entry", rs, xs}, {"timers", fmt.Sprint(timers), "true"}}, func() bool { return false })
+	}
+	for _, k := range xk {
+		if _, found := real[k]; !found {
+			res.Extra++
+			res.example("%s extra %q", snap.cmd, rec[k])
+		}
+	}
+	return res, nil
+}

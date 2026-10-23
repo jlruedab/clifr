@@ -20,7 +20,7 @@ import (
 // sys_samples, uname in meta; 4: net_counters; 5: links, addrs, routing; 6: kmsg; 7: units;
 // 8: process fields (faults, scheduling, SHR, context switches, wchan,
 // label, cgroup); 9: snapshots (whole files: swaps, modules, hostname),
-// blockdevs.
+// blockdevs, neighs.
 // Readers refuse versions newer than theirs.
 const SchemaVersion = 9
 

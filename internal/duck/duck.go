@@ -202,7 +202,7 @@ func (l *loader) load(table string) error {
 			// all rows up to the window (retention bounds them).
 			files = l.filesIn(table, 0, to)
 			where = fmt.Sprintf(` WHERE ts <= %d`, to)
-		case "net_counters", "links", "snapshots", "blockdevs":
+		case "net_counters", "links", "snapshots", "blockdevs", "neighs":
 			// Every counter (line) is written at least every NetCountersFullMS;
 			// block devices at the first read after that (a minute apart).
 			first := from - store.NetCountersFullMS - 60_000

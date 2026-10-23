@@ -377,6 +377,12 @@ chooses one; a line on stderr says when a style other than current is used.
   so the order is right within seconds. Table names other than local, main
   and default print as numbers (a host's /etc/iproute2/rt_tables is not
   recorded); MPLS and other encapsulations are recorded but not printed.
+- `ip [-s [-s]] [-4|-6] neigh [show] [dev NAME]`: the neighbour (ARP and
+  NDISC) table dumped at the system sample at or before T (since schema 9),
+  in the kernel's order; `-s` timers counted on to T (a neighbour used
+  after the sample shows its older time). `ip netns [list]`: /run/netns at
+  that sample with each namespace's id. Ubuntu 22.04's iproute2 5.15 layout
+  for recordings of it.
 - `dmesg [-T] [-t] [-x]`: the kernel log. `--at T`: the records of the boot
   running at T that were still in the kernel's buffer, as dmesg would have
   printed them; a range: the records written in it. clifrd reads

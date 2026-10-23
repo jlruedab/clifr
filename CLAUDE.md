@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -217,6 +217,12 @@ wait for the user's go-ahead.
   header) and continuation lines for several mount points. `mount -l` labels from it (by dev).
   `mounts.loop_file` is set only for loop devices with autoclear (mount shows those by their
   backing file, others as /dev/loopN; any loop device before 2026-10-23).
+- `neighs` (schema 9): the ARP/NDISC table (`rtnl.DumpNeighs`, kernel order) at every system
+  sample, written like `snapshots` (whole when the entries or their order change and every 5 min,
+  else changed entries); cacheinfo ages stored as times (`*_ms`, ±20 ms is no change), so
+  `ip -s neigh` counts them on to T. `snapshots` source "netns": /run/netns in directory order
+  with each namespace's id (RTM_GETNSID; "name id", -1 none). `IPNeighOld` (ubuntu-22.04):
+  iproute2 5.15 separates fields with a leading space.
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|

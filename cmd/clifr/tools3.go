@@ -387,8 +387,8 @@ func nstatTool() *tool {
 
 func ipTool() *tool {
 	return &tool{
-		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]  |  [-o] [-d] [-4|-6] address [show] [[dev] NAME]  |  [-4|-6] [-d] route [show] [table ID|all]  |  [-4|-6] rule [list]",
-		about: "network interfaces, addresses, routes and rules, as iproute2 ip prints them",
+		name: "ip", synopsis: "[-s [-s]] [-d] link [show] [[dev] NAME]  |  [-o] [-d] [-4|-6] address [show] [[dev] NAME]  |  [-4|-6] [-d] route [show] [table ID|all]  |  [-4|-6] rule [list]  |  [-s [-s]] [-4|-6] neigh [show] [dev NAME]  |  netns [list]",
+		about: "network interfaces, addresses, routes, rules, neighbours and named namespaces, as iproute2 ip prints them",
 		opts: []opt{
 			{short: 's', long: "stats", help: "link: statistics (twice: also the error counters)"},
 			{short: 'd', long: "details", help: "details (each interface type's own parameters are not reconstructed)"},
@@ -404,8 +404,11 @@ func ipTool() *tool {
 			"2026-10-21, printed in iproute2 6.19's layout. -d prints the generic attributes and an",
 			"interface's type (bridge, bond, vlan, ...) but not that type's parameters.",
 			"--since: one report per sample with --samples.",
+			"neigh: the neighbour table dumped at the system sample at or before T (since schema 9), its",
+			"timers (-s) counted on to T; netns: /run/netns at that sample. Both in the recorded host's",
+			"iproute2 layout (Ubuntu 22.04's 5.15 separates fields differently).",
 		},
-		examples: []string{`clifr --at "02:45" "ip -s -d link"`, `clifr --at "02:45" "ip -o addr"`, `clifr --at "02:45" "ip -d address show dev eth0"`},
+		examples: []string{`clifr --at "02:45" "ip -s -d link"`, `clifr --at "02:45" "ip -s -s neigh"`, `clifr --at "02:45" "ip -o addr"`, `clifr --at "02:45" "ip -d address show dev eth0"`},
 		prepare:  prepareIP,
 	}
 }
@@ -417,6 +420,10 @@ func prepareIP(p parsed, c *runCtx) (func() error, error) {
 	}
 	obj := ""
 	switch {
+	case strings.HasPrefix("neighbour", args[0]) || strings.HasPrefix("neighbor", args[0]):
+		obj = "neigh" // first: "n" is neighbour for ip too
+	case strings.HasPrefix("netns", args[0]) && len(args[0]) >= 3:
+		obj = "netns"
 	case strings.HasPrefix("link", args[0]):
 		obj = "link"
 	case strings.HasPrefix("address", args[0]):
@@ -426,7 +433,7 @@ func prepareIP(p parsed, c *runCtx) (func() error, error) {
 	case strings.HasPrefix("rule", args[0]):
 		obj = "rule"
 	default:
-		return nil, fmt.Errorf("ip: object %q is not supported (link, address, route, rule)", args[0])
+		return nil, fmt.Errorf("ip: object %q is not supported (link, address, route, rule, neigh, netns)", args[0])
 	}
 	args = args[1:]
 	if len(args) > 0 && (args[0] == "show" || args[0] == "list" || args[0] == "lst" || args[0] == "ls") {
@@ -434,6 +441,9 @@ func prepareIP(p parsed, c *runCtx) (func() error, error) {
 	}
 	if obj == "route" || obj == "rule" {
 		return prepareIPRouting(p, c, obj, args)
+	}
+	if obj == "neigh" || obj == "netns" {
+		return prepareIPNeigh(p, c, obj, args)
 	}
 	dev := ""
 	switch {
@@ -942,4 +952,55 @@ func lsblkTool() *tool {
 			}, nil
 		},
 	}
+}
+
+// prepareIPNeigh: ip [-s [-s]] [-4|-6] neigh [show] [dev NAME] and ip
+// netns [list].
+func prepareIPNeigh(p parsed, c *runCtx, obj string, args []string) (func() error, error) {
+	o := query.IPNeighOptions{Stats: p.has("stats")}
+	switch {
+	case obj == "netns" && len(args) > 0:
+		return nil, fmt.Errorf("ip netns: unsupported arguments %q (only list)", strings.Join(args, " "))
+	case len(args) == 2 && args[0] == "dev":
+		o.Dev = args[1]
+	case len(args) > 0:
+		return nil, fmt.Errorf("ip neigh: unsupported arguments %q (only dev NAME)", strings.Join(args, " "))
+	}
+	switch {
+	case p.has("4") && p.has("6"):
+		return nil, errors.New("ip: use -4 or -6, not both")
+	case p.has("4"):
+		o.Family = 2
+	case p.has("6"):
+		o.Family = 10
+	}
+	if p.has("oneline") || p.has("details") {
+		return nil, fmt.Errorf("ip %s: -o and -d are not supported", obj)
+	}
+	if c.w.IsRange() {
+		return nil, fmt.Errorf("ip %s: needs --at", obj)
+	}
+	return func() error {
+		t := c.w.At
+		if obj == "netns" {
+			ns, err := query.NetnsAt(c.db, t)
+			if err != nil {
+				return err
+			}
+			return c.emit(ns, func(int) rowMeta { return rowMeta{TS: t} }, func(w io.Writer) { query.PrintIPNetns(w, ns) })
+		}
+		ns, ok, err := query.NeighsAt(c.db, t)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("ip neigh: not recorded at %s (recorded since schema 9)", query.FormatMS(t))
+		}
+		links, _, err := query.LinksAt(c.db, t)
+		if err != nil {
+			return err
+		}
+		o.Old = query.StyleAt(c.db, t).IPNeighOld
+		return c.emit(ns, func(int) rowMeta { return rowMeta{TS: t} }, func(w io.Writer) { query.PrintIPNeigh(w, ns, links, o, t) })
+	}, nil
 }

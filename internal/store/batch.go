@@ -410,6 +410,26 @@ type BlockDevRow struct {
 	Label, UUID            string
 }
 
+// NeighRow is one neighbour entry (rtnl.Neigh) at a system sample, Pos its
+// place in the dump. Whole: every entry, written at a run's first dump,
+// every NetCountersFullMS and when the entries or their order changed (no
+// entries: one Whole row with Pos -1); otherwise only the changed ones.
+// The cacheinfo ages are kept as times (ms): when the entry was last
+// confirmed, used and updated (0: the kernel sent no cacheinfo).
+type NeighRow struct {
+	TS, Pos                        int64
+	Whole                          bool
+	Family, Index                  int
+	State                          int
+	Flags, Type                    int
+	ExtFlags                       int64
+	Dst, LLAddr                    []byte
+	HasLLAddr                      bool
+	Probes, Protocol               int64
+	ConfirmedMS, UsedMS, UpdatedMS int64
+	RefCnt                         int64
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -510,6 +530,7 @@ type Batch struct {
 	Cgroups     []CgroupRow
 	Snapshots   []SnapshotRow
 	BlockDevs   []BlockDevRow
+	Neighs      []NeighRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -520,5 +541,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups) + len(b.Snapshots) + len(b.BlockDevs)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups) + len(b.Snapshots) + len(b.BlockDevs) + len(b.Neighs)
 }
