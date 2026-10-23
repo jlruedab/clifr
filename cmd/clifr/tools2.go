@@ -482,20 +482,25 @@ func eventsTool() *tool {
 
 func mountTool() *tool {
 	return &tool{
-		name: "mount", diff: true, synopsis: "[-t TYPES]",
-		about:  "the mount table",
-		opts:   []opt{{short: 't', long: "types", arg: "TYPES", help: "only these file-system types (comma separated; prefix all with no to exclude)"}},
+		name: "mount", diff: true, synopsis: "[-l] [-t TYPES]",
+		about: "the mount table",
+		opts: []opt{{short: 't', long: "types", arg: "TYPES", help: "only these file-system types (comma separated; prefix all with no to exclude)"},
+			{short: 'l', long: "show-labels", help: "file system labels (recorded since schema 9)"}},
 		window: true,
 		notes: []string{
 			"The recorder's mount namespace, in mountinfo order; exact (mountinfo change events).",
 			"Recordings before schema 2 lack the file-system options and order: mount shows the mount",
 			"options only, sorted by mount point.",
 			"--since: the mounts, unmounts and remounts in the range.",
+			"-l: the label of the block device as last read at or before T (at a uevent, else every minute).",
 		},
-		examples: []string{`clifr --at "02:45" "mount -t ext4,xfs"`},
+		examples: []string{`clifr --at "02:45" "mount -t ext4,xfs"`, `clifr --at "02:45" "mount -l -t ext4"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			if len(p.pos) > 0 {
 				return nil, fmt.Errorf("mount: only listing is possible for the past (%q)", p.pos[0])
+			}
+			if p.has("show-labels") && c.w.IsRange() {
+				return nil, errors.New("mount: -l needs --at")
 			}
 			var types query.MountTypes
 			if v, ok := p.set["types"]; ok {
@@ -526,6 +531,11 @@ func mountTool() *tool {
 				for _, m := range rows {
 					if types.Keep(m.FSType) {
 						kept = append(kept, m)
+					}
+				}
+				if p.has("show-labels") && !c.w.IsRange() {
+					if err := query.AddMountLabels(c.db, c.w.At, kept); err != nil {
+						return err
 					}
 				}
 				return c.emit(kept, func(int) rowMeta {

@@ -683,7 +683,7 @@ type MountInfo struct {
 	Options      string // per mount (VFS)
 	SuperOptions string // per file system (super block)
 	// Not in mountinfo; what util-linux mount shows (set by the recorder).
-	LoopFile    string // backing file of a /dev/loopN source
+	LoopFile    string // backing file of a /dev/loopN source with autoclear set (until 2026-10-23: any)
 	UserOptions string // userspace options from /run/mount/utab (x-...)
 }
 

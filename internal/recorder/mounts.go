@@ -135,8 +135,10 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 }
 
 // withMountExtras adds what util-linux mount shows beyond mountinfo: the
-// backing file of loop devices and the userspace options libmount keeps in
-// /run/mount/utab (matched by mount point and root, like libmount).
+// backing file of loop devices with autoclear set (mount -o loop, snaps;
+// libmount's mnt_pretty_path shows any other one as /dev/loopN) and the
+// userspace options libmount keeps in /run/mount/utab (matched by mount
+// point and root, like libmount).
 func withMountExtras(ms []procfs.MountInfo) []procfs.MountInfo {
 	utab := map[string]string{}
 	if b, err := os.ReadFile("/run/mount/utab"); err == nil {
@@ -162,7 +164,8 @@ func withMountExtras(ms []procfs.MountInfo) []procfs.MountInfo {
 		m := &ms[i]
 		m.UserOptions = utab[m.Point+"\x00"+m.Root]
 		if dev, ok := strings.CutPrefix(m.Source, "/dev/loop"); ok {
-			if b, err := os.ReadFile("/sys/block/loop" + dev + "/loop/backing_file"); err == nil {
+			ac, _ := os.ReadFile("/sys/block/loop" + dev + "/loop/autoclear")
+			if b, err := os.ReadFile("/sys/block/loop" + dev + "/loop/backing_file"); err == nil && strings.TrimSpace(string(ac)) == "1" {
 				m.LoopFile = strings.TrimSpace(string(b))
 			}
 		}

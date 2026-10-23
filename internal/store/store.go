@@ -19,7 +19,8 @@ import (
 // host identity and time zone; 3 (2026-10-21): sockstat columns in
 // sys_samples, uname in meta; 4: net_counters; 5: links, addrs, routing; 6: kmsg; 7: units;
 // 8: process fields (faults, scheduling, SHR, context switches, wchan,
-// label, cgroup); 9: snapshots (whole files: swaps, modules, hostname).
+// label, cgroup); 9: snapshots (whole files: swaps, modules, hostname),
+// blockdevs.
 // Readers refuse versions newer than theirs.
 const SchemaVersion = 9
 

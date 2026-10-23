@@ -59,7 +59,11 @@ func PrintMount(w io.Writer, rows []MountRow) {
 		if m.UserOptions != "" {
 			opts += "," + m.UserOptions
 		}
-		fmt.Fprintf(w, "%s on %s type %s (%s)\n", src, m.Point, m.FSType, opts)
+		label := ""
+		if m.Label != "" {
+			label = " [" + m.Label + "]"
+		}
+		fmt.Fprintf(w, "%s on %s type %s (%s)%s\n", src, m.Point, m.FSType, opts, label)
 	}
 }
 

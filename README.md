@@ -400,6 +400,14 @@ chooses one; a line on stderr says when a style other than current is used.
   9), as util-linux prints it (`--show` prints nothing without swap areas;
   UUID and LABEL are not recorded). `lsmod`: /proc/modules likewise, as
   kmod prints it, each module's users in the order sysfs lists them.
+- `lsblk [-f] [-b] [-n]`: the block devices of /sys/block as clifrd last
+  read them (after the kernel or udev reported a change, else every
+  minute; since schema 9), as util-linux prints the tree: sorted by device
+  number, partitions and holders (LVM, dm-crypt) below their devices, file
+  systems from udev's database, mount points from the mount table at T,
+  FSAVAIL and FSUSE% from the last statfs sample. RHEL 8's 2.32 shows one
+  MOUNTPOINT and `-f` without FSVER, FSAVAIL and FSUSE%. `mount -l` adds
+  the labels.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
@@ -418,9 +426,10 @@ chooses one; a line on stderr says when a style other than current is used.
 - `events` (clifr only): a timeline of process starts and exits, OOM kills,
   mounts, recorder gaps, skipped samples and guard events (`--name REGEX`,
   `--type KINDS`); exits known only from samples are marked `~`.
-- `mount [-t TYPES]`: the mount table as util-linux prints it (mount and
-  file-system options, loop devices by their backing file, `/run/mount/utab`
-  options), in mountinfo order; exact. Over a range: the changes.
+- `mount [-l] [-t TYPES]`: the mount table as util-linux prints it (mount and
+  file-system options, autoclear loop devices by their backing file,
+  `/run/mount/utab` options), in mountinfo order; exact. `-l`: the labels
+  (since schema 9). Over a range: the changes.
 - `df [-h] [-T] [-i] [-a] [-l] [-x TYPE] [-t TYPE] [PATH...]`: usage from
   the sample at or before T, as GNU df selects and prints it (dummy, empty,
   devtmpfs and squashfs file systems left out, a device mounted twice listed

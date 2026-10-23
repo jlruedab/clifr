@@ -391,6 +391,25 @@ type SnapshotRow struct {
 	Line        string
 }
 
+// BlockDevRow is a block device of /sys/block or one of its partitions
+// (Parent: its disk) at a system sample, as lsblk reads it: written when
+// anything changed, all of them every NetCountersFullMS, and with Gone when
+// it went away. Size in bytes; RO, RM and SCSIType -1 when sysfs has no such
+// attribute; Holders and Slaves comma-separated; FSType, FSVer, Label (as
+// udev encodes it: \x20) and UUID from udev's database.
+type BlockDevRow struct {
+	TS                     int64
+	Name, Parent           string
+	Gone, Hidden           bool
+	Maj, Min               int
+	Size, RO, RM, SCSIType int64
+	DMName, DMUUID         string
+	MDLevel, LoopFile      string
+	Holders, Slaves        string
+	FSType, FSVer          string
+	Label, UUID            string
+}
+
 // NetSnapshotMS: how often the addresses (later routes and rules) are
 // written whole between their change notifications.
 const NetSnapshotMS = 60 * 60 * 1000
@@ -490,6 +509,7 @@ type Batch struct {
 	Units       []UnitRow
 	Cgroups     []CgroupRow
 	Snapshots   []SnapshotRow
+	BlockDevs   []BlockDevRow
 }
 
 // Rows is the number of row writes in the batch, excluding the sample row.
@@ -500,5 +520,5 @@ func (b *Batch) Rows() int {
 		len(b.Guard) + len(b.Verify) + len(b.Skips) + len(b.ProcExits) + len(b.OOMEvents) + len(b.Stats) +
 		len(b.HeldInserts) + len(b.HeldCloses) + len(b.Mounts) +
 		len(b.TCPConns) + len(b.TCPTrans) + len(b.Keyframes) + len(b.Reconcile) +
-		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups) + len(b.Snapshots)
+		len(b.CPUs) + len(b.Disks) + len(b.FSSamples) + len(b.NetCounters) + len(b.Links) + len(b.Addrs) + len(b.Routing) + len(b.Kmsg) + len(b.Units) + len(b.Cgroups) + len(b.Snapshots) + len(b.BlockDevs)
 }

@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -205,12 +205,24 @@ wait for the user's go-ahead.
   changes after it. The CLI parses the lines when printing. lsmod lists a module's users in
   kernfs order (`/sys/module/*/holders`), computed from the names; `hostname` and `uname -n`
   use the recorded host name (a change while clifrd runs), the run's meta before schema 9.
+- `blockdevs` (schema 9): each device of /sys/block and its partitions (`parent`) as lsblk reads
+  them: size, ro, removable, hidden, dm name/uuid, md level, SCSI type, holders, slaves, loop
+  backing file, and FSTYPE/FSVER/LABEL/UUID from udev's database (/run/udev/data, as lsblk reads
+  it first). Read at a system sample after a block uevent (`recorder/uevent.go`: kernel and udev
+  groups of NETLINK_KOBJECT_UEVENT) and every minute (a full read is ~12 ms with 65 devices);
+  written like `links` (changed rows, all every 5 min, `gone`). `query.LsblkAt` builds lsblk's
+  tree (roots: devices without slaves; partitions, then holders; sorted by glibc's makedev as
+  lsblk sorts by MAJ:MIN), mount points from `mounts`, FSAVAIL/FSUSE% from `fs_samples`;
+  libsmartcols' widths (an absolute hint widens a column only when its data are as wide as the
+  header) and continuation lines for several mount points. `mount -l` labels from it (by dev).
+  `mounts.loop_file` is set only for loop devices with autoclear (mount shows those by their
+  backing file, others as /dev/loopN; any loop device before 2026-10-23).
 - `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,
-  df, lsof, vmstat, iostat, systemd-cgls and swapon --summary as the recorded distribution's tool versions do (rhel-8, rhel-9,
+  df, lsof, vmstat, iostat, systemd-cgls, swapon --summary and lsblk as the recorded distribution's tool versions do (rhel-8, rhel-9,
   ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. Per-run values (hostname, uname,
   boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
   latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL

@@ -4,6 +4,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	"clifr/internal/rtnl"
 	"clifr/internal/store"
@@ -22,6 +23,11 @@ type sysSampler struct {
 	linkLast map[int]store.LinkRow
 	linkFull int64
 	snaps    map[string]*snapState // by source
+	// Block devices likewise (by name).
+	blockLast  map[string]store.BlockDevRow
+	blockFull  int64
+	blockRead  int64       // when they were last read
+	blockDirty atomic.Bool // a uevent reported a change (startUevents)
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -105,6 +111,11 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		}
 	}
 	r.sampleSnapshots(ts, b, fail)
+	if s.sysfs && s.blockDue(ts) {
+		if devs, err := readBlockDevs(); !fail("/sys/block", err) {
+			s.addBlockDevs(ts, devs, b)
+		}
+	}
 	disks, err := r.fs.ReadDiskStats()
 	if fail("diskstats", err) {
 		return

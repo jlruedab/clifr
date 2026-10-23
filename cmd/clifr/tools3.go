@@ -903,3 +903,43 @@ func lsmodTool() *tool {
 		},
 	}
 }
+
+func lsblkTool() *tool {
+	return &tool{
+		name: "lsblk", synopsis: "[-f] [-b] [-n]",
+		about: "the block devices as a tree, as util-linux lsblk prints them",
+		opts: []opt{
+			{short: 'f', long: "fs", help: "file systems: type, version, label, UUID, available space, use"},
+			{short: 'b', long: "bytes", help: "sizes in bytes"},
+			{short: 'n', long: "noheadings", help: "no header line"},
+		},
+		window: true,
+		notes: []string{
+			"The devices of /sys/block and their partitions as clifrd last read them at or before T (when the",
+			"kernel or udev reported a change, else every minute; recorded since schema 9), with file systems",
+			"from udev's database; mount points from the mount table at T, FSAVAIL and FSUSE% from the last",
+			"statfs sample of the mount shown. Printed as the recorded host's util-linux does (RHEL 8's 2.32:",
+			"one MOUNTPOINT, -f without FSVER, FSAVAIL and FSUSE%), with ASCII tree lines when clifr's",
+			"locale is not UTF-8.",
+		},
+		examples: []string{`clifr --at "02:45" lsblk`, `clifr --at "02:45" "lsblk -f"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if len(p.pos) > 0 {
+				return nil, fmt.Errorf("lsblk: unexpected argument %q (devices cannot be selected yet)", p.pos[0])
+			}
+			if c.w.IsRange() {
+				return nil, errors.New("lsblk: needs --at")
+			}
+			return func() error {
+				roots, err := query.LsblkAt(c.db, c.w.At)
+				if err != nil {
+					return err
+				}
+				o := query.LsblkOptions{FS: p.has("fs"), Bytes: p.has("bytes"), NoHeadings: p.has("noheadings"),
+					V232: query.StyleAt(c.db, c.w.At).LsblkV232, ASCII: !query.LocaleUTF8()}
+				return c.emit(roots, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { query.PrintLsblk(w, roots, o) })
+			}, nil
+		},
+	}
+}

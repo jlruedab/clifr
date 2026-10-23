@@ -673,6 +673,30 @@ type snapshotRow struct {
 	Line   string `parquet:"line,dict"`
 }
 
+type blockDevRow struct {
+	TS       int64  `parquet:"ts"`
+	Name     string `parquet:"name,dict"`
+	Parent   string `parquet:"parent,dict"`
+	Gone     int32  `parquet:"gone"`
+	Hidden   int32  `parquet:"hidden"`
+	Maj      int32  `parquet:"maj"`
+	Min      int32  `parquet:"min"`
+	Size     int64  `parquet:"size"`
+	RO       int32  `parquet:"ro"`
+	RM       int32  `parquet:"rm"`
+	SCSIType int32  `parquet:"scsi_type"`
+	DMName   string `parquet:"dm_name,dict"`
+	DMUUID   string `parquet:"dm_uuid,dict"`
+	MDLevel  string `parquet:"md_level,dict"`
+	LoopFile string `parquet:"loop_file,dict"`
+	Holders  string `parquet:"holders,dict"`
+	Slaves   string `parquet:"slaves,dict"`
+	FSType   string `parquet:"fstype,dict"`
+	FSVer    string `parquet:"fsver,dict"`
+	Label    string `parquet:"label,dict"`
+	UUID     string `parquet:"uuid,dict"`
+}
+
 type unitRow struct {
 	TS          int64  `parquet:"ts"`
 	Action      string `parquet:"action,dict"`

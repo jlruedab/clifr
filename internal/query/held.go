@@ -248,6 +248,7 @@ type MountRow struct {
 	LoopFile     string `json:"loop_file,omitempty"`
 	UserOptions  string `json:"user_options,omitempty"`
 	MountID      int    `json:"mount_id"`
+	Label        string `json:"label,omitempty"` // mount -l (AddMountLabels)
 	seq          int
 	since        int64 // when it was mounted (or the run's snapshot)
 }

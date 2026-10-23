@@ -284,6 +284,11 @@ func (r *Recorder) Run(ctx context.Context) error {
 		defer stop()
 		defer close(kmsgDone)
 	}
+	ueventsDone := make(chan struct{})
+	if stop := r.startUevents(ueventsDone); stop != nil {
+		defer stop()
+		defer close(ueventsDone)
+	}
 	unitsDone := make(chan struct{})
 	if stop := r.startUnits(unitsDone); stop != nil {
 		defer stop()

@@ -20,7 +20,7 @@ Usage:
 Supported commands:
   ps, top, pstree, pidstat, lsof, ss, netstat, vmstat, mpstat, iostat, free,
   uptime, df, mount, findmnt, date, hostname, uname, last, nstat, ip, dmesg,
-  systemctl, systemd-cgls, swapon, lsmod
+  systemctl, systemd-cgls, swapon, lsmod, lsblk
   events, life, oom, mounts, containers (clifr only: timeline, process
   lifetimes, OOM kills, mount table, containers by their cgroups)
   Run "clifr help COMMAND" to see which options are supported for recorded

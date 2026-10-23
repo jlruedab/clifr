@@ -736,11 +736,11 @@ func (r *Result) compareOrder(cmd string, real, rec map[string]int) {
 // ---- mount ----
 
 type mountLine struct {
-	fstype, opts string
-	pos          int
+	fstype, opts, label string
+	pos                 int
 }
 
-var mountRe = regexp.MustCompile(`^(.*) on (.*) type (\S+) \((.*)\)$`)
+var mountRe = regexp.MustCompile(`^(.*) on (.*) type (\S+) \((.*)\)(?: \[(.*)\])?$`)
 
 // parseMount reads mount's lines, keyed by source and mount point (and the
 // occurrence, for the same pair mounted twice).
@@ -758,7 +758,7 @@ func parseMount(out string) map[string]mountLine {
 			}
 			key = g[1] + " on " + g[2] + " #" + strconv.Itoa(n)
 		}
-		m[key] = mountLine{fstype: g[3], opts: g[4], pos: len(m)}
+		m[key] = mountLine{fstype: g[3], opts: g[4], label: g[5], pos: len(m)}
 	}
 	return m
 }
@@ -768,6 +768,12 @@ func compareMount(db *store.DB, snap snapshot) (Result, error) {
 	rows, err := query.MountsAt(db, snap.ts)
 	if err != nil {
 		return res, err
+	}
+	if snap.cmd == "mount -l" {
+		if err := query.AddMountLabels(db, snap.ts, rows); err != nil {
+			res.example("%s: %v", snap.cmd, err)
+			return res, nil
+		}
 	}
 	real := parseMount(snap.output)
 	rec := parseMount(render(func(sb *strings.Builder) { query.PrintMount(sb, rows) }))
@@ -780,7 +786,7 @@ func compareMount(db *store.DB, snap snapshot) (Result, error) {
 			continue
 		}
 		res.Matched++
-		res.compare("mount "+key, []fieldPair{{"type", r.fstype, x.fstype}, {"options", r.opts, x.opts}},
+		res.compare("mount "+key, []fieldPair{{"type", r.fstype, x.fstype}, {"options", r.opts, x.opts}, {"label", r.label, x.label}},
 			func() bool { return false })
 	}
 	for key := range rec {
@@ -1614,6 +1620,23 @@ func compareSnapshotTool(db *store.DB, snap snapshot) (Result, error) {
 		res.example("%s: %v", snap.cmd, err)
 		return res, nil
 	}
+	compareLines(&res, snap.cmd, snap.output, text)
+	return res, nil
+}
+
+// ---- lsblk ----
+
+// compareLsblk compares lsblk [-f] line by line (the captures run with
+// LC_ALL=C: ASCII tree glyphs).
+func compareLsblk(db *store.DB, snap snapshot) (Result, error) {
+	res := newResult(snap.cmd)
+	roots, err := query.LsblkAt(db, snap.ts)
+	if err != nil {
+		res.example("%s: %v", snap.cmd, err)
+		return res, nil
+	}
+	o := query.LsblkOptions{FS: snap.cmd == "lsblk -f", V232: query.StyleAt(db, snap.ts).LsblkV232, ASCII: true}
+	text := render(func(sb *strings.Builder) { query.PrintLsblk(sb, roots, o) })
 	compareLines(&res, snap.cmd, snap.output, text)
 	return res, nil
 }
