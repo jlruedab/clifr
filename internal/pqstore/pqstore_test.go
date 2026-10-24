@@ -49,7 +49,7 @@ func TestCompactAndRecover(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 11:30: hour 10 is finished, hour 11 is not.
-	if err := s.compact(time.Date(2026, 10, 9, 11, 0, 0, 0, time.UTC)); err != nil {
+	if err := s.compact(time.Date(2026, 10, 9, 11, 0, 0, 0, time.UTC), func() {}); err != nil {
 		t.Fatal(err)
 	}
 	if n := rowsIn(t, filepath.Join(day, "10.parquet")); n != 8 {

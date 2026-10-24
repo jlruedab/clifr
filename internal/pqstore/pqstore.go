@@ -231,11 +231,14 @@ type Store struct {
 	lastFlush       time.Time
 	unknown         int // updates/closes for ids this run does not hold
 
-	bytes  atomic.Int64
-	busy   atomic.Bool // maintenance running
-	wg     sync.WaitGroup
-	ctx    context.Context
-	cancel context.CancelFunc
+	bytes atomic.Int64
+	busy  atomic.Bool // maintenance running
+	// maintUS is the CPU the maintenance thread used so far (µs), updated
+	// after each table it compacts.
+	maintUS atomic.Int64
+	wg      sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // Tables lists the table directories, in the order they are flushed.
@@ -272,6 +275,11 @@ func (s *Store) idBase() int64 { return s.run * 1_000_000_000 }
 func (s *Store) MaxID(string) (int64, error) { return s.idBase(), nil }
 
 func (s *Store) Bytes() int64 { return s.bytes.Load() }
+
+// MaintenanceCPUUS is the CPU time compaction and retention used so far
+// (µs, their own low-priority thread): the recorder's CPU guard rail leaves
+// it out, as it runs only on idle CPU and does not depend on sampling.
+func (s *Store) MaintenanceCPUUS() int64 { return s.maintUS.Load() }
 
 func (s *Store) SetMeta(key, value string) error {
 	s.meta = append(s.meta, metaRow{Run: s.run, TS: time.Now().UnixMilli(), Key: key, Value: value})
@@ -818,18 +826,33 @@ func (s *Store) maintain() {
 	const ioprioClassIdle, ioprioWhoProcess = 3, 1
 	unix.Syscall(unix.SYS_IOPRIO_SET, ioprioWhoProcess, uintptr(tid), ioprioClassIdle<<13)
 
-	if err := s.compact(time.Now().UTC().Truncate(time.Hour)); err != nil {
+	threadCPU := func() int64 {
+		var ru unix.Rusage
+		if unix.Getrusage(unix.RUSAGE_THREAD, &ru) != nil {
+			return 0
+		}
+		return ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
+	}
+	last := threadCPU()
+	account := func() {
+		now := threadCPU()
+		s.maintUS.Add(now - last)
+		last = now
+	}
+	if err := s.compact(time.Now().UTC().Truncate(time.Hour), account); err != nil {
 		s.opt.Logf("pqstore: compaction: %v", err)
 	}
 	if err := s.expire(time.Now().UTC()); err != nil {
 		s.opt.Logf("pqstore: retention: %v", err)
 	}
 	s.bytes.Store(dirSize(s.dir))
+	account()
 }
 
 // compact merges the files of every hour that ended before current into
-// <HH>.parquet (including an earlier hour file, if any).
-func (s *Store) compact(current time.Time) error {
+// <HH>.parquet (including an earlier hour file, if any), calling done after
+// each table-hour.
+func (s *Store) compact(current time.Time, done func()) error {
 	groups := map[string][]hourFile{}
 	var keys []string
 	for _, h := range s.listHours() {
@@ -864,6 +887,7 @@ func (s *Store) compact(current time.Time) error {
 				os.Remove(h.path)
 			}
 		}
+		done()
 	}
 	return nil
 }

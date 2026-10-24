@@ -118,6 +118,7 @@ type Recorder struct {
 	cpuHist         []cpuPoint
 	fdWalkUS        int64 // time spent in fd walks since the start
 	budgetExhausted bool
+	lastMaintUS     int64  // the store's maintenance CPU already reported
 	afterSample     func() // test hook
 }
 
@@ -501,7 +502,18 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
 	cpuUS := ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
 	r.fdWalkUS += durFD.Microseconds()
-	r.checkBudget(now, cpuUS, r.fdWalkUS, &b)
+	// The store's compaction and retention run on a thread of their own at
+	// the lowest priority, an hour's files at a time (1-3 s of CPU at once):
+	// not what the guard rail can lower by walking fds less often.
+	var maintUS int64
+	if m, ok := r.db.(interface{ MaintenanceCPUUS() int64 }); ok {
+		maintUS = m.MaintenanceCPUUS()
+		if d := maintUS - r.lastMaintUS; d >= 1000 {
+			b.Stats = append(b.Stats, store.StatRow{TS: ts, Source: "maintenance_cpu_ms", Events: d / 1000})
+			r.lastMaintUS += d / 1000 * 1000
+		}
+	}
+	r.checkBudget(now, cpuUS-maintUS, r.fdWalkUS, &b)
 
 	b.Sample = store.Sample{
 		TS: ts, FDWalk: fdWalk,

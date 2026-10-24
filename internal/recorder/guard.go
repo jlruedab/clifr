@@ -22,8 +22,9 @@ type cpuPoint struct {
 }
 
 // checkBudget is the CPU guard rail. When the recorder's own CPU over the
-// last budget window exceeds --cpu-budget of one core and the fd walks are a
-// real share of it (minFDShare), it doubles the fd-walk interval and records
+// last budget window (without the store's maintenance, which runs on idle
+// CPU) exceeds --cpu-budget of one core and the fd walks are a real share of
+// it (minFDShare), it doubles the fd-walk interval and records
 // a guard event; the window then restarts so the effect is measured before
 // acting again. When the walks are not what costs the CPU, or the interval is
 // at its cap, it leaves the interval alone and reports that once per period
