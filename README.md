@@ -910,7 +910,9 @@ continuous eBPF tracer, not a metrics exporter.
   mount namespace (init's: under the shipped unit clifrd's own is a
   sandboxed copy) are recorded. Under the unit, `clifr verify`'s captures
   of mount, df, findmnt and lsblk run in that sandbox, so their comparisons
-  are only meaningful when clifrd runs outside it.
+  are only meaningful when clifrd runs outside it. A user's FUSE mount
+  without allow_other refuses statfs to root, so `df` leaves it out (as a
+  root df does).
 - **Zombie processes** disappear from `clifr ps` at their exit event, while
   `ps` lists them until they are reaped.
 - **Command lines** are read at exec and at fd walks; a process that
