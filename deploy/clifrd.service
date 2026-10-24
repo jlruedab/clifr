@@ -73,7 +73,9 @@ ProtectKernelLogs=no
 DeviceAllow=/dev/kmsg r
 ProtectControlGroups=yes
 ProtectClock=yes
-ProtectHostname=yes
+# Not ProtectHostname: it gives the service its own UTS namespace, a copy
+# of the host name taken at start, so clifrd would not see it change.
+ProtectHostname=no
 RestrictAddressFamilies=AF_NETLINK AF_UNIX
 RestrictNamespaces=yes
 RestrictRealtime=yes
