@@ -687,7 +687,8 @@ type MountInfo struct {
 	UserOptions string // userspace options from /run/mount/utab (x-...)
 }
 
-// ReadMountInfo reads /proc/self/mountinfo (the recorder's mount namespace).
+// ReadMountInfo reads /proc/self/mountinfo (the recorder's mount namespace;
+// the recorder itself watches the host's, recorder.hostMountNS).
 func (f FS) ReadMountInfo() ([]MountInfo, error) {
 	b, err := os.ReadFile(f.path("self", "mountinfo"))
 	if err != nil {

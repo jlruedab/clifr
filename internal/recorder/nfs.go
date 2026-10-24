@@ -8,11 +8,12 @@ import (
 	"clifr/internal/procfs"
 )
 
-// readMountstats keeps the NFS mounts' sections of /proc/self/mountstats
-// (clifrd's mount namespace), as mountstats reads them: each line trimmed,
-// keyed by mount point and position in its section.
+// readMountstats keeps the NFS mounts' sections of the host's mountstats
+// (hostMountNS), as mountstats reads them: each line trimmed, keyed by
+// mount point and position in its section.
 func readMountstats() ([]procfs.SnapLine, error) {
-	b, err := os.ReadFile("/proc/self/mountstats")
+	proc, _ := hostMountNS()
+	b, err := os.ReadFile(proc + "/mountstats")
 	if err != nil {
 		return nil, err
 	}

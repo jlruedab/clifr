@@ -906,8 +906,11 @@ continuous eBPF tracer, not a metrics exporter.
   2026-10-13 do not have the IPV6_V6ONLY flag, so a listener the real `ss` prints as `*:port`
   appears there as `[::]:port`. A listener's backlog (Send-Q) is 0 until
   the next keyframe, like the other queue values.
-- **Namespaces**: only the host network namespace's sockets and the
-  recorder's mount namespace are recorded.
+- **Namespaces**: only the host network namespace's sockets and the host's
+  mount namespace (init's: under the shipped unit clifrd's own is a
+  sandboxed copy) are recorded. Under the unit, `clifr verify`'s captures
+  of mount, df, findmnt and lsblk run in that sandbox, so their comparisons
+  are only meaningful when clifrd runs outside it.
 - **Zombie processes** disappear from `clifr ps` at their exit event, while
   `ps` lists them until they are reaped.
 - **Command lines** are read at exec and at fd walks; a process that

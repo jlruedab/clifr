@@ -488,7 +488,7 @@ func mountTool() *tool {
 			{short: 'l', long: "show-labels", help: "file system labels (recorded since schema 9)"}},
 		window: true,
 		notes: []string{
-			"The recorder's mount namespace, in mountinfo order; exact (mountinfo change events).",
+			"The host's mount namespace (init's), in mountinfo order; exact (mountinfo change events).",
 			"Recordings before schema 2 lack the file-system options and order: mount shows the mount",
 			"options only, sorted by mount point.",
 			"--since: the mounts, unmounts and remounts in the range.",

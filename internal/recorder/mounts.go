@@ -12,9 +12,10 @@ import (
 	"clifr/internal/store"
 )
 
-// Mount changes are events: the kernel flags /proc/self/mountinfo with
-// POLLPRI whenever the mount table changes, and the watcher diffs it by
-// mount ID. Only the recorder's mount namespace (the host's) is watched.
+// Mount changes are events: the kernel flags a mountinfo file with POLLPRI
+// whenever the mount table changes, and the watcher diffs it by mount ID.
+// Only the host's mount namespace is watched (hostMountNS: init's, which
+// differs from clifrd's own under the shipped unit).
 //
 // The file is opened with a raw open(2), not os.Open: Go would register it
 // with its own epoll, and the kernel's poll of mountinfo consumes the change
@@ -79,7 +80,8 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 	if r.fs.Root != "/proc" {
 		return nil // fixtures: nothing to watch
 	}
-	fd, err := unix.Open("/proc/self/mountinfo", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	proc, _ := hostMountNS()
+	fd, err := unix.Open(proc+"/mountinfo", unix.O_RDONLY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		r.log.Warnf("mount changes not recorded: %v", err)
 		return nil

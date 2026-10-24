@@ -1361,11 +1361,11 @@ func mountstatsTool() *tool {
 			{short: 'n', long: "nfs", help: "NFS statistics only"},
 			{short: 'r', long: "rpc", help: "RPC statistics only"},
 			{short: 'x', long: "xprt", help: "transport statistics only"},
-			{short: 'R', long: "raw", help: "as /proc/self/mountstats"},
+			{short: 'R', long: "raw", help: "as /proc/self/mountstats prints it"},
 		},
 		window: true,
 		notes: []string{
-			"The NFS mounts of /proc/self/mountstats as clifrd last read it at or before T (every minute; clifrd's",
+			"The NFS mounts of the host's mountstats as clifrd last read it at or before T (every minute; init's",
 			"mount namespace; recorded since schema 9), in the recorded host's nfs-utils layout (RHEL 8's 2.3.3",
 			"has no mount age and no error counts).",
 		},

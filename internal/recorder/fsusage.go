@@ -70,6 +70,7 @@ func (u *fsUsage) start(ts int64, mounts []procfs.MountInfo, log *Logger) {
 		u.last = map[fsKey]store.FSSample{}
 	}
 	u.mu.Unlock()
+	_, root := hostMountNS()
 	go func() {
 		var rows []store.FSSample
 		for _, m := range mounts {
@@ -77,7 +78,7 @@ func (u *fsUsage) start(ts int64, mounts []procfs.MountInfo, log *Logger) {
 				continue
 			}
 			var st unix.Statfs_t
-			if unix.Statfs(m.Point, &st) != nil {
+			if unix.Statfs(root+m.Point, &st) != nil {
 				continue
 			}
 			s := store.FSSample{MountID: m.ID, FrSize: st.Frsize, Blocks: int64(st.Blocks), BFree: int64(st.Bfree),
