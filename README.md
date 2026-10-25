@@ -39,9 +39,11 @@ CPU guard rail, retention and size caps, hourly compaction, crash recovery,
 drop and missed-event counters, reconciliation with kernel dumps). It is
 not yet shown to be viable for production:
 
-1. **No long run.** The longest recordings are 15-minute benchmark runs
-   and the 14-minute ground-truth test; days of memory use, retention,
-   compaction and restarts have not been observed.
+1. **No long run yet.** The first soak test under the installed unit ran
+   18.7 hours (2026-10-24/25: 0.56% of one core, RSS 81 MiB average, no
+   restarts, `clifr verify` every 6 hours as before) and was stopped to
+   change the unit's CPU limit; the 7-day soak is to be run again with the
+   new unit. Days of memory use, retention and restarts are not observed yet.
 2. **One machine, one kernel** (Ubuntu 26.04, kernel 7.0, bare metal). The
    targets RHEL 8.2+/9 and Ubuntu 22.04+ and their fallback paths (perf
    buffer, classic tracepoints, proc connector) are untested there; the
@@ -181,7 +183,7 @@ last flush.
 ### As a service
 
 `deploy/clifrd.service` runs the recorder with Nice=10, the idle IO class,
-CPUQuota=5%, MemoryMax=768M, a read-only filesystem except its state
+CPUWeight=10, CPUQuota=50%, MemoryMax=768M, a read-only filesystem except its state
 directory and only the capabilities it needs (listed in the unit; kernels
 before 5.8 need CAP_SYS_ADMIN for eBPF):
 
@@ -201,11 +203,18 @@ source once and prints what works and the resulting recording level (full,
 reduced or sampling only); it records nothing.
 
 MemoryMax is about 1.5 times the highest memory measured in the benchmark
-(502 MiB with 100,000 connections). Read [Limitations](#limitations) before
-relying on the CPU limit on a busy server: at the busy benchmark load the
-recorder averages about 2% of one core, but its 5-second peaks (p95 7.7%)
-and the hourly compaction exceed CPUQuota=5%, and it has not been run
-throttled at that load.
+(502 MiB with 100,000 connections). The CPU is limited by a low weight, not
+a tight quota: the workload gets the CPU whenever both want it, and the 50%
+quota only stops a runaway recorder (the recorder's own guard rail keeps its
+average within a 2% budget). The unit had CPUQuota=5% until 2026-10-25. Its
+work comes in bursts (fd walks, the hourly compaction: p95 over 5 s about 8%
+of one core at the busy load), and 5% throttled them even on an idle
+machine. At the busy load (`bench/results/units-20261025-1115`, 3 runs each)
+it was throttled for 387–636 of 900 s, skipped samples and in one run
+dropped 98,593 TCP events (4,755 connections repaired from keyframes);
+with the current limits there were no drops or skipped samples, the same
+CPU (1.94% of one core) and memory (277 / 321 MiB) as without limits, and
+pgbench within noise.
 
 ## Querying
 
@@ -585,7 +594,8 @@ free disk and validate every run. Keep the machine otherwise idle.
    `bench/run.sh --smoke` is a 3-minute check of the harness.
    `--configs N1` runs Prometheus Node Exporter instead, for comparison
    (package `prometheus-node-exporter`; scraped every 15 s from outside its
-   cgroup).
+   cgroup). `--configs U` runs B under the unit's CPU and memory limits
+   (read from `deploy/clifrd.service`), `U2` under those of `--unit2 FILE`.
 
 3. **Scaling** (about 2 hours): no workload; processes, open fds, TCP
    connections, process spawns and connection churn varied one at a time,
@@ -885,10 +895,12 @@ continuous eBPF tracer, not a metrics exporter.
   0.1% of one core; below 256 MiB of heap it makes no difference. A fixed Go memory limit (`GOMEMLIMIT`) is not a safe alternative:
   at 384 MiB it took the recorder to 11% of one core with 100,000
   connections, mostly collecting.
-- **The shipped unit's CPUQuota=5%** is above the average cost at the busy
-  load (2.1% of one core) but below the bursts of compaction and of the
-  busiest samples (p95 over 5 s: 8.6%). The recorder has not been run
-  under the unit at that load: throttled, it may fall behind on events.
+- **The unit's CPU limit is a low weight** (CPUWeight=10, CPUQuota=50%):
+  on a machine whose CPUs are all busy the recorder gets a small share and
+  may fall behind (its eBPF buffers then drop events, counted per source).
+  The benchmark measured the weight only against the load generator and
+  pgbench (PostgreSQL runs in another slice); a tight quota is worse:
+  CPUQuota=5% dropped events at the busy load (see [As a service](#as-a-service)).
 - **Open files are sampled.** A file opened and closed between two walks is
   never seen, and one is stored only at its second walk. Memory-mapped files,
   DEVICE and SIZE/OFF and per-thread rows are not recorded.

@@ -22,15 +22,15 @@
 #
 # Safety on a production server:
 #   - The recorder runs with every [Service] setting of deploy/clifrd.service
-#     (CPUQuota=5%, MemoryMax=768M, Nice=10, IOSchedulingClass=idle, its
+#     (CPUWeight=10, CPUQuota=50%, MemoryMax=768M, Nice=10, IOSchedulingClass=idle, its
 #     capabilities, ProtectSystem=strict and the other protections) except
 #     how it is started, restarted and where it writes: DIR only. On kernels
 #     before 5.8 (no CAP_BPF/CAP_PERFMON) CAP_SYS_ADMIN is added for eBPF, as
 #     the unit's comment says. Its own guard rail (2% CPU budget) lengthens
-#     the fd interval if needed. CPUQuota=5% allows 5 ms of CPU per 100 ms, so
-#     each sample's burst of work is throttled (cgroup.csv nr_throttled,
-#     throttled_us) and takes longer in wall time; the average CPU is still
-#     the true cost as long as it stays well below 5%.
+#     the fd interval if needed. If the quota throttles the recorder
+#     (cgroup.csv nr_throttled, throttled_us) its samples take longer in wall
+#     time; the average CPU is still the true cost as long as it stays well
+#     below the quota.
 #   - If free disk drops below --min-free-gb the sampler stops the recorder
 #     and writes DIR/LOWDISK.
 #   - To stop everything at any time: sudo bench/passive.sh stop

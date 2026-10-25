@@ -10,6 +10,10 @@
 #                       B   clifrd --interval 30s --fd-interval 120s (default)
 #                       C   clifrd --interval 10s --fd-interval 60s  (aggressive)
 #                       D   clifrd --interval 60s --fd-interval 300s (conservative)
+#                       U   B under the CPU and memory limits of the shipped unit
+#                           (deploy/clifrd.service: CPUQuota, CPUWeight, MemoryMax, ...)
+#                       U2  B under the limits of the --unit2 file (to compare two units;
+#                           not in the default list)
 #                       R1  atop -w FILE 30                        (reference)
 #                       N1  Prometheus Node Exporter (default collectors, on
 #                           127.0.0.1:9100), scraped every 15 s from outside its
@@ -26,7 +30,8 @@
 #                     calibrate per machine, see README)
 #   --clients N --threads N   pgbench clients/threads (default: 16/4)
 #   --load-args "..." extra flags for bench/bin/load (e.g. "--conns 5000")
-#   --rec-args "..."  extra flags for clifrd in B, C and D; RUN in them is the
+#   --unit2 FILE      the unit file whose limits U2 uses
+#   --rec-args "..."  extra flags for clifrd in B, C, D, U and U2; RUN in them is the
 #                     run's directory (e.g. "--pprof-dir RUN/pprof")
 #   --drop-caches     drop the page cache before each run
 #   --keep-db         keep each run's clifr database (default: delete it after
@@ -57,7 +62,8 @@
 # Every process under test runs in a transient scope in sosvbench.slice with
 # CPU, memory and IO accounting. The recorder and atop run with the same
 # nice 10 / idle IO class as the shipped systemd unit, but without its
-# CPUQuota/MemoryMax, so their true cost is measured instead of the cap.
+# CPUQuota/MemoryMax, so their true cost is measured instead of the cap
+# (except in U and U2, which measure the recorder under the cap).
 # Free disk is checked before each run and every 15 s during it; below
 # --min-free-gb (default 1.5) the benchmark stops.
 set -euo pipefail
@@ -65,7 +71,7 @@ cd "$(dirname "$0")/.."
 ROOT=$PWD
 
 PROFILES=busy CONFIGS="A B C D R1" REPEATS=3 BPF_STATS="" CPUS="" WARMUP=120 MEASURE=900
-PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" REC_ARGS="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
+PGB_MODE=select PGB_RATE=30000 CLIENTS=16 THREADS=4 LOAD_ARGS="" REC_ARGS="" UNIT2="" DROP_CACHES=0 KEEP_DB=0 OUT="" MIN_FREE_GB=1.5
 while (($#)); do
     case $1 in
     --profiles) PROFILES=${2//,/ }; shift ;;
@@ -79,6 +85,7 @@ while (($#)); do
     --threads) THREADS=$2; shift ;;
     --load-args) LOAD_ARGS=$2; shift ;;
     --rec-args) REC_ARGS=$2; shift ;;
+    --unit2) UNIT2=$(realpath "$2"); shift ;;
     --drop-caches) DROP_CACHES=1 ;;
     --bpf-stats) BPF_STATS=--bpf-stats ;;
     --cpus) CPUS=$2; shift ;;
@@ -100,7 +107,8 @@ OUT=$(realpath -m "$OUT") # workload.sh changes directory
 check_common clifr clifrd load benchtool report
 for c in $CONFIGS; do
     case $c in
-    A | B | C | D) ;;
+    A | B | C | D | U) ;;
+    U2) [[ -f $UNIT2 ]] || die "U2 needs --unit2 FILE" ;;
     V1) die "V1 (the v1 recorder, SQLite) was removed on 2026-10-21; its results are history" ;;
     R1) command -v atop >/dev/null || die "R1 needs atop" ;;
     N1) command -v prometheus-node-exporter >/dev/null || die "N1 needs prometheus-node-exporter" ;;
@@ -123,6 +131,14 @@ systemctl daemon-reload
 PGCG=$(systemctl show -p ControlGroup --value "$PGUNIT")
 disk_devices "$OUT"
 
+# unit_limits FILE: the resource-control settings of FILE's [Service] section
+# as systemd-run -p arguments for a scope (its Nice and IOSchedulingClass are
+# exec settings: recorder_cmd gives them with nice and ionice).
+unit_limits() {
+    awk '/^\[/ {s = ($0 == "[Service]")}
+        s && /^(CPUQuota|CPUQuotaPeriodSec|CPUWeight|MemoryMax|MemoryHigh|MemorySwapMax|IOWeight|TasksMax)=/ {print "-p"; print}' "$1"
+}
+
 # --- machine info ------------------------------------------------------------
 {
     machine_info "$OUT"
@@ -143,6 +159,8 @@ disk_devices "$OUT"
     echo "drop_caches=$DROP_CACHES"
     echo "bpf_stats=${BPF_STATS:+on}"
     echo "workload_cpus=$CPUS"
+    echo "unit_limits=$(unit_limits "$ROOT/deploy/clifrd.service" | paste -sd' ')"
+    [[ -z $UNIT2 ]] || echo "unit2_limits=$(unit_limits "$UNIT2" | paste -sd' ')"
 } >"$OUT/machine.env"
 MATRIX=$OUT/matrix.csv
 [[ -f $MATRIX ]] || echo "run_id,order,profile,config,repeat,start_ms,warm_start_ms,meas_start_ms,meas_end_ms,end_ms,status" >"$MATRIX"
@@ -171,7 +189,7 @@ recorder_cmd() {
     local s
     case $1 in
     A) return ;;
-    B) s="--interval 30s --fd-interval 120s" ;;
+    B | U | U2) s="--interval 30s --fd-interval 120s" ;;
     C) s="--interval 10s --fd-interval 60s" ;;
     D) s="--interval 60s --fd-interval 300s" ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
@@ -237,9 +255,15 @@ run_one() {
     cmd=$(recorder_cmd "$config")
     if [[ -n $cmd ]]; then
         log "$RUNID: start $cmd"
+        case $config in
+        U) mapfile -t SCOPE_PROPS < <(unit_limits "$ROOT/deploy/clifrd.service") ;;
+        U2) mapfile -t SCOPE_PROPS < <(unit_limits "$UNIT2") ;;
+        esac
+        ((${#SCOPE_PROPS[@]} == 0)) || printf '%s %s\n' "${SCOPE_PROPS[@]}" | sed 's/^-p //' >"$RUN/unit-limits.txt"
         # shellcheck disable=SC2086
         scope rec $cmd >"$RUN/recorder.log" 2>&1 &
         rec_pid=$!
+        SCOPE_PROPS=()
         sleep 3
         kill -0 $rec_pid 2>/dev/null || { log "$RUNID: recorder died at start"; tail -3 "$RUN/recorder.log"; return 1; }
     fi

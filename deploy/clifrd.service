@@ -33,7 +33,14 @@ UMask=0027
 # Resource limits: the recorder must never compete with the real workload.
 MemoryAccounting=yes
 IOAccounting=yes
-CPUQuota=5%
+# A low weight instead of a tight quota: the recorder's work comes in bursts
+# (fd walks, the hourly compaction) that a quota of a few percent throttles
+# for seconds even on an idle machine (CPUQuota=5% did, 2026-10-24). With
+# CPUWeight=10 (default 100) the workload gets the CPU whenever both want it;
+# the quota only stops a runaway recorder. Its own guard rail keeps the
+# average within the 2% budget.
+CPUWeight=10
+CPUQuota=50%
 # Measured on a 22-CPU machine: 327 MiB on average (397 at most) with 20,000
 # connections and 500 new ones per second, 502 MiB at most with 100,000
 # connections. Above the limit the kernel kills the recorder and systemd

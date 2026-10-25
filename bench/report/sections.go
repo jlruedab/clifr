@@ -36,12 +36,14 @@ var configDesc = map[string]string{
 	"B":  "clifrd --interval 30s --fd-interval 120s (v2 default)",
 	"C":  "clifrd --interval 10s --fd-interval 60s (v2 aggressive)",
 	"D":  "clifrd --interval 60s --fd-interval 300s (v2 conservative)",
+	"U":  "clifrd as B, under the shipped unit's CPU and memory limits",
+	"U2": "clifrd as B, under the limits of a second unit file",
 	"V1": "v1 recorder (snapshots, SQLite) --interval 30s --fd-interval 120s",
 	"R1": "atop -w FILE 30 (reference)",
 	"N1": "Prometheus Node Exporter, scraped every 15 s (comparison)",
 }
 
-var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "V1": "--s5", "R1": "--s4", "N1": "--s5", "passive": "--s1"}
+var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "U": "--s2", "U2": "--s3", "V1": "--s5", "R1": "--s4", "N1": "--s5", "passive": "--s1"}
 
 func color(cfg string) string {
 	if c, ok := configColor[cfg]; ok {
@@ -617,7 +619,7 @@ func (r *Report) method() section {
 	s := section{Title: "Method and caveats", Level: 2}
 	items := []string{
 		"Every process under test ran in its own systemd scope with CPU, memory and IO accounting; cgroup v2 counters and system-wide /proc counters were sampled every 5 s. Rates are counter differences over the measured window.",
-		"The recorder (and atop) ran with nice 10 and the idle IO class, like the shipped unit, but without its CPUQuota/MemoryMax, so the true cost is measured, not the cap. The clifr CPU guard rail (2% budget) was active in the matrix runs and may lengthen the fd interval; its events are listed per profile.",
+		"The recorder (and atop) ran with nice 10 and the idle IO class, like the shipped unit, but without its CPUQuota/MemoryMax (except in U and U2), so the true cost is measured, not the cap. The clifr CPU guard rail (2% budget) was active in the matrix runs and may lengthen the fd interval; its events are listed per profile.",
 		"Workload: pgbench, by default read-only (-S) at a fixed transaction rate with the database cached in memory, and its output written to RAM. The impact on a disk-bound workload is not measured here.",
 		"Confidence intervals: t-distribution over the repeats (mean ± t·s/√n); differences vs. the baseline use Welch's interval. With fewer than two repeats no interval is given.",
 		"Disk written is more than the data kept: the Parquet recorder rewrites the still-open entities at every flush and compacts hourly; v1 (SQLite) writes one transaction per sample.",
