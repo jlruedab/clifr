@@ -99,3 +99,21 @@ func TestCglsCommand239(t *testing.T) {
 		}
 	}
 }
+
+func TestInCgroupProcs(t *testing.T) {
+	for _, c := range []struct {
+		state   string
+		threads int64
+		want    bool
+	}{
+		{"S", 1, true},
+		{"R", 4, true},
+		{"Z", 1, false}, // exited, not reaped: gone from cgroup.procs
+		{"Z", 0, false},
+		{"Z", 3, true}, // leader exited, other threads still running
+	} {
+		if got := inCgroupProcs(c.state, c.threads); got != c.want {
+			t.Errorf("state %s threads %d: %v, want %v", c.state, c.threads, got, c.want)
+		}
+	}
+}

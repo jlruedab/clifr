@@ -55,7 +55,7 @@ func CglsAt(db *store.DB, t int64) ([]CglsProc, map[string]CgroupInfo, int64, er
 	var out []CglsProc
 	for _, p := range procs {
 		cg, _, ok := procfs.SystemdCgroup(p.cgroup.String)
-		if !ok || !p.state.Valid {
+		if !ok || !p.state.Valid || !inCgroupProcs(p.state.String, p.threads.Int64) {
 			continue
 		}
 		c := CglsProc{PID: p.pid, Cgroup: cg, Command: p.cmdline, pad: max(int(p.cmdlinePad.Int64), 1),
@@ -291,4 +291,13 @@ func PrintCgls(w io.Writer, procs []CglsProc, info map[string]CgroupInfo, o Cgls
 		}
 	}
 	walk(root, "/", "")
+}
+
+// inCgroupProcs reports whether a process is in its cgroup's cgroup.procs,
+// which systemd-cgls lists. A zombie leaves it when its last thread exits,
+// although /proc/<pid>/cgroup still names the cgroup; a zombie leader whose
+// other threads still run stays (systemd-cgls prints it as [comm]). ps, top
+// and pstree show every zombie.
+func inCgroupProcs(state string, threads int64) bool {
+	return state != "Z" || threads > 1
 }
