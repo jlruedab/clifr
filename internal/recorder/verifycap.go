@@ -106,10 +106,14 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 			r.log.Errorf("verify: %s: %v", argv[0], err)
 			continue
 		}
+		output := r.redact.Text(out.String()) // the real tools show the command lines as they are
+		if argv[0] == "sysctl" {
+			output = dropSysctlSecrets(output)
+		}
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
 			TS: start.UnixMilli(), EndTS: end.UnixMilli(), SampleTS: sampleTS,
 			Cmd: strings.Join(argv, " "), IgnorePIDs: fmt.Sprintf("%d,%s", os.Getpid(), strconv.Itoa(pid)),
-			Output: r.redact.Text(out.String()), // the real tools show the command lines as they are
+			Output: output,
 		})
 	}
 }

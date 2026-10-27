@@ -57,6 +57,13 @@ func secondField(line string) string {
 	return f[1]
 }
 
+// SysctlSecret reports whether a sysctl (sysctl -a's name) holds a secret,
+// which is not recorded: net.ipv6.conf.*.stable_secret, the key of the
+// stable privacy addresses (RFC 7217), readable by root once it is set.
+func SysctlSecret(name string) bool {
+	return strings.HasSuffix(name, ".stable_secret")
+}
+
 func firstField(line string) string {
 	if i := strings.IndexAny(line, " \t"); i > 0 {
 		return line[:i]

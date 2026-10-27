@@ -15,8 +15,8 @@ var sysctlDeprecated = map[string]bool{"base_reachable_time": true, "retrans_tim
 
 // readSysctl reads /proc/sys as procps' sysctl -a (3.3 and 4.0 alike)
 // walks it: each directory in its own order (procfs: by name; a mounted
-// binfmt_misc: its own), deprecated names and files without read
-// permission skipped, every line of a file printed as "name = line" with
+// binfmt_misc: its own), deprecated names, files without read permission
+// and secrets (procfs.SysctlSecret) skipped, every line of a file printed as "name = line" with
 // the name's '.' and '/' swapped (sysctl's slashdot). Each SnapLine is one
 // printed line, keyed by the name ("#n" for a file's later lines).
 func readSysctl() ([]procfs.SnapLine, error) {
@@ -53,6 +53,9 @@ func readSysctl() ([]procfs.SnapLine, error) {
 				continue
 			}
 			name := sysctlName(strings.TrimPrefix(p, "/proc/sys/"))
+			if procfs.SysctlSecret(name) {
+				continue
+			}
 			fd, err := syscall.Open(p, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
 			if err != nil {
 				continue
@@ -74,6 +77,19 @@ func readSysctl() ([]procfs.SnapLine, error) {
 	}
 	walk("/proc/sys")
 	return out, nil
+}
+
+// dropSysctlSecrets removes the secrets (procfs.SysctlSecret) from sysctl -a
+// output, which verify checkpoints save.
+func dropSysctlSecrets(out string) string {
+	lines := strings.SplitAfter(out, "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if name, _, ok := strings.Cut(l, " = "); !ok || !procfs.SysctlSecret(name) {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "")
 }
 
 // sysctlName is procps' slashdot(name, '/', '.'): the separators swapped

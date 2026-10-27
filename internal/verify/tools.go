@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"clifr/internal/procfs"
 	"clifr/internal/query"
 	"clifr/internal/store"
 )
@@ -1781,7 +1782,8 @@ func compareSysctl(db *store.DB, snap snapshot) (Result, error) {
 	}
 	var realLines []query.SysctlLine
 	for _, l := range strings.Split(strings.TrimRight(snap.output, "\n"), "\n") {
-		if name, value, ok := strings.Cut(l, " = "); ok {
+		// Secrets are not recorded (checkpoints before 2026-10-27 have them).
+		if name, value, ok := strings.Cut(l, " = "); ok && !procfs.SysctlSecret(name) {
 			realLines = append(realLines, query.SysctlLine{Name: name, Value: value})
 		}
 	}
