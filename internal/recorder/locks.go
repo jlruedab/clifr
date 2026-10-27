@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"clifr/internal/procfs"
 )
@@ -124,6 +123,21 @@ func lockDevIno(s string) (dev string, ino uint64, ok bool) {
 	return s[:i], ino, err == nil
 }
 
+// procFS: the locks are this machine's (machineSnaps), read from /proc.
+var procFS = procfs.New("/proc")
+
+// statLockFD stats the file behind an fd of pid with procfs.StatFD, which
+// does not wait for the file system: plain stat(2) of a file on an NFS
+// server that stopped answering blocks, and with it every sample.
+func statLockFD(pid, fd string) (procfs.FDStat, error) {
+	p, err1 := strconv.Atoi(pid)
+	n, err2 := strconv.Atoi(fd)
+	if err1 != nil || err2 != nil {
+		return procfs.FDStat{}, strconv.ErrSyntax
+	}
+	return procFS.StatFD(p, n)
+}
+
 // findLockFile is lslocks' get_filename_sz: the first fd of pid (not 0:
 // lslocks skips it) on inode ino, or that it cannot stat, and its link.
 func findLockFile(pid string, ino uint64) (lockFile, int64, bool) {
@@ -138,9 +152,8 @@ func findLockFile(pid string, ino uint64) (lockFile, int64, bool) {
 		if v, err := strconv.Atoi(n); err != nil || v == 0 {
 			continue
 		}
-		var st syscall.Stat_t
-		statErr := syscall.Stat(dir+n, &st)
-		if statErr == nil && st.Ino != ino {
+		st, statErr := statLockFD(pid, n)
+		if statErr == nil && st.Inode != ino {
 			continue
 		}
 		target, err := os.Readlink(dir + n)
@@ -155,8 +168,8 @@ func findLockFile(pid string, ino uint64) (lockFile, int64, bool) {
 // lockFileSize is the size of the file behind a known fd, if the fd is
 // still on that inode.
 func lockFileSize(pid, fd string, ino uint64) (int64, bool) {
-	var st syscall.Stat_t
-	if err := syscall.Stat("/proc/"+pid+"/fd/"+fd, &st); err != nil || st.Ino != ino {
+	st, err := statLockFD(pid, fd)
+	if err != nil || st.Inode != ino {
 		return 0, false
 	}
 	return st.Size, true

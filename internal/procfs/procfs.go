@@ -661,6 +661,7 @@ func (f FS) ReadNetNetlink() (map[uint64]string, error) {
 type FDStat struct {
 	Mode  uint16 // S_IFMT bits
 	Inode uint64
+	Size  int64 // as cached: NFS revalidates it only when asked to sync
 	Major uint32
 	Minor uint32
 }
@@ -670,11 +671,11 @@ type FDStat struct {
 func (f FS) StatFD(pid, fd int) (FDStat, error) {
 	var sx unix.Statx_t
 	p := f.path(strconv.Itoa(pid), "fd", strconv.Itoa(fd))
-	err := unix.Statx(unix.AT_FDCWD, p, unix.AT_STATX_DONT_SYNC, unix.STATX_TYPE|unix.STATX_INO, &sx)
+	err := unix.Statx(unix.AT_FDCWD, p, unix.AT_STATX_DONT_SYNC, unix.STATX_TYPE|unix.STATX_INO|unix.STATX_SIZE, &sx)
 	if err != nil {
 		return FDStat{}, err
 	}
-	return FDStat{Mode: sx.Mode & unix.S_IFMT, Inode: sx.Ino, Major: sx.Dev_major, Minor: sx.Dev_minor}, nil
+	return FDStat{Mode: sx.Mode & unix.S_IFMT, Inode: sx.Ino, Size: int64(sx.Size), Major: sx.Dev_major, Minor: sx.Dev_minor}, nil
 }
 
 // FDCount returns the number of open fds of pid: the size the kernel reports
