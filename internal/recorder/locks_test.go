@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestStatLockFD(t *testing.T) {
@@ -35,5 +36,23 @@ func TestStatLockFD(t *testing.T) {
 	}
 	if _, err := statLockFD(pid, "x"); err == nil {
 		t.Error("statLockFD with a bad fd: no error")
+	}
+}
+
+func TestOFDScanRate(t *testing.T) {
+	var r lockResolver
+	t0 := time.UnixMilli(1790001000000)
+	if !r.ofdDue("a", t0) {
+		t.Fatal("first OFD lines: not due")
+	}
+	r.ofdOf, r.ofdAt = "a", t0
+	if r.ofdDue("a", t0.Add(2*time.Minute)) {
+		t.Error("unchanged lines: due")
+	}
+	if r.ofdDue("b", t0.Add(30*time.Second)) {
+		t.Error("changed within a minute: due")
+	}
+	if !r.ofdDue("b", t0.Add(time.Minute)) {
+		t.Error("changed after a minute: not due")
 	}
 }

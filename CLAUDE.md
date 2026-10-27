@@ -228,7 +228,7 @@ wait for the user's go-ahead.
   "line\tpath\tsize\tholder pid\tholder comm": the path and size through the holder's fds
   (lslocks' get_filename_sz: first fd but 0 on the inode; cached per pid and inode, then only
   the fd re-stat'ed) and an OFD lock's holder from every process's fdinfo "lock:" lines (util-linux
-  2.41; scanned only when the OFD lock lines change). lslocks lists /proc/locks in reverse;
+  2.41; scanned only when the OFD lock lines change, at most once a minute: until then a new OFD lock has no holder). lslocks lists /proc/locks in reverse;
   `LslocksOld` (before 2.41): OFD locks -1 "(undefined)" with the fallback path (mount point...).
 - `snapshots` source "sysctl" (`recorder/sysctl.go`), read every minute (`snapReader.everyMS`; a read
   is 8-10 ms for ~1,600 files with raw syscalls): /proc/sys walked as procps' sysctl -a (3.3 and 4.0

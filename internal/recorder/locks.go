@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"clifr/internal/procfs"
 )
@@ -21,13 +22,26 @@ type lockResolver struct {
 	files map[string]lockFile // "pid ino"
 	ofd   map[string]string   // OFD lock (the line without pid) -> "pid\tcomm" of its holder
 	ofdOf string              // the OFD lock lines ofd was found for
+	ofdAt time.Time           // when they were
+}
+
+// ofdScanEvery: the holders of OFD locks are looked for at most this often.
+// The scan reads the fdinfo of every fd of every process, and any user can
+// change the OFD lock lines at every sample. Until the next scan a new OFD
+// lock has no holder (lslocks' pid -1).
+const ofdScanEvery = time.Minute
+
+// ofdDue reports whether to look for the holders of these OFD lock lines.
+func (r *lockResolver) ofdDue(lines string, now time.Time) bool {
+	return lines != r.ofdOf && now.Sub(r.ofdAt) >= ofdScanEvery
 }
 
 var locks = &lockResolver{}
 
 // readLocks reads /proc/locks with what lslocks adds to each lock: the
 // path and size of the locked file and, for an OFD lock (pid -1), its
-// holder from the "lock:" lines of the processes' fdinfo (lslocks 2.41).
+// holder from the "lock:" lines of the processes' fdinfo (lslocks 2.41; at
+// most every ofdScanEvery).
 // Each line is "<the lock line without its ordinal>\t<path>\t<size>\t<holder
 // pid>\t<holder command>" (empty when not found), in /proc/locks' order.
 func readLocks() ([]procfs.SnapLine, error) {
@@ -53,8 +67,8 @@ func readLocks() ([]procfs.SnapLine, error) {
 			ofdLines = append(ofdLines, lines[i])
 		}
 	}
-	if o := strings.Join(ofdLines, "\n"); o != r.ofdOf {
-		r.ofd, r.ofdOf = ofdHolders(ofdLines), o
+	if o, now := strings.Join(ofdLines, "\n"), time.Now(); r.ofdDue(o, now) {
+		r.ofd, r.ofdOf, r.ofdAt = ofdHolders(ofdLines), o, now
 	}
 	used := map[string]bool{}
 	out := make([]procfs.SnapLine, 0, len(lines))
