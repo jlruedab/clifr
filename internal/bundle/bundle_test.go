@@ -78,7 +78,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("manifest %+v", m)
 	}
 	out := t.TempDir()
-	data, m2, err := Extract(bytes.NewReader(buf.Bytes()), out)
+	data, m2, err := Extract(bytes.NewReader(buf.Bytes()), out, int64(buf.Len()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestRoundTrip(t *testing.T) {
 	bad := bytes.Clone(buf.Bytes())
 	i := bytes.LastIndex(bad, []byte("tcp_conns/open/1.parquet"))
 	bad[i] = 'X' // the content, not a header name (the last occurrence)
-	if _, _, err := Extract(bytes.NewReader(bad), t.TempDir()); err == nil || !strings.Contains(err.Error(), "damaged") {
+	if _, _, err := Extract(bytes.NewReader(bad), t.TempDir(), 0); err == nil || !strings.Contains(err.Error(), "damaged") {
 		t.Errorf("damaged bundle: %v", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestExtractRefusesEscape(t *testing.T) {
 	tw.WriteHeader(&tar.Header{Name: Root + "/../evil", Mode: 0o644, Size: 1, Typeflag: tar.TypeReg})
 	tw.Write([]byte("x"))
 	tw.Close()
-	if _, _, err := Extract(&buf, t.TempDir()); err == nil {
+	if _, _, err := Extract(&buf, t.TempDir(), 0); err == nil {
 		t.Error("a path outside the bundle was accepted")
 	}
 }
@@ -109,5 +109,20 @@ func TestExtractRefusesEscape(t *testing.T) {
 func TestNotADataDir(t *testing.T) {
 	if _, err := Write(Options{DataDir: t.TempDir()}, &bytes.Buffer{}); err == nil {
 		t.Error("an empty directory was bundled")
+	}
+}
+
+func TestExtractLimit(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	tw.WriteHeader(&tar.Header{Name: Root + "/data/samples/x.parquet", Mode: 0o640, Size: 10, Typeflag: tar.TypeReg})
+	tw.Write([]byte("0123456789"))
+	tw.Close()
+	dir := t.TempDir()
+	if _, _, err := Extract(bytes.NewReader(buf.Bytes()), dir, 5); err == nil || !strings.Contains(err.Error(), "more data") {
+		t.Fatalf("10 bytes with a limit of 5: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data", "samples", "x.parquet")); err == nil {
+		t.Error("the file was written")
 	}
 }

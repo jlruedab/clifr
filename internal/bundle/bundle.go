@@ -264,11 +264,14 @@ func addFile(tw *tar.Writer, dir, rel, name string) (File, error) {
 
 // Extract unpacks a bundle into dir and returns its data directory and
 // manifest. Only regular files under clifr-bundle/ are written; checksums
-// are verified.
-func Extract(r io.Reader, dir string) (string, *Manifest, error) {
+// are verified. At most limit bytes are written (0: no limit): a bundle is
+// an uncompressed tar, so its own size is enough, but a tar entry can be
+// sparse, a large file of zeros in a few bytes.
+func Extract(r io.Reader, dir string, limit int64) (string, *Manifest, error) {
 	tr := tar.NewReader(r)
 	sums := map[string]string{}
 	var m *Manifest
+	var written int64
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -290,6 +293,9 @@ func Extract(r io.Reader, dir string) (string, *Manifest, error) {
 				return "", nil, fmt.Errorf("bundle.json: %w", err)
 			}
 			continue
+		}
+		if written += h.Size; limit > 0 && written > limit {
+			return "", nil, fmt.Errorf("bundle: %s: more data than the bundle's %d bytes hold", h.Name, limit)
 		}
 		dst := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {

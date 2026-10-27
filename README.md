@@ -542,7 +542,10 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   hour in the middle 342 MB in 10 s (the filtering), the whole recording
   1.0 GB in 1 s; every output compared (44 moments, ranges, changes, diff)
   is identical to the same query on the recording.
-- clifr refuses bundles of a newer layout, and damaged files.
+- clifr refuses bundles of a newer layout, damaged files, paths outside
+  the bundle and more data than the tar file itself holds (a sparse entry).
+  A bundle from another machine needs no root to read: open it as an
+  ordinary user, not with sudo (its Parquet files are parsed by DuckDB).
 - `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside
   sos's plugins, `sos/report/plugins/`). It adds the bundle as
   `sos_commands/clifr/clifr-bundle.tar`, plus `clifrd --version`,

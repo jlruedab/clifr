@@ -188,7 +188,7 @@ func openBundle(g *globals) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	dir, _, err := bundle.Extract(f, tmp)
+	dir, _, err := bundle.Extract(f, tmp, st.Size())
 	if err != nil {
 		os.RemoveAll(tmp)
 		return nil, fmt.Errorf("%s: %w", g.dataDir, err)
