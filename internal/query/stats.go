@@ -334,3 +334,30 @@ func orDash(s string) string {
 }
 
 func PrintStatsJSON(w io.Writer, s *Stats) error { return writeJSON(w, s) }
+
+// LossNote says which events the recorder lost in [from, to] (its eBPF
+// buffers were full, or the kernel skipped a program: recorder_stats'
+// dropped, counted at the sample after the loss), or "" if none. Range
+// views print it: a process too short-lived for any sample is then missing
+// from the window, and a flood of events can cause that on purpose.
+func LossNote(db *store.DB, from, to int64) string {
+	rows, err := db.Query(`SELECT source, SUM(dropped) FROM recorder_stats
+		WHERE ts > ? AND ts <= COALESCE((SELECT min(ts) FROM samples WHERE ts >= ?), ?) AND dropped > 0
+		GROUP BY source ORDER BY source`, from, to, to)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+	var parts []string
+	for rows.Next() {
+		var src string
+		var n int64
+		if rows.Scan(&src, &n) == nil {
+			parts = append(parts, fmt.Sprintf("%s %d", src, n))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "events lost in this window (" + strings.Join(parts, ", ") + "): short-lived processes or connections may be missing"
+}

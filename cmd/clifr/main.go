@@ -395,6 +395,11 @@ func runToolAt(g *globals, words []string, diff []string) error {
 			query.Header("%s", note)
 		}
 	}
+	if c.w.IsRange() {
+		if note := query.LossNote(c.db, c.w.From, c.w.To); note != "" {
+			query.Header("%s", note)
+		}
+	}
 	// A moment the recording has nothing for is an error, not an empty or
 	// stale answer.
 	for _, at := range append([]int64{c.w.At}, c.diffAt...) {

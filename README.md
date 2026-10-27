@@ -914,6 +914,16 @@ continuous eBPF tracer, not a metrics exporter.
   keyframe check cover TCP state changes, exec and exit; a few missed runs
   were counted (up to 5 per run), none of which lost a connection in the
   checks.
+- **Events can be lost on purpose.** Any user who forks, execs or connects
+  faster than the recorder drains its buffers (4 MiB for process events, 8
+  for TCP) makes it drop events, and a process too short-lived for any
+  sample is then missing. Drops are counted per source and sample: a range
+  query (`events`, `life`, `oom`, `ss --since`) whose window holds some says
+  so in a `# events lost in this window` line. The eBPF maps that track
+  socket owners and counters (131,072 sockets) and connects and accepts in
+  progress (16,384 threads) evict their oldest entries when full; a user
+  holding more makes other connections lose their owner until the next fd
+  walk, or their reset and retransmit counts, without a count.
 - **System-wide tools**: resolution is the sample interval, so `mpstat 1`
   cannot be reproduced. `uptime` has no user count. `vmstat`'s `r` and `b`
   are the values at the sample. On its since-boot line procps-ng 4.0.4
