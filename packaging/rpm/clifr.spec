@@ -39,7 +39,8 @@ systemd-sysusers /usr/lib/sysusers.d/clifr.conf || :
 %preun -n clifrd
 %systemd_preun clifrd.service
 if [ $1 -eq 0 ]; then
-	rm -f "$(rpm -ql sos 2>/dev/null | sed -n 's|/__init__.py$||p' | grep 'sos/report/plugins$' | head -1)/clifr.py" || :
+	d=$(rpm -ql sos 2>/dev/null | sed -n 's|/__init__.py$||p' | grep 'sos/report/plugins$' | head -1)
+	[ -n "$d" ] && [ -L "$d/clifr.py" ] && rm -f "$d/clifr.py" || :
 fi
 
 %postun -n clifrd

@@ -10,6 +10,11 @@
 # The bundle is sos_commands/clifr/clifr-bundle.tar; read it with
 # clifr --data-dir clifr-bundle.tar --at TIME "ps aux". It holds every
 # process's command line (clifrd --redact masks secrets as they are recorded).
+#
+# With --clean (or --mask) the bundle is left out, as sos clean would remove
+# it: it obfuscates text files, not the Parquet files in the bundle, which
+# hold every host name, address and user name of the recording. With
+# --keep-binary-files as well it is added, as it is (not obfuscated).
 
 import shlex
 
@@ -47,6 +52,16 @@ class Clifr(Plugin, IndependentPlugin):
         datadir = self.get_option('datadir')
         if not self.path_exists(datadir):
             self._log_info(f'no clifrd data directory at {datadir}')
+            return
+        opts = self.commons['cmdlineopts']
+        if getattr(opts, 'clean', False) and not getattr(opts, 'keep_binary_files', False):
+            note = ('The clifr bundle was left out: sos clean (--clean, --mask) '
+                    'removes binary files, and cannot obfuscate the host names, '
+                    'addresses and user names in its Parquet files. '
+                    '--keep-binary-files adds it as it is; or send it apart '
+                    '(clifrd bundle).\n')
+            self._log_warn(note.strip())
+            self.add_string_as_file(note, 'clifr-bundle-left-out.txt')
             return
         cmd = f"{clifrd} bundle --data-dir {shlex.quote(datadir)}"
         since, until = self.get_option('start'), self.get_option('end')
