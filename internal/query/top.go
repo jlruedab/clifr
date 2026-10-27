@@ -324,7 +324,7 @@ func PrintTop(w io.Writer, r TopReport, f TopFormat) {
 	}
 	line("    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND")
 	for _, p := range r.Procs {
-		cmd := p.Comm
+		cmd := procpsSafe(p.Comm)
 		if f.CmdLine {
 			cmd = p.Command
 		}

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"errors"
-	"os"
 	"regexp"
 
 	"clifr/internal/query"
@@ -21,7 +20,9 @@ func cmdInfo(g *globals, db *store.DB) error {
 	if g.json {
 		return writeLines(s, nil)
 	}
-	query.PrintStats(os.Stdout, s)
+	out, done := stdout()
+	defer done()
+	query.PrintStats(out, s)
 	return nil
 }
 
@@ -35,7 +36,9 @@ func cmdVerify(g *globals, db *store.DB) error {
 	if g.json {
 		return writeLines(rep, nil)
 	}
-	verify.Print(os.Stdout, rep, g.verbose)
+	out, done := stdout()
+	defer done()
+	verify.Print(out, rep, g.verbose)
 	return nil
 }
 
@@ -55,7 +58,9 @@ func cmdExport(db *store.DB, table string) error {
 	if err != nil {
 		return err
 	}
-	w := csv.NewWriter(os.Stdout)
+	out, done := stdout()
+	defer done()
+	w := csv.NewWriter(out)
 	w.Write(cols)
 	vals := make([]sql.NullString, len(cols))
 	ptrs := make([]any, len(cols))

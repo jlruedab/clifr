@@ -694,7 +694,7 @@ func compareLsof(db *store.DB, snap snapshot, prev map[string]lsofLine) (Result,
 			continue
 		}
 		fd, mode := splitFD(r.FD)
-		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, r.Name), inode: r.SockInode}
+		rec[strconv.Itoa(r.PID)+" "+fd] = lsofLine{command: r.Command, mode: mode, typ: r.Type, name: normName(r.Type, query.LsofSafe(r.Name)), inode: r.SockInode}
 	}
 	if query.FDsHeld(db) {
 		// Held storage records an fd at the second walk that sees it. An fd

@@ -28,14 +28,16 @@ func (c *runCtx) show(pages []page) error {
 	if c.interactive() {
 		return runPager(pages, c.g.interactive)
 	}
+	out, done := stdout()
+	defer done()
 	for i, p := range pages {
 		if i > 0 {
-			fmt.Println()
+			fmt.Fprintln(out)
 		}
 		if p.title != "" {
-			fmt.Printf("# %s\n", p.title)
+			fmt.Fprintf(out, "# %s\n", p.title)
 		}
-		if err := p.body(os.Stdout); err != nil {
+		if err := p.body(out); err != nil {
 			return err
 		}
 	}
@@ -74,7 +76,7 @@ func (p *pager) lines(i int) []string {
 		p.err = err
 		fmt.Fprintf(&b, "error: %v\n", err)
 	}
-	l := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	l := strings.Split(strings.TrimRight(termSafe(b.String()), "\n"), "\n")
 	p.cache[i] = l
 	return l
 }

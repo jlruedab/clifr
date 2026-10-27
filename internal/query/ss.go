@@ -276,7 +276,7 @@ func usersCol(owners []Owner) string {
 	}
 	parts := make([]string, len(owners))
 	for i, o := range owners {
-		parts[i] = fmt.Sprintf("(%q,pid=%d,fd=%d)", o.Comm, o.PID, o.FD)
+		parts[i] = fmt.Sprintf("(\"%s\",pid=%d,fd=%d)", o.Comm, o.PID, o.FD) // as it is, as ss prints it
 	}
 	return "users:(" + strings.Join(parts, ",") + ")"
 }

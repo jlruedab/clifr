@@ -217,18 +217,13 @@ func tenths(permille uint64) string {
 
 func commandOf(cmdline, comm, state string) string {
 	if state == "Z" {
-		return "[" + comm + "] <defunct>"
+		return "[" + procpsSafe(comm) + "] <defunct>"
 	}
 	if cmdline == "" {
-		return "[" + comm + "]"
+		return "[" + procpsSafe(comm) + "]"
 	}
 	// ps shows control characters (e.g. newlines in bash -c scripts) as '?'.
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return '?'
-		}
-		return r
-	}, cmdline)
+	return procpsSafe(cmdline)
 }
 
 // psStat builds the BSD STAT column: state, then <N L s l + flags.

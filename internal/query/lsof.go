@@ -80,6 +80,7 @@ func inetName(proto, la string, lp int, ra string, rp int, state int) string {
 }
 
 func lsofCommand(comm string) string {
+	comm = LsofSafe(comm) // then cut, as lsof prints it
 	if len(comm) > 9 {
 		return comm[:9]
 	}
@@ -318,6 +319,6 @@ func PrintLsof(w io.Writer, rows []LsofRow, withTimes bool) {
 		wc, "COMMAND", "PID", wu, "USER", "FD", "TYPE", wn, "NODE", "NAME")
 	for _, r := range rows {
 		fmt.Fprintf(w, "%s%-*s %7d %-*s %5s %7s %*s %s\n", prefix(FormatMS(r.FirstSeen), FormatMS(r.LastSeen)),
-			wc, r.Command, r.PID, wu, r.User, r.FD, r.Type, wn, r.Node, r.Name)
+			wc, r.Command, r.PID, wu, r.User, r.FD, r.Type, wn, r.Node, LsofSafe(r.Name))
 	}
 }

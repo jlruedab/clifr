@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -40,7 +39,9 @@ func (c *runCtx) emit(rows any, meta func(i int) rowMeta, text func(io.Writer)) 
 }
 
 func writeLines(rows any, meta func(i int) rowMeta) error {
-	w := bufio.NewWriter(os.Stdout)
+	out, done := stdout()
+	defer done()
+	w := bufio.NewWriter(out)
 	v := reflect.ValueOf(rows)
 	if v.Kind() != reflect.Slice {
 		v = reflect.Append(reflect.MakeSlice(reflect.SliceOf(v.Type()), 0, 1), v)

@@ -118,7 +118,7 @@ func Pstree(rows []PSRow, f PstreeFormat) (lines []string, ok bool) {
 	}
 	var render func(i int) []string
 	render = func(i int) []string {
-		label := rows[i].CommName + "(" + strconv.Itoa(rows[i].PID) + ")"
+		label := psmiscSafe(rows[i].CommName) + "(" + strconv.Itoa(rows[i].PID) + ")"
 		pad := strings.Repeat(" ", len(label))
 		k := kids[i]
 		if len(k) == 0 {

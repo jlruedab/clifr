@@ -5,8 +5,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"clifr/internal/procfs"
 	"clifr/internal/store"
@@ -187,26 +185,4 @@ func scolsWidth(head, data, hint int) int {
 		return hint
 	}
 	return data
-}
-
-// scolsEncode is libsmartcols' mbs_safe_encode, which it applies to every
-// cell: each byte of a character that is not printable (glibc's iswprint:
-// letters, marks, numbers, punctuation, symbols and spaces; here format
-// characters such as a zero-width space are not) or not valid UTF-8
-// as \xNN, and a backslash before an 'x' too (so the output cannot be
-// mistaken for an escape). File and process names may hold any of them.
-func scolsEncode(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		r, n := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && n == 1 || !unicode.IsGraphic(r) || r == '\\' && strings.HasPrefix(s[i+1:], "x") {
-			for _, c := range []byte(s[i : i+n]) {
-				fmt.Fprintf(&b, `\x%02x`, c)
-			}
-		} else {
-			b.WriteString(s[i : i+n])
-		}
-		i += n
-	}
-	return b.String()
 }
