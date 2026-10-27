@@ -235,3 +235,15 @@ func BenchmarkReadStatSelfOSReadFile(b *testing.B) {
 		}
 	}
 }
+
+func TestEscapeOctal(t *testing.T) {
+	for _, s := range []string{"/plain/path", "a\tb\nc", `back\slash`, `\011 literal`, "x=y\n=z", ""} {
+		e := EscapeOctal(s, "\t\n=")
+		if strings.ContainsAny(e, "\t\n=") || UnescapeOctal(e) != s {
+			t.Errorf("%q: escaped %q, back %q", s, e, UnescapeOctal(e))
+		}
+	}
+	if e := EscapeOctal("/plain/path", "\t\n"); e != "/plain/path" {
+		t.Errorf("plain: %q", e)
+	}
+}

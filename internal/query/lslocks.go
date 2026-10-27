@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"clifr/internal/procfs"
 	"clifr/internal/store"
 )
 
@@ -59,7 +60,7 @@ func LocksAt(db *store.DB, t int64, old bool) ([]Lock, error) {
 		if len(f) < 7 {
 			continue
 		}
-		l := Lock{Type: f[0], Mode: f[2], Path: parts[1]}
+		l := Lock{Type: f[0], Mode: f[2], Path: procfs.UnescapeOctal(parts[1])}
 		if blocked {
 			l.Mode += "*"
 		}
@@ -84,7 +85,7 @@ func LocksAt(db *store.DB, t int64, old bool) ([]Lock, error) {
 			}
 		case parts[3] != "" && !old && !blocked:
 			l.PID, _ = strconv.Atoi(parts[3])
-			l.Command = parts[4]
+			l.Command = procfs.UnescapeOctal(parts[4])
 		default:
 			l.Command, l.Path, l.Size, l.Sized = "(undefined)", "", 0, false
 		}
@@ -132,8 +133,8 @@ func PrintLslocks(w io.Writer, locks []Lock, bytes, noHeadings, zeroSize bool) {
 				size = utilHuman(l.Size)
 			}
 		}
-		rows[i] = []string{l.Command, strconv.Itoa(l.PID), l.Type, size, l.Mode, strconv.Itoa(l.M),
-			strconv.FormatInt(l.Start, 10), strconv.FormatInt(l.End, 10), l.Path}
+		rows[i] = []string{scolsEncode(l.Command), strconv.Itoa(l.PID), l.Type, size, l.Mode, strconv.Itoa(l.M),
+			strconv.FormatInt(l.Start, 10), strconv.FormatInt(l.End, 10), scolsEncode(l.Path)}
 	}
 	width := make([]int, len(cols))
 	for i, c := range cols {

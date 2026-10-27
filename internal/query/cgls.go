@@ -283,7 +283,7 @@ func PrintCgls(w io.Writer, procs []CglsProc, info map[string]CgroupInfo, o Cgls
 			if o.Style == "252" {
 				for _, l := range strings.Split(strings.TrimSuffix(ci.Xattrs, "\n"), "\n") {
 					if name, val, ok := strings.Cut(l, "="); ok {
-						fmt.Fprintf(w, "%s%s%s %s: %s\n", prefix, next, g["arrow"], name, val)
+						fmt.Fprintf(w, "%s%s%s %s: %s\n", prefix, next, g["arrow"], procfs.UnescapeOctal(name), procfs.UnescapeOctal(val))
 					}
 				}
 			}

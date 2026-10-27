@@ -55,7 +55,9 @@ func (r *Recorder) noteCgroup(cgroup string, ts int64, b *store.Batch) {
 }
 
 // cgroupXattrs returns a cgroup directory's user.* and trusted.* attributes
-// as "name=value" lines in the kernel's order, and systemd's
+// as "name=value" lines in the kernel's order (newlines, backslashes and a
+// name's '=' as \ooo since 2026-10-27: the owner of a delegated cgroup sets
+// its user.* attributes), and systemd's
 // cg_is_delegated: trusted.delegate, else user.delegate, a boolean.
 func cgroupXattrs(dir string) (string, bool) {
 	names := make([]byte, 4096)
@@ -75,7 +77,7 @@ func cgroupXattrs(dir string) (string, bool) {
 			continue
 		}
 		v := string(bytes.TrimRight(val[:m], "\x00"))
-		b.WriteString(name + "=" + v + "\n")
+		b.WriteString(procfs.EscapeOctal(name, "\n=") + "=" + procfs.EscapeOctal(v, "\n") + "\n")
 		if strings.HasSuffix(name, ".delegate") {
 			switch strings.ToLower(strings.TrimSpace(v)) {
 			case "1", "yes", "y", "true", "t", "on":

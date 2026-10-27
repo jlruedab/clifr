@@ -43,7 +43,9 @@ var locks = &lockResolver{}
 // holder from the "lock:" lines of the processes' fdinfo (lslocks 2.41; at
 // most every ofdScanEvery).
 // Each line is "<the lock line without its ordinal>\t<path>\t<size>\t<holder
-// pid>\t<holder command>" (empty when not found), in /proc/locks' order.
+// pid>\t<holder command>" (empty when not found), in /proc/locks' order; the
+// path and the command with tabs, newlines and backslashes as \ooo (since
+// 2026-10-27).
 func readLocks() ([]procfs.SnapLine, error) {
 	b, err := os.ReadFile("/proc/locks")
 	if err != nil {
@@ -117,7 +119,7 @@ func readLocks() ([]procfs.SnapLine, error) {
 			k += "#" + strconv.Itoa(n)
 		}
 		seen[l]++
-		out = append(out, procfs.SnapLine{Key: k, Line: l + "\t" + path + "\t" + size + "\t" + holder})
+		out = append(out, procfs.SnapLine{Key: k, Line: l + "\t" + procfs.EscapeOctal(path, "\t\n") + "\t" + size + "\t" + holder})
 	}
 	for k := range r.files {
 		if !used[k] {
@@ -252,7 +254,7 @@ func ofdHolders(ofd []string) map[string]string {
 				}
 				if k := ofdKey(l); want[k] {
 					if _, done := out[k]; !done {
-						out[k] = pid + "\t" + strings.TrimSpace(string(comm))
+						out[k] = pid + "\t" + procfs.EscapeOctal(strings.TrimSuffix(string(comm), "\n"), "\t\n")
 					}
 				}
 			}

@@ -743,6 +743,25 @@ func ParseMountInfo(b []byte) []MountInfo {
 	return out
 }
 
+// EscapeOctal escapes backslashes and the bytes in chars as \ooo, the
+// kernel's escapes in mountinfo (UnescapeOctal undoes it), so that a field
+// the recorder joins with others cannot contain their separator: file names
+// and process names may hold tabs and newlines.
+func EscapeOctal(s, chars string) string {
+	if !strings.ContainsAny(s, chars+`\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '\\' || strings.IndexByte(chars, c) >= 0 {
+			fmt.Fprintf(&b, "\\%03o", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
 // UnescapeOctal undoes the kernel's \040-style escaping of spaces etc.
 func UnescapeOctal(s string) string {
 	if !strings.Contains(s, "\\") {

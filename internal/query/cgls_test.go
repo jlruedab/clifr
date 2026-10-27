@@ -65,13 +65,13 @@ func TestPrintCgls(t *testing.T) {
 func TestPrintCglsStyles(t *testing.T) {
 	procs := []CglsProc{{PID: 736, Cgroup: "/user.slice/user-1000.slice/user@1000.service/init.scope", Command: "/lib/systemd/systemd --user", pad: 1}}
 	info := map[string]CgroupInfo{
-		"/user.slice": {ID: 1396, Xattrs: "user.invocation_id=409e\ntrusted.invocation_id=409e\n"},
+		"/user.slice": {ID: 1396, Xattrs: "user.invocation_id=409e\ntrusted.invocation_id=40\\0759e\n"}, // stored escaped: '='
 		"/user.slice/user-1000.slice/user@1000.service": {Delegate: true, ID: 5432},
 	}
 	for style, want := range map[string]string{
 		"239": "Control group /:\n-.slice\n`-user.slice\n  `-user-1000.slice\n    `-user@1000.service\n",
 		"249": "Control group /:\n-.slice\n`-user.slice \n  `-user-1000.slice \n    `-user@1000.service ...\n",
-		"252": "Control group /:\n-.slice\n`-user.slice (#1396)\n  -> user.invocation_id: 409e\n  -> trusted.invocation_id: 409e\n" +
+		"252": "Control group /:\n-.slice\n`-user.slice (#1396)\n  -> user.invocation_id: 409e\n  -> trusted.invocation_id: 40=9e\n" +
 			"  `-user-1000.slice\n    `-user@1000.service ... (#5432)\n",
 		"": "CGroup /:\n-.slice\n`-user.slice\n  `-user-1000.slice\n    `-user@1000.service ...\n",
 	} {

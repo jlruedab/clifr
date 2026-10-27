@@ -18,8 +18,8 @@ func TestLocksAndIPCS(t *testing.T) {
 	}
 	var rows []store.SnapshotRow
 	rows = append(rows, snap("locks",
-		"POSIX  ADVISORY  WRITE 4242 fd:00:131 0 EOF\t/var/lib/app/db\t5000\t\t",
-		"OFDLCK ADVISORY  READ -1 fd:00:132 200 200\t/var/lib/images/a.img\t10485760\t77\tqemu-kvm",
+		"POSIX  ADVISORY  WRITE 4242 fd:00:131 0 EOF\t/var/lib/app\\134db\t5000\t\t",                    // escaped: a backslash
+		"OFDLCK ADVISORY  READ -1 fd:00:132 200 200\t/var/lib/images/a.img\t10485760\t77\tqemu\\055kvm", // and a '-'
 		"FLOCK  ADVISORY  WRITE 999 fd:00:133 0 EOF\t\t\t\t")...)
 	rows = append(rows, snap("sysvipc/shm",
 		"       key      shmid perms                  size  cpid  lpid nattch   uid   gid  cuid  cgid      atime      dtime      ctime                   rss                  swap",
@@ -40,12 +40,12 @@ func TestLocksAndIPCS(t *testing.T) {
 			"COMMAND           PID   TYPE SIZE MODE  M START        END PATH\n" +
 			"(unknown)         999  FLOCK      WRITE 0     0          0 /var...\n" +
 			"qemu-kvm           77 OFDLCK  10M READ  0   200        200 /var/lib/images/a.img\n" +
-			"app              4242  POSIX 4.9K WRITE 0     0          0 /var/lib/app/db\n"},
+			"app              4242  POSIX 4.9K WRITE 0     0          0 /var/lib/app\\db\n"},
 		{true, "" +
 			"COMMAND           PID   TYPE SIZE MODE  M START        END PATH\n" +
 			"(unknown)         999  FLOCK      WRITE 0     0          0 /var...\n" +
 			"(undefined)        -1 OFDLCK      READ  0   200        200 /var...\n" +
-			"app              4242  POSIX 4.9K WRITE 0     0          0 /var/lib/app/db\n"},
+			"app              4242  POSIX 4.9K WRITE 0     0          0 /var/lib/app\\db\n"},
 	} {
 		locks, err := LocksAt(db, 1000, c.old)
 		if err != nil {
@@ -80,5 +80,20 @@ func TestLocksAndIPCS(t *testing.T) {
 		"------ Semaphore Status --------\nused arrays = 1\nallocated semaphores = 3\n\n"
 	if sb.String() != want {
 		t.Errorf("ipcs -u: got\n%q\nwant\n%q", sb.String(), want)
+	}
+}
+
+func TestScolsEncode(t *testing.T) {
+	for in, want := range map[string]string{
+		"/var/lib/app db":     "/var/lib/app db",
+		"evil\t1\troot":       `evil\x091\x09root`,
+		"a\nb\x1b[31m":        `a\x0ab\x1b[31m`,
+		`back\slash \x41`:     `back\slash \x5cx41`,
+		"caf\xc3\xa9 \xff":    "café \\xff",
+		"\u00a0nbsp\u200bzws": "\u00a0nbsp\\xe2\\x80\\x8bzws",
+	} {
+		if got := scolsEncode(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
 	}
 }
