@@ -32,6 +32,17 @@ type DB struct {
 	// (internal/duck: load the tables it names, or count rows without
 	// loading them).
 	Prepare func(query string) (string, error)
+	// OnClose, if set, runs after the database is closed.
+	OnClose func()
+}
+
+// Close closes the database, then runs OnClose.
+func (d *DB) Close() error {
+	err := d.DB.Close()
+	if d.OnClose != nil {
+		d.OnClose()
+	}
+	return err
 }
 
 // SizeBytes is the size of the Parquet data directory.

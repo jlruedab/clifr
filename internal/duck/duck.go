@@ -48,25 +48,71 @@ func OpenWindow(dataDir string, w Window) (*store.DB, error) {
 		}
 		return nil, fmt.Errorf("%s: not a clifr data directory (no samples/)", dataDir)
 	}
+	dataDir, err := filepath.Abs(dataDir) // the allowed directory is a path prefix
+	if err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one in-memory database per connection
-	l := &loader{db: db, dir: dataDir, w: w, loaded: map[string]bool{}}
-	if err := checkSchema(db, l.files("meta")); err != nil {
+	// The empty files of each table's schema (load), the only files read
+	// from outside the data directory.
+	schemaDir, err := os.MkdirTemp("", "clifr-schema-")
+	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &store.DB{DB: db, DataDir: dataDir, Prepare: l.prepare}, nil
+	fail := func(err error) (*store.DB, error) {
+		db.Close()
+		os.RemoveAll(schemaDir)
+		return nil, err
+	}
+	if err := lockDown(db, dataDir, schemaDir); err != nil {
+		return fail(err)
+	}
+	l := &loader{db: db, dir: dataDir, schemaDir: schemaDir, w: w, loaded: map[string]bool{}}
+	if err := checkSchema(db, l.files("meta")); err != nil {
+		return fail(err)
+	}
+	return &store.DB{DB: db, DataDir: dataDir, Prepare: l.prepare, OnClose: func() { os.RemoveAll(schemaDir) }}, nil
+}
+
+// lockDown limits the database to reading these directories (the data
+// directory and the schema files' one): clifr often
+// runs with sudo, on a recording from another machine, and DuckDB's SQL can
+// otherwise read and write any file and download and load extensions. The
+// queries only read Parquet files there; this keeps a bug from doing more
+// (allowed_directories also allows writing there: it could add files to the
+// recording, not touch anything else).
+func lockDown(db *sql.DB, dirs ...string) error {
+	allowed := make([]string, len(dirs))
+	for i, d := range dirs {
+		allowed[i] = "'" + strings.ReplaceAll(strings.TrimSuffix(d, "/")+"/", "'", "''") + "'"
+	}
+	for _, s := range []string{
+		`SET autoinstall_known_extensions = false`,
+		`SET autoload_known_extensions = false`,
+		`SET allow_community_extensions = false`,
+		`SET allowed_directories = [` + strings.Join(allowed, ", ") + `]`,
+		`SET enable_external_access = false`,
+		`SET lock_configuration = true`,
+	} {
+		if _, err := db.Exec(s); err != nil {
+			return fmt.Errorf("duckdb: %s: %w", s, err)
+		}
+	}
+	return nil
 }
 
 // loader loads tables on demand.
 type loader struct {
-	db     *sql.DB
-	dir    string
-	w      Window
-	loaded map[string]bool
+	db        *sql.DB
+	dir       string
+	schemaDir string // where load writes each table's empty schema file
+	w         Window
+	loaded    map[string]bool
 }
 
 var tableRe = func() map[string]*regexp.Regexp {
@@ -140,15 +186,11 @@ func (l *loader) load(table string) error {
 	l.loaded[table] = true
 	// Every table exists even without files: an empty file of its schema
 	// also gives older recordings the columns added since (NULL).
-	tmp, err := os.MkdirTemp("", "clifr-schema-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	empty := filepath.Join(tmp, table+".parquet")
+	empty := filepath.Join(l.schemaDir, table+".parquet")
 	if err := pqstore.WriteEmpty(table, empty); err != nil {
 		return err
 	}
+	defer os.Remove(empty)
 	files := l.files(table)
 	where := ""
 	if l.w != (Window{}) {
@@ -237,7 +279,7 @@ func (l *loader) load(table string) error {
 		q = `CREATE TABLE ` + table + ` AS SELECT * EXCLUDE (filename) FROM ` + src + where
 	}
 	t0 := time.Now()
-	_, err = l.db.Exec(q)
+	_, err := l.db.Exec(q)
 	l.debug(table, t0)
 	return err
 }
