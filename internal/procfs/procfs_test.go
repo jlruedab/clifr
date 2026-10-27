@@ -195,6 +195,21 @@ func TestReadPIDLargeFile(t *testing.T) {
 	if _, _, err := f.ReadCmdline(3); !IsGone(err) {
 		t.Fatalf("missing process: %v, want gone", err)
 	}
+	// Cut at max: below, at and above a buffer's size.
+	full := "prog " + long
+	for _, max := range []int{100, 4096, 8192, len(full) + 1, len(full) + 2} {
+		cmd, argv0, pad, cut, err := f.ReadCmdlinePad(1, max)
+		want, wantCut, wantPad := full, false, 1
+		if len(full)+1 > max { // the file is the line and a final NUL
+			want, wantCut = full[:max], true
+		}
+		if err != nil || cmd != want || cut != wantCut || argv0 != 4 || pad != wantPad {
+			t.Fatalf("max %d: %d bytes, argv0 %d, pad %d, cut %v, %v; want %d bytes, cut %v", max, len(cmd), argv0, pad, cut, err, len(want), wantCut)
+		}
+	}
+	if cmd, _, _, cut, err := f.ReadCmdlinePad(2, 64); err != nil || cmd != "short arg" || cut {
+		t.Fatalf("short cmdline with a max: %q, cut %v, %v", cmd, cut, err)
+	}
 }
 
 func BenchmarkReadStatSelf(b *testing.B) {

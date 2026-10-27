@@ -126,6 +126,7 @@ only), `godbus/dbus/v5` (pure Go: systemd's units), `golang.org/x/sys`.
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
+| `--max-cmdline` | 64K | bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments) and counted as `cmdline_cut` in `clifr info`; `0` = all |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
 | `--log-level` | info | error, warn, info or debug |
 | `-v`, `--version` | | print the version and exit |
@@ -135,7 +136,7 @@ Settings can also be given in the configuration file; `deploy/clifrd.yml`
 lists them with their defaults (`data_dir`, `retention`, `max_size`,
 `log_level`, `intervals: process, system, files, keyframe, flush`,
 `collectors: process_events, tcp, files, process_io`, `cpu_budget`,
-`gc_heap_target`, `redact`: a list of patterns; the example masks password
+`gc_heap_target`, `max_cmdline`, `redact`: a list of patterns; the example masks password
 and token options, URL credentials and `key=value` secrets). A flag on the
 command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
 Unknown settings are rejected. `memory_limit` of the product spec is not

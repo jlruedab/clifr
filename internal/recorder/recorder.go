@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ type Config struct {
 	SysInterval      time.Duration // system-wide counters; 0 or >= Interval: with every sample
 	ProcIO           bool          // read /proc/<pid>/io
 	Redact           []string      // regular expressions masked in command lines before they are stored
+	MaxCmdline       int           // bytes of a command line stored (0: all)
 	FDInterval       time.Duration
 	Duration         time.Duration // 0 = until signalled
 	ProcRoot         string
@@ -118,8 +120,10 @@ type Recorder struct {
 	cpuHist         []cpuPoint
 	fdWalkUS        int64 // time spent in fd walks since the start
 	budgetExhausted bool
-	lastMaintUS     int64  // the store's maintenance CPU already reported
-	afterSample     func() // test hook
+	lastMaintUS     int64        // the store's maintenance CPU already reported
+	cmdlineCut      atomic.Int64 // command lines cut at MaxCmdline (read by events too)
+	lastCmdlineCut  int64        // of those, already reported
+	afterSample     func()       // test hook
 }
 
 func New(cfg Config, logger *Logger) (*Recorder, error) {
@@ -512,6 +516,10 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 			b.Stats = append(b.Stats, store.StatRow{TS: ts, Source: "maintenance_cpu_ms", Events: d / 1000})
 			r.lastMaintUS += d / 1000 * 1000
 		}
+	}
+	if n := r.cmdlineCut.Load(); n > r.lastCmdlineCut {
+		b.Stats = append(b.Stats, store.StatRow{TS: ts, Source: "cmdline_cut", Events: n - r.lastCmdlineCut})
+		r.lastCmdlineCut = n
 	}
 	r.checkBudget(now, cpuUS-maintUS, r.fdWalkUS, &b)
 

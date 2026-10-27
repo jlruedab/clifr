@@ -49,6 +49,14 @@ var bufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 // space left is the end of the file: /proc fills a read as far as it can,
 // and so does a regular file in a fixture.
 func (f FS) readPID(pid int, name string, parse func([]byte) error) error {
+	_, err := f.readPIDMax(pid, name, 0, parse)
+	return err
+}
+
+// readPIDMax is readPID that passes at most max bytes to parse (0: no
+// limit) and reports whether the file was longer (it reads at most twice
+// max to find out).
+func (f FS) readPIDMax(pid int, name string, max int, parse func([]byte) error) (cut bool, err error) {
 	bp := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bp)
 	buf := *bp
@@ -61,7 +69,7 @@ func (f FS) readPID(pid int, name string, parse func([]byte) error) error {
 	path = append(path, 0)
 	fd, err := openat(path)
 	if err != nil {
-		return &fs.PathError{Op: "open", Path: string(path[:len(path)-1]), Err: err}
+		return false, &fs.PathError{Op: "open", Path: string(path[:len(path)-1]), Err: err}
 	}
 	defer unix.Close(fd)
 	n := 0
@@ -71,16 +79,22 @@ func (f FS) readPID(pid int, name string, parse func([]byte) error) error {
 			continue
 		}
 		if err != nil {
-			return &fs.PathError{Op: "read", Path: string(path[:len(path)-1]), Err: err}
+			return false, &fs.PathError{Op: "read", Path: string(path[:len(path)-1]), Err: err}
 		}
 		n += m
 		if m == 0 || n < len(buf) {
 			break
 		}
+		if max > 0 && n > max {
+			return true, parse(buf[:max])
+		}
 		buf = append(buf, make([]byte, len(buf))...) // full: grow and read on
 		*bp = buf
 	}
-	return parse(buf[:n])
+	if max > 0 && n > max { // a short read past max
+		return true, parse(buf[:max])
+	}
+	return false, parse(buf[:n])
 }
 
 var atFDCWD = unix.AT_FDCWD // a variable: the constant is negative
@@ -286,19 +300,24 @@ func ParseStatus(b []byte) (Status, error) {
 // ReadCmdline returns the command line with its arguments joined by spaces,
 // and the length of argv[0] in it (where the first NUL was).
 func (f FS) ReadCmdline(pid int) (cmd string, argv0 int, err error) {
-	cmd, argv0, _, err = f.ReadCmdlinePad(pid)
+	cmd, argv0, _, _, err = f.ReadCmdlinePad(pid, 0)
 	return
 }
 
 // ReadCmdlinePad is ReadCmdline plus the number of NUL bytes after the
 // last argument: 1 normally, more when a process rewrote its arguments in
 // place and padded them (postgres, sshd). systemd-cgls counts them.
-func (f FS) ReadCmdlinePad(pid int) (cmd string, argv0, pad int, err error) {
-	err = f.readPID(pid, "cmdline", func(b []byte) error {
+// Only the first max bytes are kept (0: all); cut reports a longer command
+// line, whose padding is then taken as 1.
+func (f FS) ReadCmdlinePad(pid, max int) (cmd string, argv0, pad int, cut bool, err error) {
+	cut, err = f.readPIDMax(pid, "cmdline", max, func(b []byte) error {
 		cmd, argv0 = ParseCmdline(b), Argv0Len(b)
 		pad = len(b) - len(bytes.TrimRight(b, "\x00"))
 		return nil
 	})
+	if cut {
+		pad = 1
+	}
 	return
 }
 
