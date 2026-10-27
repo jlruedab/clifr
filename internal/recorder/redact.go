@@ -73,11 +73,11 @@ func (r *Recorder) readCmdline(pid int) (string, int, error) {
 }
 
 // readCmdlinePad also returns the trailing NULs (procfs.ReadCmdlinePad).
-// Command lines are cut at --max-cmdline: any user can give processes
-// megabytes of arguments, which would otherwise be kept in memory and
-// rewritten at every flush.
+// Command lines are cut at --max-cmdline (less while the memory guard
+// sheds): any user can give processes megabytes of arguments, which would
+// otherwise be kept in memory and rewritten at every flush.
 func (r *Recorder) readCmdlinePad(pid int) (string, int, int, error) {
-	cmd, argv0, pad, cut, err := r.fs.ReadCmdlinePad(pid, r.cfg.MaxCmdline)
+	cmd, argv0, pad, cut, err := r.fs.ReadCmdlinePad(pid, r.maxCmdline())
 	if err != nil {
 		return cmd, argv0, pad, err
 	}

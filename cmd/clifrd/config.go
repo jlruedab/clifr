@@ -49,6 +49,7 @@ type fileConfig struct {
 	CPUBudget    scalar   `yaml:"cpu_budget"`
 	GCHeapTarget scalar   `yaml:"gc_heap_target"`
 	MaxCmdline   scalar   `yaml:"max_cmdline"`
+	MemoryGuard  scalar   `yaml:"memory_guard"`
 	Redact       []string `yaml:"redact"`
 }
 
@@ -94,7 +95,7 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		{"interval", c.Intervals.Process}, {"sys-interval", c.Intervals.System}, {"fd-interval", c.Intervals.Files},
 		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
 		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
-		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline},
+		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline}, {"memory-guard", c.MemoryGuard},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
 			continue

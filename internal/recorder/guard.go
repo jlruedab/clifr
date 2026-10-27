@@ -1,7 +1,10 @@
 package recorder
 
 import (
+	"cmp"
 	"fmt"
+	"runtime/metrics"
+	"slices"
 	"time"
 
 	"clifr/internal/store"
@@ -83,4 +86,96 @@ func (r *Recorder) checkBudget(now time.Time, cpuUS, fdUS int64, b *store.Batch)
 		r.log.Warnf("cpu budget exceeded with fd-interval at its maximum %s", r.fdInterval)
 	}
 	r.cpuHist = []cpuPoint{{now, cpuUS, fdUS}}
+}
+
+// shedCmdline: while the memory guard sheds, command lines read are cut
+// to this many bytes (at most --max-cmdline).
+const shedCmdline = 4096
+
+// liveHeap is the Go heap still in use after the last collection.
+func liveHeap() uint64 {
+	s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(s)
+	if s[0].Value.Kind() != metrics.KindUint64 {
+		return 0
+	}
+	return s[0].Value.Uint64()
+}
+
+// checkMemory is the memory guard rail. Any user can make the recorder hold
+// more: processes with long command lines, or many fds on long paths. When
+// the live heap exceeds --memory-guard it records a guard event, cuts the
+// command lines it reads to shedCmdline bytes and stops tracking the open
+// files of the processes that hold the most, until half of all tracked
+// entries are gone (their last walk is their last_seen); if the heap is still
+// above the guard a budget window later, it drops half again. Below 3/4 of
+// the guard command lines are read up to --max-cmdline again; processes
+// whose files were dropped stay untracked until they exit. Without it the
+// unit's MemoryMax kills the recorder, which restarts into the same state.
+// It runs once per sample.
+func (r *Recorder) checkMemory(now time.Time, b *store.Batch) {
+	guard := uint64(r.cfg.MemoryGuard)
+	if guard == 0 {
+		return
+	}
+	live := r.heapLive()
+	ts := now.UnixMilli()
+	switch {
+	case live > guard && (!r.memShed || now.Sub(r.memShedAt) >= r.cfg.BudgetWindow):
+		first := !r.memShed
+		r.memShed, r.memShedAt = true, now
+		r.cmdlineShed.Store(true)
+		procs, entries, top := r.shedFiles(b)
+		detail := fmt.Sprintf("recorder live heap %d MiB exceeds the %d MiB memory guard: command lines cut at %d bytes; open files no longer tracked: %d processes, %d entries%s",
+			live>>20, guard>>20, min(shedCmdline, r.maxCmdline()), procs, entries, top)
+		if !first {
+			detail = "still " + detail
+		}
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "memory_shed", Detail: detail})
+		r.log.Warnf("memory guard: %s", detail)
+	case r.memShed && live < guard/4*3:
+		r.memShed = false
+		r.cmdlineShed.Store(false)
+		detail := fmt.Sprintf("recorder live heap %d MiB below 3/4 of the %d MiB memory guard: command lines read up to --max-cmdline again",
+			live>>20, guard>>20)
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "memory_ok", Detail: detail})
+		r.log.Printf("memory guard: %s", detail)
+	}
+}
+
+// maxCmdline is how many bytes of a command line are read now.
+func (r *Recorder) maxCmdline() int {
+	if r.cmdlineShed.Load() && (r.cfg.MaxCmdline == 0 || r.cfg.MaxCmdline > shedCmdline) {
+		return shedCmdline
+	}
+	return r.cfg.MaxCmdline
+}
+
+// shedFiles stops tracking the open files of the processes with the most
+// entries until at least half of all entries are dropped. It returns the
+// processes and entries dropped, and the largest as " (most: pid N (comm)
+// with M)".
+func (r *Recorder) shedFiles(b *store.Batch) (procs, entries int, top string) {
+	var list []*procEntry
+	total := 0
+	for _, p := range r.procs {
+		if len(p.files) > 0 {
+			list = append(list, p)
+			total += len(p.files)
+		}
+	}
+	slices.SortFunc(list, func(x, y *procEntry) int { return cmp.Compare(len(y.files), len(x.files)) })
+	for _, p := range list {
+		if 2*entries >= total {
+			break
+		}
+		if procs == 0 {
+			top = fmt.Sprintf(" (most: pid %d (%s) with %d)", p.key.pid, p.upd.Comm, len(p.files))
+		}
+		entries += len(p.files)
+		procs++
+		r.closeFiles(p, b)
+		p.noFiles = true
+	}
+	return procs, entries, top
 }

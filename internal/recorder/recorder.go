@@ -46,6 +46,7 @@ type Config struct {
 	ProcIO           bool          // read /proc/<pid>/io
 	Redact           []string      // regular expressions masked in command lines before they are stored
 	MaxCmdline       int           // bytes of a command line stored (0: all)
+	MemoryGuard      int64         // live heap above which the memory guard sheds data (0: off)
 	FDInterval       time.Duration
 	Duration         time.Duration // 0 = until signalled
 	ProcRoot         string
@@ -70,6 +71,7 @@ type procEntry struct {
 	walked  uint64 // generation of its last fd walk
 	files   map[fileKey]*fileEntry
 	fdCount int    // fds at its last walk (held mode: unchanged count = presumed unchanged)
+	noFiles bool   // its open files are no longer tracked (memory guard)
 	exit    int64  // exit time from a proc connector event, 0 if unknown
 	born    uint64 // generation of the sample that first saw it
 	closed  bool   // closed in the current sample
@@ -122,8 +124,12 @@ type Recorder struct {
 	budgetExhausted bool
 	lastMaintUS     int64        // the store's maintenance CPU already reported
 	cmdlineCut      atomic.Int64 // command lines cut at MaxCmdline (read by events too)
-	lastCmdlineCut  int64        // of those, already reported
-	afterSample     func()       // test hook
+	cmdlineShed     atomic.Bool  // the memory guard cuts command lines at shedCmdline
+	memShed         bool         // the memory guard is shedding
+	memShedAt       time.Time    // when it last shed
+	heapLive        func() uint64
+	lastCmdlineCut  int64  // of those, already reported
+	afterSample     func() // test hook
 }
 
 func New(cfg Config, logger *Logger) (*Recorder, error) {
@@ -140,7 +146,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
+	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, heapLive: liveHeap, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]cgroupSeen{}}
@@ -522,6 +528,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		r.lastCmdlineCut = n
 	}
 	r.checkBudget(now, cpuUS-maintUS, r.fdWalkUS, &b)
+	r.checkMemory(now, &b)
 
 	b.Sample = store.Sample{
 		TS: ts, FDWalk: fdWalk,

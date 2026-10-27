@@ -566,6 +566,64 @@ func TestCPUBudget(t *testing.T) {
 	}
 }
 
+func TestMemoryGuard(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	defer r.db.Close()
+	r.cfg.MemoryGuard = 100 << 20
+	r.cfg.MaxCmdline = 64 << 10
+	r.cfg.BudgetWindow = 5 * time.Minute
+	var live uint64
+	r.heapLive = func() uint64 { return live }
+	// Three processes holding 60, 30 and 10 tracked files.
+	for i, n := range []int{60, 30, 10} {
+		p := &procEntry{key: procKey{pid: 100 + i}, files: map[fileKey]*fileEntry{}}
+		p.upd.Comm = fmt.Sprintf("p%d", i)
+		for fd := range n {
+			p.files[fileKey{fd: fd, target: "/f"}] = &fileEntry{id: int64(fd + 1), last: 1}
+		}
+		r.procs[p.key] = p
+	}
+	t0 := time.UnixMilli(1790001000000)
+	b := &store.Batch{}
+	live = 90 << 20
+	r.checkMemory(t0, b)
+	if len(b.Guard) != 0 || r.maxCmdline() != 64<<10 {
+		t.Fatalf("below the guard: %+v, max cmdline %d", b.Guard, r.maxCmdline())
+	}
+	// Above it: the largest process alone is half of the entries.
+	live = 120 << 20
+	r.checkMemory(t0.Add(30*time.Second), b)
+	if len(b.Guard) != 1 || b.Guard[0].Kind != "memory_shed" || r.maxCmdline() != shedCmdline ||
+		!r.procs[procKey{pid: 100}].noFiles || r.procs[procKey{pid: 101}].noFiles || len(b.HeldCloses) != 60 {
+		t.Fatalf("over the guard: %+v, max cmdline %d, closes %d", b.Guard, r.maxCmdline(), len(b.HeldCloses))
+	}
+	if d := b.Guard[0].Detail; !strings.Contains(d, "open files no longer tracked: 1 processes, 60 entries (most: pid 100 (p0) with 60)") {
+		t.Errorf("detail: %s", d)
+	}
+	// Still above within the window: nothing more; after it, half again.
+	r.checkMemory(t0.Add(2*time.Minute), b)
+	if len(b.Guard) != 1 {
+		t.Fatalf("within the window: %+v", b.Guard)
+	}
+	r.checkMemory(t0.Add(6*time.Minute), b)
+	if len(b.Guard) != 2 || !r.procs[procKey{pid: 101}].noFiles || r.procs[procKey{pid: 102}].noFiles ||
+		!strings.HasPrefix(b.Guard[1].Detail, "still ") {
+		t.Fatalf("again: %+v", b.Guard)
+	}
+	// Between 3/4 and the guard: still shedding; below 3/4: back.
+	live = 80 << 20
+	r.checkMemory(t0.Add(7*time.Minute), b)
+	if len(b.Guard) != 2 || r.maxCmdline() != shedCmdline {
+		t.Fatalf("between: %+v", b.Guard)
+	}
+	live = 70 << 20
+	r.checkMemory(t0.Add(8*time.Minute), b)
+	if len(b.Guard) != 3 || b.Guard[2].Kind != "memory_ok" || r.maxCmdline() != 64<<10 || !r.procs[procKey{pid: 100}].noFiles {
+		t.Fatalf("recovered: %+v, max cmdline %d", b.Guard, r.maxCmdline())
+	}
+}
+
 // eBPF events carry exit codes, signals, exec details and OOM kills.
 func TestEBPFEvents(t *testing.T) {
 	fp := newFakeProc(t)

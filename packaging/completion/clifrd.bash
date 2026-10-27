@@ -5,7 +5,7 @@ _clifrd() {
 	local opts="--config -C --data-dir -D --log-level --version -v --interval
 		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
 		--budget-window --verify-every --flush-interval --flush-rows --retention
-		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline
+		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --memory-guard
 		--max-size --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"
 	local bundle="--data-dir -D --last --since --until -o --output"

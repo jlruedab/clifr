@@ -81,7 +81,11 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 		}
 		nfd += len(fds)
 		r.observeOwners(p, fds, ts, b)
-		if all {
+		if all && p.noFiles {
+			for _, fd := range fds {
+				r.noteSocket(p, fd) // socket holders still, no files
+			}
+		} else if all {
 			p.fdCount = len(fds)
 			fds = append(fds, r.fs.ReadSpecialLinks(p.key.pid)...)
 			r.observeFiles(p, fds, ts, names, b)

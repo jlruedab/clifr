@@ -88,6 +88,7 @@ func run(args []string) error {
 	testMode := fs.Bool("test-ebpf", false, "load the eBPF programs, trigger every event type, report and exit (root)")
 	heapTarget := fs.String("gc-heap-target", "256M", "heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50 (0 = always 50; GOGC or GOMEMLIMIT in the environment turn this off)")
 	maxCmdline := fs.String("max-cmdline", "64K", "bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments; 0 = all)")
+	memGuard := fs.String("memory-guard", "384M", "live heap above which the recorder sheds data instead of reaching the unit's MemoryMax: command lines cut to 4K, the open files of the processes holding the most no longer tracked; a guard event says so (0 = off)")
 	maxSize := fs.String("max-size", "2G", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -130,6 +131,9 @@ func run(args []string) error {
 		return fmt.Errorf("--max-cmdline: %w", err)
 	}
 	c.MaxCmdline = int(maxCmd)
+	if c.MemoryGuard, err = parseSize(*memGuard); err != nil {
+		return fmt.Errorf("--memory-guard: %w", err)
+	}
 	if c.Interval < time.Second || c.FDInterval < c.Interval {
 		return errors.New("need --interval >= 1s and --fd-interval >= --interval")
 	}

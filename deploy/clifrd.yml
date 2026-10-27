@@ -23,6 +23,8 @@ cpu_budget: 2%         # of one core over 5 minutes; above it the fd interval is
                        # lengthened when fd walks are a quarter of the cost or more
 gc_heap_target: 256M   # heap up to which garbage is collected at Go's default rate
 max_cmdline: 64K       # bytes of each command line stored; longer ones are cut
+memory_guard: 384M     # live heap above which data is shed (guard event) before
+                       # the unit's MemoryMax (768M) is reached
 
 # Masked in command lines (as ***) before they are stored: Go regular
 # expressions; with capture groups only the groups are masked. (The built-in
