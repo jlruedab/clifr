@@ -278,9 +278,10 @@ func MountChanges(db *store.DB, from, to int64) ([]MountRow, error) {
 }
 
 // MountsAt replays the mount table up to t: each recorder run starts with
-// the mounts present, then its changes.
+// the mounts present, then its changes; runs record the whole table again
+// hourly (each snapshot replaces the table).
 func MountsAt(db *store.DB, t int64) ([]MountRow, error) {
-	all, err := mountRows(db, `WHERE ts <= ?1 ORDER BY ts`, t)
+	all, err := mountRows(db, `WHERE ts <= ?1 ORDER BY ts, action = 'present' DESC, seq`, t)
 	if err != nil {
 		return nil, err
 	}

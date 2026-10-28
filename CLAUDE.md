@@ -135,7 +135,8 @@ wait for the user's go-ahead.
   socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read
   when its fd count (size of /proc/<pid>/fd, Linux 6.2+) is unchanged and it had no TCP
   activity, except every `--fd-full-every` walks. "all" = v1 `open_files` (with `--tcp sample`).
-- Mounts: `mounts` table (present/mount/unmount/remount) from POLLPRI on mountinfo, opened
+- Mounts: `mounts` table (present/mount/unmount/remount; the whole table as `present` rows at start and
+  hourly, each snapshot replacing the table, so retention never removes a running run's base) from POLLPRI on mountinfo, opened
   with raw open(2): Go's own epoll would consume the kernel's change notification. Since
   schema 2 also `super_options`, `dev`, `root`, `seq` (position in mountinfo: `mount` and `df`
   list in that order; later mounts are appended), `loop_file`, `user_options` (utab).
@@ -247,7 +248,8 @@ wait for the user's go-ahead.
   `conntrack -S` (`ConntrackOld`: conntrack-tools before 1.4.7 stop at search_restart), `nfsstat`
   (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a port of mountstats.py;
   `Mountstats233`: RHEL 8's 2.3.3).
-- `meta` (per run, latest wins in DuckDB): `schema_version` (`store.SchemaVersion`, 9 since
+- `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),

@@ -89,6 +89,48 @@ func TestFindmnt(t *testing.T) {
 	}
 }
 
+// Retention removes a long run's oldest hours, its first meta and mount
+// snapshot with them: the hourly copies stand in.
+func TestMetaAndMountsAfterRetention(t *testing.T) {
+	dir := t.TempDir()
+	s, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Truncate(time.Second).UnixMilli() // the run's name
+	time.Sleep(5 * time.Millisecond)
+	s.SetMeta("os_id", "rhel")
+	copyTS := time.Now().UnixMilli()
+	m := func(ts int64, action string, id int, point string, seq int) store.MountEvent {
+		return store.MountEvent{TS: ts, Action: action, MountID: id, Point: point, Source: "src", FSType: "ext4", Options: "rw", Seq: seq}
+	}
+	// The first snapshot expired; an hourly one at copyTS, with a mount at
+	// the same moment that it does not hold yet.
+	s.Write(&store.Batch{Sample: store.Sample{TS: copyTS}, Mounts: []store.MountEvent{
+		m(copyTS, "mount", 9, "/srv", 2),
+		m(copyTS, "present", 1, "/", 0), m(copyTS, "present", 2, "/home", 1)}})
+	s.Close()
+	db, err := duck.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if v := MetaAt(db, "os_id", start); v != "rhel" {
+		t.Errorf("MetaAt before the run's first remaining copy: %q", v)
+	}
+	if v := MetaAt(db, "os_id", start-1000); v != "" {
+		t.Errorf("MetaAt before the run: %q", v)
+	}
+	rows, err := MountsAt(db, copyTS)
+	var points []string
+	for _, r := range rows {
+		points = append(points, r.Point)
+	}
+	if err != nil || strings.Join(points, " ") != "/ /home /srv" {
+		t.Errorf("mounts %v %v", points, err)
+	}
+}
+
 // Two clifrd runs in two boots: last reboot lists both, the newer still
 // running, the older ending at its last sample.
 func TestLastReboot(t *testing.T) {

@@ -134,10 +134,13 @@ func PrintFindmnt(w io.Writer, rows []FindmntRow) {
 }
 
 // MetaAt is a meta value as the recorder run that was recording at t set it
-// (the meta table keeps only the newest run's), "" if none.
+// (the meta table keeps only the newest run's), "" if none. A run writes its
+// meta again every hour; when retention has removed the copies before t,
+// the run's first copy after t stands in.
 func MetaAt(db *store.DB, key string, t int64) string {
 	var v sql.NullString
-	db.QueryRow(`SELECT arg_max(value, ts) FROM read_parquet(?, union_by_name = true) WHERE key = ? AND ts <= ?`,
+	db.QueryRow(`SELECT value FROM read_parquet(?1, union_by_name = true) WHERE key = ?2 AND run <= ?3 // 1000
+		ORDER BY run DESC, ts <= ?3 DESC, CASE WHEN ts <= ?3 THEN -ts ELSE ts END LIMIT 1`,
 		filepath.Join(db.DataDir, "meta", "**", "*.parquet"), key, t).Scan(&v)
 	return v.String
 }

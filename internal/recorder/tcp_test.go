@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"testing"
+	"time"
 
 	"clifr/internal/bpftcp"
 	"clifr/internal/procfs"
@@ -102,6 +103,27 @@ func TestMountDiff(t *testing.T) {
 	}
 	want := "[1000 present / 2000 mount /srv 3000 remount /srv 4000 unmount /srv]"
 	if fmt.Sprint(got) != want {
+		t.Errorf("got %v", got)
+	}
+}
+
+// The whole table again as "present" rows once the last snapshot is old.
+func TestMountRefresh(t *testing.T) {
+	w := &mountWatch{known: map[int]procfs.MountInfo{}, snapAt: time.Now().UnixMilli()}
+	root := procfs.MountInfo{ID: 1, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw"}
+	nfs := procfs.MountInfo{ID: 9, Point: "/srv", Source: "srv:/x", FSType: "nfs4", Options: "rw"}
+	w.diff([]procfs.MountInfo{root, nfs}, w.snapAt, "present")
+	w.take()
+	w.refresh(time.Hour.Milliseconds())
+	if p := w.take(); len(p) != 0 {
+		t.Fatalf("snapshot within the hour: %+v", p)
+	}
+	w.refresh(0)
+	var got []string
+	for _, e := range w.take() {
+		got = append(got, fmt.Sprintf("%s %s %d", e.Action, e.Point, e.Seq))
+	}
+	if fmt.Sprint(got) != "[present / 0 present /srv 1]" {
 		t.Errorf("got %v", got)
 	}
 }

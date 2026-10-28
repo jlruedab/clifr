@@ -459,6 +459,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		b.Units = append(b.Units, r.units.take()...)
 	}
 	if r.mounts != nil {
+		r.mounts.refresh(store.NetSnapshotMS)
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
 		b.FSSamples = append(b.FSSamples, r.fsUsage.take()...)
 		r.fsUsage.start(ts, r.mounts.table(), r.log)

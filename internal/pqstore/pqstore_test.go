@@ -239,3 +239,38 @@ func TestStartedBy(t *testing.T) {
 		t.Error("a table without entities was accepted")
 	}
 }
+
+// A run writes its whole meta again hourly, so retention never leaves a
+// running recorder without it.
+func TestMetaRefresh(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, Options{FlushInterval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetMeta("hostname", "old")
+	s.SetMeta("hostname", "web1")
+	s.SetMeta("os_id", "rhel")
+	count := func() (n int64) {
+		dated, open := DataFiles(dir, "meta")
+		for _, f := range append(dated, open...) {
+			n += rowsIn(t, f)
+		}
+		return n
+	}
+	if err := s.Flush(); err != nil || count() != 3 {
+		t.Fatalf("first flush: %d rows, %v", count(), err)
+	}
+	s.Flush()
+	if n := count(); n != 3 {
+		t.Errorf("copied again within the hour: %d rows", n)
+	}
+	s.metaAt = time.Now().Add(-time.Hour)
+	s.Flush()
+	if n := count(); n != 5 { // the latest value of each key
+		t.Errorf("after an hour: %d rows, want 5", n)
+	}
+	if m, _ := ReadMeta(dir); m["hostname"] != "web1" || m["os_id"] != "rhel" {
+		t.Errorf("meta %v", m)
+	}
+}

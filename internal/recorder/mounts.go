@@ -26,6 +26,25 @@ type mountWatch struct {
 	pending []store.MountEvent
 	known   map[int]procfs.MountInfo
 	order   []procfs.MountInfo // the table in mountinfo order
+	snapAt  int64              // the last "present" snapshot (unix ms)
+}
+
+// refresh records the whole table again as "present" rows once the last
+// snapshot is every ms old: a run's first snapshot would otherwise expire
+// with the oldest hours while the run goes on, and the mounts with it.
+func (w *mountWatch) refresh(every int64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ts := time.Now().UnixMilli()
+	if ts-w.snapAt < every {
+		return
+	}
+	for i, m := range w.order {
+		w.pending = append(w.pending, store.MountEvent{TS: ts, Action: "present", MountID: m.ID, Point: m.Point, Source: m.Source,
+			FSType: m.FSType, Options: m.Options, SuperOptions: m.SuperOptions, Dev: m.Dev, Root: m.Root, Seq: i,
+			LoopFile: m.LoopFile, UserOptions: m.UserOptions})
+	}
+	w.snapAt = ts
 }
 
 // table returns the current mount table in mountinfo order.
@@ -108,7 +127,8 @@ func (r *Recorder) startMounts(done <-chan struct{}) (stop func()) {
 		r.log.Warnf("mount changes not recorded: cannot read mountinfo")
 		return nil
 	}
-	w.diff(now, time.Now().UnixMilli(), "present")
+	w.snapAt = time.Now().UnixMilli()
+	w.diff(now, w.snapAt, "present")
 	r.mounts = w
 	var wg sync.WaitGroup
 	wg.Add(1)

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -225,6 +226,8 @@ type Store struct {
 	stats       []statRow
 	verify      []verifyRow
 	meta        []metaRow
+	metaAll     map[string]string // the run's meta, written again hourly
+	metaAt      time.Time         // its last full copy
 	verifyID    int64
 
 	lastAny, lastFD int64 // last sample, last fd-walk sample (unix ms)
@@ -259,7 +262,7 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, opt: opt, run: time.Now().Unix(), lastFlush: time.Now(),
+	s := &Store{dir: dir, opt: opt, run: time.Now().Unix(), lastFlush: time.Now(), metaAll: map[string]string{}, metaAt: time.Now(),
 		procs: newEntity[processRow](), socks: newEntity[socketRow](),
 		owners: newEntity[ownerRow](), files: newEntity[fileRow](), held: newValBuf[heldRec](), conns: newValBuf[store.TCPConn]()}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -283,7 +286,22 @@ func (s *Store) MaintenanceCPUUS() int64 { return s.maintUS.Load() }
 
 func (s *Store) SetMeta(key, value string) error {
 	s.meta = append(s.meta, metaRow{Run: s.run, TS: time.Now().UnixMilli(), Key: key, Value: value})
+	s.metaAll[key] = value
 	return nil
+}
+
+// refreshMeta copies the run's whole meta into the next flush once the last
+// copy is store.NetSnapshotMS old. Retention deletes hours, and meta is
+// written at the start: without the copies a run that outlives the
+// retention loses its host, schema and distribution.
+func (s *Store) refreshMeta(now time.Time) {
+	if now.Sub(s.metaAt) < store.NetSnapshotMS*time.Millisecond {
+		return
+	}
+	for _, k := range slices.Sorted(maps.Keys(s.metaAll)) {
+		s.meta = append(s.meta, metaRow{Run: s.run, TS: now.UnixMilli(), Key: k, Value: s.metaAll[k]})
+	}
+	s.metaAt = now
 }
 
 func (s *Store) Write(b *store.Batch) error {
@@ -501,6 +519,7 @@ func (s *Store) buffered() int {
 // Flush writes everything buffered and rewrites the open files.
 func (s *Store) Flush() error {
 	now := time.Now().UTC()
+	s.refreshMeta(now)
 	day, name := now.Format("2006-01-02"), now.Format("15-04")
 	var errs []error
 	part := func(table string, n int, write func(path string) error) {
