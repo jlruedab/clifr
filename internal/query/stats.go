@@ -3,6 +3,8 @@ package query
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -107,24 +109,28 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 	db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(missing_from_events), 0), COALESCE(SUM(extra_in_events), 0)
 		FROM reconcile WHERE initial = 0`).Scan(&st.Reconcile.Keyframes, &st.Reconcile.MissingFromEvents, &st.Reconcile.ExtraInEvents)
 	st.DBBytes = db.SizeBytes()
+	// Read before the samples query: the DB has one connection, and a query
+	// while rows are open would wait for it forever.
+	gapMS := IntervalMS(db) * 5 / 2 // longer without samples: stopped or suspended
 
 	rows, err := db.Query(`SELECT ts, fd_walk, skipped, COALESCE(dur_proc_us,0), COALESCE(dur_sock_us,0),
 		COALESCE(dur_fd_us,0), COALESCE(dur_db_us,0), COALESCE(nproc,0), COALESCE(nsock,0), COALESCE(nfd,0),
-		COALESCE(cpu_us,0), COALESCE(rss_kb,0), COALESCE(db_bytes,0) FROM samples ORDER BY ts`)
+		COALESCE(cpu_us,0), COALESCE(rss_kb,0) FROM samples ORDER BY ts`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	phases := map[string][]float64{}
-	var prevTS, prevCPU, prevDB int64
-	firstOfRun := true // the first interval of a run includes the initial inventory
-	var cpuSum, wallSum, dbGrowth, dbWall, rssSum, fdSum float64
+	var prevTS, prevCPU int64
+	var sampleTS []int64
+	var cpuSum, wallSum, rssSum, fdSum float64
 	var nprocSum, nsockSum float64
 	for rows.Next() {
-		var ts, fdw, skipped, dp, ds, df, dd, np, ns, nf, cpu, rss, dbb int64
-		if err := rows.Scan(&ts, &fdw, &skipped, &dp, &ds, &df, &dd, &np, &ns, &nf, &cpu, &rss, &dbb); err != nil {
+		var ts, fdw, skipped, dp, ds, df, dd, np, ns, nf, cpu, rss int64
+		if err := rows.Scan(&ts, &fdw, &skipped, &dp, &ds, &df, &dd, &np, &ns, &nf, &cpu, &rss); err != nil {
 			return nil, err
 		}
+		sampleTS = append(sampleTS, ts)
 		if st.FromMS == 0 {
 			st.FromMS = ts
 		}
@@ -149,22 +155,13 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 		if rss > st.RSSMaxKB {
 			st.RSSMaxKB = rss
 		}
-		// cpu_us and db_bytes restart with each recorder run; only count
-		// increasing pairs.
-		if prevTS != 0 && cpu >= prevCPU {
+		// cpu_us restarts with each recorder run; only count increasing pairs,
+		// and not across a gap (a suspend would count as idle time).
+		if prevTS != 0 && cpu >= prevCPU && ts-prevTS < gapMS {
 			cpuSum += float64(cpu - prevCPU)
 			wallSum += float64(ts-prevTS) * 1000
 		}
-		if prevTS != 0 && dbb >= prevDB && cpu >= prevCPU {
-			if !firstOfRun {
-				dbGrowth += float64(dbb - prevDB)
-				dbWall += float64(ts - prevTS)
-			}
-			firstOfRun = false
-		} else {
-			firstOfRun = true
-		}
-		prevTS, prevCPU, prevDB = ts, cpu, dbb
+		prevTS, prevCPU = ts, cpu
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -183,9 +180,7 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 	if st.FDWalks > 0 {
 		st.AvgFDs = fdSum / float64(st.FDWalks)
 	}
-	if dbWall > 0 {
-		st.DiskPerDayBytes = int64(dbGrowth / dbWall * 86400e3)
-	}
+	st.DiskPerDayBytes = keptPerDay(db.DataDir, sampleTS, gapMS)
 	adj, err := db.Query(`SELECT ts, kind, detail FROM guard_events WHERE kind != 'skip' ORDER BY ts LIMIT 50`)
 	if err != nil {
 		return nil, err
@@ -254,6 +249,48 @@ func humanBytes(n int64) string {
 	return ""
 }
 
+// keptPerDay estimates the data kept per day of recording: the size of the
+// finished hour files over the time recorded in those hours. Hours still in
+// flush parts are left out (compaction shrinks them), and so is time without
+// samples (gapMS or more: a stopped recorder, a suspended machine). The size
+// of the store over time is no measure: compaction and retention shrink it.
+func keptPerDay(dir string, samples []int64, gapMS int64) int64 {
+	if dir == "" {
+		return 0
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "*-*-*", "*.parquet"))
+	done, parts := map[int64]int64{}, map[int64]bool{} // by hour (UTC, ms)
+	for _, p := range files {
+		name := strings.TrimSuffix(filepath.Base(p), ".parquet")
+		h, err := time.Parse("2006-01-02 15", filepath.Base(filepath.Dir(p))+" "+name[:min(2, len(name))])
+		if err != nil {
+			continue
+		}
+		if len(name) > 2 { // HH-MM: a flush part
+			parts[h.UnixMilli()] = true
+		} else if fi, err := os.Stat(p); err == nil {
+			done[h.UnixMilli()] += fi.Size()
+		}
+	}
+	recorded := map[int64]int64{}
+	for i := 1; i < len(samples); i++ {
+		if d := samples[i] - samples[i-1]; d < gapMS {
+			recorded[samples[i]/3_600_000*3_600_000] += d
+		}
+	}
+	var bytes, ms int64
+	for h, n := range done {
+		if !parts[h] && recorded[h] > 0 {
+			bytes += n
+			ms += recorded[h]
+		}
+	}
+	if ms == 0 {
+		return 0
+	}
+	return int64(float64(bytes) / float64(ms) * 86400e3)
+}
+
 func PrintStats(w io.Writer, s *Stats) {
 	span := time.Duration(s.ToMS-s.FromMS) * time.Millisecond
 	h := s.Host
@@ -267,7 +304,7 @@ func PrintStats(w io.Writer, s *Stats) {
 	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS((s.FromMS+999)/1000*1000), FormatMS(s.ToMS), span.Round(time.Second))
 	fmt.Fprintf(w, "Samples:          %d (%d with full fd walk), skipped: %d\n", s.Samples, s.FDWalks, s.Skipped)
 	fmt.Fprintf(w, "Seen per sample:  %.0f processes, %.0f sockets, %.0f fds per walk\n", s.AvgProcs, s.AvgSockets, s.AvgFDs)
-	fmt.Fprintf(w, "DB size:          %s on disk (est. %s/day from its growth while recording)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))
+	fmt.Fprintf(w, "DB size:          %s on disk (about %s kept per day recorded)\n", humanBytes(s.DBBytes), humanBytes(s.DiskPerDayBytes))
 	fmt.Fprintf(w, "Recorder CPU:     %.3f%% of one core (average)\n", s.CPUPctOneCore)
 	fmt.Fprintf(w, "Recorder RSS:     avg %s, max %s\n", humanBytes(s.RSSAvgKB*1024), humanBytes(s.RSSMaxKB*1024))
 	fmt.Fprintf(w, "Process events:   %s\n", orDash(s.EventMode))

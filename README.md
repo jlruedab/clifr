@@ -520,7 +520,8 @@ chooses one; a line on stderr says when a style other than current is used.
   connections) 5.2 s and 2.3 GB.
 - `info` shows the recording range, samples and skips, rows per table, data
   size, recorder CPU and RSS, sample durations by phase, events and drops per
-  source, guard-rail changes and estimated disk per day.
+  source, guard-rail changes and the data kept per day recorded (finished hours
+  only, time without samples left out).
 
 ### Bundles and sos report
 
