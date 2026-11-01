@@ -1,3 +1,5 @@
+<p align="center"><img src="clifr-logo.png" alt="clifr logo" width="480"></p>
+
 # clifr — a Linux flight recorder (working prototype)
 
 *clifr was called sosv until 2026-10-19 (`sosv-record` → `clifrd`,
