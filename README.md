@@ -39,11 +39,20 @@ CPU guard rail, retention and size caps, hourly compaction, crash recovery,
 drop and missed-event counters, reconciliation with kernel dumps). It is
 not yet shown to be viable for production:
 
-1. **No long run yet.** The first soak test under the installed unit ran
-   18.7 hours (2026-10-24/25: 0.56% of one core, RSS 81 MiB average, no
-   restarts, `clifr verify` every 6 hours as before) and was stopped to
-   change the unit's CPU limit; the 7-day soak is to be run again with the
-   new unit. Days of memory use, retention and restarts are not observed yet.
+1. **One 7-day run, on a desktop.** The soak test ran the installed
+   packages under the shipped unit for 7 days (2026-10-25 to 11-01; 152
+   hours awake, one 15.75-hour suspend) on this machine's ordinary desktop
+   use, about 510 processes, not a server load: no restarts, 0.36% of one
+   core, program memory steady at about 50 MiB (RSS 97 MiB on average, 222
+   at most in a burst after the resume; the cgroup's peak 365 MiB with page
+   cache), 16 MiB of data kept per day, no drops (3 eBPF missed runs). It
+   found two retention bugs, now fixed: the run's meta and mount table, and
+   the values of idle processes and the usage of unchanging file systems,
+   were written only once, so after 72 hours retention deleted them and
+   `ss`, `lsof`, `df`, `findmnt`, `lsblk`, `uname` and the idle processes of
+   `ps`, `top`, `pidstat` and `systemd-cgls` were wrong or empty. Everything
+   else `clifr verify` checked matched to the end. A run longer than its
+   retention with the fixes is still to do.
 2. **One machine, one kernel** (Ubuntu 26.04, kernel 7.0, bare metal). The
    targets RHEL 8.2+/9 and Ubuntu 22.04+ and their fallback paths (perf
    buffer, classic tracepoints, proc connector) are untested there; the
