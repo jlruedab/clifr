@@ -1,9 +1,12 @@
 package pqstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -44,10 +47,98 @@ func FileSpan(path string, flush time.Duration) (lo, hi int64, ok bool) {
 	return lo, hi, true
 }
 
+// Dir is the name of a table's directory: 8 hex digits of the SHA-256 of
+// "clifr/" and the table name, so that the names do not show what is
+// recorded (the user, 2026-11-01). It is the same on every host: any clifr
+// reads any recording or bundle without a key.
+func Dir(table string) string {
+	if d, ok := dirs[table]; ok {
+		return d
+	}
+	return hashDir(table)
+}
+
+var dirs = func() map[string]string {
+	m := make(map[string]string, len(Tables))
+	for _, t := range Tables {
+		m[t] = hashDir(t)
+	}
+	return m
+}()
+
+func hashDir(table string) string {
+	h := sha256.Sum256([]byte("clifr/" + table))
+	return hex.EncodeToString(h[:4])
+}
+
+// TableDir is the directory of a table in a data directory: Dir(table), or
+// the table's own name in recordings and bundles made before 2026-11-01
+// (clifrd renames those when it opens the store).
+func TableDir(dataDir, table string) string {
+	p := filepath.Join(dataDir, Dir(table))
+	if _, err := os.Stat(p); err != nil {
+		if old := filepath.Join(dataDir, table); dirExists(old) {
+			return old
+		}
+	}
+	return p
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+// IsDataDir reports whether dir holds a recording (its samples table).
+func IsDataDir(dir string) error {
+	_, err := os.Stat(TableDir(dir, "samples"))
+	return err
+}
+
+// renameDirs gives the table directories of an older recording their
+// Dir names. When both exist (an older clifrd ran meanwhile) the files are
+// moved one by one; one whose name is already taken stays where it was.
+func renameDirs(dataDir string, logf func(string, ...any)) error {
+	var errs []error
+	for _, t := range Tables {
+		old, cur := filepath.Join(dataDir, t), filepath.Join(dataDir, Dir(t))
+		if !dirExists(old) {
+			continue
+		}
+		if !dirExists(cur) {
+			errs = append(errs, os.Rename(old, cur))
+			continue
+		}
+		left := 0
+		filepath.WalkDir(old, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			rel, _ := filepath.Rel(old, p)
+			to := filepath.Join(cur, rel)
+			if _, err := os.Stat(to); err == nil {
+				left++
+				return nil
+			}
+			if err := os.MkdirAll(filepath.Dir(to), 0o750); err != nil {
+				return err
+			}
+			return os.Rename(p, to)
+		})
+		if left > 0 {
+			logf("pqstore: %s: %d files left in %s (their names exist in %s)", t, left, old, cur)
+			continue
+		}
+		errs = append(errs, os.RemoveAll(old))
+	}
+	return errors.Join(errs...)
+}
+
 // DataFiles lists a table's dated files and its open files.
 func DataFiles(dir, table string) (dated, open []string) {
-	dated, _ = filepath.Glob(filepath.Join(dir, table, "*-*-*", "*.parquet"))
-	open, _ = filepath.Glob(filepath.Join(dir, table, "open", "*.parquet"))
+	d := TableDir(dir, table)
+	dated, _ = filepath.Glob(filepath.Join(d, "*-*-*", "*.parquet"))
+	open, _ = filepath.Glob(filepath.Join(d, "open", "*.parquet"))
 	return dated, open
 }
 

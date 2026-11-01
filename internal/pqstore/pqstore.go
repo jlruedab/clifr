@@ -266,6 +266,9 @@ func Open(dir string, opt Options) (*Store, error) {
 		procs: newEntity[processRow](), socks: newEntity[socketRow](),
 		owners: newEntity[ownerRow](), files: newEntity[fileRow](), held: newValBuf[heldRec](), conns: newValBuf[store.TCPConn]()}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+	if err := renameDirs(dir, opt.Logf); err != nil {
+		return nil, fmt.Errorf("rename table directories: %w", err)
+	}
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
@@ -526,7 +529,7 @@ func (s *Store) Flush() error {
 		if n == 0 {
 			return
 		}
-		p, err := freePath(filepath.Join(s.dir, table, day), name)
+		p, err := freePath(filepath.Join(s.dir, Dir(table), day), name)
 		if err == nil {
 			err = write(p)
 		}
@@ -609,7 +612,7 @@ func (s *Store) Flush() error {
 // writeOpen rewrites the run's open file for an entity table: each row seen
 // until last (or its first sighting, if later).
 func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) int64, setLast func(*T, int64)) error {
-	p := filepath.Join(s.dir, table, "open", fmt.Sprintf("%d.parquet", s.run))
+	p := filepath.Join(s.dir, Dir(table), "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(e.open) == 0 {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -631,7 +634,7 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 // writeOpenConv rewrites the run's open file of a valBuf table; conv
 // converts a row (a copy: it may set its last_seen).
 func writeOpenConv[S, T any](s *Store, table string, open map[int64]*S, conv func(*T, *S)) error {
-	p := filepath.Join(s.dir, table, "open", fmt.Sprintf("%d.parquet", s.run))
+	p := filepath.Join(s.dir, Dir(table), "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(open) == 0 {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -786,14 +789,14 @@ func (h hourFile) start() time.Time {
 func (s *Store) listHours() []hourFile {
 	var out []hourFile
 	for _, t := range Tables {
-		days, _ := os.ReadDir(filepath.Join(s.dir, t))
+		days, _ := os.ReadDir(filepath.Join(s.dir, Dir(t)))
 		for _, d := range days {
 			if !d.IsDir() || d.Name() == "open" {
 				continue
 			}
-			files, _ := os.ReadDir(filepath.Join(s.dir, t, d.Name()))
+			files, _ := os.ReadDir(filepath.Join(s.dir, Dir(t), d.Name()))
 			for _, f := range files {
-				h := hourFile{path: filepath.Join(s.dir, t, d.Name(), f.Name()), table: t, day: d.Name()}
+				h := hourFile{path: filepath.Join(s.dir, Dir(t), d.Name(), f.Name()), table: t, day: d.Name()}
 				if m := partRe.FindStringSubmatch(f.Name()); m != nil {
 					h.hour = m[1]
 				} else if m := hourRe.FindStringSubmatch(f.Name()); m != nil {
@@ -897,7 +900,7 @@ func (s *Store) compact(current time.Time, done func()) error {
 		for _, h := range g {
 			paths = append(paths, h.path)
 		}
-		out := filepath.Join(s.dir, g[0].table, g[0].day, g[0].hour+".parquet")
+		out := filepath.Join(s.dir, Dir(g[0].table), g[0].day, g[0].hour+".parquet")
 		if err := compactors[g[0].table](paths, out); err != nil {
 			return fmt.Errorf("%s: %w", k, err)
 		}
@@ -981,10 +984,11 @@ func (s *Store) expire(now time.Time) error {
 		}
 		own := fmt.Sprintf("%d.parquet", s.run)
 		for _, t := range EntityTables {
-			files, _ := os.ReadDir(filepath.Join(s.dir, t, "open"))
+			open := filepath.Join(s.dir, Dir(t), "open")
+			files, _ := os.ReadDir(open)
 			for _, f := range files {
 				if fi, err := f.Info(); err == nil && f.Name() != own && fi.ModTime().Before(now.Add(-r)) {
-					errs = append(errs, os.Remove(filepath.Join(s.dir, t, "open", f.Name())))
+					errs = append(errs, os.Remove(filepath.Join(open, f.Name())))
 				}
 			}
 		}
@@ -1010,10 +1014,10 @@ func (s *Store) expire(now time.Time) error {
 	}
 	// Remove empty day directories.
 	for _, t := range Tables {
-		days, _ := os.ReadDir(filepath.Join(s.dir, t))
+		days, _ := os.ReadDir(filepath.Join(s.dir, Dir(t)))
 		for _, d := range days {
 			if d.IsDir() && d.Name() != "open" {
-				os.Remove(filepath.Join(s.dir, t, d.Name())) // fails unless empty
+				os.Remove(filepath.Join(s.dir, Dir(t), d.Name())) // fails unless empty
 			}
 		}
 	}

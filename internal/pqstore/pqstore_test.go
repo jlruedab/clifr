@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -48,6 +49,12 @@ func TestCompactAndRecover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Open moved the files of the old-style directory to Dir's.
+	old := day
+	day = filepath.Join(dir, Dir("guard_events"), "2026-10-09")
+	if _, err := os.Stat(filepath.Join(dir, "guard_events")); !os.IsNotExist(err) {
+		t.Errorf("old directory kept: %v", err)
+	}
 	// 11:30: hour 10 is finished, hour 11 is not.
 	if err := s.compact(time.Date(2026, 10, 9, 11, 0, 0, 0, time.UTC), func() {}); err != nil {
 		t.Fatal(err)
@@ -61,8 +68,9 @@ func TestCompactAndRecover(t *testing.T) {
 	}
 
 	// A crash after the rename but before the parts were removed: the next
-	// Open removes the parts already merged.
-	writeFile(filepath.Join(day, "10-30.parquet"), guardRows(5, 0))
+	// Open removes the parts already merged. Written by an older clifrd (both
+	// directories exist): moved file by file.
+	writeFile(filepath.Join(old, "10-30.parquet"), guardRows(5, 0))
 	os.WriteFile(filepath.Join(day, "11-05.parquet.tmp"), []byte("partial"), 0o644)
 	if _, err := Open(dir, Options{}); err != nil {
 		t.Fatal(err)
@@ -83,15 +91,16 @@ func TestRetentionAndSizeCap(t *testing.T) {
 	if err := s.expire(now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "samples", "2026-10-06")); !os.IsNotExist(err) {
+	samples := filepath.Join(dir, Dir("samples"))
+	if _, err := os.Stat(filepath.Join(samples, "2026-10-06")); !os.IsNotExist(err) {
 		t.Error("hour older than the retention was kept (or its empty day directory)")
 	}
-	one := dirSize(filepath.Join(dir, "samples", "2026-10-09"))
+	one := dirSize(filepath.Join(samples, "2026-10-09"))
 	s.opt.MaxBytes = one / 2 // room for one of the three files left
 	if err := s.expire(now); err != nil {
 		t.Fatal(err)
 	}
-	left, _ := filepath.Glob(filepath.Join(dir, "samples", "*", "*.parquet"))
+	left, _ := filepath.Glob(filepath.Join(samples, "*", "*.parquet"))
 	// The cap removes the oldest hours, never the current one.
 	if len(left) != 1 || filepath.Base(left[0]) != "12-05.parquet" {
 		t.Errorf("after size cap: %v", left)
@@ -272,5 +281,28 @@ func TestMetaRefresh(t *testing.T) {
 	}
 	if m, _ := ReadMeta(dir); m["hostname"] != "web1" || m["os_id"] != "rhel" {
 		t.Errorf("meta %v", m)
+	}
+}
+
+// Table directories are opaque, distinct and the same on every host.
+func TestDirNames(t *testing.T) {
+	seen := map[string]string{}
+	for _, tb := range Tables {
+		d := Dir(tb)
+		if len(d) != 8 || strings.Contains(d, tb) {
+			t.Errorf("%s: %q", tb, d)
+		}
+		if o, dup := seen[d]; dup {
+			t.Errorf("%s and %s share %s", o, tb, d)
+		}
+		seen[d] = tb
+	}
+	if Dir("samples") != "59d5714c" { // fixed: bundles move between hosts
+		t.Errorf("samples: %s", Dir("samples"))
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "samples"), 0o750)
+	if TableDir(dir, "samples") != filepath.Join(dir, "samples") || IsDataDir(dir) != nil {
+		t.Error("an older recording is not read")
 	}
 }

@@ -139,8 +139,8 @@ func Select(o Options, meta map[string]string) (Selection, error) {
 // meanwhile (an hour compacted into one file) makes the selection be done
 // again, once.
 func Write(o Options, w io.Writer) (*Manifest, error) {
-	if _, err := os.Stat(filepath.Join(o.DataDir, "samples")); err != nil {
-		return nil, fmt.Errorf("%s: not a clifr data directory (no samples/)", o.DataDir)
+	if err := pqstore.IsDataDir(o.DataDir); err != nil {
+		return nil, fmt.Errorf("%s: not a clifr data directory (no samples table)", o.DataDir)
 	}
 	meta, err := pqstore.ReadMeta(o.DataDir)
 	if err != nil {

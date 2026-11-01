@@ -42,11 +42,11 @@ func Open(dataDir string) (*store.DB, error) { return OpenWindow(dataDir, Window
 
 // OpenWindow is Open with the TCP tables limited to w.
 func OpenWindow(dataDir string, w Window) (*store.DB, error) {
-	if _, err := os.Stat(filepath.Join(dataDir, "samples")); err != nil {
+	if err := pqstore.IsDataDir(dataDir); err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			return nil, fmt.Errorf("%s: permission denied (the recording is readable by root and the clifr group)", dataDir)
 		}
-		return nil, fmt.Errorf("%s: not a clifr data directory (no samples/)", dataDir)
+		return nil, fmt.Errorf("%s: not a clifr data directory (no samples table)", dataDir)
 	}
 	dataDir, err := filepath.Abs(dataDir) // the allowed directory is a path prefix
 	if err != nil {
@@ -151,7 +151,7 @@ func (l *loader) prepare(q string) (string, error) {
 }
 
 func (l *loader) files(table string) []string {
-	files, _ := filepath.Glob(filepath.Join(l.dir, table, "*", "*.parquet"))
+	files, _ := filepath.Glob(filepath.Join(pqstore.TableDir(l.dir, table), "*", "*.parquet"))
 	return files
 }
 

@@ -41,7 +41,11 @@ wait for the user's go-ahead.
 - Other dependencies only with the user's approval.
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
-- No network, encryption, obfuscation or web UI.
+- No network, encryption, obfuscation or web UI. One exception (the user, 2026-11-01, against
+  copy-cats): table directories are named by a fixed hash, `pqstore.Dir` (8 hex digits of
+  SHA-256("clifr/" + table)), the same on every host; never change it (bundles move between
+  hosts). Column names inside the Parquet files stay readable. Readers take the old plain names
+  too (`pqstore.TableDir`); clifrd renames them when it opens the store.
 
 ## Layout
 - `cmd/clifrd/` — the recorder binary (static, no cgo).
@@ -86,7 +90,7 @@ wait for the user's go-ahead.
   first_seen"); it is written when the entity closes, on clean shutdown, or recovered
   from the last sample timestamp on the next start after a crash.
 - Parquet: append-only. A closed entity is written once; open ones are rewritten each
-  flush to `<table>/open/<run>.parquet` with last_seen = last sample. Readers keep one
+  flush to `<Dir(table)>/open/<run>.parquet` with last_seen = last sample. Readers keep one
   row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter.
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
   newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:

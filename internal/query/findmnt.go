@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"clifr/internal/pqstore"
 	"clifr/internal/store"
 )
 
@@ -141,7 +142,7 @@ func MetaAt(db *store.DB, key string, t int64) string {
 	var v sql.NullString
 	db.QueryRow(`SELECT value FROM read_parquet(?1, union_by_name = true) WHERE key = ?2 AND run <= ?3 // 1000
 		ORDER BY run DESC, ts <= ?3 DESC, CASE WHEN ts <= ?3 THEN -ts ELSE ts END LIMIT 1`,
-		filepath.Join(db.DataDir, "meta", "**", "*.parquet"), key, t).Scan(&v)
+		filepath.Join(pqstore.TableDir(db.DataDir, "meta"), "**", "*.parquet"), key, t).Scan(&v)
 	return v.String
 }
 
@@ -159,7 +160,7 @@ type Boot struct {
 func Boots(db *store.DB, t int64) ([]Boot, error) {
 	rows, err := db.Query(`SELECT run, min(ts), max(value) FILTER (WHERE key = 'boot_id'),
 			max(value) FILTER (WHERE key = 'boot_ms'), max(value) FILTER (WHERE key = 'uname_release')
-		FROM read_parquet(?, union_by_name = true) GROUP BY run ORDER BY run`, filepath.Join(db.DataDir, "meta", "**", "*.parquet"))
+		FROM read_parquet(?, union_by_name = true) GROUP BY run ORDER BY run`, filepath.Join(pqstore.TableDir(db.DataDir, "meta"), "**", "*.parquet"))
 	if err != nil {
 		return nil, err
 	}
