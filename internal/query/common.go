@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"time"
 
+	"clifr/internal/pqstore"
 	"clifr/internal/store"
 )
 
@@ -99,8 +101,6 @@ func metaInt(db *store.DB, key string) int64 {
 	return n
 }
 
-// IntervalMS is the recorder's sample interval from the metadata (30 s if
-// unknown).
 // Covered returns an error when the recording has nothing for the moment t:
 // t is after its last sample (the recorder stopped, or its latest rows are
 // not flushed to disk yet) or in a gap between samples. Before the first
@@ -131,11 +131,18 @@ func Covered(db *store.DB, t int64) error {
 		"so the latest minutes may not be there yet, or it was not running", FormatMS(t), FormatMS(prev.Int64), flush)
 }
 
+// IntervalMS is the recorder's sample interval from the metadata (30 s if
+// unknown): the longest of every run's, as the meta table keeps only the
+// newest run's and gaps are found with it. A run with a shorter interval
+// then has gaps shorter than 2.5 of the longest interval go unreported;
+// with the newest one, every sample of a run with a longer interval looked
+// like the end of a gap.
 func IntervalMS(db *store.DB) int64 {
-	var v string
-	db.QueryRow(`SELECT value FROM meta WHERE key = 'interval_s'`).Scan(&v)
-	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
-		return int64(f * 1000)
+	var v sql.NullFloat64
+	db.QueryRow(`SELECT max(TRY_CAST(value AS DOUBLE)) FROM read_parquet(?, union_by_name = true) WHERE key = 'interval_s'`,
+		filepath.Join(pqstore.TableDir(db.DataDir, "meta"), "**", "*.parquet")).Scan(&v)
+	if v.Valid && v.Float64 > 0 {
+		return int64(v.Float64 * 1000)
 	}
 	return 30_000
 }
