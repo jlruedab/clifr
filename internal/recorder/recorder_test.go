@@ -775,3 +775,42 @@ func TestHeldFDs(t *testing.T) {
 		t.Errorf("held mode wrote %d open_files rows", n)
 	}
 }
+
+// An idle process's values and an unchanging file system's usage are written
+// again hourly: retention deletes hours, and with them the only row.
+func TestIdleSamplesHourly(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "idle", 100, 5)
+	r, dataDir := newTestRecorder(t, fp.root)
+	t1 := time.UnixMilli(1790001000000)
+	for _, d := range []time.Duration{0, 30 * time.Second, 59 * time.Minute, 60 * time.Minute, 61 * time.Minute} {
+		must(t, r.sample(t1.Add(d), d == 0))
+	}
+	must(t, r.shutdown())
+	r.db.Close()
+	db, err := duck.Open(dataDir)
+	must(t, err)
+	defer db.Close()
+	var got []int64
+	rows, err := db.Query(`SELECT ts FROM proc_samples ORDER BY ts`)
+	must(t, err)
+	for rows.Next() {
+		var ts int64
+		rows.Scan(&ts)
+		got = append(got, (ts-t1.UnixMilli())/60_000)
+	}
+	rows.Close()
+	if fmt.Sprint(got) != "[0 60]" { // minutes after t1
+		t.Errorf("proc_samples at minutes %v, want [0 60]", got)
+	}
+
+	u := &fsUsage{last: map[fsKey]store.FSSample{}}
+	k := fsKey{1, "8:1", "/"}
+	write := func(ts, bfree int64) bool {
+		s := store.FSSample{MountID: 1, FrSize: 4096, Blocks: 100, BFree: bfree}
+		return u.keep(k, &s, ts) && s.TS == ts
+	}
+	if !write(0, 50) || write(60_000, 50) || !write(120_000, 49) || write(3_000_000, 49) || !write(3_720_000, 49) {
+		t.Error("fs usage: want rows when first seen, changed and an hour after the last row")
+	}
+}

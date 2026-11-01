@@ -12,13 +12,14 @@ import (
 // fsUsage measures each mounted file system (statfs, what df shows) once per
 // sample in a goroutine of its own: statfs of a network file system whose
 // server is gone can block, and must not stall the samples. While a round
-// still runs, the next ones are skipped. A row is stored only when a file
-// system's numbers changed.
+// still runs, the next ones are skipped. A row is stored when a file
+// system's numbers changed, and hourly (retention would otherwise delete
+// the only row of one that does not change, read-only ones).
 type fsUsage struct {
 	mu      sync.Mutex
 	busy    bool
 	skipped int
-	last    map[fsKey]store.FSSample // TS 0
+	last    map[fsKey]store.FSSample // TS = when written
 	pending []store.FSSample
 }
 
@@ -83,13 +84,7 @@ func (u *fsUsage) start(ts int64, mounts []procfs.MountInfo, log *Logger) {
 			}
 			s := store.FSSample{MountID: m.ID, FrSize: st.Frsize, Blocks: int64(st.Blocks), BFree: int64(st.Bfree),
 				BAvail: int64(st.Bavail), Files: int64(st.Files), FFree: int64(st.Ffree)}
-			k := fsKey{m.ID, m.Dev, m.Point}
-			u.mu.Lock()
-			changed := u.last[k] != s
-			u.last[k] = s
-			u.mu.Unlock()
-			if changed {
-				s.TS = ts
+			if u.keep(fsKey{m.ID, m.Dev, m.Point}, &s, ts) {
 				rows = append(rows, s)
 			}
 		}
@@ -98,4 +93,19 @@ func (u *fsUsage) start(ts int64, mounts []procfs.MountInfo, log *Logger) {
 		u.busy = false
 		u.mu.Unlock()
 	}()
+}
+
+// keep reports whether s (TS 0) is written at ts: when it changed or the
+// last row of that file system is an hour old. It sets s.TS then.
+func (u *fsUsage) keep(k fsKey, s *store.FSSample, ts int64) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	prev, ok := u.last[k]
+	at := prev.TS
+	if prev.TS = 0; ok && prev == *s && ts-at < store.NetSnapshotMS {
+		return false
+	}
+	s.TS = ts
+	u.last[k] = *s
+	return true
 }

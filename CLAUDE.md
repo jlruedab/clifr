@@ -141,8 +141,9 @@ wait for the user's go-ahead.
   schema 2 also `super_options`, `dev`, `root`, `seq` (position in mountinfo: `mount` and `df`
   list in that order; later mounts are appended), `loop_file`, `user_options` (utab).
 - `fs_samples`: statfs per mount per sample (frsize, blocks, bfree, bavail, files, ffree), written
-  when changed, in a goroutine that skips rounds while one is still running (hung NFS).
-- Per-sample values (`proc_samples`, `sock_samples`) are written only when they change.
+  when changed and hourly, in a goroutine that skips rounds while one is still running (hung NFS).
+- Per-sample values (`proc_samples`, `sock_samples`) are written when they change and hourly
+  (`store.NetSnapshotMS`): retention would otherwise delete an idle process's only row.
 - System-wide counters: every `--sys-interval` (10 s default; also at every sample) writes one `sys_samples` row, one `cpu_samples` row per CPU
   (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,
   from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:

@@ -613,7 +613,9 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			PSFlags: int(st.Flags>>6) & 7, STimeTicks: int64(st.Stime), GuestTicks: int64(st.GuestTime),
 			BlkioTicks: int64(st.BlkioTicks), RSSStatKB: st.RSS * int64(pageKB)}
 		r.sampleRun(e, &s, fresh, status, haveStatus)
-		if !e.hasSamp || !sameProcSample(e.sample, s) {
+		// Unchanged values are written again hourly: retention would
+		// otherwise delete an idle process's only row.
+		if !e.hasSamp || !sameProcSample(e.sample, s) || ts-e.sample.TS >= store.NetSnapshotMS {
 			b.ProcSamples = append(b.ProcSamples, s)
 			e.sample, e.hasSamp = s, true
 		}
