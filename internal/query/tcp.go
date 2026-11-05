@@ -185,67 +185,93 @@ func sortSS(out []SSRow) {
 	})
 }
 
-// ConnsInRange groups the TCP connections that existed in [from, to] by the
-// process that owned them, with retransmits and resets.
-func ConnsInRange(db *store.DB, from, to int64, f SockFilter) ([]SSGroup, error) {
+// rangeConn is one TCP connection that existed in a range.
+type rangeConn struct {
+	row          SSRow // State: its last state in the range (before TCP_CLOSE if it closed)
+	first, last  int64 // open time; close time or last seen
+	closed       bool  // closed by the end of the range
+	retr, resets int
+	pid          int
+	comm         string
+	procID       int64 // processes.id of the owner; 0 unknown
+	cmdline      string
+}
+
+// connsInRange returns the TCP connections that existed in [from, to] that f
+// matches, in the order they opened.
+func connsInRange(db *store.DB, from, to int64, f SockFilter) ([]rangeConn, error) {
 	q, err := db.Query(`
 		SELECT c.id, c.laddr, c.lport, c.raddr, c.rport, c.open_ts, COALESCE(c.close_ts, c.last_seen),
 		       COALESCE(c.close_ts <= ?2, false), c.final_state,
 		       COALESCE((SELECT x.new_state FROM tcp_transitions x WHERE x.conn_id = c.id AND x.ts <= ?2
 		                 ORDER BY x.ts DESC, x.seq DESC LIMIT 1), c.first_state),
-		       c.retransmits, c.resets_sent, c.resets_received, c.pid, COALESCE(p.comm, '')
+		       c.retransmits, c.resets_sent, c.resets_received, c.pid, COALESCE(p.comm, ''),
+		       COALESCE(p.id, 0), COALESCE(p.cmdline, '')
 		FROM tcp_conns c
 		LEFT JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
-		WHERE c.open_ts <= ?2 AND COALESCE(c.close_ts, c.last_seen) >= ?1`, from, to)
+		WHERE c.open_ts <= ?2 AND COALESCE(c.close_ts, c.last_seen) >= ?1
+		ORDER BY c.open_ts, c.id`, from, to)
 	if err != nil {
 		return nil, err
 	}
 	defer q.Close()
+	var out []rangeConn
+	for q.Next() {
+		var c rangeConn
+		var la, ra string
+		var finalState, state, rs, rr int
+		if err := q.Scan(&c.row.id, &la, &c.row.LPort, &ra, &c.row.RPort, &c.first, &c.last, &c.closed, &finalState,
+			&state, &c.retr, &rs, &rr, &c.pid, &c.comm, &c.procID, &c.cmdline); err != nil {
+			return nil, err
+		}
+		c.row.laddr, _ = netip.ParseAddr(la)
+		c.row.raddr, _ = netip.ParseAddr(ra)
+		if !f.Match(&c.row) {
+			continue
+		}
+		if c.closed {
+			state = finalState // its last state before it closed
+		}
+		c.row.Proto = "tcp"
+		c.row.State = sockdiag.StateName(state)
+		c.resets = rs + rr
+		out = append(out, c)
+	}
+	return out, q.Err()
+}
+
+// ConnsInRange groups the TCP connections that existed in [from, to] by the
+// process that owned them, with retransmits and resets.
+func ConnsInRange(db *store.DB, from, to int64, f SockFilter) ([]SSGroup, error) {
+	conns, err := connsInRange(db, from, to, f)
+	if err != nil {
+		return nil, err
+	}
 	type acc struct {
 		g     SSGroup
 		spans []interval
 	}
 	groups := map[string]*acc{}
 	var order []string
-	for q.Next() {
-		var r SSRow
-		var la, ra, comm string
-		var first, last int64
-		var closed bool
-		var finalState, state, retr, rs, rr, pid int
-		if err := q.Scan(&r.id, &la, &r.LPort, &ra, &r.RPort, &first, &last, &closed, &finalState, &state,
-			&retr, &rs, &rr, &pid, &comm); err != nil {
-			return nil, err
-		}
-		r.laddr, _ = netip.ParseAddr(la)
-		r.raddr, _ = netip.ParseAddr(ra)
-		if !f.Match(&r) {
-			continue
-		}
-		if closed {
-			state = finalState // its last state before it closed
-		}
-		key := fmt.Sprint(pid, comm)
+	for _, c := range conns {
+		key := fmt.Sprint(c.pid, c.comm)
 		a := groups[key]
 		if a == nil {
-			a = &acc{g: SSGroup{FirstSeen: first, LastSeen: last, States: map[string]int{}, PID: pid,
-				Process: fmt.Sprintf("%s,pid=%d", comm, pid)}}
-			if pid == 0 {
+			a = &acc{g: SSGroup{FirstSeen: c.first, LastSeen: c.last, States: map[string]int{}, PID: c.pid,
+				Process: fmt.Sprintf("%s,pid=%d", c.comm, c.pid)}}
+			if c.pid == 0 {
 				a.g.Process = "(no process)"
 			}
 			groups[key] = a
 			order = append(order, key)
 		}
-		a.g.FirstSeen = min(a.g.FirstSeen, first)
-		a.g.LastSeen = max(a.g.LastSeen, last)
+		a.g.FirstSeen = min(a.g.FirstSeen, c.first)
+		a.g.LastSeen = max(a.g.LastSeen, c.last)
 		a.g.Conns++
-		a.g.States[sockdiag.StateName(state)]++
-		a.g.Retransmits += retr
-		a.g.Resets += rs + rr
-		a.spans = append(a.spans, interval{max(first, from), min(last, to)})
-	}
-	if err := q.Err(); err != nil {
-		return nil, err
+		a.g.States[c.row.State]++
+		a.g.Retransmits += c.retr
+		a.g.Resets += c.resets
+		a.spans = append(a.spans, interval{max(c.first, from), min(c.last, to)})
 	}
 	out := make([]SSGroup, 0, len(groups))
 	for _, k := range order {

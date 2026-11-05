@@ -285,8 +285,8 @@ resolved time and time zone and other informational lines go to stderr.
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
 `/var/lib/clifr`); `--style STYLE`; `-j/--json`;
-for ranges `--summary` (default), `--changes`, `--samples`,
-`-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
+for ranges `--summary` (default), `--changes`, `--samples`, `--list`
+(ss, netstat), `-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).
 `CLIFR_SINCE`, `CLIFR_UNTIL`, `CLIFR_TZ` and `CLIFR_DATA_DIR` set defaults.
 A command can also be given unquoted after clifr's options
@@ -461,8 +461,9 @@ chooses one; a line on stderr says when a style other than current is used.
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
   Filters: `dst IP[/len][:port]`, `src ...`, `dport = :N`, `sport = :N`,
   joined with `and`. With events, connections, states and owners at a moment
-  are exact (queues come from the last keyframe); a range lists TCP
-  connections by process with duration, resets and retransmits.
+  are exact (queues come from the last keyframe); a range summarizes TCP
+  connections by process (count, peak, resets, retransmits, states), and
+  `--list` lists every connection instead (see Range views).
 - `netstat -n -t|-u [-a|-l] [-p] [-W] [-4|-6]`: the same data as `ss` in
   net-tools' layout (`-n` is required: past host names cannot be looked up).
   Program names come from the recorded argv[0], by net-tools' rule
@@ -493,9 +494,16 @@ chooses one; a line on stderr says when a style other than current is used.
   an interval argument (`"vmstat 60"`, `"iostat -x 60 10"`). `mpstat -P
   ALL` or `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p`
   (partitions).
-- Range views: `--summary` (default) is one report for the range (ps, ss,
-  netstat, lsof: one row per object with first/last seen and peaks; the
-  counters: one report). `--samples` prints the full output at every sample
+- Range views: a range has no single moment, so by default (`--summary`)
+  clifr summarizes it in one report: ps and lsof one row per object with
+  first/last seen and peaks; ss and netstat one row per process (its TCP
+  connections, peak, retransmits, resets and the states they ended in); the
+  counters one report. `--list` (ss, netstat) prints every TCP connection of
+  the range instead, one row each in the command's own columns, with Opened
+  and Closed (`-` if still open at the end) in place of the queues (known
+  only at keyframes) and State its last state in the range; from events, so
+  connections shorter than a sample are there too (TCP only; the command's
+  `-a`/`-l` selection applies to that state). `--samples` prints the full output at every sample
   (spacing `-e`, at most `-n`). `--changes` (ps, ss, netstat, lsof, df,
   mount) prints, between consecutive samples, the rows that appeared,
   disappeared or changed (ps: command, user, parent or terminal; sockets:

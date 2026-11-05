@@ -38,8 +38,12 @@ Time:
   "today", "now". The resolved time and time zone are printed on stderr.
 
 Range views (with --since):
-      --summary        one report for the range; for ps, ss, lsof one row per
-                       object with first/last seen and peaks (default)
+  A range has no single moment, so clifr summarizes it by default.
+      --summary        one report for the range; for ps and lsof one row per
+                       object with first/last seen and peaks; for ss and
+                       netstat one row per process (default)
+      --list           ss, netstat: every TCP connection of the range, one row
+                       each, with its open and close times
       --changes        ps, ss, netstat, lsof, df, mount: only what appeared,
                        disappeared or changed between consecutive samples
       --samples        full command output for every sample

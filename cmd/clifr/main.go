@@ -30,6 +30,7 @@ type globals struct {
 	at, since, until, tz      string
 	ats                       atList // every --at: diff takes two
 	summary, changes, samples bool
+	list                      bool // ss, netstat: every connection over a range
 	every                     string
 	everyMS                   int64
 	number                    int
@@ -63,6 +64,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	boolean(&g.summary, "", "summary")
 	boolean(&g.changes, "", "changes")
 	boolean(&g.samples, "", "samples")
+	boolean(&g.list, "", "list")
 	str(&g.every, "e", "every", "")
 	fs.IntVar(&g.number, "n", 0, "")
 	fs.IntVar(&g.number, "number", 0, "")
@@ -288,11 +290,11 @@ func resolve(g *globals, need bool) (query.Window, error) {
 	default:
 		w.From, w.To = 0, now.UnixMilli() // the whole recording
 	}
-	if !w.IsRange() && (g.summary || g.changes || g.samples || g.every != "" || g.number != 0) {
-		return w, usageError{errors.New("--summary, --changes, --samples, --every and --number need a range (--since)")}
+	if !w.IsRange() && (g.summary || g.changes || g.samples || g.list || g.every != "" || g.number != 0) {
+		return w, usageError{errors.New("--summary, --changes, --samples, --list, --every and --number need a range (--since)")}
 	}
-	if btoi(g.summary)+btoi(g.changes)+btoi(g.samples) > 1 {
-		return w, usageError{errors.New("use one of --summary, --changes, --samples")}
+	if btoi(g.summary)+btoi(g.changes)+btoi(g.samples)+btoi(g.list) > 1 {
+		return w, usageError{errors.New("use one of --summary, --changes, --samples, --list")}
 	}
 	if g.every != "" {
 		d, err := query.ParseDuration(g.every)
@@ -342,6 +344,9 @@ func runToolAt(g *globals, words []string, diff []string) error {
 			}
 		}
 		return usageError{err}
+	}
+	if g.list && t.name != "ss" && t.name != "netstat" {
+		return usageError{fmt.Errorf("--list is for ss and netstat (every TCP connection over a range); %s has no connection list", t.name)}
 	}
 	c := &runCtx{g: g}
 	if diff != nil {
@@ -422,7 +427,7 @@ func misplaced(a string) bool {
 		return false
 	}
 	switch name {
-	case "at", "since", "until", "tz", "data-dir", "style", "json", "summary", "changes", "samples", "every", "number":
+	case "at", "since", "until", "tz", "data-dir", "style", "json", "summary", "changes", "samples", "list", "every", "number":
 		return true
 	}
 	return false

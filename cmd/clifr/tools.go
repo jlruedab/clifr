@@ -74,12 +74,15 @@ func init() {
 			"Without -a or -l only connected sockets are shown, as by ss. Without -n port numbers are",
 			"resolved with /etc/services of the machine running clifr.",
 			"TCP from events: connections, states and owners exact; Recv-Q/Send-Q from the keyframe (sampled).",
-			"--since: TCP connections by process over the range (every connection, however short).",
+			"A range has no single moment, so --since summarizes it: TCP connections by process.",
+			"--list prints every TCP connection instead, one row each (however short, from events):",
+			"Opened and Closed (- if still open at the end) replace the queues, State is its last in the range.",
 			"-s: the counts from the system sample at or before T; estab (ESTABLISHED and CLOSE-WAIT) from",
 			"the TCP records at T.",
 		},
 		examples: []string{`clifr --at "14:00" "ss -ltnp"`,
-			`clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" "ss -tanp dst 10.0.4.21 and dport = :5432"`},
+			`clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" "ss -tanp dst 10.0.4.21 and dport = :5432"`,
+			`clifr --since "2026-10-02 02:00" --until "2026-10-02 03:00" --list "ss -tnp dport = :443"`},
 		prepare: prepareSS,
 	})
 	addTool(lsofTool())
@@ -176,6 +179,11 @@ func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) er
 	if ok, err := rangeView(c, ssView(c, tcp, udp, filter, v)); ok {
 		return err
 	}
+	if c.w.IsRange() && c.g.list {
+		return connList(c, "ss", udp, filter, func(w io.Writer, conns []query.ConnSpan) {
+			query.PrintSSList(w, conns, v)
+		}, func(r *query.SSRow) bool { return v.Keep(r) })
+	}
 	if c.w.IsRange() {
 		return socketsRange(c, "ss", udp, filter)
 	}
@@ -220,6 +228,33 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 		}
 		return m
 	}, func(w io.Writer) { query.PrintSSGroups(w, groups) })
+}
+
+// connList prints every TCP connection over the range, one row each (--list;
+// ss and netstat), from events. keep is the command's state and family
+// selection, applied to each connection's last state in the range.
+func connList(c *runCtx, name string, udp bool, filter query.SockFilter,
+	print func(io.Writer, []query.ConnSpan), keep func(*query.SSRow) bool) error {
+	if udp {
+		return errors.New(name + ": --list covers TCP only (UDP is recorded at keyframes); use -t")
+	}
+	if !query.TCPFromEvents(c.db) {
+		return errors.New(name + ": --list needs TCP events (this recording sampled sockets: --tcp sample); use --samples")
+	}
+	all, err := query.ConnList(c.db, c.w.From, c.w.To, filter)
+	if err != nil {
+		return err
+	}
+	conns := all[:0]
+	for i := range all {
+		if keep(all[i].Row()) {
+			conns = append(conns, all[i])
+		}
+	}
+	c.header("%s: %d TCP connections %s .. %s, from events (every connection, however short; State: the last in the range)",
+		name, len(conns), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+	return c.emit(conns, func(int) rowMeta { return rowMeta{From: c.w.From, To: c.w.To} },
+		func(w io.Writer) { print(w, conns) })
 }
 
 // socketsAt returns the TCP and/or UDP sockets at c.w.At (UDP first, as ss

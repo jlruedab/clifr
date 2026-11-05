@@ -374,9 +374,12 @@ func netstatTool() *tool {
 			"Same data as ss. Without -a or -l: TCP in every state but LISTEN, connected UDP only.",
 			"Program names: argv[0] from the recording, by net-tools' rule (recordings before schema 2:",
 			"approximated from the command line).",
-			"--since: TCP connections by process over the range, as ss shows them.",
+			"A range has no single moment, so --since summarizes it: TCP connections by process.",
+			"--list prints every TCP connection instead, one row each (however short, from events):",
+			"Opened and Closed (- if still open at the end) replace the queues, State is its last in the range.",
 		},
-		examples: []string{`clifr --at "02:45" "netstat -tulpn"`, `clifr --at "02:45" "netstat -tanp"`},
+		examples: []string{`clifr --at "02:45" "netstat -tulpn"`, `clifr --at "02:45" "netstat -tanp"`,
+			`clifr --since "02:00" --until "03:00" --list "netstat -ntp"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			tcp, udp := p.has("tcp"), p.has("udp")
 			if p.has("statistics") {
@@ -399,6 +402,11 @@ func netstatTool() *tool {
 			return func() error {
 				if ok, err := rangeView(c, netstatView(c, tcp, udp, v)); ok {
 					return err
+				}
+				if c.w.IsRange() && c.g.list {
+					return connList(c, "netstat", udp, query.SockFilter{}, func(w io.Writer, conns []query.ConnSpan) {
+						query.PrintNetstatList(w, conns, v)
+					}, func(r *query.SSRow) bool { return v.Keep(r) })
 				}
 				if c.w.IsRange() {
 					return socketsRange(c, "netstat", udp, query.SockFilter{})
