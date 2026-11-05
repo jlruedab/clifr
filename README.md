@@ -1,4 +1,5 @@
 <p align="center"><img src="clifr-logo.png" alt="clifr logo" width="480"></p>
+<p align="center"><em>time-travel for your Linux system</em></p>
 
 # clifr — a Linux flight recorder (working prototype)
 
