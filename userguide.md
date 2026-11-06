@@ -299,7 +299,6 @@ In JSON every command writes all of its fields: `ps -o pid,rss` selects rows lik
 
 **8. Commands whose JSON is not the tool's table.** Most commands write one object per printed row. These do not:
 
-- `systemctl list-units`: the recorded unit rows, *without* the command's filters (`--failed`, `-t`, `--all`, or the active-only default). Use the text output, or filter in jq on `Active` and `Name`.
 - `ip`: one object with the raw interface records (`links`) or the route lines (`lines`); `ipcs`, `numastat` and `nfsstat`: one object each.
 - `mountstats`: no JSON output. Use the text output.
 
@@ -326,8 +325,7 @@ and similar tools showed at a past time, run clifr instead of guessing:
   short ranges), count with `wc -l`, then select fields with jq. Never dump whole outputs.
 - For counters over time use a range with an interval ("vmstat 60"); without one they are
   averages since boot.
-- systemctl and mountstats: use the text output (no --json). systemctl's JSON ignores its
-  filters; mountstats writes no JSON.
+- mountstats writes no JSON: use its text output (no --json).
 ```
 
 ### Raw tables

@@ -724,7 +724,7 @@ func systemctlTool() *tool {
 					return err
 				}
 				st := query.StyleAt(c.db, c.w.At)
-				return c.emit(units, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+				return c.emit(query.FilterUnits(units, o), func(int) rowMeta { return rowMeta{TS: c.w.At} },
 					func(w io.Writer) { query.PrintListUnits(w, units, o, st) })
 			}, nil
 		},

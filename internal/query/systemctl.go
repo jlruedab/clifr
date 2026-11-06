@@ -77,6 +77,19 @@ func showUnit(u *store.UnitRow, o ListUnitsOptions) bool {
 	return u.Active != "inactive"
 }
 
+// FilterUnits returns the units systemctl list-units shows with o, in its
+// order (the rows of the text output and of --json alike).
+func FilterUnits(all []store.UnitRow, o ListUnitsOptions) []store.UnitRow {
+	var units []store.UnitRow
+	for i := range all {
+		if showUnit(&all[i], o) {
+			units = append(units, all[i])
+		}
+	}
+	slices.SortFunc(units, unitCompare)
+	return units
+}
+
 func unitType(name string) string {
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		return name[i+1:]
@@ -107,17 +120,13 @@ func PrintListUnits(w io.Writer, all []store.UnitRow, o ListUnitsOptions, st Too
 	if o.ASCII {
 		circleGlyph, arrow = "*", "->"
 	}
-	var units []store.UnitRow
+	units := FilterUnits(all, o)
 	jobs := 0
-	for i := range all {
-		if showUnit(&all[i], o) {
-			units = append(units, all[i])
-			if all[i].JobID > 0 {
-				jobs++
-			}
+	for i := range units {
+		if units[i].JobID > 0 {
+			jobs++
 		}
 	}
-	slices.SortFunc(units, unitCompare)
 	circled := func(u *store.UnitRow) bool {
 		return !o.Plain && (u.Active == "failed" || slices.Contains([]string{"error", "not-found", "bad-setting", "masked"}, u.Load))
 	}

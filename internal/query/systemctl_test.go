@@ -7,6 +7,39 @@ import (
 	"clifr/internal/store"
 )
 
+// TestFilterUnits: the rows --json writes are the rows the text shows, in
+// its order (they were all recorded units once, whatever the options).
+func TestFilterUnits(t *testing.T) {
+	units := []store.UnitRow{
+		{Name: "sshd.service", Load: "loaded", Active: "active", Sub: "running"},
+		{Name: "boot.mount", Load: "not-found", Active: "inactive", Sub: "dead"},
+		{Name: "bad.service", Load: "loaded", Active: "failed", Sub: "failed"},
+		{Name: "dev-sda.device", Load: "loaded", Active: "active", Sub: "plugged", Following: "sys-x.device"},
+		{Name: "idle.timer", Load: "loaded", Active: "inactive", Sub: "dead", JobID: 7, JobType: "start"},
+	}
+	names := func(o ListUnitsOptions) string {
+		var n []string
+		for _, u := range FilterUnits(units, o) {
+			n = append(n, u.Name)
+		}
+		return strings.Join(n, " ")
+	}
+	for _, c := range []struct {
+		o    ListUnitsOptions
+		want string
+	}{
+		{ListUnitsOptions{}, "bad.service sshd.service idle.timer"},
+		{ListUnitsOptions{States: []string{"failed"}}, "bad.service"},
+		{ListUnitsOptions{Types: []string{"service"}}, "bad.service sshd.service"},
+		{ListUnitsOptions{All: true}, "dev-sda.device boot.mount bad.service sshd.service idle.timer"},
+		{ListUnitsOptions{All: true, Pattern: []string{"*.mount"}}, "boot.mount"},
+	} {
+		if got := names(c.o); got != c.want {
+			t.Errorf("%+v: got %q, want %q", c.o, got, c.want)
+		}
+	}
+}
+
 func TestPrintListUnits(t *testing.T) {
 	units := []store.UnitRow{
 		{Name: "sshd.service", Description: "OpenSSH server daemon", Load: "loaded", Active: "active", Sub: "running"},
