@@ -81,6 +81,41 @@ func TestCompactAndRecover(t *testing.T) {
 	}
 }
 
+// TestFlushDuringExpire: the maintenance goroutine's expire removes empty
+// day directories; a flush that has just created one for its first file of
+// the day must still write it (it once failed with "open ….parquet.tmp: no
+// such file or directory" when Close flushed while maintain ran, losing the
+// table's rows of that flush).
+func TestFlushDuringExpire(t *testing.T) {
+	for i := range 200 {
+		s, err := Open(t.TempDir(), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stop := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					s.expire(time.Now().UTC())
+				}
+			}
+		}()
+		s.guard = guardRows(1, 0)
+		err = s.Flush()
+		close(stop)
+		<-done
+		s.Close()
+		if err != nil {
+			t.Fatalf("flush %d: %v", i, err)
+		}
+	}
+}
+
 func TestRetentionAndSizeCap(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 10, 9, 12, 10, 0, 0, time.UTC)

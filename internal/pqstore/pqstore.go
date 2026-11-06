@@ -236,6 +236,10 @@ type Store struct {
 
 	bytes atomic.Int64
 	busy  atomic.Bool // maintenance running
+	// dirs is held while Flush writes and while expire removes empty day
+	// directories: a flush creates a day directory before its first file
+	// there, and expire would remove it in between.
+	dirs sync.Mutex
 	// maintUS is the CPU the maintenance thread used so far (µs), updated
 	// after each table it compacts.
 	maintUS atomic.Int64
@@ -521,6 +525,8 @@ func (s *Store) buffered() int {
 
 // Flush writes everything buffered and rewrites the open files.
 func (s *Store) Flush() error {
+	s.dirs.Lock()
+	defer s.dirs.Unlock()
 	now := time.Now().UTC()
 	s.refreshMeta(now)
 	day, name := now.Format("2006-01-02"), now.Format("15-04")
@@ -1012,7 +1018,9 @@ func (s *Store) expire(now time.Time) error {
 			}
 		}
 	}
-	// Remove empty day directories.
+	// Remove empty day directories (not while a flush may have just made one).
+	s.dirs.Lock()
+	defer s.dirs.Unlock()
 	for _, t := range Tables {
 		days, _ := os.ReadDir(filepath.Join(s.dir, Dir(t)))
 		for _, d := range days {
