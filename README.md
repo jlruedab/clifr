@@ -4,7 +4,7 @@
 # clifr — a Linux flight recorder (working prototype)
 
 **Documentation:** [installation guide](install.md) (Debian/Ubuntu, RHEL/AlmaLinux/Rocky) ·
-[user guide](userguide.md) (usage, 12 use cases, Prometheus, configuration, architecture).
+[user guide](userguide.md) (usage, querying from an AI agent, 12 use cases, Prometheus, configuration, architecture).
 This README is the project's technical record: build, design, tests, benchmark results and limitations.
 
 *clifr was called sosv until 2026-10-19 (`sosv-record` → `clifrd`,

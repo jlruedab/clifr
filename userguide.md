@@ -15,7 +15,7 @@ To install clifr, see the [installation guide](install.md).
 
 1. [Concepts](#1-concepts)
 2. [Basic usage](#2-basic-usage)
-3. [Advanced usage](#3-advanced-usage)
+3. [Advanced usage](#3-advanced-usage): [using clifr from an AI agent](#using-clifr-from-an-ai-agent)
 4. [Use cases](#4-use-cases)
    1. [Review a performance issue from yesterday](#use-case-1-review-a-performance-issue-from-yesterday)
    2. [Cybersecurity: check for suspicious activity an hour ago](#use-case-2-cybersecurity-check-for-suspicious-activity-an-hour-ago)
@@ -237,6 +237,97 @@ clifr --at "2026-11-05 13:20" containers    # containers whose processes were se
 clifr --json --at "2026-11-05 13:20" "ss -tanp" | jq -r 'select(.state=="ESTAB") | .owners[0].comm' | sort | uniq -c
 clifr --json --since "2026-11-05 13:00" --until "2026-11-05 14:00" --list "ss -tnp" \
   | jq -r '.peer' | sort | uniq -c | sort -rn | head      # most-contacted peers
+```
+
+### Using clifr from an AI agent
+
+An AI assistant or agent (Claude Code, Copilot CLI, a local LLM with a shell tool…) can investigate a past incident with clifr the way an administrator does: ask for a moment or a range, read the reconstruction, narrow down. What works for a person at a terminal does not always work for an agent, though. It cannot see a pager, it pays for every line of output it reads, and it tends to report a sampled value as if it were exact. This section is the contract for scripts and agents. At the end there is a block you can paste into the agent's instructions.
+
+**1. Always `--json --plain`, and keep stderr.** `--json` prints JSON Lines on stdout. `--plain` makes sure the pager never starts, even when the agent's shell is a pseudo-terminal. stderr carries two kinds of lines, and the agent should read both:
+
+- lines starting with `#` say how the request was understood and where the data come from: `# time: at 2026-11-05 12:20:00 UTC (UTC+00:00)`, `# ps at 2026-11-05 12:20:00, reconstructed from sample at 2026-11-05 12:19:48 (548 processes)`, `# events lost in this window (…): short-lived processes or connections may be missing`;
+- lines starting with `clifr:` are errors.
+
+**2. Exit codes.**
+
+| Code | Meaning | What the agent should do |
+|---|---|---|
+| 0 | Success. Empty output means nothing matched. | Report "none found", not "no data". |
+| 1 | Nothing recorded for that request: before the start or after the end of the recording, in a gap (`clifrd was not running`), or a source that was not there (`conntrack: nf_conntrack_netlink was not loaded`). | Do not retry with other options. Check the range with `clifr --json info` and the gaps with `events --type gap`, and say what is missing. |
+| 2 | Usage error: unsupported command or option, bad time, a command that needs a range or an extra option (`events: needs a range`, `nstat: with --at add -a`, `pstree: add -p`). | Read the message (it usually names the fix) and `clifr help COMMAND`. Do not guess option variants. |
+
+**3. Start with the recording, then the gaps.**
+
+```sh
+clifr --json --plain info | jq '{host: .host.hostname, tz: .host.timezone, from_ms, to_ms, samples}'
+clifr --json --plain --tz UTC --since "2026-11-04 00:00" "events --type gap"
+```
+
+`from_ms`/`to_ms` is the range that can be queried. `host.timezone` is the recorded host's zone, which is what its logs and its users mean by "13:20".
+
+**4. Times: pass UTC, read Unix milliseconds.** `--at`, `--since` and `--until` take `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`, `now`, `today`, `yesterday` and relative times (`-30m`, `2 hours ago`). They do not take ISO 8601 with a `T` or an offset, and they do not take epoch numbers. An agent should always add `--tz UTC` and convert the times it is given to UTC itself. Without `--tz`, times are read in the zone of the machine running clifr, which is not necessarily the recorded host's. Then it should check the `# time:` line on stderr. Every time in the JSON is Unix milliseconds (UTC). Text fields such as `time` or `start` follow `--tz`.
+
+**5. Exact or sampled: say which.** Every JSON object ends with `sampled`, the names of its fields whose values come from a periodic sample. The other fields are exact (from kernel events) or fixed for the object's life. `sample_ts_ms` is the sample the values come from, often several seconds or minutes before `ts_ms` (the moment asked for): 2 minutes for open files, 5 minutes for socket queues. An agent should report a sampled value as "at the sample of 12:19:48", not as "at 12:20". A process that lived less than a sample interval is only in `events` and `life`, not in `ps` or `top`. Section [1. Concepts](#1-concepts) lists the intervals.
+
+**6. Pick the view that answers the question.**
+
+| Question | Command |
+|---|---|
+| What was running, and how big was it? | `--at T "ps aux"`, `--at T "top -b -n 1"` (one object, its rows in `procs`) |
+| What started or exited, however briefly? | `--since A --until B "events --type start,exit --name REGEX"`, `"life --name REGEX"` |
+| Who talked to whom over TCP? | `--since A --until B "ss -tanp"` (one row per process), `--list "ss -tnp"` (every connection) |
+| What was listening? | `--at T "ss -ltnp"` |
+| CPU, memory, disk and load over time | `--since A --until B "vmstat 60"`, `"mpstat -P ALL 60"`, `"iostat -x 60"`, `"pidstat -u 300"` |
+| What changed between a good and a bad moment? | `diff --at A --at B "ps aux"` (also ss, netstat, lsof, df, mount; `change` is `+`, `-` or `~`) |
+| OOM kills, kernel messages | `--since A "oom"`, `--at T "dmesg"` |
+
+Without an interval, `vmstat`, `mpstat`, `iostat`, `pidstat` and `uptime` at `--at` print averages since boot (`"since_boot": true`), as the real tools do. For "what was the load like then", ask for a range.
+
+**7. Narrow down in the command, then in jq.** At a busy moment `ss -tanp` returned 71,861 rows, `lsof -i` 40,100 rows (7 MB) and `top -b -n 1` one 686 KB object. Rows like those fill an agent's context and cost money. Filter with the tool's own options first: `ps -p PID`, `ps -u USER`, `ps -C NAME`, `lsof -p PID`, `lsof -u USER`, `lsof -c NAME`, `ss -l`, `ss` filters `sport`, `dport`, `src`, `dst` (`"ss -tnp dport = :443"`; `state` filters are not supported), `events --name/--type`, `life --name`, a shorter range. Then count before reading, and select fields with jq:
+
+```sh
+clifr --json --plain --tz UTC --at "2026-11-05 12:20" "ss -tanp" | wc -l
+clifr --json --plain --tz UTC --at "2026-11-05 12:20" "ss -tanp" \
+  | jq -r '.state' | sort | uniq -c                          # connections per state
+clifr --json --plain --tz UTC --at "2026-11-05 12:20" "top -b -n 1" \
+  | jq -c '.procs | sort_by(-.pcpu)[:10][] | {pid, comm, pcpu, res_kb}'
+clifr --json --plain --tz UTC --since "2026-11-05 12:00" --until "2026-11-05 13:00" \
+    "events --type start --name '^(curl|wget|ssh|scp) '" | jq -c '{ts_ms, pid, detail}'
+```
+
+In JSON every command writes all of its fields: `ps -o pid,rss` selects rows like `ps`, but not columns. Use jq for that.
+
+**8. Commands whose JSON is not the tool's table.** Most commands write one object per printed row. These do not:
+
+- `systemctl list-units`: the recorded unit rows, *without* the command's filters (`--failed`, `-t`, `--all`, or the active-only default). Use the text output, or filter in jq on `Active` and `Name`.
+- `ip`: one object with the raw interface records (`links`) or the route lines (`lines`); `ipcs`, `numastat` and `nfsstat`: one object each.
+- `mountstats`: no JSON output. Use the text output.
+
+When in doubt, run the command once without `--json` and compare.
+
+**9. Access and privacy.** The recording holds every user's command lines and connections. Give the agent's user membership of the `clifr` group instead of sudo. `sudo` also drops the `CLIFR_*` variables (see [Environment variables](#environment-variables)). Anything clifr prints goes into the agent's context, and from there to its provider. If command lines on the host can contain secrets, set `redact` patterns in clifrd's configuration ([section 6](#6-configuration)), and give the agent a bundle of just the window in question (`clifrd bundle`, read with `--data-dir FILE.tar`; see [Another machine's recording](#another-machines-recording-bundles-and-sosreports)) instead of the whole recording. Use `clifr` itself or `clifr export TABLE` (CSV) to read the data. Do not read the Parquet files directly: their directories have hashed names and keep several versions of each row.
+
+**Instructions to paste into an agent's configuration** (`CLAUDE.md`, `AGENTS.md`, a system prompt):
+
+```text
+This host runs clifr, a flight recorder. To see what ps, top, ss, lsof, vmstat, dmesg
+and similar tools showed at a past time, run clifr instead of guessing:
+  clifr --json --plain --tz UTC --at "YYYY-MM-DD HH:MM:SS" "COMMAND ARGS"
+  clifr --json --plain --tz UTC --since "..." --until "..." "COMMAND ARGS"
+- First run `clifr --json --plain info` (the recorded range in from_ms/to_ms and the
+  host's time zone). Convert times to UTC yourself; ISO 8601 and epoch input are not accepted.
+- stdout is JSON Lines; times are Unix ms. Read stderr: "#" lines say which sample the data
+  come from and whether events were lost; "clifr:" lines are errors.
+- Exit 1 = nothing recorded for that request (outside the range, a gap): say so, do not retry.
+  Exit 2 = unsupported option or bad time: read the message and `clifr help COMMAND`.
+- Fields listed in "sampled" come from a periodic sample (at sample_ts_ms); others are exact.
+  Say which when you report. Short-lived processes are only in "events" and "life".
+- Narrow first (ps -p/-u/-C, lsof -p/-c, ss -l or sport/dport filters, events --name/--type,
+  short ranges), count with `wc -l`, then select fields with jq. Never dump whole outputs.
+- For counters over time use a range with an interval ("vmstat 60"); without one they are
+  averages since boot.
+- systemctl and mountstats: use the text output (no --json). systemctl's JSON ignores its
+  filters; mountstats writes no JSON.
 ```
 
 ### Raw tables
