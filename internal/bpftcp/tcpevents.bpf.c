@@ -1,6 +1,7 @@
 //go:build ignore
 
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+// Copyright (c) 2026 Jorge L. Rueda B.
 //
 // TCP connection events for clifrd.
 //
@@ -770,4 +771,4 @@ int handle_receive_reset(void *ctx)
 	return 0;
 }
 
-char LICENSE[] SEC("license") = "GPL";
+char LICENSE[] SEC("license") = "Dual BSD/GPL";

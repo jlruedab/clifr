@@ -17,6 +17,13 @@ clifrd --version
 files | grep -E 'man1/clifr.1.gz|man8/clifrd.8.gz'
 test -f /usr/lib/systemd/system/clifrd.service
 test -f /etc/clifr/clifrd.yml
+# The license files, notices and eBPF sources (from the file list: a
+# minimized image may skip docs on install; read once, as grep -q would
+# make the lister fail with SIGPIPE under pipefail).
+list=$(files)
+for f in clifr/LICENSE clifr/THIRD_PARTY_NOTICES clifrd/LICENSE clifrd/THIRD_PARTY_NOTICES clifrd/ebpf/tcpevents.bpf.c; do
+	grep -qx "/usr/share/doc/$f" <<<"$list" || { echo "missing /usr/share/doc/$f"; exit 1; }
+done
 getent group clifr
 sos report --list-plugins 2>/dev/null | grep -E '^ *clifr '
 clifrd doctor | tail -1

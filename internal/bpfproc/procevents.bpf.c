@@ -1,8 +1,9 @@
 //go:build ignore
 
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+// Copyright (c) 2026 Jorge L. Rueda B.
 //
-// Process lifecycle and OOM events for sosv-record.
+// Process lifecycle and OOM events for clifrd.
 //
 // No vmlinux.h: the few kernel structures read here are declared below with
 // preserve_access_index, so CO-RE relocates every field to the running
@@ -480,4 +481,4 @@ int handle_oom(struct trace_event_raw_mark_victim *ctx)
 	return 0;
 }
 
-char LICENSE[] SEC("license") = "GPL";
+char LICENSE[] SEC("license") = "Dual BSD/GPL";

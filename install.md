@@ -79,6 +79,7 @@ What the packages contain:
 | `/usr/share/clifr/sos/clifr.py` (plugin for `sos report`) | clifrd |
 | `man clifrd`, bash completion | clifrd |
 | `/usr/bin/clifr`, `man clifr`, bash completion | clifr |
+| `/usr/share/doc/clifr*/`: `LICENSE` (AGPL-3.0), `LICENSING.md`, `THIRD_PARTY_NOTICES`; clifrd's eBPF sources in `ebpf/` | both |
 
 ## 3. Debian and Ubuntu
 

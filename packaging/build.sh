@@ -15,6 +15,7 @@ VERSION=${VERSION:-0.1.0}
 DOCKER=${DOCKER:-docker}
 IMAGE=rockylinux:8
 
+maintainer="Jorge L. Rueda B. <jlrueda@gmail.com>"
 rev=$(git rev-parse --short=12 HEAD)
 git diff --quiet HEAD -- . ':!sessions.txt' ':!docs/clifr command line flight.txt' || rev=$rev.dirty
 snap=$(date -u +%Y%m%d).$rev
@@ -59,6 +60,17 @@ install -D -m 0755 "$dist/clifr" "$c/usr/bin/clifr"
 install -D -m 0644 "$stage/man/clifr.1" "$c/usr/share/man/man1/clifr.1"
 install -D -m 0644 packaging/completion/clifr.bash "$c/usr/share/bash-completion/completions/clifr"
 install -D -m 0644 README.md "$c/usr/share/doc/clifr/README.md"
+# Licenses: clifr is AGPL-3.0-only; the eBPF programs GPL-2.0-only OR
+# BSD-2-Clause (their sources ship with clifrd); third-party notices from
+# what each binary links.
+for p in clifr clifrd; do
+	install -D -m 0644 LICENSE "$stage/$p/usr/share/doc/$p/LICENSE"
+	install -D -m 0644 LICENSING.md "$stage/$p/usr/share/doc/$p/LICENSING.md"
+done
+packaging/notices.sh "$dist/clifr" "$c/usr/share/doc/clifr/THIRD_PARTY_NOTICES"
+packaging/notices.sh "$dist/clifrd" "$stage/clifrd/usr/share/doc/clifrd/THIRD_PARTY_NOTICES"
+install -D -m 0644 internal/bpfproc/procevents.bpf.c "$d/usr/share/doc/clifrd/ebpf/procevents.bpf.c"
+install -D -m 0644 internal/bpftcp/tcpevents.bpf.c "$d/usr/share/doc/clifrd/ebpf/tcpevents.bpf.c"
 install -D -m 0755 "$dist/clifrd" "$d/usr/sbin/clifrd"
 install -D -m 0644 deploy/clifrd.service "$d/usr/lib/systemd/system/clifrd.service"
 install -D -m 0644 deploy/clifr-sysusers.conf "$d/usr/lib/sysusers.d/clifr.conf"
@@ -85,13 +97,63 @@ rm -rf "$d/usr/share/clifr"
 for p in clifr clifrd; do
 	r=$stage/$p
 	mkdir -p "$r/DEBIAN" "$r/usr/share/doc/$p"
-	printf 'clifr\nLicense: proprietary (to be decided)\n' >"$r/usr/share/doc/$p/copyright"
+	cat >"$r/usr/share/doc/$p/copyright" <<-EOT
+		Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+		Upstream-Name: clifr
+		Upstream-Contact: $maintainer
+		Comment: clifr is dual-licensed: AGPL-3.0-only, or a commercial license
+		 from the copyright holder (see LICENSING.md). Third-party software and
+		 its licenses: THIRD_PARTY_NOTICES in this directory.
+
+		Files: *
+		Copyright: 2026 Jorge L. Rueda B.
+		License: AGPL-3.0-only
+		 The full text is in /usr/share/doc/$p/LICENSE.
+	EOT
+	if [ $p = clifrd ]; then
+		cat >>"$r/usr/share/doc/$p/copyright" <<-EOT
+
+			Files: usr/share/doc/clifrd/ebpf/*
+			Copyright: 2026 Jorge L. Rueda B.
+			License: GPL-2.0-only or BSD-2-Clause
+			Comment: The eBPF programs compiled into clifrd.
+
+			License: GPL-2.0-only
+			 On Debian systems, the full text of the GNU General Public License
+			 version 2 can be found in /usr/share/common-licenses/GPL-2.
+
+			License: BSD-2-Clause
+			 Copyright (c) 2026 Jorge L. Rueda B.
+			 .
+			 Redistribution and use in source and binary forms, with or without
+			 modification, are permitted provided that the following conditions are met:
+			 .
+			 1. Redistributions of source code must retain the above copyright notice,
+			    this list of conditions and the following disclaimer.
+			 .
+			 2. Redistributions in binary form must reproduce the above copyright notice,
+			    this list of conditions and the following disclaimer in the documentation
+			    and/or other materials provided with the distribution.
+			 .
+			 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+			 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+			 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+			 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+			 LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+			 CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+			 SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+			 INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+			 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+			 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+			 POSSIBILITY OF SUCH DAMAGE.
+		EOT
+	fi
 	size=$(du -sk --exclude=DEBIAN "$r" | cut -f1)
 	{
 		echo "Package: $p"
 		echo "Version: $debver"
 		echo "Architecture: amd64"
-		echo "Maintainer: clifr <clifr@example.invalid>"
+		echo "Maintainer: $maintainer"
 		echo "Installed-Size: $size"
 		echo "Section: admin"
 		echo "Priority: optional"

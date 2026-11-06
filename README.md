@@ -71,8 +71,9 @@ not yet shown to be viable for production:
    fleet agent; that is a product decision.
 6. **Packages, but no delivery yet.** The .deb and .rpm packages (x86_64),
    the bundle and the sos plugin exist and are tested in containers and VMs
-   (see [Build](#build) and the [installation guide](install.md)); there is no
-   package repository, signing, published checksums or license yet.
+   (see [Build](#build) and the [installation guide](install.md)), under
+   the AGPL-3.0 with a commercial license on the side ([License](#license));
+   there is no package repository, signing or published checksums yet.
 
 To call it viable: a soak test of 3–7 days with a realistic mixed load
 (memory, disk and data checked daily); `--test-ebpf`, the e2e test and the
@@ -105,7 +106,11 @@ Ubuntu 22.04 and 24.04 and Rocky Linux 8 and 9 containers and checks them
 kernel, a query of BUNDLE, removal); the service itself is not run there.
 The .deb enables and starts clifrd on install (Debian's convention), the
 .rpm does not (presets: `systemctl enable --now clifrd`); purging the .deb
-deletes the recording. License field: to be decided.
+deletes the recording. Licenses: `AGPL-3.0-only` (clifrd also `GPL-2.0-only OR
+BSD-2-Clause` for its eBPF programs, whose sources it ships); each package has
+`LICENSE`, `LICENSING.md` and `THIRD_PARTY_NOTICES` (from what the binary links:
+`packaging/notices.sh`; DuckDB's bundled libraries from
+`packaging/notices/duckdb-<version>.txt`) in `/usr/share/doc/`.
 
 Tested kernels (packages in KVM guests, 2026-10-20, `packaging/vm.sh`):
 Rocky Linux 8.10 (4.18, SELinux enforcing), AlmaLinux 9.8 (5.14, enforcing),
@@ -985,3 +990,13 @@ continuous eBPF tracer, not a metrics exporter.
 - **No network, encryption or access control**: the data directory holds
   command lines and connection endpoints in plain Parquet files; the shipped
   unit creates it readable by root only (0700).
+
+## License
+
+Copyright © 2026 Jorge L. Rueda B.
+
+clifr is dual-licensed: under the [GNU Affero General Public License v3.0](LICENSE)
+(`AGPL-3.0-only`), or under a commercial license from the copyright holder for
+uses the AGPL does not allow. The eBPF programs are `GPL-2.0-only OR
+BSD-2-Clause`. See [LICENSING.md](LICENSING.md); contributions need the
+[Contributor License Agreement](CLA.md) ([CONTRIBUTING.md](CONTRIBUTING.md)).

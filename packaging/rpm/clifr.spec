@@ -7,8 +7,8 @@ Name:           clifr
 Version:        %{ver}
 Release:        %{rel}%{?dist}
 Summary:        Shows what ps, ss, lsof, vmstat and others printed at a past moment
-License:        Proprietary
-URL:            https://example.invalid/clifr
+License:        AGPL-3.0-only
+Packager:       Jorge L. Rueda B. <jlrueda@gmail.com>
 ExclusiveArch:  x86_64
 
 %description
@@ -18,6 +18,7 @@ by clifrd, on the recorded host or elsewhere (a bundle).
 
 %package -n clifrd
 Summary:        Flight recorder of processes, sockets, open files and system counters
+License:        AGPL-3.0-only AND (GPL-2.0-only OR BSD-2-Clause)
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
@@ -67,3 +68,4 @@ d=$(rpm -ql sos 2>/dev/null | sed -n 's|/__init__.py$||p' | grep 'sos/report/plu
 /usr/share/man/man8/clifrd.8*
 /usr/share/bash-completion/completions/clifrd
 /usr/share/clifr
+%doc /usr/share/doc/clifrd
