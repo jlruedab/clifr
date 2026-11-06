@@ -828,7 +828,7 @@ func uname() (sysname, release, version, machine string) {
 		unix.ByteSliceToString(u.Version[:]), unix.ByteSliceToString(u.Machine[:])
 }
 
-// timeZone is the host's time zone name (e.g. Australia/Adelaide): $TZ, the
+// timeZone is the host's time zone name (e.g. Europe/Berlin): $TZ, the
 // target of /etc/localtime, or /etc/timezone; "" if none says.
 func timeZone() string {
 	if tz := strings.TrimPrefix(os.Getenv("TZ"), ":"); tz != "" && !strings.HasPrefix(tz, "/") {

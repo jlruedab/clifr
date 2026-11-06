@@ -10,7 +10,7 @@ import (
 func TestParsePS(t *testing.T) {
 	out := "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\n" +
 		"root           1  0.0  0.1  22176 13464 ?        Ss   17:54   0:01 /sbin/init splash\n" +
-		"jlrueda     4990  0.0  0.1  10296  9576 pts/0    Ss+  Oct06   0:00 bash -c  two  spaces\n"
+		"alice       4990  0.0  0.1  10296  9576 pts/0    Ss+  Oct06   0:00 bash -c  two  spaces\n"
 	m := parsePS(out)
 	if len(m) != 2 || m[1].cmd != "/sbin/init splash" || m[1].rss != "13464" || m[4990].start != "Oct06" {
 		t.Fatalf("%+v", m)

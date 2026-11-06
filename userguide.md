@@ -33,7 +33,7 @@ To install clifr, see the [installation guide](install.md).
 6. [Configuration](#6-configuration): [clifrd's file](#clifrd-the-configuration-file), [clifrd's options](#clifrd-command-line-options), [the systemd unit](#the-systemd-unit), [clifr's options](#clifr-command-line-options)
 7. [Architecture](#7-architecture): [local](#local), [centralized analysis](#centralized-analysis), [data and security](#data-and-security)
 
-The examples use a real recording of a desktop machine (Ubuntu 26.04, host `desktop01`, time zone Australia/Adelaide) made on 4–6 November 2026. On 5 November from 13:04 to 14:04 it ran a synthetic database benchmark (pgbench against PostgreSQL plus a TCP load generator), which several examples use as "the incident". Long lines are cut with `…`; user names, paths and public peer addresses are replaced by neutral ones (`alice`, documentation addresses such as 203.0.113.10).
+The examples use a real recording of a desktop machine (Ubuntu 26.04, host `desktop01`) made on 4–6 November 2026; times are the machine's local time. On 5 November from 13:04 to 14:04 it ran a synthetic database benchmark (pgbench against PostgreSQL plus a TCP load generator), which several examples use as "the incident". Long lines are cut with `…`; user names, paths and public peer addresses are replaced by neutral ones (`alice`, documentation addresses such as 203.0.113.10).
 
 ## 1. Concepts
 
@@ -90,14 +90,14 @@ clifr --since "1 hour ago" events             # --until defaults to now
 Times are in the local time zone of the machine running clifr; `--tz ZONE` (or `CLIFR_TZ`) changes it, which matters when you read another host's recording. The first line on stderr always says how the time was understood:
 
 ```
-# time: at 2026-11-05 13:20:15 ACDT (UTC+10:30)
+# time: at 2026-11-05 13:20:15 CET (UTC+01:00)
 ```
 
 ### What is recorded: `clifr info`
 
 ```console
 $ clifr info
-Host:             desktop01, machine-id …, boot …, time zone Australia/Adelaide
+Host:             desktop01, machine-id …, boot …, time zone Europe/Berlin
 Recorded by:      clifrd 0.1.0-20261105.6f30dcebea9e, schema 9
 Recording:        2026-11-04 09:09:01 .. 2026-11-06 21:13:00 (60h4m0s)
 Samples:          5666 (1388 with full fd walk), skipped: 0
@@ -262,7 +262,7 @@ Copy it anywhere and read it with `--data-dir` (no root needed for a file you ow
 
 ```sh
 clifr --data-dir web01-clifr.tar info
-clifr --data-dir web01-clifr.tar --tz Australia/Adelaide --at "2026-11-05 13:20" "ps aux"
+clifr --data-dir web01-clifr.tar --tz Europe/Berlin --at "2026-11-05 13:20" "ps aux"
 ```
 
 In a sosreport made with the clifr plugin the bundle is `sos_commands/clifr/clifr-bundle.tar`:

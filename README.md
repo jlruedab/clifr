@@ -541,7 +541,7 @@ chooses one; a line on stderr says when a style other than current is used.
   one object.
 
       {"ts_ms":1792380606000,"sample_ts_ms":1792380585319,"state":"ESTAB","recv_q":0,"send_q":0,
-       "local":"192.168.1.12","lport":32800,"peer":"40.99.129.18","rport":443,"proto":"tcp",
+       "local":"192.168.1.12","lport":32800,"peer":"203.0.113.50","rport":443,"proto":"tcp",
        "inode":305975,"owners":[{"comm":"firefox","pid":12348,"fd":147}],"sampled":["recv_q","send_q"]}
 
 - Query cost: clifr loads only the tables a query names, and the TCP tables
