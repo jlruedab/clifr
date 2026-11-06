@@ -61,8 +61,8 @@ install -D -m 0644 "$stage/man/clifr.1" "$c/usr/share/man/man1/clifr.1"
 install -D -m 0644 packaging/completion/clifr.bash "$c/usr/share/bash-completion/completions/clifr"
 install -D -m 0644 README.md "$c/usr/share/doc/clifr/README.md"
 # Licenses: clifr is AGPL-3.0-only; the eBPF programs GPL-2.0-only OR
-# BSD-2-Clause (their sources ship with clifrd); third-party notices from
-# what each binary links.
+# BSD-2-Clause (their sources ship with clifrd); the sos plugin GPL-2.0-only
+# (as sos); third-party notices from what each binary links.
 for p in clifr clifrd; do
 	install -D -m 0644 LICENSE "$stage/$p/usr/share/doc/$p/LICENSE"
 	install -D -m 0644 LICENSING.md "$stage/$p/usr/share/doc/$p/LICENSING.md"
@@ -117,6 +117,11 @@ for p in clifr clifrd; do
 			Copyright: 2026 Jorge L. Rueda B.
 			License: GPL-2.0-only or BSD-2-Clause
 			Comment: The eBPF programs compiled into clifrd.
+
+			Files: usr/lib/python3/dist-packages/sos/report/plugins/clifr.py
+			Copyright: 2026 Jorge L. Rueda B.
+			License: GPL-2.0-only
+			Comment: The plugin for sos report, licensed as sos is.
 
 			License: GPL-2.0-only
 			 On Debian systems, the full text of the GNU General Public License

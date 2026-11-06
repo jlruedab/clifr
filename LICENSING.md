@@ -56,6 +56,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## sos report plugin
+
+The plugin for sos report, `deploy/sos/clifr.py` (installed into sos's plugin directory by the clifrd package), is licensed under **GPL-2.0-only**, the license of sos itself: it subclasses sos's plugin classes and runs inside sos, so it is licensed as sos is (and as sos requires of its plugins). Its header says so. The GPL-2.0 text is at <https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt> (and in `/usr/share/common-licenses/GPL-2` on Debian and Ubuntu).
+
 ## Third-party code
 
 The binaries include third-party Go modules under their own permissive licenses (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0), all compatible with the AGPL-3.0. Their copyright and license texts are shipped with the packages in `/usr/share/doc/clifr*/THIRD_PARTY_NOTICES`.

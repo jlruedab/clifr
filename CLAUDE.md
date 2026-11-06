@@ -41,7 +41,9 @@ wait for the user's go-ahead.
 - Other dependencies only with the user's approval.
 - License (2026-11-06): `AGPL-3.0-only` with a commercial license on the side and a CLA
   (`LICENSING.md`, `CLA.md`); the `.bpf.c` files are `GPL-2.0-only OR BSD-2-Clause` and
-  declare "Dual BSD/GPL" (the kernel's GPL-only helpers need a GPL-compatible string).
+  declare "Dual BSD/GPL" (the kernel's GPL-only helpers need a GPL-compatible string);
+  the sos plugin `deploy/sos/clifr.py` is `GPL-2.0-only` with sos's header (2026-11-07: it
+  runs inside sos, which is GPLv2-only; flake8- and pylint-clean with sos's settings).
   A new dependency must be AGPL-compatible; updating duckdb-go-bindings to another DuckDB
   version needs `packaging/notices/duckdb-<version>.txt` (`packaging/notices.sh` stops
   the build without it).

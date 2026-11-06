@@ -18,7 +18,7 @@ by clifrd, on the recorded host or elsewhere (a bundle).
 
 %package -n clifrd
 Summary:        Flight recorder of processes, sockets, open files and system counters
-License:        AGPL-3.0-only AND (GPL-2.0-only OR BSD-2-Clause)
+License:        AGPL-3.0-only AND (GPL-2.0-only OR BSD-2-Clause) AND GPL-2.0-only
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
