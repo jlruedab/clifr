@@ -3,6 +3,10 @@
 
 # clifr — a Linux flight recorder (working prototype)
 
+**Documentation:** [installation guide](install.md) (Debian/Ubuntu, RHEL/AlmaLinux/Rocky) ·
+[user guide](userguide.md) (usage, 12 use cases, Prometheus, configuration, architecture).
+This README is the project's technical record: build, design, tests, benchmark results and limitations.
+
 *clifr was called sosv until 2026-10-19 (`sosv-record` → `clifrd`,
 `sosv` → `clifr`, `/var/lib/sosv/data` → `/var/lib/clifr`). Recordings made
 under the old name read unchanged; benchmark result directories keep their
@@ -65,8 +69,10 @@ not yet shown to be viable for production:
 4. **Known open issues**: see [Limitations](#limitations).
 5. **Memory** (about 285 MiB on average at the busy load) may be too much for a
    fleet agent; that is a product decision.
-6. **No packaging or delivery** (.deb/.rpm, the planned rename to clifr,
-   the bundle and sos plugin of `docs/sos-vault-integration.md`).
+6. **Packages, but no delivery yet.** The .deb and .rpm packages (x86_64),
+   the bundle and the sos plugin exist and are tested in containers and VMs
+   (see [Build](#build) and the [installation guide](install.md)); there is no
+   package repository, signing, published checksums or license yet.
 
 To call it viable: a soak test of 3–7 days with a realistic mixed load
 (memory, disk and data checked daily); `--test-ebpf`, the e2e test and the
@@ -75,6 +81,8 @@ and a short recording on a real server checked with `clifr verify`. About a
 week, mostly unattended.
 
 ## Build
+
+To install from packages, see the [installation guide](install.md).
 
 Two binaries, Go 1.25 or newer (go.mod pins toolchain go1.26.8, which an older
 `go` downloads by itself):
@@ -115,6 +123,9 @@ Dependencies: `cilium/ebpf`, `parquet-go/parquet-go`, `duckdb/duckdb-go` (CLI
 only), `godbus/dbus/v5` (pure Go: systemd's units), `golang.org/x/sys`.
 
 ## Recording
+
+Every setting, the configuration file and the unit's limits are explained in the user guide's
+[Configuration](userguide.md#6-configuration) section.
 
     sudo ./clifrd --data-dir /var/lib/clifr
     sudo ./clifrd --test-ebpf        # load the programs, trigger every event type, report
@@ -231,6 +242,9 @@ CPU (1.94% of one core) and memory (277 / 321 MiB) as without limits, and
 pgbench within noise.
 
 ## Querying
+
+Task-oriented examples (a slow afternoon, suspicious activity, a crash, an OOM kill, high load
+without CPU use...) are in the [user guide](userguide.md#4-use-cases).
 
 `clifr` takes its own options and then the command to reconstruct, quoted,
 in the real tool's syntax. `clifr help` lists the commands, `clifr help
