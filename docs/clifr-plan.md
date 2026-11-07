@@ -205,9 +205,12 @@ turned on; no phone-home or telemetry; licences checked offline.
   loopback; per-file transfer with a cache (`/v1/files` lists a window's
   files with SHA-256, as `bundle.Select`; clifr fetches the ones it lacks and
   queries exactly the listed set); no licence check until 7.3.
-  - 7.2a: clifrd side (`--serve`, `clifrd token`, the certificate,
-    `/v1/info`, `/v1/files`, `/v1/file`).
-  - 7.2b: clifr side (`--host`, pinning, cache).
+  - 7.2a (done 2026-11-07): clifrd side (`--serve`, `clifrd token`, the
+    certificate, `/v1/info`, `/v1/files`, `/v1/file`).
+  - 7.2b (done 2026-11-07): clifr side (`--host`, pinning, cache). On the
+    way, two bugs of existing code fixed: bundles lost the rows of entities
+    closed after the window (since 2026-11-01), and lsof lost most open
+    files of a recording with several runs (fds_held ids, since M5).
   - 7.2c: unit drop-in, sos plugin (never collect the token file), docs,
     VM end to end.
 - **7.3 Licensing** (3–5 days): `clifr license key|install`, a signed

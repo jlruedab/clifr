@@ -268,11 +268,19 @@ var tableDirs = func() map[string]bool {
 	return m
 }()
 
+// ValidPath reports whether rel has the shape of a served data file:
+// TABLEDIR/DAY/NAME.parquet or TABLEDIR/open/NAME.parquet of a known table,
+// clean, with no "..". The server serves nothing else, and clifr --host
+// accepts nothing else in a listing.
+func ValidPath(rel string) bool {
+	m := relRe.FindStringSubmatch(rel)
+	return m != nil && tableDirs[m[1]] && path.Clean(rel) == rel && !strings.Contains(rel, "..")
+}
+
 // openData opens a data file named by a client: only a regular file of a
 // known table, inside the data directory (no "..", no symlink).
 func (s *Server) openData(rel string) (*os.File, fs.FileInfo, error) {
-	m := relRe.FindStringSubmatch(rel)
-	if m == nil || !tableDirs[m[1]] || path.Clean(rel) != rel || strings.Contains(rel, "..") {
+	if !ValidPath(rel) {
 		return nil, nil, fs.ErrPermission
 	}
 	p := filepath.Join(s.DataDir, filepath.FromSlash(rel))

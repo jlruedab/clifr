@@ -67,6 +67,15 @@ Interactive keys:
 
 Sources:
   -D, --data-dir DIR   local recording directory (default /var/lib/clifr)
+  -H, --host HOST      another host's recording, from its clifrd --serve
+                       (HOST, HOST:PORT or https://HOST:PORT; port 8443): the
+                       files the query needs are fetched (cached in
+                       ~/.cache/clifr) and the query runs here
+      --token TOKEN    access token for --host (or CLIFR_TOKEN; on the
+                       server: clifrd token new)
+      --tls-fingerprint SHA256:...  the certificate --host must have, to pin
+                       it on first use without a terminal (clifrd logs it);
+                       pins are kept in ~/.config/clifr/known_hosts
       --style STYLE    print free, top, df and lsof as these tools' versions do:
                        rhel-8, rhel-9, ubuntu-22.04 or current (default: the
                        recorded host's distribution; current if unknown)
@@ -81,7 +90,8 @@ Other commands:
   clifr export TABLE   one recorded table as CSV
 
 Environment variables:
-  CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE
+  CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,
+  CLIFR_HOST, CLIFR_TOKEN, CLIFR_TLS_FINGERPRINT
 
 Examples:
   # Processes at 02:45 this morning

@@ -37,6 +37,7 @@ type globals struct {
 	json, interactive, plain  bool
 	dataDir, style            string
 	host, token, tlsCA, lic   string
+	tlsFP                     string // --tls-fingerprint: the expected certificate of --host on first use
 	version, help, verbose    bool
 }
 
@@ -80,6 +81,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
 	str(&g.tlsCA, "", "tls-ca", "")
+	str(&g.tlsFP, "", "tls-fingerprint", os.Getenv("CLIFR_TLS_FINGERPRINT"))
 	str(&g.lic, "l", "license", os.Getenv("CLIFR_LICENSE"))
 	boolean(&g.version, "v", "version")
 	boolean(&g.help, "h", "help")
@@ -163,6 +165,14 @@ func run(args []string) error {
 		}
 		query.StyleOverride = g.style
 	}
+	if g.host != "" {
+		dataDirGiven := os.Getenv("CLIFR_DATA_DIR") != ""
+		fs.Visit(func(f *flag.Flag) { dataDirGiven = dataDirGiven || f.Name == "D" || f.Name == "data-dir" })
+		if dataDirGiven {
+			return usageError{errors.New("--host and --data-dir: give one (a remote host, or a local recording or bundle)")}
+		}
+	}
+	defer cleanupRemote()
 	cleanup, err := openBundle(&g)
 	if err != nil {
 		return err
@@ -202,8 +212,10 @@ func openBundle(g *globals) (func(), error) {
 // checkLater rejects options of features that are not in this release.
 func checkLater(g *globals) error {
 	switch {
-	case g.host != "" || g.token != "" || g.tlsCA != "":
-		return errors.New("--host, --token and --tls-ca (remote hosts) are not available in this release; use --data-dir")
+	case g.tlsCA != "":
+		return errors.New("--tls-ca is not used: clifr pins clifrd's own certificate on first use (--tls-fingerprint)")
+	case g.host == "" && g.tlsFP != "":
+		return usageError{errors.New("--tls-fingerprint is for --host")}
 	case g.lic != "":
 		return errors.New("--license is not needed: this release reads local data only")
 	}
@@ -321,7 +333,17 @@ func openWindow(g *globals, w duck.Window) (*store.DB, error) {
 	if os.Getenv("CLIFR_FULL_LOAD") != "" { // check: the window must not change any answer
 		w = duck.Window{}
 	}
-	return duck.OpenWindow(g.dataDir, w)
+	dir := g.dataDir
+	if g.host != "" {
+		// The files the window needs, from the remote host (cached); the
+		// zero window: the whole recording.
+		d, err := fetchWindow(g, w.From, w.To)
+		if err != nil {
+			return nil, err
+		}
+		dir = d
+	}
+	return duck.OpenWindow(dir, w)
 }
 
 func runTool(g *globals, words []string) error { return runToolAt(g, words, nil) }
