@@ -211,8 +211,11 @@ turned on; no phone-home or telemetry; licences checked offline.
     way, two bugs of existing code fixed: bundles lost the rows of entities
     closed after the window (since 2026-11-01), and lsof lost most open
     files of a recording with several runs (fds_held ids, since M5).
-  - 7.2c: unit drop-in, sos plugin (never collect the token file), docs,
-    VM end to end.
+  - 7.2c (done 2026-11-08): unit drop-in, sos plugin (never collects the
+    token file), docs, VM end to end (Ubuntu 22.04, Rocky 8). It found that
+    user names came from the reading machine's passwd: clifrd now records
+    the host's (snapshots source "passwd", the user's choice). 7.2 is
+    complete.
 - **7.3 Licensing** (3–5 days): `clifr license key|install`, a signed
   licence file checked offline, gating `--host` and fleet use; after the
   legal review.
