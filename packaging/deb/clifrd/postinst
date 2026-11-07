@@ -1,6 +1,24 @@
 #!/bin/sh
 set -e
-if [ "$1" = configure ]; then
+
+# The sos plugin: linked into sos's plugin directory while sosreport is
+# installed. Run at configure and by the file trigger on that directory
+# (sosreport installed, upgraded or removed later).
+sos_plugin() {
+	plugins=/usr/lib/python3/dist-packages/sos/report/plugins
+	if [ -f "$plugins/__init__.py" ]; then
+		ln -sfn /usr/share/clifr/sos/clifr.py "$plugins/clifr.py"
+	elif [ -L "$plugins/clifr.py" ]; then
+		# sosreport is gone: dpkg kept its directories for our link.
+		rm -f "$plugins/clifr.py"
+		rmdir --ignore-fail-on-non-empty "$plugins" "${plugins%/plugins}" \
+			/usr/lib/python3/dist-packages/sos 2>/dev/null || true
+	fi
+}
+
+case "$1" in
+configure)
+	sos_plugin
 	systemd-sysusers clifr.conf || true
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload || true
@@ -11,4 +29,8 @@ if [ "$1" = configure ]; then
 			systemctl try-restart clifrd.service || true
 		fi
 	fi
-fi
+	;;
+triggered)
+	sos_plugin
+	;;
+esac

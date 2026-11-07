@@ -1,5 +1,12 @@
 #!/bin/sh
 set -e
-if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
-	systemctl disable --now clifrd.service || true
+if [ "$1" = remove ]; then
+	if [ -d /run/systemd/system ]; then
+		systemctl disable --now clifrd.service || true
+	fi
+	# The sos plugin's link (postinst); only ours.
+	l=/usr/lib/python3/dist-packages/sos/report/plugins/clifr.py
+	if [ "$(readlink "$l" 2>/dev/null)" = /usr/share/clifr/sos/clifr.py ]; then
+		rm -f "$l"
+	fi
 fi

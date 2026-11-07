@@ -91,9 +91,9 @@ $DOCKER run --rm -v "$PWD:/src" -w /src "$IMAGE" bash -euc "
 rm -rf "$stage/rpm"
 
 echo "== deb"
-# Debian ships the sos plugin straight into sos's directory.
-install -D -m 0644 deploy/sos/clifr.py "$d/usr/lib/python3/dist-packages/sos/report/plugins/clifr.py"
-rm -rf "$d/usr/share/clifr"
+# The sos plugin stays in /usr/share/clifr/sos, as in the rpm: clifrd's
+# postinst links it into sos's directory while sosreport is installed (a
+# file trigger on that directory: packaging/deb/clifrd/triggers).
 for p in clifr clifrd; do
 	r=$stage/$p
 	mkdir -p "$r/DEBIAN" "$r/usr/share/doc/$p"
@@ -118,7 +118,7 @@ for p in clifr clifrd; do
 			License: GPL-2.0-only or BSD-2-Clause
 			Comment: The eBPF programs compiled into clifrd.
 
-			Files: usr/lib/python3/dist-packages/sos/report/plugins/clifr.py
+			Files: usr/share/clifr/sos/clifr.py
 			Copyright: 2026 Jorge L. Rueda B.
 			License: GPL-2.0-only
 			Comment: The plugin for sos report, licensed as sos is.
@@ -179,7 +179,8 @@ for p in clifr clifrd; do
 		fi
 	} >"$r/DEBIAN/control"
 	if [ $p = clifrd ]; then
-		cp packaging/deb/clifrd/postinst packaging/deb/clifrd/prerm packaging/deb/clifrd/postrm "$r/DEBIAN/"
+		cp packaging/deb/clifrd/postinst packaging/deb/clifrd/prerm packaging/deb/clifrd/postrm packaging/deb/clifrd/triggers "$r/DEBIAN/"
+		chmod 0644 "$r/DEBIAN/triggers"
 		echo /etc/clifr/clifrd.yml >"$r/DEBIAN/conffiles"
 	fi
 	dpkg-deb --root-owner-group -Zxz --build "$r" "$dist/${p}_${debver}_amd64.deb" >/dev/null

@@ -53,6 +53,13 @@ fi
 d=$(rpm -ql sos 2>/dev/null | sed -n 's|/__init__.py$||p' | grep 'sos/report/plugins$' | head -1)
 [ -n "$d" ] && ln -sf /usr/share/clifr/sos/clifr.py "$d/clifr.py" || :
 
+# sos removed (not upgraded: $2, the sos packages left, is 0): the link goes
+# first, so that rpm can remove sos's directory.
+%triggerun -n clifrd -- sos
+[ "$2" -eq 0 ] || exit 0
+d=$(rpm -ql sos 2>/dev/null | sed -n 's|/__init__.py$||p' | grep 'sos/report/plugins$' | head -1)
+[ -n "$d" ] && [ -L "$d/clifr.py" ] && rm -f "$d/clifr.py" || :
+
 %files
 /usr/bin/clifr
 /usr/share/man/man1/clifr.1*

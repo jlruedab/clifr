@@ -255,7 +255,7 @@ sudo sos report -k clifr.start="2026-11-05 12:00" -k clifr.end="2026-11-05 13:00
 
 Inside the report the bundle is `sos_commands/clifr/clifr-bundle.tar`, beside `clifrd --version`, `clifrd doctor` and a copy of `/etc/clifr`. Plan for its size: about 175 MB per hour on a very busy server, a few MB per hour on a quiet one (Parquet files hardly compress further). With `sos report --clean` the bundle is left out, because sos's obfuscation cannot process it.
 
-On Debian and Ubuntu the package installs the plugin straight into sos's plugin directory; on RPM systems a trigger links it there when both clifrd and sos are installed (in either order). The plugin belongs to sos's `system` profile, so a full `sos report` runs it.
+The plugin is installed as `/usr/share/clifr/sos/clifr.py` and linked into sos's plugin directory while sos is installed: clifrd and sos can be installed in either order, and removing sos removes the link (and nothing of sos's directory is left behind). Without sos, nothing is installed into sos's directory. The plugin belongs to sos's `system` profile, so a full `sos report` runs it. Unlike the rest of clifr it is licensed GPL-2.0-only, as sos is (see `LICENSING.md`).
 
 ### Configuration
 
