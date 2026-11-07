@@ -366,6 +366,23 @@ func abs(x int64) int64 {
 	return x
 }
 
+// durErr is how far a recorded duration lies outside what the client can
+// bound: the kernel opened the connection between the client's dial (taken
+// before connect) and connect's return, so the true duration is between
+// close - open and close - dial. In a burst of connects the first can take
+// 20 ms to reach the kernel; measured from the dial alone, that delay
+// counted as the recorder's error (truth-full-20261107-1156: 13 of 10,000).
+func durErr(got int64, c conn) int64 {
+	lo, hi := c.CloseMS-c.OpenMS, c.CloseMS-c.DialMS
+	switch {
+	case got < lo:
+		return got - lo
+	case got > hi:
+		return got - hi
+	}
+	return 0
+}
+
 func (e *env) checkTCP(tr tcpTruth) {
 	const sc = "tcp short connections"
 	m := newMatcher(e.connRows(tr.port))
@@ -373,7 +390,6 @@ func (e *env) checkTCP(tr tcpTruth) {
 	var cFound, cOwner, cPeer, cDur, sFound, sOwner, sPeer, sDur, unclosed, slowClose int
 	var cErr, sErr []int64
 	for _, c := range tr.conns {
-		want := c.CloseMS - c.DialMS
 		if r := m.find(c.LPort, tr.port, c); r != nil {
 			cFound++
 			if r.pid == tr.clientPID {
@@ -385,7 +401,7 @@ func (e *env) checkTCP(tr tcpTruth) {
 			if r.close == 0 {
 				unclosed++
 			} else {
-				d := r.close - r.open - want
+				d := durErr(r.close-r.open, c)
 				cErr = append(cErr, abs(d))
 				if abs(d) <= durTolMS {
 					cDur++
@@ -406,7 +422,7 @@ func (e *env) checkTCP(tr tcpTruth) {
 			if r.close == 0 || r.appClose == 0 {
 				unclosed++
 			} else {
-				d := r.appClose - r.open - want
+				d := durErr(r.appClose-r.open, c)
 				sErr = append(sErr, abs(d))
 				if abs(d) <= durTolMS {
 					sDur++
@@ -418,7 +434,7 @@ func (e *env) checkTCP(tr tcpTruth) {
 		}
 	}
 	durNote := func(v []int64) string {
-		return fmt.Sprintf("within %d ms of the client's own measurement; error p50 %d ms, p99 %d ms, max %d ms",
+		return fmt.Sprintf("within %d ms of the client's own measurement (dial or connect's return to close); error p50 %d ms, p99 %d ms, max %d ms",
 			durTolMS, percentile(v, 0.5), percentile(v, 0.99), percentile(v, 1))
 	}
 	e.res.add(sc, "client end: found", cFound, n, "by local port, peer port and connect time")
