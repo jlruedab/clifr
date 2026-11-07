@@ -190,8 +190,10 @@ turned on; no phone-home or telemetry; licences checked offline.
     collector, read only with `--metrics`). Not served (data not recorded):
     `node_disk_info` and the other `*_info` families, sysfs-only interface
     gauges (speed, carrier, dormant, assign types, device id).
-  - 7.1c: compare names and values with the real Node Exporter on this
-    machine; the unit drop-in; docs; benchmark with 15 s scrapes.
+  - 7.1c (done 2026-11-07): compared with the real Node Exporter here (in
+    7.1a/b); the opt-in unit drop-in `deploy/clifrd-metrics.conf` (VMs:
+    Ubuntu 22.04, Rocky 8); docs; benchmark with 15 s scrapes
+    (`metrics-busy-20261107-1857`: no measurable cost). 7.1 is complete.
 - **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the
   Parquet files of a window (as `clifrd bundle`); `clifr --host URL --token
   T --tls-ca F` downloads and caches them and queries locally. TLS except
