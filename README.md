@@ -603,7 +603,7 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
 ## Tests
 
     go test ./...                                                  # unit tests, /proc fixtures
-    sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e      # about 2.5 minutes
+    sudo env PATH=$PATH HOME=$HOME go test -tags e2e -count=1 ./test/e2e      # about 3 minutes: an incident, and a recorder restart
     sudo env PATH=$PATH HOME=$HOME go test -tags truth -count=1 -timeout 40m -v ./test/truth -scale small|full
 
 The **ground-truth test** (`test/truth`; small about 4 minutes, full about 14)

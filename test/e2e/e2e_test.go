@@ -16,6 +16,10 @@
 // Afterwards it checks that clifr ss, clifr lsof and clifr life (reading the
 // Parquet files through DuckDB) each find their part of the incident at the
 // right moment.
+//
+// TestRestart (under a minute) records in two runs on one data directory
+// while a process holds 50 files throughout, and checks that clifr lsof
+// lists them in either run and that no fds_held id repeats across runs.
 package e2e
 
 import (
@@ -51,6 +55,8 @@ func TestMain(m *testing.M) {
 		client()
 	case "deleted":
 		deleted()
+	case "files":
+		files()
 	case "sleep":
 		// Not a copy of /bin/sleep: on uutils systems (Ubuntu 26.04) that is a
 		// multicall binary that dispatches on its name.
@@ -118,25 +124,7 @@ func TestIncident(t *testing.T) {
 		t.Skip("needs root: sudo go test -tags e2e ./test/e2e")
 	}
 	dir := t.TempDir()
-	root, _ := filepath.Abs("../..")
-	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
-	for _, b := range []struct{ out, pkg, cgo string }{
-		{"clifrd", "./cmd/clifrd", "0"}, {"clifr", "./cmd/clifr", "1"}, {"load", "./bench/load", "0"},
-	} {
-		if bin := os.Getenv("CLIFR_TEST_BIN"); bin != "" {
-			// Prebuilt (a machine without Go, such as a test VM).
-			if err := exec.Command("cp", filepath.Join(bin, b.out), dir).Run(); err != nil {
-				t.Fatalf("CLIFR_TEST_BIN: %s: %v", b.out, err)
-			}
-			continue
-		}
-		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
-		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "CGO_ENABLED="+b.cgo)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build %s: %v\n%s", b.pkg, err, out)
-		}
-	}
+	buildBins(t, dir)
 	clifr := filepath.Join(dir, "clifr")
 	data := filepath.Join(dir, "data")
 	if keep := os.Getenv("CLIFR_E2E_KEEP"); keep != "" { // keep the data and the log for a look
@@ -318,6 +306,134 @@ func TestIncident(t *testing.T) {
 			t.Logf("stats:\n%s", out)
 		}
 		t.Logf("burst %s .. %s", burstStart.Format("15:04:05.000"), burstEnd.Format("15:04:05.000"))
+	}
+}
+
+// buildBins puts clifrd, clifr and the load generator in dir: built from
+// this tree, or copied from CLIFR_TEST_BIN (a machine without Go, such as a
+// test VM).
+func buildBins(t *testing.T, dir string) {
+	t.Helper()
+	root, _ := filepath.Abs("../..")
+	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
+	for _, b := range []struct{ out, pkg, cgo string }{
+		{"clifrd", "./cmd/clifrd", "0"}, {"clifr", "./cmd/clifr", "1"}, {"load", "./bench/load", "0"},
+	} {
+		if bin := os.Getenv("CLIFR_TEST_BIN"); bin != "" {
+			if err := exec.Command("cp", filepath.Join(bin, b.out), dir).Run(); err != nil {
+				t.Fatalf("CLIFR_TEST_BIN: %s: %v", b.out, err)
+			}
+			continue
+		}
+		cmd := exec.Command(gobin, "build", "-o", filepath.Join(dir, b.out), b.pkg)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "CGO_ENABLED="+b.cgo)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build %s: %v\n%s", b.pkg, err, out)
+		}
+	}
+}
+
+// nHeld is how many regular files the "files" helper holds open.
+const nHeld = 50
+
+// files holds nHeld regular files in CLIFR_E2E_DIR open until killed.
+func files() {
+	dir := os.Getenv("CLIFR_E2E_DIR")
+	for i := 0; i < nHeld; i++ {
+		f, err := os.Create(filepath.Join(dir, fmt.Sprintf("held-%02d.log", i)))
+		if err != nil {
+			panic(err)
+		}
+		held = append(held, f)
+	}
+	fmt.Println("READY")
+	holdForever()
+}
+
+// TestRestart records in two runs on one data directory while a process
+// holds the same files throughout: clifr lsof must list them at a moment of
+// either run. Until 2026-11-07 fds_held ids began at 1 in every run, so the
+// second run reused the first run's ids and the first run's closed rows hid
+// the second run's open files (no test restarted the recorder).
+func TestRestart(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root: sudo go test -tags e2e ./test/e2e")
+	}
+	dir := t.TempDir()
+	buildBins(t, dir)
+	clifr := filepath.Join(dir, "clifr")
+	data := filepath.Join(dir, "data")
+	heldDir := filepath.Join(dir, "held")
+	os.MkdirAll(heldDir, 0o755)
+	h := helper(t, "files", []string{"CLIFR_E2E_DIR=" + heldDir})
+	defer stop(h.cmd)
+
+	var mids []time.Time
+	for run := 1; run <= 2; run++ {
+		rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data,
+			"--interval", "2s", "--fd-interval", "4s")
+		recLog, _ := os.Create(filepath.Join(dir, fmt.Sprintf("recorder-%d.log", run)))
+		rec.Stdout, rec.Stderr = recLog, recLog
+		if err := rec.Start(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Second) // two full fd walks: the files are held
+		mids = append(mids, time.Now().Truncate(time.Second))
+		time.Sleep(10 * time.Second)
+		rec.Process.Signal(syscall.SIGTERM) // a clean stop: closes the run's rows
+		if err := rec.Wait(); err != nil {
+			b, _ := os.ReadFile(recLog.Name())
+			t.Fatalf("run %d: %v\n%s", run, err, b)
+		}
+		time.Sleep(2 * time.Second) // the next run starts in a later second
+	}
+
+	for run, mid := range mids {
+		var lsof []struct {
+			Name string `json:"name"`
+		}
+		at := mid.Format("2006-01-02 15:04:05")
+		query(t, clifr, &lsof, "--at", at, "--data-dir", data, "--json", "lsof", "-p", strconv.Itoa(h.cmd.Process.Pid))
+		n := 0
+		for _, f := range lsof {
+			if strings.HasPrefix(f.Name, heldDir+"/held-") {
+				n++
+			}
+		}
+		t.Logf("run %d, at %s: lsof -p %d lists %d of the %d held files (%d rows)", run+1, at, h.cmd.Process.Pid, n, nHeld, len(lsof))
+		if n != nHeld {
+			t.Errorf("run %d at %s: lsof lists %d of the %d held files", run+1, at, n, nHeld)
+		}
+	}
+
+	// Each held fd of each run has its own id: the recorder's half of the fix
+	// (the reader keeps one row per id and first_seen, which hides reuse).
+	// Over all rows: a run reuses ids of the other run's fds of any process,
+	// in the order the walks meet them.
+	out, err := exec.Command(clifr, "export", "fds_held", "--data-dir", data).Output()
+	if err != nil {
+		t.Fatalf("export fds_held: %v", err)
+	}
+	seen := map[string]int{}
+	rows, dups := 0, 0
+	for i, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if i == 0 {
+			continue
+		}
+		id := strings.SplitN(line, ",", 2)[0]
+		if seen[id]++; seen[id] == 2 {
+			dups++
+		}
+		if strings.Contains(line, heldDir) {
+			rows++
+		}
+	}
+	if dups > 0 {
+		t.Errorf("fds_held: %d ids used by more than one fd (of %d ids): ids repeat across runs", dups, len(seen))
+	}
+	if rows != 2*nHeld {
+		t.Errorf("fds_held: %d rows for the held files, want %d (each file once per run)", rows, 2*nHeld)
 	}
 }
 
