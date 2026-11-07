@@ -51,6 +51,9 @@ type fileConfig struct {
 	MaxCmdline   scalar   `yaml:"max_cmdline"`
 	MemoryGuard  scalar   `yaml:"memory_guard"`
 	Metrics      scalar   `yaml:"metrics"`
+	Serve        scalar   `yaml:"serve"`
+	ServeTokens  scalar   `yaml:"serve_tokens"`
+	ServeTLSDir  scalar   `yaml:"serve_tls_dir"`
 	Redact       []string `yaml:"redact"`
 }
 
@@ -97,7 +100,7 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
 		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
 		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline}, {"memory-guard", c.MemoryGuard},
-		{"metrics", c.Metrics},
+		{"metrics", c.Metrics}, {"serve", c.Serve}, {"serve-tokens", c.ServeTokens}, {"serve-tls-dir", c.ServeTLSDir},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
 			continue

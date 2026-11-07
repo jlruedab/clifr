@@ -51,7 +51,10 @@ wait for the user's go-ahead.
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
 - Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,
   `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand, loopback
-  addresses only for now). A default install opens no port and makes no connection; the
+  addresses only for now); `--serve` (7.2: any address, but every request needs a token, and
+  TLS with clifrd's self-signed certificate, pinned by clifr, except on loopback; only the
+  recording's Parquet files are served, never the token file or the TLS key). A default
+  install opens no port and makes no connection; the
   unit keeps `RestrictAddressFamilies=AF_NETLINK AF_UNIX` (a drop-in adds AF_INET for a
   feature turned on). No phone-home or telemetry.
 - No encryption, obfuscation or web UI. One exception (the user, 2026-11-01, against

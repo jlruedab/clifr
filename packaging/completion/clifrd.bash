@@ -6,13 +6,17 @@ _clifrd() {
 		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
 		--budget-window --verify-every --flush-interval --flush-rows --retention
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --memory-guard
-		--max-size --metrics --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
+		--max-size --metrics --serve --serve-tokens --serve-tls-dir --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"
 	local bundle="--data-dir -D --last --since --until -o --output"
 	COMPREPLY=()
 	case $prev in
-	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root)
+	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --serve-tokens | --serve-tls-dir | --file)
 		COMPREPLY=($(compgen -f -- "$cur"))
+		return
+		;;
+	token)
+		COMPREPLY=($(compgen -W "new list revoke" -- "$cur"))
 		return
 		;;
 	--log-level)
@@ -38,10 +42,12 @@ _clifrd() {
 	esac
 	if [[ " ${COMP_WORDS[*]:1:COMP_CWORD-1} " == *" bundle "* ]]; then
 		COMPREPLY=($(compgen -W "$bundle" -- "$cur"))
+	elif [[ " ${COMP_WORDS[*]:1:COMP_CWORD-1} " == *" token "* ]]; then
+		COMPREPLY=($(compgen -W "--file --comment" -- "$cur"))
 	elif [[ $cur == -* ]]; then
 		COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 	elif ((COMP_CWORD == 1)); then
-		COMPREPLY=($(compgen -W "doctor bundle" -- "$cur"))
+		COMPREPLY=($(compgen -W "doctor bundle token" -- "$cur"))
 	fi
 }
 complete -F _clifrd clifrd

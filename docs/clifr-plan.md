@@ -195,9 +195,21 @@ turned on; no phone-home or telemetry; licences checked offline.
     Ubuntu 22.04, Rocky 8); docs; benchmark with 15 s scrapes
     (`metrics-busy-20261107-1857`: no measurable cost). 7.1 is complete.
 - **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the
-  Parquet files of a window (as `clifrd bundle`); `clifr --host URL --token
-  T --tls-ca F` downloads and caches them and queries locally. TLS except
-  on loopback; tokens compared in constant time.
+  Parquet files of a window; `clifr --host URL` downloads and caches them and
+  queries locally. Decisions (the user, 2026-11-07): tokens hashed in a
+  root-only file (`clifrd token new` prints one once and stores its SHA-256
+  in `/etc/clifr/serve-tokens`; constant-time compare); TLS with a
+  self-signed certificate clifrd makes at first start, pinned by clifr on
+  first use (`~/.config/clifr/known_hosts`, as SSH; `--tls-fingerprint` for
+  non-interactive use; a changed certificate is an error); plain HTTP only on
+  loopback; per-file transfer with a cache (`/v1/files` lists a window's
+  files with SHA-256, as `bundle.Select`; clifr fetches the ones it lacks and
+  queries exactly the listed set); no licence check until 7.3.
+  - 7.2a: clifrd side (`--serve`, `clifrd token`, the certificate,
+    `/v1/info`, `/v1/files`, `/v1/file`).
+  - 7.2b: clifr side (`--host`, pinning, cache).
+  - 7.2c: unit drop-in, sos plugin (never collect the token file), docs,
+    VM end to end.
 - **7.3 Licensing** (3–5 days): `clifr license key|install`, a signed
   licence file checked offline, gating `--host` and fleet use; after the
   legal review.
