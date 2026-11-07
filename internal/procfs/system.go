@@ -2,9 +2,52 @@ package procfs
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strconv"
 )
+
+// Pressure is one /proc/pressure file (PSI): the total time, in µs, that
+// some or all ("full") non-idle tasks were stalled on the resource.
+type Pressure struct {
+	Some, Full uint64
+	HasFull    bool // the file has a full line (cpu has one since Linux 5.13)
+}
+
+// ReadPressure reads /proc/pressure/<resource> (cpu, memory, io, irq). An
+// error wrapping fs.ErrNotExist means no PSI (CONFIG_PSI off, psi=0, or no
+// such resource on this kernel).
+func (f FS) ReadPressure(resource string) (Pressure, error) {
+	b, err := os.ReadFile(f.path("pressure", resource))
+	if err != nil {
+		return Pressure{}, err
+	}
+	var p Pressure
+	for len(b) > 0 {
+		line := b
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			line, b = b[:i], b[i+1:]
+		} else {
+			b = nil
+		}
+		kind, rest, _ := bytes.Cut(line, []byte(" "))
+		_, total, ok := bytes.Cut(rest, []byte("total="))
+		if !ok {
+			continue
+		}
+		v, err := strconv.ParseUint(string(bytes.TrimSpace(total)), 10, 64)
+		if err != nil {
+			return Pressure{}, fmt.Errorf("pressure/%s: %q: %w", resource, line, err)
+		}
+		switch string(kind) {
+		case "some":
+			p.Some = v
+		case "full":
+			p.Full, p.HasFull = v, true
+		}
+	}
+	return p, nil
+}
 
 // The system-wide counters behind uptime, vmstat, mpstat and iostat. All of
 // them are the kernel's raw values: cumulative since boot unless noted.

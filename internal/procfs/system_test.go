@@ -96,3 +96,21 @@ func BenchmarkSystemCounters(b *testing.B) {
 		fs.ReadDiskStats()
 	}
 }
+
+func TestReadPressure(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "pressure"), 0o755)
+	os.WriteFile(filepath.Join(dir, "pressure", "memory"), []byte("some avg10=0.00 avg60=0.00 avg300=0.00 total=432\n"+
+		"full avg10=0.12 avg60=0.00 avg300=0.00 total=426\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "pressure", "cpu"), []byte("some avg10=1.50 avg60=0.40 avg300=0.10 total=354079129\n"), 0o644)
+	f := FS{Root: dir}
+	if p, err := f.ReadPressure("memory"); err != nil || p != (Pressure{Some: 432, Full: 426, HasFull: true}) {
+		t.Errorf("memory: %+v %v", p, err)
+	}
+	if p, err := f.ReadPressure("cpu"); err != nil || p != (Pressure{Some: 354079129}) {
+		t.Errorf("cpu (no full line, before 5.13): %+v %v", p, err)
+	}
+	if _, err := f.ReadPressure("io"); !os.IsNotExist(err) {
+		t.Errorf("a resource without a file: %v", err)
+	}
+}

@@ -1,14 +1,32 @@
 package recorder
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
 
+	"clifr/internal/metrics"
+	"clifr/internal/procfs"
 	"clifr/internal/rtnl"
 	"clifr/internal/store"
 )
+
+// readPressure reads /proc/pressure for /metrics (PSI is not recorded). A
+// kernel without PSI, or without one of the files, is not an error.
+func (r *Recorder) readPressure(fail func(string, error) bool) map[string]procfs.Pressure {
+	out := map[string]procfs.Pressure{}
+	for _, res := range metrics.PressureResources {
+		p, err := r.fs.ReadPressure(res)
+		if errors.Is(err, fs.ErrNotExist) || fail("pressure/"+res, err) {
+			continue
+		}
+		out[res] = p
+	}
+	return out
+}
 
 // sysSampler reads the system-wide counters behind uptime, vmstat, mpstat and
 // iostat once per sample.
@@ -96,10 +114,21 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	}
 	b.Sys = append(b.Sys, *row)
 	if r.cfg.Metrics {
-		r.live.Version, r.live.BootMS = r.cfg.Version, r.boot
-		r.live.SysTS, r.live.Sys = ts, *row
-		r.live.CPUs = append([]store.CPUSample(nil), b.CPUs[firstCPU:]...) // a new slice: the published one stays as it is
-		r.publishMetrics()
+		// Published when the rest (interfaces, disks) is read too. New
+		// slices: the published snapshot stays as it is.
+		firstDisk := len(b.Disks)
+		defer func() {
+			r.live.Version, r.live.BootMS = r.cfg.Version, r.boot
+			r.live.SysTS, r.live.Sys = ts, *row
+			r.live.CPUs = append([]store.CPUSample(nil), b.CPUs[firstCPU:]...)
+			r.live.Disks = append([]store.DiskSample(nil), b.Disks[firstDisk:]...)
+			r.live.Links = make([]store.LinkRow, 0, len(s.linkLast))
+			for _, l := range s.linkLast {
+				r.live.Links = append(r.live.Links, l)
+			}
+			r.live.Press = r.readPressure(fail)
+			r.publishMetrics()
+		}()
 	}
 	if s.sysfs { // rtnetlink describes this machine, not a --proc-root fixture
 		if links, err := rtnl.Dump(); !fail("rtnetlink links", err) {

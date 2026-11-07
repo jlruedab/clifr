@@ -175,6 +175,9 @@ func (r *Recorder) metricsSample(b *store.Batch) {
 	r.live.Version, r.live.BootMS = r.cfg.Version, r.boot
 	r.live.Sample = b.Sample
 	r.live.Samples++
+	if r.mounts != nil {
+		r.live.FS = r.fsUsage.current(r.mounts.table())
+	}
 	r.publishMetrics()
 }
 

@@ -1,10 +1,13 @@
 package recorder
 
 import (
+	"slices"
+	"strings"
 	"sync"
 
 	"golang.org/x/sys/unix"
 
+	"clifr/internal/metrics"
 	"clifr/internal/procfs"
 	"clifr/internal/store"
 )
@@ -93,6 +96,29 @@ func (u *fsUsage) start(ts int64, mounts []procfs.MountInfo, log *Logger) {
 		u.busy = false
 		u.mu.Unlock()
 	}()
+}
+
+// current returns, for /metrics, the last statfs numbers of each mount of
+// the table that Node Exporter's default filters keep (a mount not measured
+// yet, or that statfs refused, is left out).
+func (u *fsUsage) current(mounts []procfs.MountInfo) []metrics.FSUsage {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	var out []metrics.FSUsage
+	for _, m := range mounts {
+		if !metrics.ServedFS(m.Point, m.FSType) {
+			continue
+		}
+		s, ok := u.last[fsKey{m.ID, m.Dev, m.Point}]
+		if !ok {
+			continue
+		}
+		bs := int64(s.FrSize)
+		out = append(out, metrics.FSUsage{Device: m.Source, FSType: m.FSType, MountPoint: m.Point,
+			ReadOnly: slices.Contains(strings.Split(m.Options, ","), "ro"),
+			Size:     s.Blocks * bs, Free: s.BFree * bs, Avail: s.BAvail * bs, Files: s.Files, FilesFree: s.FFree})
+	}
+	return out
 }
 
 // keep reports whether s (TS 0) is written at ts: when it changed or the

@@ -181,12 +181,15 @@ turned on; no phone-home or telemetry; licences checked offline.
   addresses only at first (TLS and auth later, as clifr's own small subset
   in clifrd.yml); Node Exporter's metric names, so its dashboards work.
   Served from the latest in-memory sample (a scrape reads no file).
-  - 7.1a: endpoint, text format; `/proc/stat`, meminfo, loadavg, vmstat
-    (`node_cpu_seconds_total`, `node_memory_*_bytes`, `node_load*`,
-    `node_context_switches_total`, …) and `clifr_*` (recorder CPU, memory,
-    data size, events received and dropped per source).
-  - 7.1b: disks, network interfaces (rtnetlink stats64), filesystems
-    (`fs_samples`), pressure (`/proc/pressure/*`, the one new collector).
+  - 7.1a (done 2026-11-07): endpoint, text format; `/proc/stat`, meminfo,
+    loadavg, vmstat (`node_cpu_seconds_total`, `node_memory_*_bytes`,
+    `node_load*`, `node_context_switches_total`, …) and `clifr_*` (recorder
+    CPU, memory, data size, events received and dropped per source).
+  - 7.1b (done 2026-11-07): disks, network interfaces (rtnetlink stats64),
+    filesystems (`fs_samples`), pressure (`/proc/pressure/*`, the one new
+    collector, read only with `--metrics`). Not served (data not recorded):
+    `node_disk_info` and the other `*_info` families, sysfs-only interface
+    gauges (speed, carrier, dormant, assign types, device id).
   - 7.1c: compare names and values with the real Node Exporter on this
     machine; the unit drop-in; docs; benchmark with 15 s scrapes.
 - **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the

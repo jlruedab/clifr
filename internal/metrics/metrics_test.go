@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"clifr/internal/procfs"
 	"clifr/internal/store"
 )
 
@@ -192,5 +193,102 @@ func TestHandler(t *testing.T) {
 	}
 	if resp, _ := get("GET", "/other"); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("other path: %d", resp.StatusCode)
+	}
+}
+
+// Disks, interfaces, file systems and pressure: Node Exporter's names,
+// units, sums and default filters.
+func TestWriteDevices(t *testing.T) {
+	s := testSnapshot()
+	disk := func(name string, v ...int64) store.DiskSample {
+		d := store.DiskSample{Name: name}
+		copy(d.V[:], v)
+		return d
+	}
+	s.Disks = []store.DiskSample{
+		disk("nvme0n1", 10, 1, 2048, 1500, 20, 2, 4096, 2500, 3, 0, 8, 7, 4, 3000, 3500, 5, 60),
+		disk("nvme0n1p1", 9), disk("loop0", 9), disk("sda1", 9), disk("dm-0", 1),
+	}
+	var stats [25]int64
+	for i := range stats {
+		stats[i] = int64(100 + i)
+	}
+	s.Links = []store.LinkRow{
+		{Name: "lo", Index: 1, Link: -1, MTU: 65536, OperState: 0, HasStats: true, Stats: stats, TxQLen: 1000, Type: 772},
+		{Name: "eth0", Index: 2, Link: 2, MTU: 1500, OperState: 6, HasStats: true, Stats: stats, CarrierChanges: 4, Flags: 0x11043},
+		{Name: "tun0", Index: 7, Link: -1, MTU: 1400, OperState: 6}, // no statistics
+	}
+	s.FS = []FSUsage{{Device: "/dev/sda1", FSType: "ext4", MountPoint: "/", ReadOnly: true, Size: 4096, Free: 1024, Avail: 512, Files: 10, FilesFree: 3}}
+	s.Press = map[string]procfs.Pressure{"cpu": {Some: 2_500_000, Full: 1, HasFull: true}, "memory": {Some: 1_000_000, Full: 500_000, HasFull: true},
+		"io": {Some: 3_000_000}, "irq": {Full: 7_000_000, HasFull: true}}
+	var b strings.Builder
+	if err := Write(&b, s); err != nil {
+		t.Fatal(err)
+	}
+	got := parse(t, b.String())
+	fs := `{device="/dev/sda1",device_error="",fstype="ext4",mountpoint="/"}`
+	for key, want := range map[string]float64{
+		`node_disk_reads_completed_total{device="nvme0n1"}`:             10,
+		`node_disk_read_bytes_total{device="nvme0n1"}`:                  2048 * 512,
+		`node_disk_read_time_seconds_total{device="nvme0n1"}`:           1.5,
+		`node_disk_written_bytes_total{device="nvme0n1"}`:               4096 * 512,
+		`node_disk_discarded_sectors_total{device="nvme0n1"}`:           8,
+		`node_disk_io_now{device="nvme0n1"}`:                            4,
+		`node_disk_io_time_weighted_seconds_total{device="nvme0n1"}`:    3.5,
+		`node_disk_flush_requests_time_seconds_total{device="nvme0n1"}`: 0.06,
+		`node_disk_reads_completed_total{device="dm-0"}`:                1,
+		`node_network_receive_bytes_total{device="eth0"}`:               102,
+		`node_network_receive_drop_total{device="eth0"}`:                106 + 115,             // dropped + missed
+		`node_network_receive_frame_total{device="eth0"}`:               113 + 110 + 111 + 112, // frame + length + over + crc
+		`node_network_transmit_carrier_total{device="lo"}`:              117 + 116 + 119 + 120,
+		`node_network_transmit_colls_total{device="lo"}`:                109,
+		`node_network_receive_nohandler_total{device="lo"}`:             123,
+		`node_network_up{device="eth0"}`:                                1,
+		`node_network_up{device="lo"}`:                                  0,
+		`node_network_up{device="tun0"}`:                                1,
+		`node_network_iface_link{device="lo"}`:                          1, // no IFLA_LINK: the device itself
+		`node_network_iface_link{device="eth0"}`:                        2,
+		`node_network_mtu_bytes{device="tun0"}`:                         1400,
+		`node_network_carrier_changes_total{device="eth0"}`:             4,
+		`node_network_protocol_type{device="lo"}`:                       772,
+		`node_network_flags{device="eth0"}`:                             0x1003, // sysfs's: without RUNNING and LOWER_UP
+		"node_filesystem_size_bytes" + fs:                               4096,
+		"node_filesystem_avail_bytes" + fs:                              512,
+		"node_filesystem_files_free" + fs:                               3,
+		"node_filesystem_readonly" + fs:                                 1,
+		"node_filesystem_device_error" + fs:                             0,
+		"node_pressure_cpu_waiting_seconds_total":                       2.5,
+		"node_pressure_memory_waiting_seconds_total":                    1,
+		"node_pressure_memory_stalled_seconds_total":                    0.5,
+		"node_pressure_io_waiting_seconds_total":                        3,
+		"node_pressure_irq_stalled_seconds_total":                       7,
+	} {
+		if v, ok := got[key]; !ok || v != want {
+			t.Errorf("%s = %v (present %v), want %v", key, v, ok, want)
+		}
+	}
+	for key := range got {
+		for _, bad := range []string{`"nvme0n1p1"`, `"loop0"`, `"sda1"`, "node_pressure_cpu_stalled", "node_pressure_io_stalled",
+			`node_network_receive_bytes_total{device="tun0"}`} {
+			if strings.Contains(key, bad) {
+				t.Errorf("should not be served: %s", key)
+			}
+		}
+	}
+}
+
+func TestServedFS(t *testing.T) {
+	for _, c := range []struct {
+		point, fstype string
+		want          bool
+	}{
+		{"/", "ext4", true}, {"/boot/efi", "vfat", true}, {"/tmp", "tmpfs", true}, {"/home/a/x", "fuse.sshfs", true},
+		{"/run", "tmpfs", false}, {"/run/user/1000", "tmpfs", false}, {"/dev/shm", "tmpfs", false}, {"/sys/fs/cgroup", "cgroup2", false},
+		{"/snap/core/1", "squashfs", false}, {"/var/lib/docker/overlay2/x/merged", "overlay", false}, {"/media/usb", "vfat", false},
+		{"/data", "overlay", false}, {"/proc", "proc", false},
+	} {
+		if got := ServedFS(c.point, c.fstype); got != c.want {
+			t.Errorf("ServedFS(%q, %q) = %v", c.point, c.fstype, got)
+		}
 	}
 }

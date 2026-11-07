@@ -24,7 +24,11 @@ type Snapshot struct {
 
 	SysTS int64 // time of the system sample below (0: none yet)
 	Sys   store.SysSample
-	CPUs  []store.CPUSample // per CPU (the total, CPU -1, is left out)
+	CPUs  []store.CPUSample          // per CPU (the total, CPU -1, is left out)
+	Disks []store.DiskSample         // the devices that did I/O (Node Exporter's filter applied when written)
+	Links []store.LinkRow            // every network interface now
+	Press map[string]procfs.Pressure // /proc/pressure, by resource (with --metrics only)
+	FS    []FSUsage                  // mounted file systems Node Exporter's filters keep, as of the last statfs round
 
 	Sample  store.Sample        // the recorder's last full sample (its own CPU, memory, data size)
 	Samples int64               // full samples written since start
@@ -37,7 +41,11 @@ func Write(w io.Writer, s *Snapshot) error {
 	e := &enc{w: bufio.NewWriter(w)}
 	if s.SysTS > 0 {
 		e.node(s)
+		e.disks(s.Disks)
+		e.network(s.Links)
+		e.pressure(s.Press)
 	}
+	e.filesystems(s.FS)
 	e.self(s)
 	return e.w.Flush()
 }
