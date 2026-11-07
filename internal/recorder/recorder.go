@@ -417,6 +417,10 @@ func (r *Recorder) shutdown() error {
 	r.flushEventProcs(openRowsFlushAll, b)
 	if r.tcp != nil {
 		r.applyTCP(b)
+		// Before flushTCP, which forgets what closed in the sample: a
+		// deferred keyframe row would not find such a connection and be
+		// adopted from the dump as a second one.
+		r.resolveDeferred(b)
 		r.flushTCP(r.lastTS, b)
 		r.closeAllTCP(r.lastTS, b)
 	}

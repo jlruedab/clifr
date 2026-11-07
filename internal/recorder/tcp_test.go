@@ -330,6 +330,45 @@ func TestDeferredDumpRow(t *testing.T) {
 	}
 }
 
+// A keyframe row deferred at the last sample, whose connection's events
+// (open and close) are applied only at shutdown: one connection, from the
+// events. Shutdown once wrote the closed connection (clearing what closed
+// in the sample) before deciding the deferred rows, so the row was adopted
+// from the dump as a second connection.
+func TestDeferredDumpRowAtShutdown(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	tr := r.tcp
+	tr.keyframes = 1 // not the initial keyframe
+	tr.pendingDump = []sockdiag.Socket{{Proto: "tcp", Family: 4, State: bpftcp.SynSent, LAddr: netip.MustParseAddr("127.0.0.1"),
+		LPort: 40000, RAddr: netip.MustParseAddr("127.0.0.2"), RPort: 443, Inode: 77}}
+	tr.dumpStart = 1000
+	var b store.Batch
+	r.applyTCP(&b)
+	r.resolveDeferred(&b)
+	r.keyframe(&b)
+	r.flushTCP(1000, &b)
+	if len(tr.deferred) != 1 {
+		t.Fatalf("the row should wait: %d deferred", len(tr.deferred))
+	}
+	r.lastTS = 1000
+	tr.queue = []bpftcp.Event{
+		tcpEvent(5, bpftcp.Close, bpftcp.SynSent, "127.0.0.1", 40000, "127.0.0.2", 443),
+		tcpEvent(5, bpftcp.SynSent, bpftcp.Close, "127.0.0.1", 40000, "127.0.0.2", 443),
+	}
+	if err := r.shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	p := r.pending
+	if len(p.TCPConns) != 1 || p.TCPConns[0].Source != store.SrcEBPF {
+		t.Errorf("want one connection from the events, got %+v", p.TCPConns)
+	}
+	if len(p.Reconcile) != 1 || p.Reconcile[0].MissingFromEvents != 0 {
+		t.Errorf("reconcile: %+v", p.Reconcile)
+	}
+}
+
 // A connect stuck in SYN_SENT: its state event has no local port (the
 // kernel picks it after), the connect's return reports it, and a later
 // keyframe matches the connection instead of adopting a second one.
