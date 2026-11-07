@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"clifr/internal/pqstore"
@@ -79,13 +80,60 @@ func writeJSON(w io.Writer, v any) error {
 
 var userCache = map[int]string{}
 
+// recordedUsers is the recording's uid -> name table at the queried moment
+// (snapshots source "passwd", since 2026-11-08); nil for a recording without
+// it, whose names are then this machine's.
+var recordedUsers map[int]string
+
+// LoadUsers takes the recorded user names of the host at t (the copy at or
+// before t, else the first after it: names rarely change). It reports
+// whether the recording has them; without, a recording made on another
+// machine gets a header saying its names are this machine's.
+func LoadUsers(db *store.DB, t int64) (bool, error) {
+	recordedUsers, userCache = nil, map[int]string{}
+	lines, _, ok, err := FileAt(db, "passwd", t)
+	if err == nil && !ok {
+		// Before the run's first read: its first copy after t.
+		var next sql.NullInt64
+		db.QueryRow(`SELECT MIN(ts) FROM snapshots WHERE source = 'passwd' AND whole = 1 AND ts > ?`, t).Scan(&next)
+		if next.Valid {
+			lines, _, ok, err = FileAt(db, "passwd", next.Int64)
+		}
+	}
+	if err != nil || !ok {
+		if err == nil && db.Meta("machine_id") != "" && db.Meta("machine_id") != localMachineID() {
+			Header("user names: this machine's, not the recorded host's (recorded with names since 2026-11-08)")
+		}
+		return false, err
+	}
+	m := make(map[int]string, len(lines))
+	for _, l := range lines {
+		uid, name, _ := strings.Cut(l, " ")
+		if n, err := strconv.Atoi(uid); err == nil && name != "" {
+			m[n] = name
+		}
+	}
+	recordedUsers = m
+	return true, nil
+}
+
+func localMachineID() string {
+	b, _ := os.ReadFile("/etc/machine-id")
+	return strings.TrimSpace(string(b))
+}
+
 // UserName resolves a uid the way ps does: names longer than 8 characters
-// are cut to 7 plus '+'.
+// are cut to 7 plus '+'. With the recording's names (LoadUsers) a uid it does
+// not name stays a number, as on the host.
 func UserName(uid int, truncate bool) string {
 	name, ok := userCache[uid]
 	if !ok {
 		name = strconv.Itoa(uid)
-		if u, err := user.LookupId(name); err == nil {
+		if recordedUsers != nil {
+			if n, ok := recordedUsers[uid]; ok {
+				name = n
+			}
+		} else if u, err := user.LookupId(name); err == nil {
 			name = u.Username
 		}
 		userCache[uid] = name

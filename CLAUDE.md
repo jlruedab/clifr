@@ -281,6 +281,11 @@ wait for the user's go-ahead.
   `conntrack -S` (`ConntrackOld`: conntrack-tools before 1.4.7 stop at search_restart), `nfsstat`
   (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a port of mountstats.py;
   `Mountstats233`: RHEL 8's 2.3.3).
+- `snapshots` source "passwd" (2026-11-08, a minute; `recorder/users.go`): the host's "uid name" pairs
+  from /etc/passwd (nothing else of it), so a recording read on another machine (`--host`, a
+  bundle) names users as the host did: `query.LoadUsers` at the queried moment, then
+  `query.UserName`. Older recordings: this machine's names (a header says so when the machine-id
+  differs). Never use `user.LookupId` for a recorded uid when the recording has names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
   retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 9 since
   2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,

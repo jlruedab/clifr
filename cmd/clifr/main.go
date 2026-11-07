@@ -411,6 +411,14 @@ func runToolAt(g *globals, words []string, diff []string) error {
 		return err
 	}
 	defer c.db.Close()
+	// User names as the recorded host had them (not this machine's).
+	at := c.w.At
+	if c.w.IsRange() {
+		at = c.w.To
+	}
+	if _, err := query.LoadUsers(c.db, at); err != nil {
+		return err
+	}
 	// The commands whose output differs between tool versions say which
 	// version's they follow, unless it is the current one.
 	if styled[t.name] {
