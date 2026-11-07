@@ -89,6 +89,12 @@ wait for the user's go-ahead.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.
 - `internal/verify/` — compare saved real tool output with reconstructions.
+- `internal/remote/` — `clifrd --serve` (pure Go): tokens stored hashed (`clifrd token`), the
+  self-signed certificate (fingerprint = SHA-256 of the public key, OpenSSH style), `/v1/info`,
+  `/v1/files` (bundle.Select's set), `/v1/file` (only `TABLEDIR/DAY|open/NAME.parquet`,
+  `ValidPath`); `cmd/clifr/remote.go` is `clifr --host` (pinning in known_hosts, cache by
+  SHA-256, a query directory of exactly the listed files). `deploy/clifrd-serve.conf` is the
+  opt-in unit drop-in.
 - `internal/metrics/` — `clifrd --metrics`: the Prometheus text format written by hand, Node
   Exporter's names, from the recorder's last published `Snapshot` (no read per scrape);
   loopback addresses only; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP,

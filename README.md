@@ -158,6 +158,9 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--memory-guard` | 384M | live Go heap above which the recorder sheds data rather than reach the unit's `MemoryMax`: command lines are cut to 4K and the open files of the processes holding the most are no longer tracked (half of all entries; again after `--budget-window` if still above); a `memory_shed` guard event says so, `memory_ok` when the heap is below 3/4 of it; `0` = off |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
 | `--metrics` | off | serve Prometheus metrics at `http://ADDR/metrics` (loopback addresses only, e.g. `127.0.0.1:9100`): Node Exporter's names for CPU, memory, load, disks, network interfaces, file systems and pressure, and `clifr_*` for the recorder itself; from the last sample (no file read per scrape). Under the systemd unit it also needs the drop-in `/usr/share/clifr/clifrd-metrics.conf`; if the port cannot be opened clifrd logs it and records without metrics |
+| `--serve` | off | serve the recording's files to `clifr --host` on another machine at `ADDR` (e.g. `:8443`): every request needs a token (`clifrd token new`), and TLS with clifrd's own self-signed certificate (made at first start, its fingerprint logged; clifr pins it) except on a loopback address. Under the systemd unit it also needs the drop-in `/usr/share/clifr/clifrd-serve.conf`; if it cannot serve (no token, the port) clifrd logs it and records anyway |
+| `--serve-tokens` | /etc/clifr/serve-tokens | the accepted tokens' SHA-256, one per line (`clifrd token new|list|revoke`); mode 600, owned by clifrd's user |
+| `--serve-tls-dir` | DATA-DIR/serve-tls | clifrd's TLS key and certificate for `--serve` |
 | `--log-level` | info | error, warn, info or debug |
 | `-v`, `--version` | | print the version and exit |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
@@ -304,7 +307,9 @@ resolved time and time zone and other informational lines go to stderr.
 
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
-`/var/lib/clifr`); `--style STYLE`; `-j/--json`;
+`/var/lib/clifr`), or `-H/--host HOST` with `--token TOKEN` (another host's
+recording from its `clifrd --serve`; `--tls-fingerprint` pins its certificate
+without a terminal); `--style STYLE`; `-j/--json`;
 for ranges `--summary` (default), `--changes`, `--samples`, `--list`
 (ss, netstat), `-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).

@@ -72,6 +72,12 @@ class Clifr(Plugin, IndependentPlugin):
     ]
 
     def setup(self):
+        # The access tokens of clifrd --serve (only their hashes, but they
+        # decide who reads every process's command line): never collected.
+        self.add_forbidden_path([
+            '/etc/clifr/serve-tokens',
+            '/etc/clifr/serve-tokens.tmp',
+        ])
         self.add_copy_spec('/etc/clifr')
         clifrd = shlex.quote(self.get_option('clifrd'))
         self.add_cmd_output([f'{clifrd} --version', f'{clifrd} doctor'])

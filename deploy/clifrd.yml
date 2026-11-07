@@ -32,6 +32,16 @@ memory_guard: 384M     # live heap above which data is shed (guard event) before
 # (the unit allows no TCP otherwise; see that file).
 #metrics: 127.0.0.1:9100
 
+# Serve the recording to clifr --host on another machine (off by default).
+# Every request needs a token (clifrd token new: their SHA-256 are kept in
+# serve_tokens); TLS with clifrd's self-signed certificate (made at first
+# start in serve_tls_dir, its fingerprint logged), except on a loopback
+# address. Under the systemd unit it also needs the drop-in
+# /usr/share/clifr/clifrd-serve.conf, and the port open in the firewall.
+#serve: :8443
+#serve_tokens: /etc/clifr/serve-tokens
+#serve_tls_dir: /var/lib/clifr/serve-tls
+
 # Masked in command lines (as ***) before they are stored: Go regular
 # expressions; with capture groups only the groups are masked. (The built-in
 # default is none; these are suggestions.)

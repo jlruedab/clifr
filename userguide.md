@@ -362,6 +362,41 @@ clifr --data-dir sosreport-web01-2026-11-05/sos_commands/clifr/clifr-bundle.tar 
 
 A sosreport's own captures (`ps`, `ss`, `sos_commands/logs/journalctl_*`, `var/log/messages`, `var/log/secure`) show the moment the report was taken; the bundle lets you go back to the moment of the problem, with the same tools.
 
+### Querying another host directly: `--host`
+
+Instead of copying bundles, clifr can query another host's recording over the network. The recorded host serves its files (`clifrd --serve`, off by default); clifr fetches only what the query needs, keeps it in a cache, and answers locally, exactly as with `--data-dir`.
+
+**On the recorded host** (once):
+
+```sh
+sudo clifrd token new --comment "ops laptop"          # prints the token once: keep it
+echo 'serve: ":8443"' | sudo tee -a /etc/clifr/clifrd.yml
+sudo install -D -m 0644 /usr/share/clifr/clifrd-serve.conf /etc/systemd/system/clifrd.service.d/serve.conf
+sudo systemctl daemon-reload && sudo systemctl restart clifrd
+sudo firewall-cmd --permanent --add-port=8443/tcp && sudo firewall-cmd --reload   # RHEL family, if firewalld runs
+journalctl -u clifrd -b | grep serve
+```
+
+The last line shows the address and the certificate's fingerprint: `serve: recording served at https://[::]:8443 (certificate SHA256:dYyozhtax5W4…; clifr --host pins it on first use)`. clifrd made that self-signed certificate at its first start (in `/var/lib/clifr/serve-tls/`) and keeps it; the token file `/etc/clifr/serve-tokens` holds only each token's SHA-256. `clifrd token list` shows the tokens' hashes and comments, `clifrd token revoke HASH` removes one at once, without a restart.
+
+**On your machine:**
+
+```sh
+export CLIFR_TOKEN=clifr_...                           # better than --token: not in ps (or in clifr's own recording)
+clifr --host web01 --at "2026-11-05 13:20" "ps aux"
+```
+
+The first time, clifr shows the server's fingerprint and asks whether to trust it. Compare it with the one in the server's journal; on `yes` it is kept in `~/.config/clifr/known_hosts`, and every later connection must present the same certificate. Without a terminal (a script, an AI agent) give it instead: `--tls-fingerprint SHA256:…` (or `CLIFR_TLS_FINGERPRINT`). If the certificate ever changes clifr refuses to connect and says so; if that was intended (clifrd's TLS directory was recreated, for example after `apt purge`), delete the host's line in `known_hosts`.
+
+Each query fetches the files of its window (`--at`, `--since`/`--until`; `info` and `export` the whole recording) that are not in the cache yet (`~/.cache/clifr/MACHINE-ID/`, checked by SHA-256), so the first query of an incident takes the time to transfer the window and later ones are quick. A line on stderr says how much was fetched: `# remote: web01:8443 (web01, machine-id 141c779d): 395 files, 12 fetched (3.1 MB), 383 from the cache`. Cached files unused for two weeks are deleted.
+
+Notes:
+
+- `--host` is `HOST`, `HOST:PORT` or `https://HOST:PORT` (port 8443 by default). To a loopback address clifr uses plain HTTP, as clifrd serves it (useful through an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 web01` with `serve: 127.0.0.1:8443` on the server).
+- clifrd serves only the recording's data files, to token holders. It never serves the token file or its TLS key, and the sos plugin never collects the token file.
+- With the metrics drop-in installed too, the serve drop-in's `IPAddressAllow=any` is what lets clients in; narrow it to your admin networks there.
+- Serving is read-only and limited to four transfers at a time, at the recorder's low CPU and I/O priority.
+
 ### Output styles
 
 clifr prints as the recorded host's tool versions do: RHEL 8's `free` computes "used" differently, RHEL 8's `top`, `df`, `vmstat`, `iostat` and `lsof` differ in details, and so on. That keeps clifr's output comparable with that host's sosreports and runbooks. `--style rhel-8|rhel-9|ubuntu-22.04|current` overrides it, and a line on stderr says when a non-current style is used.
