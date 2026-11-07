@@ -39,7 +39,10 @@ func TestSelect(t *testing.T) {
 		"samples/2026-10-20/13-10.parquet",
 		"proc_samples/2026-10-20/03.parquet", "proc_samples/2026-10-20/14.parquet",
 		"processes/2026-10-20/12.parquet", "processes/2026-10-20/15.parquet", "processes/open/1.parquet",
-		"meta/2026-10-19/23.parquet")
+		"meta/2026-10-19/23.parquet",
+		"kmsg/2026-10-20/03.parquet",                                 // dmesg: the whole boot up to the window
+		"units/2026-10-20/11.parquet", "units/2026-10-20/10.parquet", // the hourly snapshot before the window
+		"addrs/2026-10-20/09.parquet") // more than an hour before: not needed
 	o := Options{DataDir: dir, From: ms("2026-10-20 12:00"), To: ms("2026-10-20 13:00")}
 	sel, err := Select(o, map[string]string{"flush_interval_s": "300", "keyframe_interval_s": "300"})
 	if err != nil {
@@ -50,6 +53,8 @@ func TestSelect(t *testing.T) {
 		"processes/2026-10-20/12.parquet", "processes/open/1.parquet",
 		"proc_samples/2026-10-20/03.parquet", // written on change: any time before
 		"meta/2026-10-19/23.parquet",
+		"kmsg/2026-10-20/03.parquet",
+		"units/2026-10-20/11.parquet", "units/2026-10-20/10.parquet",
 	}
 	slices.Sort(want)
 	got := slices.Sorted(slices.Values(sel.Copy))
@@ -61,7 +66,7 @@ func TestSelect(t *testing.T) {
 	}
 	// No window: everything, copied.
 	sel, _ = Select(Options{DataDir: dir}, nil)
-	if len(sel.Copy) != 10 || len(sel.After) != 0 {
+	if len(sel.Copy) != 14 || len(sel.After) != 0 {
 		t.Errorf("whole recording: %d files, after %v", len(sel.Copy), sel.After)
 	}
 }

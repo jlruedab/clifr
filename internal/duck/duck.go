@@ -151,7 +151,11 @@ func (l *loader) prepare(q string) (string, error) {
 }
 
 func (l *loader) files(table string) []string {
-	files, _ := filepath.Glob(filepath.Join(pqstore.TableDir(l.dir, table), "*", "*.parquet"))
+	var files []string
+	for _, d := range pqstore.TableDirs(l.dir, table) {
+		f, _ := filepath.Glob(filepath.Join(d, "*", "*.parquet"))
+		files = append(files, f...)
+	}
 	return files
 }
 

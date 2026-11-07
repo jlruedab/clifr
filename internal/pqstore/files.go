@@ -84,6 +84,23 @@ func TableDir(dataDir, table string) string {
 	return p
 }
 
+// TableDirs are the directories that hold a table's files: Dir(table), and
+// the table's own name when that exists too. Bundles made from 2026-11-01
+// to 2026-11-07 put their after-window rows under the plain name beside the
+// Dir directory; reading only TableDir lost them.
+func TableDirs(dataDir, table string) []string {
+	var out []string
+	for _, p := range []string{filepath.Join(dataDir, Dir(table)), filepath.Join(dataDir, table)} {
+		if dirExists(p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, TableDir(dataDir, table))
+	}
+	return out
+}
+
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
@@ -136,9 +153,11 @@ func renameDirs(dataDir string, logf func(string, ...any)) error {
 
 // DataFiles lists a table's dated files and its open files.
 func DataFiles(dir, table string) (dated, open []string) {
-	d := TableDir(dir, table)
-	dated, _ = filepath.Glob(filepath.Join(d, "*-*-*", "*.parquet"))
-	open, _ = filepath.Glob(filepath.Join(d, "open", "*.parquet"))
+	for _, d := range TableDirs(dir, table) {
+		ds, _ := filepath.Glob(filepath.Join(d, "*-*-*", "*.parquet"))
+		op, _ := filepath.Glob(filepath.Join(d, "open", "*.parquet"))
+		dated, open = append(dated, ds...), append(open, op...)
+	}
 	return dated, open
 }
 

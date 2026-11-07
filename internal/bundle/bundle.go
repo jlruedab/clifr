@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"clifr/internal/pqstore"
+	"clifr/internal/store"
 )
 
 // Version is the bundle layout version (bundle.json "bundle_version").
@@ -61,8 +62,14 @@ type Options struct {
 }
 
 // Tables whose values are written only when they change: a value in the
-// window may have been written long before it.
-var changeOnly = []string{"proc_samples", "sock_samples", "mounts", "fs_samples"}
+// window may have been written long before it. kmsg too: dmesg at a moment
+// prints every record of the boot up to it (internal/duck loads it so).
+var changeOnly = []string{"proc_samples", "sock_samples", "mounts", "fs_samples", "kmsg"}
+
+// Tables whose state at a moment is the last snapshot before it (written
+// every store.NetSnapshotMS) plus the changes after, as internal/duck loads
+// them: a window needs the hour before it.
+var hourly = []string{"addrs", "routing", "units", "cgroups"}
 
 // Selection is what a window needs: files copied whole, and per entity
 // table the files written after the window, of which only the rows of
@@ -110,6 +117,8 @@ func Select(o Options, meta map[string]string) (Selection, error) {
 			hi = 1 << 62
 		case slices.Contains(changeOnly, t):
 			lo = 0
+		case slices.Contains(hourly, t):
+			lo = o.From - store.NetSnapshotMS - (2 * time.Minute).Milliseconds()
 		}
 		for _, f := range dated {
 			fLo, fHi, ok := pqstore.FileSpan(f, flush)
@@ -231,7 +240,9 @@ func addAfter(tw *tar.Writer, m *Manifest, sel Selection, o Options, meta map[st
 		if n == 0 {
 			continue
 		}
-		f, err := addFile(tw, tmp, t+".parquet", filepath.Join(t, day, "after-window.parquet"))
+		// Under the table's Dir, where readers look (from 2026-11-01 to
+		// 2026-11-07 this used the plain name, beside it: lost).
+		f, err := addFile(tw, tmp, t+".parquet", filepath.Join(pqstore.Dir(t), day, "after-window.parquet"))
 		if err != nil {
 			return err
 		}
