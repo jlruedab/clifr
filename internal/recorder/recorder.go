@@ -18,6 +18,7 @@ import (
 
 	"clifr/internal/bpfproc"
 	"clifr/internal/bpftcp"
+	"clifr/internal/metrics"
 	"clifr/internal/pqstore"
 	"clifr/internal/procfs"
 	"clifr/internal/sockdiag"
@@ -47,6 +48,7 @@ type Config struct {
 	Redact           []string      // regular expressions masked in command lines before they are stored
 	MaxCmdline       int           // bytes of a command line stored (0: all)
 	MemoryGuard      int64         // live heap above which the memory guard sheds data (0: off)
+	Metrics          bool          // publish a metrics.Snapshot after each sample (clifrd --metrics)
 	FDInterval       time.Duration
 	Duration         time.Duration // 0 = until signalled
 	ProcRoot         string
@@ -130,6 +132,50 @@ type Recorder struct {
 	heapLive        func() uint64
 	lastCmdlineCut  int64  // of those, already reported
 	afterSample     func() // test hook
+	// With cfg.Metrics: the next snapshot, built by the sampling loop, and
+	// the published one, read by /metrics (never changed once published).
+	live metrics.Snapshot
+	snap atomic.Pointer[metrics.Snapshot]
+}
+
+// Metrics returns the newest published snapshot (nil before the first
+// sample, or without cfg.Metrics). Safe from any goroutine.
+func (r *Recorder) Metrics() *metrics.Snapshot { return r.snap.Load() }
+
+// publishMetrics publishes a copy of r.live: the maps are copied, as the
+// sampling loop goes on adding to them.
+func (r *Recorder) publishMetrics() {
+	s := r.live
+	s.Stats = make(map[string][2]int64, len(r.live.Stats))
+	for k, v := range r.live.Stats {
+		s.Stats[k] = v
+	}
+	s.Guard = make(map[string]int64, len(r.live.Guard))
+	for k, v := range r.live.Guard {
+		s.Guard[k] = v
+	}
+	r.snap.Store(&s)
+}
+
+// metricsSample adds a full sample's batch to the running totals (its stats
+// rows are deltas since the previous sample) and publishes.
+func (r *Recorder) metricsSample(b *store.Batch) {
+	if r.live.Stats == nil {
+		r.live.Stats, r.live.Guard = map[string][2]int64{}, map[string]int64{}
+	}
+	for _, s := range b.Stats {
+		t := r.live.Stats[s.Source]
+		t[0] += s.Events
+		t[1] += s.Dropped
+		r.live.Stats[s.Source] = t
+	}
+	for _, g := range b.Guard {
+		r.live.Guard[g.Kind]++
+	}
+	r.live.Version, r.live.BootMS = r.cfg.Version, r.boot
+	r.live.Sample = b.Sample
+	r.live.Samples++
+	r.publishMetrics()
 }
 
 func New(cfg Config, logger *Logger) (*Recorder, error) {
@@ -545,6 +591,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		Rows:  b.Rows(),
 		CPUUS: cpuUS, RSSKB: selfRSSKB(), DBBytes: r.db.Bytes(),
 		FDIntervalS: int64(r.fdInterval.Seconds()),
+	}
+	if r.cfg.Metrics {
+		r.metricsSample(&b)
 	}
 	t1 := time.Now()
 	if err := r.db.Write(&b); err != nil {

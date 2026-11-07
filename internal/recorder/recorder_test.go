@@ -814,3 +814,35 @@ func TestIdleSamplesHourly(t *testing.T) {
 		t.Error("fs usage: want rows when first seen, changed and an hour after the last row")
 	}
 }
+
+// With Metrics on, each sample publishes a snapshot: the system counters,
+// the recorder's own sample, and stats summed over the samples (their rows
+// are per-sample deltas). Published snapshots do not change afterwards.
+func TestMetricsSnapshot(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "alpha", 100, 5)
+	r, _ := newTestRecorder(t, fp.root)
+	if r.Metrics() != nil {
+		t.Fatal("a snapshot before any sample")
+	}
+	r.cfg.Metrics = true
+	t1 := time.UnixMilli(1790001000000)
+	// Deltas as the event sources report them, one batch each.
+	r.pending.Stats = []store.StatRow{{Source: "ebpf_exec", Events: 3, Dropped: 1}}
+	r.pending.Guard = []store.GuardEvent{{Kind: "budget_exceeded"}}
+	must(t, r.sample(t1, true))
+	first := r.Metrics()
+	if first == nil || first.Samples != 1 || first.SysTS != t1.UnixMilli() || first.Sys.MemTotal != 1000000 ||
+		first.Sample.TS != t1.UnixMilli() || first.Stats["ebpf_exec"] != [2]int64{3, 1} || first.Guard["budget_exceeded"] != 1 {
+		t.Fatalf("after one sample: %+v", first)
+	}
+	r.pending.Stats = []store.StatRow{{Source: "ebpf_exec", Events: 4, Dropped: 2}}
+	must(t, r.sample(t1.Add(30*time.Second), true))
+	second := r.Metrics()
+	if second.Samples != 2 || second.Stats["ebpf_exec"] != [2]int64{7, 3} || second.Guard["budget_exceeded"] != 1 {
+		t.Errorf("after two samples: %d samples, stats %v, guard %v", second.Samples, second.Stats, second.Guard)
+	}
+	if first.Samples != 1 || first.Stats["ebpf_exec"] != [2]int64{3, 1} {
+		t.Errorf("the first snapshot changed: %d samples, %v", first.Samples, first.Stats)
+	}
+}

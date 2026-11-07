@@ -168,11 +168,39 @@ Missing from the spec:
 - A real server, checked with `clifr verify`.
 - README Status updated to "viable" if all pass.
 
-### Phase 7 — Network features (later; constraint lifted at its start)
-- `--push` to sos-vault, `clifrd --serve` + `clifr --host` (files for a
-  window), `--token`, `--tls-ca`, licence (`license key|install`),
-  `/metrics` with new collectors (net interfaces, pressure), encryption of
-  bundles/pushes. Sized when the phase starts (needs sos-vault's ingestion API).
+### Phase 7 — Network features (started 2026-11-07)
+Agreed with the user on 2026-11-07 (the real-server test of phase 6 waits
+for a busy server). Rules for the whole phase: every network feature is
+opt-in and off by default (a default install has no listening port and no
+outbound connection); the unit keeps `RestrictAddressFamilies=AF_NETLINK
+AF_UNIX`, a packaged drop-in adds AF_INET/AF_INET6 for a feature that is
+turned on; no phone-home or telemetry; licences checked offline.
+- **7.1 `/metrics`** (1–1.5 weeks): `clifrd --metrics 127.0.0.1:9100`
+  (`metrics:` in clifrd.yml). Decisions (the user, 2026-11-07): the text
+  exposition format written by hand (no Prometheus client library); loopback
+  addresses only at first (TLS and auth later, as clifr's own small subset
+  in clifrd.yml); Node Exporter's metric names, so its dashboards work.
+  Served from the latest in-memory sample (a scrape reads no file).
+  - 7.1a: endpoint, text format; `/proc/stat`, meminfo, loadavg, vmstat
+    (`node_cpu_seconds_total`, `node_memory_*_bytes`, `node_load*`,
+    `node_context_switches_total`, …) and `clifr_*` (recorder CPU, memory,
+    data size, events received and dropped per source).
+  - 7.1b: disks, network interfaces (rtnetlink stats64), filesystems
+    (`fs_samples`), pressure (`/proc/pressure/*`, the one new collector).
+  - 7.1c: compare names and values with the real Node Exporter on this
+    machine; the unit drop-in; docs; benchmark with 15 s scrapes.
+- **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the
+  Parquet files of a window (as `clifrd bundle`); `clifr --host URL --token
+  T --tls-ca F` downloads and caches them and queries locally. TLS except
+  on loopback; tokens compared in constant time.
+- **7.3 Licensing** (3–5 days): `clifr license key|install`, a signed
+  licence file checked offline, gating `--host` and fleet use; after the
+  legal review.
+- **7.4 Encryption** (3–5 days): bundles and pushes to a public key, not
+  data at rest (local `clifr` could not read it).
+- **7.5 Push to sos-vault**: needs sos-vault's ingestion API; may not be
+  needed if route A (a minimal `sos report` uploaded through sos-vault's
+  existing API, `docs/sos-vault-integration.md`) is enough. Open (the user).
 
 ### Phase 8 — Command coverage (`docs/sosv_derivable_commands.csv`)
 Agreed with the user on 2026-10-21; one step at a time, report and wait.

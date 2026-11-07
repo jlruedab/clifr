@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -20,6 +21,7 @@ import (
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 
+	"clifr/internal/metrics"
 	"clifr/internal/recorder"
 )
 
@@ -90,6 +92,7 @@ func run(args []string) error {
 	maxCmdline := fs.String("max-cmdline", "64K", "bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments; 0 = all)")
 	memGuard := fs.String("memory-guard", "384M", "live heap above which the recorder sheds data instead of reaching the unit's MemoryMax: command lines cut to 4K, the open files of the processes holding the most no longer tracked; a guard event says so (0 = off)")
 	maxSize := fs.String("max-size", "2G", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
+	metricsAddr := fs.String("metrics", "", "serve Prometheus metrics (Node Exporter names, and clifr_*) at http://ADDR/metrics; loopback addresses only, e.g. 127.0.0.1:9100 (off by default)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -169,9 +172,26 @@ func run(args []string) error {
 		}
 		defer stopProfile()
 	}
+	// Opened before the recorder starts: a bad or busy address stops clifrd
+	// at once, not after its first sample.
+	var metricsLn net.Listener
+	if *metricsAddr != "" {
+		if metricsLn, err = metrics.Listen(*metricsAddr); err != nil {
+			return err
+		}
+		c.Metrics = true
+	}
 	r, err := recorder.New(c, logger)
 	if err != nil {
+		if metricsLn != nil {
+			metricsLn.Close()
+		}
 		return err
+	}
+	if metricsLn != nil {
+		srv := metrics.Serve(metricsLn, r.Metrics)
+		defer srv.Close()
+		logger.Printf("metrics at http://%s/metrics", metricsLn.Addr())
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

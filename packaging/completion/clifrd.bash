@@ -6,7 +6,7 @@ _clifrd() {
 		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
 		--budget-window --verify-every --flush-interval --flush-rows --retention
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --memory-guard
-		--max-size --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
+		--max-size --metrics --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"
 	local bundle="--data-dir -D --last --since --until -o --output"
 	COMPREPLY=()
@@ -17,6 +17,10 @@ _clifrd() {
 		;;
 	--log-level)
 		COMPREPLY=($(compgen -W "error warn info debug" -- "$cur"))
+		return
+		;;
+	--metrics)
+		COMPREPLY=($(compgen -W "127.0.0.1:9100 [::1]:9100" -- "$cur"))
 		return
 		;;
 	--events)

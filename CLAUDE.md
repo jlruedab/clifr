@@ -49,7 +49,12 @@ wait for the user's go-ahead.
   the build without it).
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
-- No network, encryption, obfuscation or web UI. One exception (the user, 2026-11-01, against
+- Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,
+  `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand, loopback
+  addresses only for now). A default install opens no port and makes no connection; the
+  unit keeps `RestrictAddressFamilies=AF_NETLINK AF_UNIX` (a drop-in adds AF_INET for a
+  feature turned on). No phone-home or telemetry.
+- No encryption, obfuscation or web UI. One exception (the user, 2026-11-01, against
   copy-cats): table directories are named by a fixed hash, `pqstore.Dir` (8 hex digits of
   SHA-256("clifr/" + table)), the same on every host; never change it (bundles move between
   hosts). Column names inside the Parquet files stay readable. Readers take the old plain names

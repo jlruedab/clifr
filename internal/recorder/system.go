@@ -68,6 +68,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	}
 	row := &store.SysSample{TS: ts, UptimeMS: ts - r.boot, ProcsRunning: st.ProcsRunning, ProcsBlocked: st.ProcsBlocked,
 		Intr: int64(st.Intr), Ctxt: int64(st.Ctxt), Forks: int64(st.Forks), SoftIRQ: int64(st.SoftIRQ)}
+	firstCPU := len(b.CPUs)
 	for _, c := range st.CPUs {
 		cs := store.CPUSample{TS: ts, CPU: c.CPU}
 		for i, v := range c.T {
@@ -94,6 +95,12 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.Raw6InUse, row.Frag6InUse, row.Frag6Memory = int64(k.Raw6InUse), int64(k.Frag6InUse), int64(k.Frag6Memory)
 	}
 	b.Sys = append(b.Sys, *row)
+	if r.cfg.Metrics {
+		r.live.Version, r.live.BootMS = r.cfg.Version, r.boot
+		r.live.SysTS, r.live.Sys = ts, *row
+		r.live.CPUs = append([]store.CPUSample(nil), b.CPUs[firstCPU:]...) // a new slice: the published one stays as it is
+		r.publishMetrics()
+	}
 	if s.sysfs { // rtnetlink describes this machine, not a --proc-root fixture
 		if links, err := rtnl.Dump(); !fail("rtnetlink links", err) {
 			s.addLinks(ts, links, b)
