@@ -57,13 +57,13 @@ packaging/build.sh                         # or: DOCKER="sudo docker" packaging/
 ls dist/
 ```
 
-`dist/` then holds four files (the version is taken from the last git commit):
+`dist/` then holds four files. The version is taken from the last git commit: its time in UTC (date and time to the second), then its hash, so a package built from a later commit always installs as an upgrade:
 
 ```
-clifr_0.1.0~git20261105.6f30dcebea9e_amd64.deb
-clifrd_0.1.0~git20261105.6f30dcebea9e_amd64.deb
-clifr-0.1.0-0.git20261105.6f30dcebea9e.x86_64.rpm
-clifrd-0.1.0-0.git20261105.6f30dcebea9e.x86_64.rpm
+clifr_0.1.0~git20261105.142233.6f30dcebea9e_amd64.deb
+clifrd_0.1.0~git20261105.142233.6f30dcebea9e_amd64.deb
+clifr-0.1.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
+clifrd-0.1.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
 ```
 
 Copy the two files for your distribution to the host.

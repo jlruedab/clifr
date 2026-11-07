@@ -18,7 +18,10 @@ IMAGE=rockylinux:8
 maintainer="Jorge L. Rueda B. <jlrueda@gmail.com>"
 rev=$(git rev-parse --short=12 HEAD)
 git diff --quiet HEAD -- . ':!sessions.txt' ':!docs/clifr command line flight.txt' || rev=$rev.dirty
-snap=$(date -u +%Y%m%d).$rev
+# Snapshots sort by the commit's time (UTC, to the second), then its hash:
+# a later commit is always a newer package, and rebuilding a commit gives the
+# same version. (The build date alone made same-day builds sort by hash.)
+snap=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y%m%d.%H%M%S HEAD).$rev
 full=$VERSION-$snap              # what --version prints
 debver=$VERSION~git$snap         # sorts before the release $VERSION
 rpmrel=0.git$snap
