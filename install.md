@@ -77,6 +77,7 @@ What the packages contain:
 | `/etc/clifr/clifrd.yml` (configuration, kept on upgrade) | clifrd |
 | `/usr/lib/sysusers.d/clifr.conf` (creates the `clifr` group) | clifrd |
 | `/usr/share/clifr/sos/clifr.py` (plugin for `sos report`) | clifrd |
+| `/usr/share/clifr/clifrd-metrics.conf` (systemd drop-in to copy only if you turn on Prometheus metrics, see the [user guide](userguide.md#clifrd-as-a-metrics-source-metrics)) | clifrd |
 | `man clifrd`, bash completion | clifrd |
 | `/usr/bin/clifr`, `man clifr`, bash completion | clifr |
 | `/usr/share/doc/clifr*/`: `LICENSE` (AGPL-3.0), `LICENSING.md`, `THIRD_PARTY_NOTICES`; clifrd's eBPF sources in `ebpf/` | both |

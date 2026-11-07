@@ -172,14 +172,20 @@ func run(args []string) error {
 		}
 		defer stopProfile()
 	}
-	// Opened before the recorder starts: a bad or busy address stops clifrd
-	// at once, not after its first sample.
+	// A bad address is a configuration error: clifrd does not start. If the
+	// port cannot be opened (taken, or no TCP under the unit), clifrd logs
+	// it and records without metrics: the recording comes first.
 	var metricsLn net.Listener
 	if *metricsAddr != "" {
-		if metricsLn, err = metrics.Listen(*metricsAddr); err != nil {
+		if _, err := metrics.CheckAddr(*metricsAddr); err != nil {
 			return err
 		}
-		c.Metrics = true
+		if metricsLn, err = metrics.Listen(*metricsAddr); err != nil {
+			logger.Errorf("metrics: %v; recording without them", err)
+			metricsLn = nil
+		} else {
+			c.Metrics = true
+		}
 	}
 	r, err := recorder.New(c, logger)
 	if err != nil {

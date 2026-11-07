@@ -26,6 +26,12 @@ max_cmdline: 64K       # bytes of each command line stored; longer ones are cut
 memory_guard: 384M     # live heap above which data is shed (guard event) before
                        # the unit's MemoryMax (768M) is reached
 
+# Prometheus metrics (Node Exporter's names, and clifr_*) at
+# http://ADDR/metrics. Off by default; loopback addresses only. Under the
+# systemd unit it also needs the drop-in /usr/share/clifr/clifrd-metrics.conf
+# (the unit allows no TCP otherwise; see that file).
+#metrics: 127.0.0.1:9100
+
 # Masked in command lines (as ***) before they are stored: Go regular
 # expressions; with capture groups only the groups are masked. (The built-in
 # default is none; these are suggestions.)

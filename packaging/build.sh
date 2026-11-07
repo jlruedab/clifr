@@ -81,6 +81,7 @@ install -D -m 0644 deploy/clifrd.yml "$d/etc/clifr/clifrd.yml"
 install -D -m 0644 "$stage/man/clifrd.8" "$d/usr/share/man/man8/clifrd.8"
 install -D -m 0644 packaging/completion/clifrd.bash "$d/usr/share/bash-completion/completions/clifrd"
 install -D -m 0644 deploy/sos/clifr.py "$d/usr/share/clifr/sos/clifr.py"
+install -D -m 0644 deploy/clifrd-metrics.conf "$d/usr/share/clifr/clifrd-metrics.conf" # opt-in: copied by the admin
 gzip -9n "$c/usr/share/man/man1/clifr.1" "$d/usr/share/man/man8/clifrd.8"
 
 echo "== rpm (in $IMAGE)"

@@ -86,6 +86,10 @@ wait for the user's go-ahead.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.
 - `internal/verify/` — compare saved real tool output with reconstructions.
+- `internal/metrics/` — `clifrd --metrics`: the Prometheus text format written by hand, Node
+  Exporter's names, from the recorder's last published `Snapshot` (no read per scrape);
+  loopback addresses only; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP,
+  loopback-only IP). A failed listen is logged and clifrd records without metrics.
 - `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
   `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
 - `packaging/vm.sh` — KVM test VMs (Rocky 8, Alma 9, Ubuntu 22.04 cloud images in

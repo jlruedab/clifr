@@ -29,7 +29,7 @@ To install clifr, see the [installation guide](install.md).
    10. [The state of the system before a hard freeze or crash](#use-case-10-the-state-of-the-system-before-a-hard-freeze-or-crash)
    11. [The OOM killer killed nfsd: what was using the memory?](#use-case-11-the-oom-killer-killed-nfsd-what-was-using-the-memory)
    12. [High load average, but little CPU use and no disk wait](#use-case-12-high-load-average-but-little-cpu-use-and-no-disk-wait)
-5. [Active monitoring with Prometheus](#5-active-monitoring-with-prometheus)
+5. [Active monitoring with Prometheus](#5-active-monitoring-with-prometheus): [clifrd as a metrics source](#clifrd-as-a-metrics-source-metrics)
 6. [Configuration](#6-configuration): [clifrd's file](#clifrd-the-configuration-file), [clifrd's options](#clifrd-command-line-options), [the systemd unit](#the-systemd-unit), [clifr's options](#clifr-command-line-options)
 7. [Architecture](#7-architecture): [local](#local), [centralized analysis](#centralized-analysis), [data and security](#data-and-security)
 
@@ -953,10 +953,57 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
 
 ## 5. Active monitoring with Prometheus
 
-clifr is not a monitoring system: it sends nothing over the network and has no metrics endpoint. Prometheus and clifr work well together, though, each doing its own part:
+clifr is not a monitoring system, and by default it opens no network port at all. Prometheus and clifr work well together, though, each doing its own part:
 
 - **Prometheus tells you *when*.** Its alerts and graphs show the moment a metric went wrong: load, latency, memory, error rate.
 - **clifr tells you *what*.** At that moment, which processes, connections, files and kernel messages explain it.
+
+### clifrd as a metrics source (`metrics:`)
+
+clifrd can also serve the system counters it reads anyway as Prometheus metrics, under **Node Exporter's metric names**, so existing dashboards and alert rules work unchanged. It is off by default and listens on loopback addresses only (there is no TLS or authentication yet), so Prometheus must run on the same machine, or reach it through an SSH tunnel or a local agent.
+
+1. Turn it on in `/etc/clifr/clifrd.yml`:
+
+   ```yaml
+   metrics: 127.0.0.1:9100
+   ```
+
+   (Use another port, such as 9101, if node_exporter already runs on 9100.)
+
+2. Allow it in the service. The shipped unit lets clifrd open only netlink and Unix sockets; a drop-in adds TCP, limited to the loopback interface:
+
+   ```sh
+   sudo install -D -m 0644 /usr/share/clifr/clifrd-metrics.conf /etc/systemd/system/clifrd.service.d/metrics.conf
+   sudo systemctl daemon-reload && sudo systemctl restart clifrd
+   journalctl -u clifrd -b | grep metrics     # "metrics at http://127.0.0.1:9100/metrics"
+   curl -s http://127.0.0.1:9100/metrics | head
+   ```
+
+   Without the drop-in clifrd logs `error: metrics: --metrics 127.0.0.1:9100: listen tcp 127.0.0.1:9100: socket: address family not supported by protocol (the systemd unit allows no TCP sockets: install its metrics drop-in); recording without them` and keeps recording: recording always comes first. A port already in use is handled the same way. An address that is not a loopback address is a configuration error, and clifrd does not start. On kernels with pressure stall information turned off (RHEL 8 by default, `psi=1` on the kernel command line turns it on) the `node_pressure_*` metrics are absent.
+
+3. Scrape it from Prometheus like a node_exporter target:
+
+   ```yaml
+   scrape_configs:
+     - job_name: clifrd
+       static_configs:
+         - targets: ["127.0.0.1:9100"]
+   ```
+
+What is served, with Node Exporter's names, types and labels (compared series by series with Node Exporter 1.10.2 on a test machine):
+
+| Area | Metrics |
+|---|---|
+| CPU | `node_cpu_seconds_total{cpu,mode}`, `node_cpu_guest_seconds_total` |
+| Load, processes | `node_load1/5/15`, `node_procs_running`, `node_procs_blocked`, `node_context_switches_total`, `node_forks_total`, `node_intr_total`, `node_boot_time_seconds` |
+| Memory | `node_memory_*_bytes` (MemTotal, MemFree, MemAvailable, Buffers, Cached, Swap*, Active, Inactive, Dirty, Writeback, Shmem, Slab, SReclaimable), `node_vmstat_pg*`, `node_vmstat_pswp*` |
+| Disks | `node_disk_*` (reads, writes, discards, flushes, bytes, times, I/O in progress), same devices as Node Exporter's default filter |
+| Network | `node_network_{receive,transmit}_*_total`, `node_network_up`, `_mtu_bytes`, `_flags`, `_carrier_changes_total` and other interface properties |
+| File systems | `node_filesystem_{size,free,avail}_bytes`, `_files`, `_files_free`, `_readonly` (Node Exporter's default mount and type filters) |
+| Pressure | `node_pressure_{cpu,io,memory}_*_seconds_total` |
+| clifrd itself | `clifr_build_info`, `clifr_sample_timestamp_seconds`, `clifr_recorder_cpu_seconds_total`, `clifr_recorder_resident_memory_bytes`, `clifr_data_bytes`, `clifr_events_total{source}`, `clifr_events_dropped_total{source}`, `clifr_guard_events_total{kind}` |
+
+Values come from clifrd's last system sample (every 10 s, `intervals.system`), not read again at each scrape: a scrape costs about 1 ms. So they can be up to 10 s old (`clifr_system_sample_timestamp_seconds` says when they were read); a 15 s or longer scrape interval suits them. Not served, as clifrd does not record them: Node Exporter's `*_info` families (disk model and serial, interface addresses), link speed, duplex and carrier from sysfs, hardware sensors, `node_netstat_*`, `node_systemd_*` and the textfile collector. Command lines, connections and files are never served: they stay in the recording, for `clifr`.
 
 ### From an alert to clifr
 
@@ -986,7 +1033,7 @@ Time zones: Prometheus and Alertmanager work in UTC, so `--tz UTC` lets you past
 
 ### Monitoring the recorder itself
 
-The recording is only useful if it is there when you need it. Watch clifrd with Prometheus too:
+The recording is only useful if it is there when you need it. Watch clifrd with Prometheus too. With `metrics:` turned on, the `clifr_*` metrics above already say it: alert when `time() - clifr_sample_timestamp_seconds > 120` (no recent sample), when `rate(clifr_events_dropped_total[10m]) > 0`, or when the target is down. Without it, as follows:
 
 1. **Service up.** node_exporter's systemd collector (`--collector.systemd`) exports `node_systemd_unit_state{name="clifrd.service",state="active"}`.
 

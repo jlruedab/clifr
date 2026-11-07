@@ -9,21 +9,31 @@ import (
 	"time"
 )
 
-// Listen opens addr for --metrics. Only loopback addresses for now (the
-// user, 2026-11-07: TLS and authentication come later): 127.0.0.1:9100,
-// [::1]:9100 or localhost:9100.
-func Listen(addr string) (net.Listener, error) {
+// CheckAddr validates a --metrics address and returns the one to listen on.
+// Only loopback addresses for now (the user, 2026-11-07: TLS and
+// authentication come later): 127.0.0.1:9100, [::1]:9100 or localhost:9100.
+func CheckAddr(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, fmt.Errorf("--metrics %q: want HOST:PORT, e.g. 127.0.0.1:9100", addr)
+		return "", fmt.Errorf("--metrics %q: want HOST:PORT, e.g. 127.0.0.1:9100", addr)
 	}
 	if host == "localhost" {
 		host = "127.0.0.1"
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return nil, fmt.Errorf("--metrics %q: only loopback addresses for now (127.0.0.1 or ::1): there is no TLS or authentication yet", addr)
+		return "", fmt.Errorf("--metrics %q: only loopback addresses for now (127.0.0.1 or ::1): there is no TLS or authentication yet", addr)
 	}
-	ln, err := net.Listen("tcp", net.JoinHostPort(host, port))
+	return net.JoinHostPort(host, port), nil
+}
+
+// Listen opens addr (CheckAddr first). A failure here is the environment's
+// (port taken, no TCP under the unit): clifrd logs it and records anyway.
+func Listen(addr string) (net.Listener, error) {
+	a, err := CheckAddr(addr)
+	if err != nil {
+		return nil, err
+	}
+	ln, err := net.Listen("tcp", a)
 	if errors.Is(err, syscall.EAFNOSUPPORT) {
 		return nil, fmt.Errorf("--metrics %s: %w (the systemd unit allows no TCP sockets: install its metrics drop-in)", addr, err)
 	}

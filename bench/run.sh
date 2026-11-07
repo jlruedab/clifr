@@ -18,6 +18,8 @@
 #                       N1  Prometheus Node Exporter (default collectors, on
 #                           127.0.0.1:9100), scraped every 15 s from outside its
 #                           scope (comparison; not in the default list)
+#                       M1  B with --metrics 127.0.0.1:9100, scraped every 15 s
+#                           from outside its scope, as N1 (not in the default list)
 #   --bpf-stats       B, C, D: also measure the eBPF programs' run time
 #                     (adds a little to every program run: not for latency figures)
 #   --cpus LIST       pin PostgreSQL and pgbench to these CPUs (e.g. 0-11: the
@@ -107,7 +109,7 @@ OUT=$(realpath -m "$OUT") # workload.sh changes directory
 check_common clifr clifrd load benchtool report
 for c in $CONFIGS; do
     case $c in
-    A | B | C | D | U) ;;
+    A | B | C | D | U | M1) ;;
     U2) [[ -f $UNIT2 ]] || die "U2 needs --unit2 FILE" ;;
     V1) die "V1 (the v1 recorder, SQLite) was removed on 2026-10-21; its results are history" ;;
     R1) command -v atop >/dev/null || die "R1 needs atop" ;;
@@ -190,6 +192,7 @@ recorder_cmd() {
     case $1 in
     A) return ;;
     B | U | U2) s="--interval 30s --fd-interval 120s" ;;
+    M1) s="--interval 30s --fd-interval 120s --metrics 127.0.0.1:9100" ;;
     C) s="--interval 10s --fd-interval 60s" ;;
     D) s="--interval 60s --fd-interval 300s" ;;
     R1) echo "nice -n 10 ionice -c 3 atop -w $RUN/atop.raw 30"; return ;;
@@ -267,7 +270,7 @@ run_one() {
         sleep 3
         kill -0 $rec_pid 2>/dev/null || { log "$RUNID: recorder died at start"; tail -3 "$RUN/recorder.log"; return 1; }
     fi
-    if [[ $config == N1 ]]; then
+    if [[ $config == N1 || $config == M1 ]]; then
         # The scraper stands in for Prometheus: outside the measured scope.
         echo "ts_ms,bytes,seconds" >"$RUN/scrape.csv"
         (while :; do

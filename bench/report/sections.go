@@ -41,9 +41,10 @@ var configDesc = map[string]string{
 	"V1": "v1 recorder (snapshots, SQLite) --interval 30s --fd-interval 120s",
 	"R1": "atop -w FILE 30 (reference)",
 	"N1": "Prometheus Node Exporter, scraped every 15 s (comparison)",
+	"M1": "clifrd as B with --metrics, scraped every 15 s",
 }
 
-var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "U": "--s2", "U2": "--s3", "V1": "--s5", "R1": "--s4", "N1": "--s5", "passive": "--s1"}
+var configColor = map[string]string{"A": "--base", "B": "--s1", "C": "--s2", "D": "--s3", "U": "--s2", "U2": "--s3", "V1": "--s5", "R1": "--s4", "N1": "--s5", "M1": "--s2", "passive": "--s1"}
 
 func color(cfg string) string {
 	if c, ok := configColor[cfg]; ok {

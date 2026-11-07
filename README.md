@@ -157,6 +157,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--max-cmdline` | 64K | bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments) and counted as `cmdline_cut` in `clifr info`; `0` = all |
 | `--memory-guard` | 384M | live Go heap above which the recorder sheds data rather than reach the unit's `MemoryMax`: command lines are cut to 4K and the open files of the processes holding the most are no longer tracked (half of all entries; again after `--budget-window` if still above); a `memory_shed` guard event says so, `memory_ok` when the heap is below 3/4 of it; `0` = off |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
+| `--metrics` | off | serve Prometheus metrics at `http://ADDR/metrics` (loopback addresses only, e.g. `127.0.0.1:9100`): Node Exporter's names for CPU, memory, load, disks, network interfaces, file systems and pressure, and `clifr_*` for the recorder itself; from the last sample (no file read per scrape). Under the systemd unit it also needs the drop-in `/usr/share/clifr/clifrd-metrics.conf`; if the port cannot be opened clifrd logs it and records without metrics |
 | `--log-level` | info | error, warn, info or debug |
 | `-v`, `--version` | | print the version and exit |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
