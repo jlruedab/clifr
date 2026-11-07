@@ -15,10 +15,28 @@ import (
 	"golang.org/x/sys/unix"
 
 	"clifr/internal/duck"
+	"clifr/internal/pqstore"
 	"clifr/internal/procfs"
 	"clifr/internal/query"
 	"clifr/internal/store"
 )
+
+// Every entity table's ids start at the run's base (run start × 1e9), so
+// they never repeat across runs: fds_held was left out until 2026-11-07, its
+// ids began at 1 in every run, and lsof of a recording with several runs
+// lost most open files.
+func TestIDsSeededPerRun(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	for _, tbl := range pqstore.EntityTables {
+		if r.ids[tbl] < 1_000_000_000 {
+			t.Errorf("%s: ids start at %d, not at the run's base", tbl, r.ids[tbl])
+		}
+	}
+	if id := r.nextID("fds_held"); id <= 1_000_000_000 {
+		t.Errorf("first fds_held id %d", id)
+	}
+}
 
 // fakeProc is a writable proc-root for driving the recorder in tests.
 type fakeProc struct {

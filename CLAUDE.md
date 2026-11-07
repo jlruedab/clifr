@@ -111,7 +111,9 @@ wait for the user's go-ahead.
   from the last sample timestamp on the next start after a crash.
 - Parquet: append-only. A closed entity is written once; open ones are rewritten each
   flush to `<Dir(table)>/open/<run>.parquet` with last_seen = last sample. Readers keep one
-  row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter.
+  row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter, for every table
+  of `pqstore.EntityTables` (fds_held's began at 1 in every run until 2026-11-07, so readers
+  keep one fds_held row per id and first_seen: older recordings reuse its ids across runs).
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
   newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;

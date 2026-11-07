@@ -276,8 +276,17 @@ func (l *loader) load(table string) error {
 	case table == "meta":
 		q = `CREATE TABLE meta AS SELECT key, arg_max(value, ts) AS value FROM ` + src + ` GROUP BY key`
 	case slices.Contains(pqstore.EntityTables, table):
+		// One row per entity: its versions share id and first_seen. Until
+		// 2026-11-07 fds_held ids began at 1 in every run (the recorder did
+		// not seed them), so one id can be several runs' fds: first_seen
+		// tells them apart, else a closed row of an earlier run hid a later
+		// run's open fd (lsof of a recording with more than one run).
+		part := "id"
+		if table == "fds_held" {
+			part = "id, first_seen"
+		}
 		q = `CREATE TABLE ` + table + ` AS SELECT * EXCLUDE (filename) FROM ` + src + where + `
-			QUALIFY row_number() OVER (PARTITION BY id
+			QUALIFY row_number() OVER (PARTITION BY ` + part + `
 				ORDER BY contains(filename, '/open/'), last_seen DESC NULLS LAST) = 1`
 	default:
 		q = `CREATE TABLE ` + table + ` AS SELECT * EXCLUDE (filename) FROM ` + src + where

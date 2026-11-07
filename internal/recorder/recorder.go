@@ -207,7 +207,10 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	if r.cfg.BudgetWindow == 0 {
 		r.cfg.BudgetWindow = 5 * time.Minute
 	}
-	for _, t := range []string{"processes", "sockets", "sock_owners", "open_files", "tcp_conns"} {
+	// Every entity table: ids must not repeat across runs (readers keep one
+	// row per id). fds_held was left out of a hand-written list until
+	// 2026-11-07, so its ids began at 1 in every run and collided.
+	for _, t := range pqstore.EntityTables {
 		n, err := db.MaxID(t)
 		if err != nil {
 			return nil, err
