@@ -1004,5 +1004,7 @@ Copyright © 2026 Jorge L. Rueda B.
 clifr is dual-licensed: under the [GNU Affero General Public License v3.0](LICENSE)
 (`AGPL-3.0-only`), or under a commercial license from the copyright holder for
 uses the AGPL does not allow. The eBPF programs are `GPL-2.0-only OR
-BSD-2-Clause`. See [LICENSING.md](LICENSING.md); contributions need the
+BSD-2-Clause`. `clifr --host` (another host's recording) asks for a commercial
+licence file, checked offline (`clifr license`, `clifr license install FILE`;
+not yet in builds without the issuer's key). See [LICENSING.md](LICENSING.md); contributions need the
 [Contributor License Agreement](CLA.md) ([CONTRIBUTING.md](CONTRIBUTING.md)).

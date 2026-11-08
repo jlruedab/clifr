@@ -24,6 +24,12 @@ If the AGPL-3.0's obligations do not suit you — for example, you want to ship 
 
 The commercial license is a separate agreement; nothing in this repository grants it.
 
+### The licence file for `clifr --host`
+
+Querying another host's recording (`clifr --host`) is meant for commercial licence holders. clifr asks for a licence file for it: a text file signed by the copyright holder, checked offline against the public key built into clifr, with no network connection, no tracking and no tie to a machine. Install it with `clifr license install FILE` (as root for the whole system, `/etc/clifr/clifr.lic`; otherwise for the user) and check it with `clifr license`. An expired licence only makes clifr print a reminder; `--host` keeps working. Reading local recordings, bundles and sosreports never needs a licence, and neither does `clifrd --serve`. Builds made before the copyright holder's public key is added do not ask for a licence at all.
+
+This check does not limit the rights the AGPL-3.0 grants: under it you may study, change and redistribute clifr, the check included. (This paragraph is part of the legal review noted in the project's HANDOFF.)
+
 ## eBPF programs
 
 The two eBPF programs that clifrd loads into the kernel, `internal/bpfproc/procevents.bpf.c` and `internal/bpftcp/tcpevents.bpf.c`, and the objects compiled from them, are licensed under **GPL-2.0-only OR BSD-2-Clause**, at your option, as is common for eBPF programs: the kernel only gives some of its helper functions to programs that declare a GPL-compatible license. Each file says so in its header.

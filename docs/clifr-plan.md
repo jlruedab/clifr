@@ -256,9 +256,11 @@ turned on; no phone-home or telemetry; licences checked offline.
     with a backup), `sign` (fields from flags, the private key from a file
     given on the command line; prints the licence), `verify`. The private
     key is never in the repository. The user generates the production key
-    pair and gives the public half to be embedded: until then only test keys
-    exist, so the gate is merged together with the production public key
-    (else --host would be unusable for everyone, the user included).
+    pair and gives the public half to be embedded in the source
+    (`productionKeys`; the user, 2026-11-08: in the source, not injected at
+    build time). Until then the gate is dormant (the user, 2026-11-08:
+    merged before the key exists): a build without a production key asks
+    for no licence; adding the key turns the gate on.
   - **Steps:** 7.3a (done 2026-11-08) the format, verification and `clifr
     license`, with test keys; 7.3b (done 2026-11-08) the gate on --host and
     its messages; 7.3c `clifr-license`,

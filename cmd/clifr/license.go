@@ -65,6 +65,12 @@ func checkRemoteLicense(g *globals) error {
 	const terms = "Querying another host (clifr --host) needs a commercial licence; local recordings, bundles and " +
 		"sosreports (--data-dir) do not.\nLicensing: see LICENSING.md (/usr/share/doc/clifr/LICENSING.md); " +
 		"install a licence with: clifr license install FILE"
+	// Dormant in a build without the issuer's public key (the user,
+	// 2026-11-08: merged before the production key exists; adding the key to
+	// license.productionKeys turns the gate on).
+	if len(license.Keys()) == 0 {
+		return nil
+	}
 	p, l, err := findLicense(g)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

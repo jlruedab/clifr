@@ -36,6 +36,22 @@ func writeLicense(t *testing.T, priv ed25519.PrivateKey, l license.License) stri
 	return p
 }
 
+// Without a production key built in, the gate is dormant: no licence is
+// asked for. With one (here a test key) it is on.
+func TestRemoteLicenseGateDormant(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if len(license.Keys()) != 0 {
+		t.Skip("this build has a production key: the gate is on (TestRemoteLicenseGate)")
+	}
+	if err := checkRemoteLicense(&globals{lic: filepath.Join(t.TempDir(), "missing.lic")}); err != nil {
+		t.Errorf("no production key, no licence: %v", err)
+	}
+	testLicenseKey(t)
+	if err := checkRemoteLicense(&globals{lic: filepath.Join(t.TempDir(), "missing.lic")}); err == nil {
+		t.Error("with a key built in, no licence was accepted")
+	}
+}
+
 // The gate of --host: refused without a valid licence for remote queries,
 // a warning (and on) when expired; checked before any connection.
 func TestRemoteLicenseGate(t *testing.T) {
