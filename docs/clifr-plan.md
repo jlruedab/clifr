@@ -260,7 +260,8 @@ turned on; no phone-home or telemetry; licences checked offline.
     exist, so the gate is merged together with the production public key
     (else --host would be unusable for everyone, the user included).
   - **Steps:** 7.3a (done 2026-11-08) the format, verification and `clifr
-    license`, with test keys; 7.3b the gate on --host and its messages; 7.3c `clifr-license`,
+    license`, with test keys; 7.3b (done 2026-11-08) the gate on --host and
+    its messages; 7.3c `clifr-license`,
     the key ceremony (the user, offline), docs (README "License",
     LICENSING.md, user guide's --host section, man page), merge with the
     production public key. Tests: valid, expired (a warning), tampered

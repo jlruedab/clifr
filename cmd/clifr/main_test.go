@@ -79,7 +79,7 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"--since", "-1h", "--list", "--samples", "ss -tn"}, "use one of"},
 		{[]string{"--since", "-1h", "--list", "ps aux"}, "--list is for ss and netstat"},
 		{[]string{"--at", "now", "ss -an"}, "add -t and/or -u"},
-		{[]string{"--host", "x", "--at", "now", "ps aux"}, "--host needs a token"},
+		{[]string{"--host", "x", "--license", "/nonexistent/clifr.lic", "--at", "now", "ps aux"}, "needs a commercial licence"},
 		{[]string{"--host", "x", "--token", "t", "--data-dir", "/tmp", "--at", "now", "ps aux"}, "--host and --data-dir: give one"},
 		{[]string{"--tls-ca", "f", "--at", "now", "ps aux"}, "--tls-ca is not used"},
 		{[]string{"--tls-fingerprint", "SHA256:x", "--at", "now", "ps aux"}, "--tls-fingerprint is for --host"},

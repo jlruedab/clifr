@@ -36,6 +36,52 @@ func writeLicense(t *testing.T, priv ed25519.PrivateKey, l license.License) stri
 	return p
 }
 
+// The gate of --host: refused without a valid licence for remote queries,
+// a warning (and on) when expired; checked before any connection.
+func TestRemoteLicenseGate(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	priv := testLicenseKey(t)
+	_, other, _ := ed25519.GenerateKey(rand.Reader)
+	lic := func(key ed25519.PrivateKey, expires string, features ...string) string {
+		return writeLicense(t, key, license.License{ID: "CL-1", Customer: "Acme Ltd", Contact: "sales@example.com",
+			Issued: "2026-01-01", Expires: expires, Features: features})
+	}
+	for _, c := range []struct {
+		name, file, want string // want: "" = allowed
+	}{
+		{"none", filepath.Join(t.TempDir(), "missing.lic"), "no licence installed (looked in"},
+		{"forged", lic(other, "", license.FeatureRemote), "not signed by a key"},
+		{"no remote feature", lic(priv, "", "other"), "does not include remote queries"},
+		{"valid", lic(priv, "2099-12-31", license.FeatureRemote), ""},
+		{"expired: warns, allowed", lic(priv, "2025-01-01", license.FeatureRemote), ""},
+	} {
+		err := checkRemoteLicense(&globals{lic: c.file})
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "LICENSING.md")):
+			t.Errorf("%s: %v, want %q and the licensing pointer", c.name, err, c.want)
+		}
+	}
+	// Nothing installed anywhere: names where it looked.
+	err := checkRemoteLicense(&globals{})
+	if err == nil || !strings.Contains(err.Error(), "no licence installed") || !strings.Contains(err.Error(), "--data-dir) do not") {
+		t.Errorf("nothing installed: %v", err)
+	}
+	// The expiry warning, on stderr.
+	r, w, _ := os.Pipe()
+	old := os.Stderr
+	os.Stderr = w
+	checkRemoteLicense(&globals{lic: lic(priv, "2025-01-01", license.FeatureRemote)})
+	w.Close()
+	os.Stderr = old
+	b := make([]byte, 512)
+	n, _ := r.Read(b)
+	if want := "# licence CL-1 of Acme Ltd expired on 2025-01-01 (clifr --host keeps working; renew it: sales@example.com)"; !strings.Contains(string(b[:n]), want) {
+		t.Errorf("expiry warning %q", b[:n])
+	}
+}
+
 func TestLicenseCommand(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("as root install writes /etc/clifr/clifr.lic")

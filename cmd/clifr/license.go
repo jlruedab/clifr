@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"clifr/internal/license"
+	"clifr/internal/query"
 )
 
 // systemLicense is the spec's default licence file.
@@ -55,6 +56,29 @@ func findLicense(g *globals) (string, *license.License, error) {
 		return p, l, err
 	}
 	return "", nil, fs.ErrNotExist
+}
+
+// checkRemoteLicense is the gate of clifr --host (the user, 2026-11-08: all
+// of --host needs a commercial licence; local data never does). Checked
+// before any connection. An expired licence warns and goes on.
+func checkRemoteLicense(g *globals) error {
+	const terms = "Querying another host (clifr --host) needs a commercial licence; local recordings, bundles and " +
+		"sosreports (--data-dir) do not.\nLicensing: see LICENSING.md (/usr/share/doc/clifr/LICENSING.md); " +
+		"install a licence with: clifr license install FILE"
+	p, l, err := findLicense(g)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("no licence installed (looked in %s).\n%s", strings.Join(licensePaths(g), ", "), terms)
+	case err != nil:
+		return fmt.Errorf("licence %s: %w.\n%s", p, err, terms)
+	case !l.Has(license.FeatureRemote):
+		return fmt.Errorf("licence %s (%s, for %s) does not include remote queries (features: %s).\n%s",
+			l.ID, p, l.Customer, featureList(l), terms)
+	}
+	if l.Expired(time.Now()) {
+		query.Header("licence %s of %s expired on %s (clifr --host keeps working; renew it%s)", l.ID, l.Customer, l.Expires, contactHint(l))
+	}
+	return nil
 }
 
 func licenseCmd(g *globals, args []string) error {
