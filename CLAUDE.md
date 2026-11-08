@@ -50,8 +50,8 @@ wait for the user's go-ahead.
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
 - Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,
-  `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand, loopback
-  addresses only for now); `--serve` (7.2: any address, but every request needs a token, and
+  `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand; loopback
+  addresses only, unless `--metrics-tls-config` gives TLS: then any address); `--serve` (7.2: any address, but every request needs a token, and
   TLS with clifrd's self-signed certificate, pinned by clifr, except on loopback; only the
   recording's Parquet files are served, never the token file or the TLS key). A default
   install opens no port and makes no connection; the
@@ -97,8 +97,12 @@ wait for the user's go-ahead.
   opt-in unit drop-in.
 - `internal/metrics/` — `clifrd --metrics`: the Prometheus text format written by hand, Node
   Exporter's names, from the recorder's last published `Snapshot` (no read per scrape);
-  loopback addresses only; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP,
-  loopback-only IP). A failed listen is logged and clifrd records without metrics.
+  loopback addresses only without TLS; `--metrics-tls-config` (`webconfig.go`, 2026-11-08):
+  Node Exporter's web configuration file (TLS, client certificates, bcrypt basic auth via
+  golang.org/x/crypto, unknown keys refused, reloaded when its files change) allows any address
+  with TLS; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP, loopback-only IP
+  unless its `IPAddressAllow=` line is uncommented). A failed listen is logged and clifrd
+  records without metrics; an invalid web config at start stops it.
 - `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
   `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
 - `packaging/vm.sh` — KVM test VMs (Rocky 8, Alma 9, Ubuntu 22.04 cloud images in

@@ -194,6 +194,14 @@ turned on; no phone-home or telemetry; licences checked offline.
     7.1a/b); the opt-in unit drop-in `deploy/clifrd-metrics.conf` (VMs:
     Ubuntu 22.04, Rocky 8); docs; benchmark with 15 s scrapes
     (`metrics-busy-20261107-1857`: no measurable cost). 7.1 is complete.
+  - 7.1d (2026-11-08, the user: needed for clifrd to be an actual Node
+    Exporter alternative): `--metrics-tls-config FILE` (`metrics_tls_config:`)
+    in Node Exporter's web configuration format instead of clifr's own subset
+    (an existing web-config.yml works): tls_server_config (admin-provided
+    certificates, client certificates, versions, ciphers, curves),
+    http_server_config.headers, basic_auth_users (bcrypt:
+    golang.org/x/crypto, approved). With TLS any address; without it still
+    loopback only. Reloaded when the files change.
 - **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the
   Parquet files of a window; `clifr --host URL` downloads and caches them and
   queries locally. Decisions (the user, 2026-11-07): tokens hashed in a

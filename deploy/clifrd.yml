@@ -26,11 +26,15 @@ max_cmdline: 64K       # bytes of each command line stored; longer ones are cut
 memory_guard: 384M     # live heap above which data is shed (guard event) before
                        # the unit's MemoryMax (768M) is reached
 
-# Prometheus metrics (Node Exporter's names, and clifr_*) at
-# http://ADDR/metrics. Off by default; loopback addresses only. Under the
-# systemd unit it also needs the drop-in /usr/share/clifr/clifrd-metrics.conf
-# (the unit allows no TCP otherwise; see that file).
+# Prometheus metrics (Node Exporter's names, and clifr_*) at ADDR/metrics.
+# Off by default. Without TLS loopback addresses only. Under the systemd
+# unit it also needs the drop-in /usr/share/clifr/clifrd-metrics.conf (the
+# unit allows no TCP otherwise; see that file).
 #metrics: 127.0.0.1:9100
+# TLS and basic authentication for it, in Node Exporter's web configuration
+# format (its --web.config.file: an existing web-config.yml works); with
+# tls_server_config any address, e.g. metrics: :9100.
+#metrics_tls_config: /etc/clifr/web-config.yml
 
 # Serve the recording to clifr --host on another machine (off by default).
 # Every request needs a token (clifrd token new: their SHA-256 are kept in

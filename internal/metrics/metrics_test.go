@@ -143,13 +143,13 @@ func TestEscape(t *testing.T) {
 
 func TestListenLoopbackOnly(t *testing.T) {
 	for _, addr := range []string{"0.0.0.0:0", ":9100", "10.1.2.3:9100", "example.com:9100", "[::]:0", "9100"} {
-		if ln, err := Listen(addr); err == nil {
+		if ln, err := Listen(addr, nil); err == nil {
 			ln.Close()
 			t.Errorf("%s: accepted", addr)
 		}
 	}
 	for _, addr := range []string{"127.0.0.1:0", "localhost:0"} {
-		ln, err := Listen(addr)
+		ln, err := Listen(addr, nil)
 		if err != nil {
 			t.Errorf("%s: %v", addr, err)
 			continue

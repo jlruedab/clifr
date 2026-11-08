@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -10,26 +11,35 @@ import (
 )
 
 // CheckAddr validates a --metrics address and returns the one to listen on.
-// Only loopback addresses for now (the user, 2026-11-07: TLS and
-// authentication come later): 127.0.0.1:9100, [::1]:9100 or localhost:9100.
-func CheckAddr(addr string) (string, error) {
+// Without TLS (no --metrics-tls-config, or one without tls_server_config)
+// only loopback addresses: 127.0.0.1:9100, [::1]:9100 or localhost:9100, so
+// no password or metric crosses a network in clear. With TLS any address,
+// ":9100" for all interfaces (the user, 2026-11-08).
+func CheckAddr(addr string, withTLS bool) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", fmt.Errorf("--metrics %q: want HOST:PORT, e.g. 127.0.0.1:9100", addr)
+		return "", fmt.Errorf("--metrics %q: want HOST:PORT, e.g. 127.0.0.1:9100 (or :9100 with TLS)", addr)
 	}
 	if host == "localhost" {
 		host = "127.0.0.1"
 	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return "", fmt.Errorf("--metrics %q: only loopback addresses for now (127.0.0.1 or ::1): there is no TLS or authentication yet", addr)
+	ip := net.ParseIP(host)
+	switch {
+	case host != "" && ip == nil:
+		return "", fmt.Errorf("--metrics %q: the host must be an IP address (or empty for all interfaces, with TLS)", addr)
+	case !withTLS && (ip == nil || !ip.IsLoopback()):
+		return "", fmt.Errorf("--metrics %q: without TLS only loopback addresses (127.0.0.1 or ::1); for others give "+
+			"--metrics-tls-config FILE with tls_server_config (Node Exporter's web configuration format)", addr)
 	}
 	return net.JoinHostPort(host, port), nil
 }
 
-// Listen opens addr (CheckAddr first). A failure here is the environment's
-// (port taken, no TCP under the unit): clifrd logs it and records anyway.
-func Listen(addr string) (net.Listener, error) {
-	a, err := CheckAddr(addr)
+// Listen opens addr (CheckAddr first), with TLS when web has it. A failure
+// here is the environment's (port taken, no TCP under the unit): clifrd logs
+// it and records anyway.
+func Listen(addr string, web *Web) (net.Listener, error) {
+	withTLS := web != nil && web.hasTLS()
+	a, err := CheckAddr(addr, withTLS)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +47,10 @@ func Listen(addr string) (net.Listener, error) {
 	if errors.Is(err, syscall.EAFNOSUPPORT) {
 		return nil, fmt.Errorf("--metrics %s: %w (the systemd unit allows no TCP sockets: install its metrics drop-in)", addr, err)
 	}
-	return ln, err
+	if err != nil || !withTLS {
+		return ln, err
+	}
+	return tls.NewListener(ln, &tls.Config{GetConfigForClient: web.tlsForClient}), nil
 }
 
 // Handler serves /metrics from get's newest Snapshot.
@@ -72,9 +85,13 @@ func Handler(get func() *Snapshot) http.Handler {
 }
 
 // Serve serves Handler(get) on ln until Close is called on the returned server.
-func Serve(ln net.Listener, get func() *Snapshot) *http.Server {
+func Serve(ln net.Listener, get func() *Snapshot, web *Web) *http.Server {
+	h := Handler(get)
+	if web != nil {
+		h = web.wrap(h) // headers and basic authentication
+	}
 	srv := &http.Server{
-		Handler:           Handler(get),
+		Handler:           h,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,

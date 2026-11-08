@@ -997,7 +997,7 @@ clifr is not a monitoring system, and by default it opens no network port at all
 
 ### clifrd as a metrics source (`metrics:`)
 
-clifrd can also serve the system counters it reads anyway as Prometheus metrics, under **Node Exporter's metric names**, so existing dashboards and alert rules work unchanged. It is off by default and listens on loopback addresses only (there is no TLS or authentication yet), so Prometheus must run on the same machine, or reach it through an SSH tunnel or a local agent.
+clifrd can also serve the system counters it reads anyway as Prometheus metrics, under **Node Exporter's metric names**, so existing dashboards and alert rules work unchanged. It is off by default. Without TLS it listens on loopback addresses only, for a Prometheus or an agent on the same machine; with TLS and authentication (Node Exporter's web configuration file, below) a Prometheus server on another machine scrapes it like any node_exporter.
 
 1. Turn it on in `/etc/clifr/clifrd.yml`:
 
@@ -1016,7 +1016,7 @@ clifrd can also serve the system counters it reads anyway as Prometheus metrics,
    curl -s http://127.0.0.1:9100/metrics | head
    ```
 
-   Without the drop-in clifrd logs `error: metrics: --metrics 127.0.0.1:9100: listen tcp 127.0.0.1:9100: socket: address family not supported by protocol (the systemd unit allows no TCP sockets: install its metrics drop-in); recording without them` and keeps recording: recording always comes first. A port already in use is handled the same way. An address that is not a loopback address is a configuration error, and clifrd does not start. On kernels with pressure stall information turned off (RHEL 8 by default, `psi=1` on the kernel command line turns it on) the `node_pressure_*` metrics are absent.
+   Without the drop-in clifrd logs `error: metrics: --metrics 127.0.0.1:9100: listen tcp 127.0.0.1:9100: socket: address family not supported by protocol (the systemd unit allows no TCP sockets: install its metrics drop-in); recording without them` and keeps recording: recording always comes first. A port already in use is handled the same way. An address that is not a loopback address, without TLS, is a configuration error, and clifrd does not start. On kernels with pressure stall information turned off (RHEL 8 by default, `psi=1` on the kernel command line turns it on) the `node_pressure_*` metrics are absent.
 
 3. Scrape it from Prometheus like a node_exporter target:
 
@@ -1026,6 +1026,43 @@ clifrd can also serve the system counters it reads anyway as Prometheus metrics,
        static_configs:
          - targets: ["127.0.0.1:9100"]
    ```
+
+**From another machine: TLS and authentication.** Give clifrd a web configuration file in Node Exporter's format (the same file as node_exporter's `--web.config.file`; an existing one works unchanged):
+
+```yaml
+# /etc/clifr/clifrd.yml
+metrics: :9100                               # all interfaces; needs TLS
+metrics_tls_config: /etc/clifr/web-config.yml
+```
+
+```yaml
+# /etc/clifr/web-config.yml (mode 600; paths relative to this file)
+tls_server_config:
+  cert_file: web01.crt                       # from your CA
+  key_file: web01.key
+basic_auth_users:
+  prometheus: $2y$10$...                     # htpasswd -nBC 10 "" | tr -d ':\n'
+```
+
+- Every key of the format is taken: `cert`/`key` inline, `client_ca_file` with `client_auth_type: RequireAndVerifyClientCert` and `client_allowed_sans` for client certificates, `min_version`, `max_version`, `cipher_suites`, `curve_preferences`, `http_server_config.headers`. A key clifrd does not know is an error, so a typo is not silently ignored.
+- The file and the certificate files are checked at each connection and request, as Node Exporter does: a renewed certificate or a new password applies without a restart. An invalid file at start stops clifrd; an invalid edit later is logged and the previous settings kept.
+- Without `tls_server_config` (only `basic_auth_users`, say) the address must still be loopback: passwords are not sent over a network in clear.
+- In the systemd drop-in, uncomment `IPAddressAllow=` with the Prometheus server's address (it allows only loopback otherwise).
+
+Prometheus then scrapes it with:
+
+```yaml
+scrape_configs:
+  - job_name: clifrd
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+    basic_auth:
+      username: prometheus
+      password_file: /etc/prometheus/clifrd.pass
+    static_configs:
+      - targets: ["web01.example.com:9100"]
+```
 
 What is served, with Node Exporter's names, types and labels (compared series by series with Node Exporter 1.10.2 on a test machine):
 

@@ -98,7 +98,8 @@ func run(args []string) error {
 	maxCmdline := fs.String("max-cmdline", "64K", "bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments; 0 = all)")
 	memGuard := fs.String("memory-guard", "384M", "live heap above which the recorder sheds data instead of reaching the unit's MemoryMax: command lines cut to 4K, the open files of the processes holding the most no longer tracked; a guard event says so (0 = off)")
 	maxSize := fs.String("max-size", "2G", "size cap for the data directory, e.g. 2G or 500M (0 = none); the oldest hours go first")
-	metricsAddr := fs.String("metrics", "", "serve Prometheus metrics (Node Exporter names, and clifr_*) at http://ADDR/metrics; loopback addresses only, e.g. 127.0.0.1:9100 (off by default)")
+	metricsAddr := fs.String("metrics", "", "serve Prometheus metrics (Node Exporter names, and clifr_*) at ADDR/metrics, e.g. 127.0.0.1:9100; addresses other than loopback need --metrics-tls-config with TLS (off by default)")
+	metricsWebConfig := fs.String("metrics-tls-config", "", "--metrics: TLS and basic authentication, in Node Exporter's web configuration format (its --web.config.file: tls_server_config, basic_auth_users)")
 	serveAddr := fs.String("serve", "", "serve the recording's files to clifr --host at ADDR (e.g. :8443): every request needs a token (clifrd token new), TLS with clifrd's self-signed certificate except on loopback (off by default)")
 	serveTokens := fs.String("serve-tokens", remote.DefaultTokenFile, "--serve: file of the accepted tokens' SHA-256 (clifrd token)")
 	serveTLSDir := fs.String("serve-tls-dir", "", "--serve: directory of clifrd's TLS key and certificate, made at first start (default DATA-DIR/serve-tls)")
@@ -190,11 +191,23 @@ func run(args []string) error {
 		}
 	}
 	var metricsLn net.Listener
+	var metricsWeb *metrics.Web
+	if *metricsAddr == "" && *metricsWebConfig != "" {
+		return errors.New("--metrics-tls-config needs --metrics")
+	}
 	if *metricsAddr != "" {
-		if _, err := metrics.CheckAddr(*metricsAddr); err != nil {
+		// The web configuration is checked at start like the address: an
+		// invalid one stops clifrd (later changes that are invalid are
+		// logged and the previous settings kept).
+		if *metricsWebConfig != "" {
+			if metricsWeb, err = metrics.NewWeb(*metricsWebConfig, logger.Errorf); err != nil {
+				return err
+			}
+		}
+		if _, err := metrics.CheckAddr(*metricsAddr, metricsWeb != nil && metricsWeb.HasTLS()); err != nil {
 			return err
 		}
-		if metricsLn, err = metrics.Listen(*metricsAddr); err != nil {
+		if metricsLn, err = metrics.Listen(*metricsAddr, metricsWeb); err != nil {
 			logger.Errorf("metrics: %v; recording without them", err)
 			metricsLn = nil
 		} else {
@@ -209,9 +222,16 @@ func run(args []string) error {
 		return err
 	}
 	if metricsLn != nil {
-		srv := metrics.Serve(metricsLn, r.Metrics)
+		srv := metrics.Serve(metricsLn, r.Metrics, metricsWeb)
 		defer srv.Close()
-		logger.Printf("metrics at http://%s/metrics", metricsLn.Addr())
+		scheme, auth := "http", ""
+		if metricsWeb != nil {
+			if metricsWeb.HasTLS() {
+				scheme = "https"
+			}
+			auth = metricsWeb.Describe()
+		}
+		logger.Printf("metrics at %s://%s/metrics%s", scheme, metricsLn.Addr(), auth)
 	}
 	if *serveAddr != "" {
 		tlsDir := *serveTLSDir
