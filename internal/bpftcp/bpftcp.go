@@ -72,6 +72,7 @@ type Event struct {
 	Kind     Kind
 	MonoNS   uint64
 	SK       uint64 // kernel sock pointer: identifies the connection while it exists
+	NetNS    uint32 // the socket's network namespace (inode of /proc/PID/ns/net; 0 unknown)
 	Old, New int    // State
 	Family   int    // 2 or 10
 	SAddr    netip.Addr
@@ -500,7 +501,7 @@ func decode(raw []byte) (Event, error) {
 	}
 	var r tcpRBTcpEvent
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(&r)), eventSize), raw)
-	e := Event{Kind: Kind(r.Kind), MonoNS: r.MonoNs, SK: r.Sk, Old: int(r.Oldstate), New: int(r.Newstate),
+	e := Event{Kind: Kind(r.Kind), MonoNS: r.MonoNs, SK: r.Sk, NetNS: r.Netns, Old: int(r.Oldstate), New: int(r.Newstate),
 		Family: int(r.Family), SPort: int(r.Sport), DPort: int(r.Dport), V6Only: r.Flags&flagV6Only != 0,
 		Owner:       Owner{PID: int(r.Owner.Pid), StartNS: r.Owner.StartNs, FD: int(r.Owner.Fd), Inode: r.Owner.Inode},
 		Retransmits: r.Counters.Retransmits, ResetsSent: r.Counters.ResetsSent, ResetsReceived: r.Counters.ResetsReceived}

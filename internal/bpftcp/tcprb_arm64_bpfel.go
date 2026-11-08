@@ -38,7 +38,7 @@ type tcpRBTcpEvent struct {
 	Sport    uint16
 	Dport    uint16
 	Flags    uint16
-	Pad2     uint32
+	Netns    uint32
 	MonoNs   uint64
 	Sk       uint64
 	Owner    tcpRBOwner

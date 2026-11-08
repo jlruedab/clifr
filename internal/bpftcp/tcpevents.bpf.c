@@ -68,6 +68,11 @@ struct in6_addr {
 	} in6_u;
 } __attribute__((preserve_access_index));
 
+// A network namespace's number (the inode of /proc/PID/ns/net).
+struct ns_common { unsigned int inum; } __attribute__((preserve_access_index));
+struct net { struct ns_common ns; } __attribute__((preserve_access_index));
+typedef struct { struct net *net; } __attribute__((preserve_access_index)) possible_net_t;
+
 // The addresses of a time-wait socket (its struct sock_common).
 struct sock_common {
 	union {
@@ -87,6 +92,7 @@ struct sock_common {
 	unsigned char skc_ipv6only : 1;
 	struct in6_addr skc_v6_daddr;
 	struct in6_addr skc_v6_rcv_saddr;
+	possible_net_t skc_net;
 } __attribute__((preserve_access_index));
 
 struct inet_timewait_sock {
@@ -198,7 +204,7 @@ struct tcp_event {
 	__u16 sport;
 	__u16 dport;
 	__u16 flags; // EV_STATE to TCP_LISTEN only: FLAG_V6ONLY
-	__u32 pad2;
+	__u32 netns; // the socket's network namespace (inode number); 0: unknown
 	__u64 mono_ns;
 	__u64 sk;
 	struct owner owner;
@@ -282,6 +288,14 @@ struct {
 
 static __always_inline void send(void *ctx, struct tcp_event *e)
 {
+	// Every event has its socket (a time-wait one starts with the same
+	// sock_common): connections are told apart by namespace, as the same
+	// addresses exist in many (containers, pods). e->sk is read outside
+	// BPF_CORE_READ: everything inside it gets a CO-RE relocation, and struct
+	// tcp_event is not the kernel's.
+	struct sock_common *skc = (void *)e->sk;
+	if (skc)
+		e->netns = BPF_CORE_READ(skc, skc_net.net, ns.inum);
 	if (OUTPUT(ctx, e) != 0) {
 		__u32 k = e->kind;
 		__u64 *n = bpf_map_lookup_elem(&drops, &k);
