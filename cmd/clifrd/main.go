@@ -25,6 +25,7 @@ import (
 	"clifr/internal/metrics"
 	"clifr/internal/recorder"
 	"clifr/internal/remote"
+	"clifr/internal/webconfig"
 )
 
 const defaultDataDir = "/var/lib/clifr"
@@ -103,6 +104,7 @@ func run(args []string) error {
 	serveAddr := fs.String("serve", "", "serve the recording's files to clifr --host at ADDR (e.g. :8443): every request needs a token (clifrd token new), TLS with clifrd's self-signed certificate except on loopback (off by default)")
 	serveTokens := fs.String("serve-tokens", remote.DefaultTokenFile, "--serve: file of the accepted tokens' SHA-256 (clifrd token)")
 	serveTLSDir := fs.String("serve-tls-dir", "", "--serve: directory of clifrd's TLS key and certificate, made at first start (default DATA-DIR/serve-tls)")
+	serveWebConfig := fs.String("serve-tls-config", "", "--serve: your own TLS certificate instead of the self-signed one, in Node Exporter's web configuration format (its tls_server_config; may be the file of --metrics-tls-config); TLS on loopback too")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -185,13 +187,25 @@ func run(args []string) error {
 	// A bad address is a configuration error: clifrd does not start. If the
 	// port cannot be opened (taken, or no TCP under the unit), clifrd logs
 	// it and records without metrics: the recording comes first.
+	var serveWeb *webconfig.Web
+	if *serveAddr == "" && *serveWebConfig != "" {
+		return errors.New("--serve-tls-config needs --serve")
+	}
 	if *serveAddr != "" {
 		if _, err := remote.CheckServeAddr(*serveAddr); err != nil {
 			return err
 		}
+		if *serveWebConfig != "" {
+			if serveWeb, err = webconfig.New("serve", *serveWebConfig, logger.Errorf); err != nil {
+				return err
+			}
+			if !serveWeb.HasTLS() {
+				return fmt.Errorf("--serve-tls-config %s: no tls_server_config (--serve uses only that part)", *serveWebConfig)
+			}
+		}
 	}
 	var metricsLn net.Listener
-	var metricsWeb *metrics.Web
+	var metricsWeb *webconfig.Web
 	if *metricsAddr == "" && *metricsWebConfig != "" {
 		return errors.New("--metrics-tls-config needs --metrics")
 	}
@@ -200,7 +214,7 @@ func run(args []string) error {
 		// invalid one stops clifrd (later changes that are invalid are
 		// logged and the previous settings kept).
 		if *metricsWebConfig != "" {
-			if metricsWeb, err = metrics.NewWeb(*metricsWebConfig, logger.Errorf); err != nil {
+			if metricsWeb, err = webconfig.New("metrics", *metricsWebConfig, logger.Errorf); err != nil {
 				return err
 			}
 		}
@@ -238,7 +252,7 @@ func run(args []string) error {
 		if tlsDir == "" {
 			tlsDir = filepath.Join(c.DataDir, "serve-tls")
 		}
-		if srv := startServe(*serveAddr, *serveTokens, tlsDir, c.DataDir, c.Version, logger); srv != nil {
+		if srv := startServe(*serveAddr, *serveTokens, tlsDir, c.DataDir, c.Version, serveWeb, logger); srv != nil {
 			defer srv.Close()
 		}
 	}

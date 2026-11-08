@@ -52,7 +52,9 @@ wait for the user's go-ahead.
 - Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,
   `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand; loopback
   addresses only, unless `--metrics-tls-config` gives TLS: then any address); `--serve` (7.2: any address, but every request needs a token, and
-  TLS with clifrd's self-signed certificate, pinned by clifr, except on loopback; only the
+  TLS with clifrd's self-signed certificate, pinned by clifr, except on loopback, or with the
+  admin's (`--serve-tls-config`, Node Exporter's format, TLS 1.3, also on loopback), checked by
+  clifr against `--tls-ca` or the system's CAs; only the
   recording's Parquet files are served, never the token file or the TLS key). A default
   install opens no port and makes no connection; the
   unit keeps `RestrictAddressFamilies=AF_NETLINK AF_UNIX` (a drop-in adds AF_INET for a
@@ -92,12 +94,14 @@ wait for the user's go-ahead.
 - `internal/remote/` — `clifrd --serve` (pure Go): tokens stored hashed (`clifrd token`), the
   self-signed certificate (fingerprint = SHA-256 of the public key, OpenSSH style), `/v1/info`,
   `/v1/files` (bundle.Select's set), `/v1/file` (only `TABLEDIR/DAY|open/NAME.parquet`,
-  `ValidPath`); `cmd/clifr/remote.go` is `clifr --host` (pinning in known_hosts, cache by
+  `ValidPath`); `cmd/clifr/remote.go` is `clifr --host` (a CA-verified certificate for the host
+  name is accepted, `--tls-ca` = only that CA; otherwise pinning in known_hosts, cache by
   SHA-256, a query directory of exactly the listed files). `deploy/clifrd-serve.conf` is the
   opt-in unit drop-in.
 - `internal/metrics/` — `clifrd --metrics`: the Prometheus text format written by hand, Node
   Exporter's names, from the recorder's last published `Snapshot` (no read per scrape);
-  loopback addresses only without TLS; `--metrics-tls-config` (`webconfig.go`, 2026-11-08):
+  loopback addresses only without TLS; `--metrics-tls-config` (`internal/webconfig`, shared with
+  `--serve-tls-config`, 2026-11-08):
   Node Exporter's web configuration file (TLS, client certificates, bcrypt basic auth via
   golang.org/x/crypto, unknown keys refused, reloaded when its files change) allows any address
   with TLS; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP, loopback-only IP

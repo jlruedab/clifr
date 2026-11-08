@@ -218,12 +218,12 @@ func TestListenTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, isTLS, err := Listen("127.0.0.1:0", cert)
+	ln, isTLS, err := Listen("127.0.0.1:0", cert, nil)
 	if err != nil || isTLS {
 		t.Fatalf("loopback: TLS %v, %v", isTLS, err)
 	}
 	ln.Close()
-	ln, isTLS, err = Listen(":0", cert)
+	ln, isTLS, err = Listen(":0", cert, nil)
 	if err != nil || !isTLS {
 		t.Fatalf("all interfaces: TLS %v, %v", isTLS, err)
 	}

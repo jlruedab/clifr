@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"syscall"
 	"time"
+
+	"clifr/internal/webconfig"
 )
 
 // CheckAddr validates a --metrics address and returns the one to listen on.
@@ -37,8 +39,8 @@ func CheckAddr(addr string, withTLS bool) (string, error) {
 // Listen opens addr (CheckAddr first), with TLS when web has it. A failure
 // here is the environment's (port taken, no TCP under the unit): clifrd logs
 // it and records anyway.
-func Listen(addr string, web *Web) (net.Listener, error) {
-	withTLS := web != nil && web.hasTLS()
+func Listen(addr string, web *webconfig.Web) (net.Listener, error) {
+	withTLS := web != nil && web.HasTLS()
 	a, err := CheckAddr(addr, withTLS)
 	if err != nil {
 		return nil, err
@@ -50,7 +52,7 @@ func Listen(addr string, web *Web) (net.Listener, error) {
 	if err != nil || !withTLS {
 		return ln, err
 	}
-	return tls.NewListener(ln, &tls.Config{GetConfigForClient: web.tlsForClient}), nil
+	return tls.NewListener(ln, &tls.Config{GetConfigForClient: web.TLSForClient}), nil
 }
 
 // Handler serves /metrics from get's newest Snapshot.
@@ -85,10 +87,10 @@ func Handler(get func() *Snapshot) http.Handler {
 }
 
 // Serve serves Handler(get) on ln until Close is called on the returned server.
-func Serve(ln net.Listener, get func() *Snapshot, web *Web) *http.Server {
+func Serve(ln net.Listener, get func() *Snapshot, web *webconfig.Web) *http.Server {
 	h := Handler(get)
 	if web != nil {
-		h = web.wrap(h) // headers and basic authentication
+		h = web.Wrap(h) // headers and basic authentication
 	}
 	srv := &http.Server{
 		Handler:           h,

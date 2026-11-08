@@ -76,6 +76,9 @@ Sources:
       --tls-fingerprint SHA256:...  the certificate --host must have, to pin
                        it on first use without a terminal (clifrd logs it);
                        pins are kept in ~/.config/clifr/known_hosts
+      --tls-ca FILE    accept only a --host certificate signed by this CA
+                       (or CLIFR_TLS_CA; clifrd --serve-tls-config); without
+                       it the system's CAs are trusted, else clifr pins
       --style STYLE    print free, top, df and lsof as these tools' versions do:
                        rhel-8, rhel-9, ubuntu-22.04 or current (default: the
                        recorded host's distribution; current if unknown)

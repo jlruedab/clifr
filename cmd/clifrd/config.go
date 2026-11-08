@@ -55,6 +55,7 @@ type fileConfig struct {
 	Serve        scalar   `yaml:"serve"`
 	ServeTokens  scalar   `yaml:"serve_tokens"`
 	ServeTLSDir  scalar   `yaml:"serve_tls_dir"`
+	ServeTLS     scalar   `yaml:"serve_tls_config"`
 	Redact       []string `yaml:"redact"`
 }
 
@@ -101,7 +102,7 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
 		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
 		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline}, {"memory-guard", c.MemoryGuard},
-		{"metrics", c.Metrics}, {"metrics-tls-config", c.MetricsTLS}, {"serve", c.Serve}, {"serve-tokens", c.ServeTokens}, {"serve-tls-dir", c.ServeTLSDir},
+		{"metrics", c.Metrics}, {"metrics-tls-config", c.MetricsTLS}, {"serve", c.Serve}, {"serve-tokens", c.ServeTokens}, {"serve-tls-dir", c.ServeTLSDir}, {"serve-tls-config", c.ServeTLS},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
 			continue

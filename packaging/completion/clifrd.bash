@@ -6,12 +6,12 @@ _clifrd() {
 		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
 		--budget-window --verify-every --flush-interval --flush-rows --retention
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --memory-guard
-		--max-size --metrics --metrics-tls-config --serve --serve-tokens --serve-tls-dir --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
+		--max-size --metrics --metrics-tls-config --serve --serve-tls-config --serve-tokens --serve-tls-dir --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"
 	local bundle="--data-dir -D --last --since --until -o --output"
 	COMPREPLY=()
 	case $prev in
-	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --serve-tokens | --serve-tls-dir | --metrics-tls-config | --file)
+	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --serve-tokens | --serve-tls-dir | --metrics-tls-config | --serve-tls-config | --file)
 		COMPREPLY=($(compgen -f -- "$cur"))
 		return
 		;;

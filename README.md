@@ -162,6 +162,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--serve` | off | serve the recording's files to `clifr --host` on another machine at `ADDR` (e.g. `:8443`): every request needs a token (`clifrd token new`), and TLS with clifrd's own self-signed certificate (made at first start, its fingerprint logged; clifr pins it) except on a loopback address. Under the systemd unit it also needs the drop-in `/usr/share/clifr/clifrd-serve.conf`; if it cannot serve (no token, the port) clifrd logs it and records anyway |
 | `--serve-tokens` | /etc/clifr/serve-tokens | the accepted tokens' SHA-256, one per line (`clifrd token new|list|revoke`); mode 600, owned by clifrd's user |
 | `--serve-tls-dir` | DATA-DIR/serve-tls | clifrd's TLS key and certificate for `--serve` |
+| `--serve-tls-config` | none | your own certificate for `--serve` instead of the self-signed one, in Node Exporter's web configuration format (its `tls_server_config`; may be the file of `--metrics-tls-config`): `clifr --host` checks it with `--tls-ca` or the system's CAs instead of pinning it |
 | `--log-level` | info | error, warn, info or debug |
 | `-v`, `--version` | | print the version and exit |
 | `--duration`, `--proc-root`, `--pprof-dir` | | stop after a time; fixture tree for tests; the recorder's own profiles |
@@ -310,7 +311,7 @@ Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`
 (default now); `-T/--tz ZONE`; `-D/--data-dir DIR` (default
 `/var/lib/clifr`), or `-H/--host HOST` with `--token TOKEN` (another host's
 recording from its `clifrd --serve`; `--tls-fingerprint` pins its certificate
-without a terminal); `--style STYLE`; `-j/--json`;
+without a terminal, `--tls-ca FILE` checks a CA-signed one); `--style STYLE`; `-j/--json`;
 for ranges `--summary` (default), `--changes`, `--samples`, `--list`
 (ss, netstat), `-e/--every DUR`, `-n/--number N`. TIME is `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DD`, `HH:MM`
 (today), `today`, `yesterday`, `now`, or relative (`-30m`, `2 hours ago`).

@@ -23,6 +23,8 @@ import (
 
 	"clifr/internal/bundle"
 	"clifr/internal/pqstore"
+
+	"clifr/internal/webconfig"
 )
 
 // Server serves a data directory to clifr --host.
@@ -80,9 +82,10 @@ func CheckServeAddr(addr string) (loopback bool, err error) {
 	return ip.IsLoopback(), nil
 }
 
-// Listen opens addr: plain TCP on a loopback address, TLS 1.3 with cert
-// otherwise.
-func Listen(addr string, cert tls.Certificate) (net.Listener, bool, error) {
+// Listen opens addr. With web (--serve-tls-config: the admin's certificate)
+// TLS on every address; otherwise plain TCP on a loopback address and TLS
+// with cert (clifrd's self-signed one) on others. Always TLS 1.3 or later.
+func Listen(addr string, cert tls.Certificate, web *webconfig.Web) (net.Listener, bool, error) {
 	loopback, err := CheckServeAddr(addr)
 	if err != nil {
 		return nil, false, err
@@ -91,10 +94,35 @@ func Listen(addr string, cert tls.Certificate) (net.Listener, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	if web != nil {
+		return tls.NewListener(ln, &tls.Config{GetConfigForClient: func(h *tls.ClientHelloInfo) (*tls.Config, error) {
+			return ServeTLS(web, h)
+		}}), true, nil
+	}
 	if loopback {
 		return ln, false, nil
 	}
 	return tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS13}), true, nil
+}
+
+// ServeTLS is the web configuration's current TLS settings as --serve uses
+// them: the certificate, versions, ciphers and curves, at least TLS 1.3, and
+// no client certificates (clifr sends none; tokens authenticate). The same
+// file may also give --metrics its client certificate settings.
+func ServeTLS(web *webconfig.Web, h *tls.ClientHelloInfo) (*tls.Config, error) {
+	t, err := web.TLSForClient(h)
+	if err != nil {
+		return nil, err
+	}
+	t = t.Clone()
+	t.ClientAuth, t.ClientCAs, t.VerifyConnection = tls.NoClientCert, nil, nil
+	if t.MinVersion < tls.VersionTLS13 {
+		t.MinVersion = tls.VersionTLS13
+	}
+	if t.MaxVersion != 0 && t.MaxVersion < tls.VersionTLS13 {
+		t.MaxVersion = tls.VersionTLS13
+	}
+	return t, nil
 }
 
 // HTTPServer is s's http.Server (timeouts for slow clients and large files).

@@ -45,6 +45,11 @@ memory_guard: 384M     # live heap above which data is shed (guard event) before
 #serve: :8443
 #serve_tokens: /etc/clifr/serve-tokens
 #serve_tls_dir: /var/lib/clifr/serve-tls
+# Your own certificate instead of the self-signed one, in Node Exporter's web
+# configuration format (its tls_server_config; may be metrics_tls_config's
+# file): clifr --host then checks it with --tls-ca or the system's CAs
+# instead of pinning it. TLS on loopback addresses too.
+#serve_tls_config: /etc/clifr/web-config.yml
 
 # Masked in command lines (as ***) before they are stored: Go regular
 # expressions; with capture groups only the groups are masked. (The built-in

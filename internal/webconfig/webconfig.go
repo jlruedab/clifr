@@ -1,9 +1,10 @@
-package metrics
+package webconfig
 
-// clifrd --metrics-tls-config FILE: TLS and basic authentication for
-// /metrics, in Node Exporter's web configuration format (exporter-toolkit's
-// --web.config.file; the user, 2026-11-08), so an existing web-config.yml
-// works unchanged. Keys this version does not handle are refused, not
+// Package webconfig reads Node Exporter's web configuration format
+// (exporter-toolkit's --web.config.file; the user, 2026-11-08), so an existing
+// web-config.yml works unchanged: clifrd --metrics-tls-config (TLS, basic
+// authentication, headers) and --serve-tls-config (its tls_server_config
+// only: --serve authenticates with tokens). The same file may serve both. Keys this version does not handle are refused, not
 // ignored. The file (and the certificate files it names) is checked again on
 // every connection and request, as Node Exporter does: a renewed certificate
 // or a changed password applies without a restart.
@@ -27,8 +28,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// WebConfig is the web configuration file.
-type WebConfig struct {
+// Config is the web configuration file.
+type Config struct {
 	TLS   *TLSServerConfig  `yaml:"tls_server_config"`
 	HTTP  HTTPServerConfig  `yaml:"http_server_config"`
 	Users map[string]string `yaml:"basic_auth_users"` // user -> bcrypt hash
@@ -71,14 +72,14 @@ var tlsVersions = map[string]uint16{"TLS10": tls.VersionTLS10, "TLS11": tls.Vers
 
 var curves = map[string]tls.CurveID{"CurveP256": tls.CurveP256, "CurveP384": tls.CurveP384, "CurveP521": tls.CurveP521, "X25519": tls.X25519}
 
-// LoadWebConfig reads and checks a web configuration file: every key known,
+// Load reads and checks a web configuration file: every key known,
 // the certificate and key loadable, the bcrypt hashes well formed.
-func LoadWebConfig(path string) (*WebConfig, *tls.Config, error) {
+func Load(path string) (*Config, *tls.Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	var c WebConfig
+	var c Config
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&c); err != nil && err.Error() != "EOF" {
@@ -217,21 +218,21 @@ func cipherID(name string) (uint16, bool) {
 // names change. A file that became invalid keeps the last good settings
 // (and the error is logged once per change).
 type Web struct {
-	path string
-	logf func(string, ...any)
+	name, path string
+	logf       func(string, ...any)
 
 	mu      sync.Mutex
 	stamp   string // modification times and sizes of the file and its certificate files
-	cfg     *WebConfig
+	cfg     *Config
 	tls     *tls.Config
 	authOK  map[[sha256.Size]byte]bool // user, password and hash already checked
 	lastErr string
 }
 
-// NewWeb loads path; an invalid file at start is an error.
-func NewWeb(path string, logf func(string, ...any)) (*Web, error) {
-	w := &Web{path: path, logf: logf}
-	c, t, err := LoadWebConfig(path)
+// New loads path (name: "metrics" or "serve", for the log); an invalid file at start is an error.
+func New(name, path string, logf func(string, ...any)) (*Web, error) {
+	w := &Web{name: name, path: path, logf: logf}
+	c, t, err := Load(path)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +240,7 @@ func NewWeb(path string, logf func(string, ...any)) (*Web, error) {
 	return w, nil
 }
 
-func (w *Web) files(c *WebConfig) string {
+func (w *Web) files(c *Config) string {
 	paths := []string{w.path}
 	if c != nil && c.TLS != nil {
 		paths = append(paths, c.TLS.CertFile, c.TLS.KeyFile, c.TLS.ClientCAFile)
@@ -256,16 +257,16 @@ func (w *Web) files(c *WebConfig) string {
 	return b.String()
 }
 
-// current returns the settings, reloading them if a file changed.
-func (w *Web) current() (*WebConfig, *tls.Config) {
+// Current returns the settings, reloading them if a file changed.
+func (w *Web) Current() (*Config, *tls.Config) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if st := w.files(w.cfg); st != w.stamp {
-		c, t, err := LoadWebConfig(w.path)
+		c, t, err := Load(w.path)
 		if err != nil {
 			if err.Error() != w.lastErr {
 				w.lastErr = err.Error()
-				w.logf("metrics: %v; keeping the previous settings", err)
+				w.logf("%s: %v; keeping the previous settings", w.name, err)
 			}
 		} else {
 			w.cfg, w.tls, w.stamp, w.lastErr = c, t, w.files(c), ""
@@ -278,14 +279,14 @@ func (w *Web) current() (*WebConfig, *tls.Config) {
 // hasTLS reports whether the file configures TLS (required for addresses
 // other than loopback).
 func (w *Web) hasTLS() bool {
-	_, t := w.current()
+	_, t := w.Current()
 	return t != nil
 }
 
-// tlsForClient is the listener's GetConfigForClient: each new connection
+// TLSForClient is the listener's GetConfigForClient: each new connection
 // takes the current settings.
-func (w *Web) tlsForClient(*tls.ClientHelloInfo) (*tls.Config, error) {
-	_, t := w.current()
+func (w *Web) TLSForClient(*tls.ClientHelloInfo) (*tls.Config, error) {
+	_, t := w.Current()
 	if t == nil {
 		return nil, errors.New("tls_server_config was removed: restart clifrd to serve without TLS")
 	}
@@ -296,16 +297,16 @@ func (w *Web) tlsForClient(*tls.ClientHelloInfo) (*tls.Config, error) {
 // answer takes does not tell which user names exist.
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("clifr-dummy"), bcrypt.DefaultCost)
 
-// wrap adds the configured headers and, with basic_auth_users, basic
+// Wrap adds the configured headers and, with basic_auth_users, basic
 // authentication to h.
-func (w *Web) wrap(h http.Handler) http.Handler {
+func (w *Web) Wrap(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		c, _ := w.current()
+		c, _ := w.Current()
 		for k, v := range c.HTTP.Headers {
 			rw.Header().Set(k, v)
 		}
 		if len(c.Users) > 0 && !w.authorized(c, r) {
-			rw.Header().Set("WWW-Authenticate", `Basic realm="clifrd metrics", charset="UTF-8"`)
+			rw.Header().Set("WWW-Authenticate", `Basic realm="clifrd `+w.name+`", charset="UTF-8"`)
 			http.Error(rw, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -313,7 +314,7 @@ func (w *Web) wrap(h http.Handler) http.Handler {
 	})
 }
 
-func (w *Web) authorized(c *WebConfig, r *http.Request) bool {
+func (w *Web) authorized(c *Config, r *http.Request) bool {
 	user, pass, ok := r.BasicAuth()
 	if !ok {
 		return false
@@ -343,10 +344,25 @@ func (w *Web) authorized(c *WebConfig, r *http.Request) bool {
 // HasTLS reports whether the settings serve TLS.
 func (w *Web) HasTLS() bool { return w.hasTLS() }
 
+// HasUsers reports whether the file has basic_auth_users.
+func (w *Web) HasUsers() bool {
+	c, _ := w.Current()
+	return len(c.Users) > 0
+}
+
+// Leaf is the current server certificate (nil without TLS).
+func (w *Web) Leaf() *x509.Certificate {
+	_, t := w.Current()
+	if t == nil || len(t.Certificates) == 0 {
+		return nil
+	}
+	return t.Certificates[0].Leaf // set by tls.X509KeyPair since Go 1.23
+}
+
 // Describe is how clifrd's log names the protection: client certificates,
 // basic authentication.
 func (w *Web) Describe() string {
-	c, t := w.current()
+	c, t := w.Current()
 	var parts []string
 	if t != nil && t.ClientAuth == tls.RequireAndVerifyClientCert {
 		parts = append(parts, "client certificates required")

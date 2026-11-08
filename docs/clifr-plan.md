@@ -202,6 +202,13 @@ turned on; no phone-home or telemetry; licences checked offline.
     http_server_config.headers, basic_auth_users (bcrypt:
     golang.org/x/crypto, approved). With TLS any address; without it still
     loopback only. Reloaded when the files change.
+  - 7.2d (2026-11-08, the user: one kind of certificate for both): `--serve-tls-config FILE`
+    (`serve_tls_config:`), the same format and possibly the same file
+    (`internal/webconfig`): the admin's certificate instead of the self-signed
+    one, TLS 1.3 at least, on loopback too, client certificate settings and
+    users ignored (tokens). `clifr --host` accepts a certificate valid for the
+    host name against `--tls-ca FILE` (only that CA) or the system's CAs, and
+    pins only when no CA vouches for it.
 - **7.2 Remote query** (1.5–2 weeks): `clifrd --serve ADDR` serves the
   Parquet files of a window; `clifr --host URL` downloads and caches them and
   queries locally. Decisions (the user, 2026-11-07): tokens hashed in a

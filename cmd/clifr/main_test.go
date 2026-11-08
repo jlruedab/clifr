@@ -81,7 +81,8 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"--at", "now", "ss -an"}, "add -t and/or -u"},
 		{[]string{"--host", "x", "--at", "now", "ps aux"}, "--host needs a token"}, // no production key: the gate is dormant
 		{[]string{"--host", "x", "--token", "t", "--data-dir", "/tmp", "--at", "now", "ps aux"}, "--host and --data-dir: give one"},
-		{[]string{"--tls-ca", "f", "--at", "now", "ps aux"}, "--tls-ca is not used"},
+		{[]string{"--tls-ca", "f", "--at", "now", "ps aux"}, "--tls-ca is for --host"},
+		{[]string{"--host", "x", "--tls-ca", "f", "--tls-fingerprint", "SHA256:x", "--at", "now", "ps aux"}, "give one"},
 		{[]string{"--tls-fingerprint", "SHA256:x", "--at", "now", "ps aux"}, "--tls-fingerprint is for --host"},
 		{[]string{"--at", "now", "-T", "Nowhere/City", "ps aux"}, "--tz"},
 		{[]string{"--at", "now", "mount /dev/sda1 /mnt"}, "only listing"},

@@ -80,7 +80,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	str(&g.style, "", "style", os.Getenv("CLIFR_STYLE"))
 	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
-	str(&g.tlsCA, "", "tls-ca", "")
+	str(&g.tlsCA, "", "tls-ca", os.Getenv("CLIFR_TLS_CA"))
 	str(&g.tlsFP, "", "tls-fingerprint", os.Getenv("CLIFR_TLS_FINGERPRINT"))
 	str(&g.lic, "l", "license", os.Getenv("CLIFR_LICENSE"))
 	boolean(&g.version, "v", "version")
@@ -212,10 +212,12 @@ func openBundle(g *globals) (func(), error) {
 // checkLater rejects options of features that are not in this release.
 func checkLater(g *globals) error {
 	switch {
-	case g.tlsCA != "":
-		return errors.New("--tls-ca is not used: clifr pins clifrd's own certificate on first use (--tls-fingerprint)")
 	case g.host == "" && g.tlsFP != "":
 		return usageError{errors.New("--tls-fingerprint is for --host")}
+	case g.host == "" && g.tlsCA != "":
+		return usageError{errors.New("--tls-ca is for --host")}
+	case g.tlsCA != "" && g.tlsFP != "":
+		return usageError{errors.New("--tls-ca and --tls-fingerprint: give one (a CA-signed certificate, or clifrd's own pinned)")}
 	}
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -100,23 +101,73 @@ func connect(g *globals) (*remoteHost, error) {
 		MaxIdleConnsPerHost:   4,
 	}
 	if strings.HasPrefix(base, "https://") {
-		pin, err := trustHost(g, hostport)
-		if err != nil {
-			return nil, err
+		// A certificate a CA vouches for (--tls-ca, else the system's CAs:
+		// clifrd --serve-tls-config) is accepted for the host name; clifrd's
+		// own self-signed one is pinned instead (the user, 2026-11-08).
+		var roots *x509.CertPool // nil: the system's
+		if g.tlsCA != "" {
+			if roots, err = readCA(g.tlsCA); err != nil {
+				return nil, usageError{err}
+			}
+		}
+		pin := ""
+		if roots == nil {
+			if pin, err = trustHost(g, hostport); err != nil {
+				return nil, err
+			}
 		}
 		tr.TLSClientConfig = &tls.Config{
 			MinVersion:         tls.VersionTLS13,
-			InsecureSkipVerify: true, // self-signed: checked against the pin instead
+			InsecureSkipVerify: true, // checked here: by the CA, else against the pin
 			VerifyConnection: func(cs tls.ConnectionState) error {
-				if len(cs.PeerCertificates) == 0 || remote.Fingerprint(cs.PeerCertificates[0]) != pin {
-					return fmt.Errorf("the certificate of %s is not the pinned one", hostport)
+				err := verifyCA(cs.PeerCertificates, hostport, roots)
+				switch {
+				case err == nil:
+					return nil
+				case roots != nil:
+					return fmt.Errorf("the certificate of %s: %w (--tls-ca %s)", hostport, err, g.tlsCA)
+				case pin != "" && len(cs.PeerCertificates) > 0 && remote.Fingerprint(cs.PeerCertificates[0]) == pin:
+					return nil
+				case pin == "":
+					return fmt.Errorf("the certificate of %s is not the pinned one: no CA vouches for it any more (%v)", hostport, err)
 				}
-				return nil
+				return fmt.Errorf("the certificate of %s is not the pinned one", hostport)
 			},
 		}
 	}
 	h.client = &http.Client{Transport: tr}
 	return h, nil
+}
+
+// readCA reads --tls-ca: PEM certificates.
+func readCA(path string) (*x509.CertPool, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("--tls-ca: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(b) {
+		return nil, fmt.Errorf("--tls-ca %s: no PEM certificate in it", path)
+	}
+	return pool, nil
+}
+
+// verifyCA checks certs (the server's chain) for hostport's host name or IP
+// address against roots (nil: the system's CAs).
+func verifyCA(certs []*x509.Certificate, hostport string, roots *x509.CertPool) error {
+	if len(certs) == 0 {
+		return errors.New("no certificate")
+	}
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	inter := x509.NewCertPool()
+	for _, c := range certs[1:] {
+		inter.AddCert(c)
+	}
+	_, err = certs[0].Verify(x509.VerifyOptions{DNSName: host, Roots: roots, Intermediates: inter})
+	return err
 }
 
 // knownHosts is clifr's pin file: "HOST:PORT SHA256:..." per line.
@@ -157,7 +208,7 @@ func trustHost(g *globals, hostport string) (string, error) {
 		return "", fmt.Errorf("--tls-fingerprint %s differs from the one pinned for %s in %s (%s)", g.tlsFP, hostport, path, pinned)
 	}
 	if pinned != "" {
-		return pinned, nil // the handshake must match it (VerifyConnection)
+		return pinned, nil // the handshake must match it, or a CA vouch for it (VerifyConnection)
 	}
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", hostport,
 		&tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true})
@@ -168,6 +219,9 @@ func trustHost(g *globals, hostport string) (string, error) {
 	conn.Close()
 	if len(certs) == 0 {
 		return "", fmt.Errorf("%s: no certificate", hostport)
+	}
+	if g.tlsFP == "" && verifyCA(certs, hostport, nil) == nil {
+		return "", nil // a system CA vouches for it: nothing to pin
 	}
 	fp := remote.Fingerprint(certs[0])
 	switch {

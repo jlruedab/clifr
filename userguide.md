@@ -388,11 +388,21 @@ clifr --host web01 --at "2026-11-05 13:20" "ps aux"
 
 The first time, clifr shows the server's fingerprint and asks whether to trust it. Compare it with the one in the server's journal; on `yes` it is kept in `~/.config/clifr/known_hosts`, and every later connection must present the same certificate. Without a terminal (a script, an AI agent) give it instead: `--tls-fingerprint SHA256:…` (or `CLIFR_TLS_FINGERPRINT`). If the certificate ever changes clifr refuses to connect and says so; if that was intended (clifrd's TLS directory was recreated, for example after `apt purge`), delete the host's line in `known_hosts`.
 
+**With your own certificates instead.** If you have a CA, give `--serve` a certificate from it rather than the self-signed one, in the same Node Exporter format as the metrics' (`metrics_tls_config`). It can be the very same file:
+
+```yaml
+# /etc/clifr/clifrd.yml
+serve: ":8443"
+serve_tls_config: /etc/clifr/web-config.yml     # its tls_server_config: cert_file, key_file, ...
+```
+
+clifr then checks the certificate for the host name, like a browser, instead of pinning it: against `--tls-ca FILE` (or `CLIFR_TLS_CA`) if given, which then is the only CA accepted, else against the system's CAs (`/etc/ssl/certs`, where `update-ca-certificates` or `update-ca-trust` put an internal CA). Nothing is pinned and there is no question on first use; a renewed certificate is picked up by clifrd without a restart and accepted by clifr. A host whose certificate no CA vouches for is still pinned, as above. Only the certificate, key, TLS versions, ciphers and curves of the file are used: `--serve` always needs TLS 1.3 and authenticates with tokens, so the file's `basic_auth_users` and client-certificate settings apply to `/metrics` only. With `serve_tls_config` clifrd uses TLS on a loopback address too: give clifr `https://127.0.0.1:8443` then.
+
 Each query fetches the files of its window (`--at`, `--since`/`--until`; `info` and `export` the whole recording) that are not in the cache yet (`~/.cache/clifr/MACHINE-ID/`, checked by SHA-256), so the first query of an incident takes the time to transfer the window and later ones are quick. A line on stderr says how much was fetched: `# remote: web01:8443 (web01, machine-id 141c779d): 395 files, 12 fetched (3.1 MB), 383 from the cache`. Cached files unused for two weeks are deleted.
 
 Notes:
 
-- `--host` is `HOST`, `HOST:PORT` or `https://HOST:PORT` (port 8443 by default). To a loopback address clifr uses plain HTTP, as clifrd serves it (useful through an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 web01` with `serve: 127.0.0.1:8443` on the server).
+- `--host` is `HOST`, `HOST:PORT` or `https://HOST:PORT` (port 8443 by default). To a loopback address clifr uses plain HTTP, as clifrd serves it without `serve_tls_config` (useful through an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 web01` with `serve: 127.0.0.1:8443` on the server).
 - clifrd serves only the recording's data files, to token holders. It never serves the token file or its TLS key, and the sos plugin never collects the token file.
 - With the metrics drop-in installed too, the serve drop-in's `IPAddressAllow=any` is what lets clients in; narrow it to your admin networks there.
 - Serving is read-only and limited to four transfers at a time, at the recorder's low CPU and I/O priority.
