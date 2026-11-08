@@ -53,6 +53,13 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 		sortSS(rows)
 		return rows, kf, err
 	}
+	if f.NetNS != 0 {
+		// Another namespace's TCP files are read at keyframes within a time
+		// budget (recorder/netns.go): its queues come from its latest read.
+		var ts sql.NullInt64
+		db.QueryRow(`SELECT MAX(ts) FROM tcp_keyframes WHERE ts <= ?1 AND proto = 'tcp' AND netns = ?2`, t, f.NetNS).Scan(&ts)
+		kf = ts.Int64
+	}
 	q, err := db.Query(`
 		SELECT c.id, c.laddr, c.lport, c.raddr, c.rport, c.inode, c.pid, c.fd, c.owner_until, COALESCE(c.ifname, ''),
 		       c.close_ts, c.linger_state, c.linger_until,

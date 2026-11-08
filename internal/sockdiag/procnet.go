@@ -16,12 +16,21 @@ import (
 // ReadProcNet is the fallback when sock_diag is unavailable: it parses
 // <procRoot>/net/{tcp,tcp6,udp,udp6}. It is much slower with many sockets,
 // and for LISTEN sockets Send-Q (the backlog) is not available (reported 0).
-func ReadProcNet(procRoot string) ([]Socket, error) {
+func ReadProcNet(procRoot string) ([]Socket, error) { return ReadProcNetProtos(procRoot, true, true) }
+
+// ReadProcNetProtos reads the TCP files, the UDP files or both. Each TCP
+// file read walks the kernel's whole established hash table (sized by
+// memory: about 2 ms each on a 64 GB machine, however few sockets the
+// namespace has); the UDP ones are about 50 µs.
+func ReadProcNetProtos(procRoot string, tcp, udp bool) ([]Socket, error) {
 	var out []Socket
 	for _, f := range []struct {
 		name, proto string
 		family      int
 	}{{"tcp", "tcp", 4}, {"tcp6", "tcp", 6}, {"udp", "udp", 4}, {"udp6", "udp", 6}} {
+		if f.proto == "tcp" && !tcp || f.proto == "udp" && !udp {
+			continue
+		}
 		fh, err := os.Open(filepath.Join(procRoot, "net", f.name))
 		if err != nil {
 			if os.IsNotExist(err) {

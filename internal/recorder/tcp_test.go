@@ -471,7 +471,9 @@ func TestOtherNetNS(t *testing.T) {
 	os.MkdirAll(filepath.Join(fp.root, "50", "net"), 0o755)
 	os.WriteFile(filepath.Join(fp.root, "50", "net", "tcp"), []byte(
 		"  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"+
-			"   0: 0100007F:9C40 0100007F:0050 01 00000000:00000000 00:00000000 00000000     0        0 4242 1\n"), 0o644)
+			"   0: 0100007F:9C40 0100007F:0050 01 00000000:00000000 00:00000000 00000000     0        0 4242 1\n"+
+			// Older than the run: no event knows it (adopted at the first read).
+			"   1: 0100007F:9C41 0100007F:0050 01 00000000:00000000 00:00000000 00000000     0        0 4343 1\n"), 0o644)
 	r.procs[procKey{pid: 50, start: 1}] = &procEntry{key: procKey{pid: 50, start: 1}, upd: store.ProcUpdate{NetNS: container}}
 
 	ev := func(sk uint64, old, new int, ns uint32) bpftcp.Event {
@@ -512,8 +514,22 @@ func TestOtherNetNS(t *testing.T) {
 	for _, k := range b.Keyframes {
 		kfNS = append(kfNS, k.NetNS)
 	}
-	if len(b.Keyframes) != 2 || kfNS[0] == kfNS[1] {
-		t.Errorf("keyframe rows' namespaces: %v, want one of each", kfNS)
+	if len(b.Keyframes) != 3 || kfNS[0] != 0 || kfNS[1] != container || kfNS[2] != container {
+		t.Errorf("keyframe rows' namespaces: %v, want the host's and two of the container's", kfNS)
+	}
+	// The namespace's first read is its initial keyframe: the older
+	// connection is adopted now, not counted as missed by the events.
+	adopted := false
+	for _, c := range b.TCPConns {
+		adopted = adopted || c.LPort == 40001 && c.NetNS == container && c.Source == store.SrcKeyframe
+	}
+	if !adopted || len(r.tcp.deferred) != 0 {
+		t.Errorf("older connection of the namespace not adopted at its first read (deferred %d): %+v", len(r.tcp.deferred), b.TCPConns)
+	}
+	for _, rc := range b.Reconcile {
+		if rc.MissingFromEvents != 0 {
+			t.Errorf("counted as missed by events: %+v", rc)
+		}
 	}
 
 	// The container's process is gone: its namespace is not read, and its

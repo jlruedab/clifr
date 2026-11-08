@@ -109,6 +109,14 @@ type tcpTracker struct {
 	// pendingNS: the namespaces the pending dump lists (0: the host's); a
 	// connection elsewhere is not judged by that keyframe.
 	pendingNS map[uint32]bool
+	// nsTCPRead: the keyframe (dumpSeq) at which each other namespace's TCP
+	// files were last read (netns.go); dumpSeq counts keyframes.
+	nsTCPRead map[uint32]int64
+	dumpSeq   int64
+	// pendingFirst: namespaces whose TCP files the pending dump read for the
+	// first time: their connections are adopted as at a run's first
+	// keyframe (they may predate the run), not counted as missed events.
+	pendingFirst map[uint32]bool
 }
 
 const timeWaitMS = 60_000 // TCP_TIMEWAIT_LEN
@@ -589,8 +597,8 @@ func (t *tcpTracker) dumpRow(r *Recorder, b *store.Batch, s sockdiag.Socket, kf 
 // dump is not atomic.
 func (r *Recorder) keyframe(b *store.Batch) {
 	t := r.tcp
-	list, start, covered := t.pendingDump, t.dumpStart, t.pendingNS
-	t.pendingDump, t.pendingInode, t.pendingNS = nil, nil, nil
+	list, start, covered, first := t.pendingDump, t.dumpStart, t.pendingNS, t.pendingFirst
+	t.pendingDump, t.pendingInode, t.pendingNS, t.pendingFirst = nil, nil, nil, nil
 	if covered == nil { // a dump set directly (tests): the host's only
 		covered = map[uint32]bool{0: true}
 	}
@@ -642,7 +650,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			// First seen through an event after the dump, but it was already open.
 			c.row.OpenTS, c.dirty = start, true
 		}
-		if c == nil && !initial {
+		if c == nil && !initial && !first[kf.NetNS] {
 			// Not known to the events yet: its connect or accept may have
 			// come just before the dump, its event still on its way. Decided
 			// after the next sample's events (resolveDeferred).
