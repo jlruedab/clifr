@@ -70,6 +70,13 @@ func ParseProcNet(r io.Reader, proto string, family int, out []Socket) ([]Socket
 			r, _ := strconv.ParseUint(rx, 16, 32)
 			s.TxQ, s.RxQ = uint32(t), uint32(r)
 		}
+		// tr:tm->when: the active timer (3: time-wait) and the clock ticks
+		// (USER_HZ, 100 a second) until it fires.
+		if tr, when, ok := strings.Cut(f[5], ":"); ok {
+			timer, _ := strconv.ParseUint(tr, 16, 8)
+			ticks, _ := strconv.ParseUint(when, 16, 32)
+			s.Timer, s.Expires = int(timer), uint32(ticks*10)
+		}
 		uid, _ := strconv.ParseUint(f[7], 10, 32)
 		s.UID = uint32(uid)
 		s.Inode, _ = strconv.ParseUint(f[9], 10, 64)

@@ -21,9 +21,9 @@ interval_s | 30
 == proc_samples: proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan
 101 | 1000 | S | 5 | 100 | 200 | 2 | 7 | 4096 | 8192 | 11 | 2 | 40 | -51 | 1 | 50 | 3 | 5 | 2 | 1 | 6 | 96 | 12345 | 9 | 4 | do_epoll_wait
 101 | 2000 | R | 9 | 120 | 200 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 
-== processes: id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid
-101 | 10 | 900 | 1 | 5 | srv | srv -y | 1000 | 2000 | 2500 | sample | /usr/bin/srv | 1900 | 2500 | <nil> | 9 | 1 | unconfined | 0::/system.slice/srv.service | 7
-102 | 11 | 1600 | 10 | 0 | sh | sh -c true | 1600 | 1700 | 1700 | ebpf | /bin/sh | 1600 | 1700 | 3 | <nil> | 0 |  |  | 0
+== processes: id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns
+101 | 10 | 900 | 1 | 5 | srv | srv -y | 1000 | 2000 | 2500 | sample | /usr/bin/srv | 1900 | 2500 | <nil> | 9 | 1 | unconfined | 0::/system.slice/srv.service | 7 | 0
+102 | 11 | 1600 | 10 | 0 | sh | sh -c true | 1600 | 1700 | 1700 | ebpf | /bin/sh | 1600 | 1700 | 3 | <nil> | 0 |  |  | 0 | 4026532512
 == reconcile: ts, kind, dump_rows, missing_from_events, extra_in_events
 2000 | tcp | 1 | 0 | 0
 == recorder_stats: ts, source, events, dropped
@@ -41,11 +41,11 @@ interval_s | 30
 201 | 555 | tcp | 4 | 127.0.0.1 | 80 | 127.0.0.2 | 4000 | 1000 | 2000
 == sys_samples: ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory
 1000 | 500 | 149 | 7 | 1099511627776 | 8000000 | 3 | 1417 | 46 | 2 | 13 | 4 | 5
-== tcp_conns: id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source
-501 | 10 | 900 | 5 | 2400 | 777 | 127.0.0.1 | 4000 | 127.0.0.2 | 80 | active | 1500 | 2450 | 2 | 5 | 6 | 62450 | 2 | 0 | 0 | ebpf
-502 | 10 | 900 | -1 | <nil> | 0 | 127.0.0.1 | 4001 | 127.0.0.2 | 80 | active | 1600 | 1650 | 0 | 2 | 0 | <nil> | 0 | 0 | 1 | ebpf
-== tcp_keyframes: ts, proto, laddr, lport, inode, state, recv_q, conn_id, pid, fd
-2000 | tcp | 127.0.0.1 | 4000 | 777 | 1 | 3 | 501 | 10 | 5
+== tcp_conns: id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source, netns
+501 | 10 | 900 | 5 | 2400 | 777 | 127.0.0.1 | 4000 | 127.0.0.2 | 80 | active | 1500 | 2450 | 2 | 5 | 6 | 62450 | 2 | 0 | 0 | ebpf | 0
+502 | 10 | 900 | -1 | <nil> | 0 | 127.0.0.1 | 4001 | 127.0.0.2 | 80 | active | 1600 | 1650 | 0 | 2 | 0 | <nil> | 0 | 0 | 1 | ebpf | 4026532512
+== tcp_keyframes: ts, proto, laddr, lport, inode, state, recv_q, conn_id, pid, fd, netns
+2000 | tcp | 127.0.0.1 | 4000 | 777 | 1 | 3 | 501 | 10 | 5 | 0
 == tcp_transitions: conn_id, ts, seq, old_state, new_state
 501 | 1500 | 0 | 7 | 2
 501 | 1501 | 0 | 2 | 1

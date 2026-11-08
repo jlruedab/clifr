@@ -26,6 +26,7 @@ type tuple struct {
 	laddr, raddr store.Addr
 	lport, rport uint16
 	family       uint8
+	netns        uint32 // 0: the host's (containers and pods reuse addresses)
 }
 
 // tconn is a tracked connection. It holds no pointers (row is compact, see
@@ -44,11 +45,12 @@ type tconn struct {
 }
 
 func (c *tconn) tuple() tuple {
-	return tuple{c.row.LAddr, c.row.RAddr, c.row.LPort, c.row.RPort, c.row.Family}
+	return tuple{c.row.LAddr, c.row.RAddr, c.row.LPort, c.row.RPort, c.row.Family, c.row.NetNS}
 }
 
+// eventTuple: e.NetNS is already the written form (0 for the host's).
 func eventTuple(e *bpftcp.Event) tuple {
-	return tuple{store.AddrOf(e.SAddr), store.AddrOf(e.DAddr), uint16(e.SPort), uint16(e.DPort), family(e.Family)}
+	return tuple{store.AddrOf(e.SAddr), store.AddrOf(e.DAddr), uint16(e.SPort), uint16(e.DPort), family(e.Family), e.NetNS}
 }
 
 // text is the connection's addresses for guard event details.
@@ -103,6 +105,10 @@ type tcpTracker struct {
 	pendingDump  []sockdiag.Socket
 	pendingInode map[uint64]bool
 	dumpStart    int64
+	netnsRead    int64 // other network namespaces read at keyframes (cumulative)
+	// pendingNS: the namespaces the pending dump lists (0: the host's); a
+	// connection elsewhere is not judged by that keyframe.
+	pendingNS map[uint32]bool
 }
 
 const timeWaitMS = 60_000 // TCP_TIMEWAIT_LEN
@@ -236,6 +242,9 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	if t.twInferred > 0 {
 		t.received["tcp_time_wait_inferred"] = t.twInferred
 	}
+	if t.netnsRead > 0 { // other network namespaces read at keyframes
+		t.received["tcp_netns_keyframe_reads"] = t.netnsRead
+	}
 	var out []store.StatRow
 	seen := map[string]bool{}
 	for _, m := range []map[string]int64{t.received, drops} {
@@ -283,8 +292,8 @@ func (c *tconn) setOwner(r *Recorder, o bpftcp.Owner) {
 	if o.FD >= 0 && int(c.row.FD) != o.FD {
 		c.row.FD, c.dirty = int32(o.FD), true
 	}
-	if o.Inode != 0 && c.row.Inode != o.Inode {
-		c.row.Inode, c.dirty = o.Inode, true
+	if o.Inode != 0 && uint64(c.row.Inode) != o.Inode {
+		c.row.Inode, c.dirty = uint32(o.Inode), true
 	}
 }
 
@@ -298,6 +307,7 @@ func (c *tconn) setTuple(e bpftcp.Event) bool {
 	tp := eventTuple(&e)
 	if c.tuple() != tp {
 		c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = tp.family, tp.laddr, tp.lport, tp.raddr, tp.rport
+		c.row.NetNS = tp.netns
 		c.dirty = true
 		return true
 	}
@@ -329,6 +339,7 @@ func (r *Recorder) drainTCP() {
 	clock := newClockRef()
 	for _, e := range t.take() {
 		ts := clock.at(e.MonoNS)
+		e.NetNS = r.netnsID(e.NetNS)
 		c := t.conns[e.SK]
 		if e.Owner.PID != 0 {
 			t.fdActive[e.Owner.PID] = true
@@ -367,7 +378,7 @@ func (r *Recorder) drainTCP() {
 				c.row.V6Only, c.dirty = e.V6Only, true
 			}
 			if c.row.Inode != 0 {
-				t.byInode[c.row.Inode] = c
+				t.byInode[uint64(c.row.Inode)] = c
 			}
 			c.seq++
 			b.TCPTrans = append(b.TCPTrans, store.TCPTransition{ConnID: c.row.ID, TS: ts, Seq: c.seq, Old: e.Old, New: e.New})
@@ -386,7 +397,7 @@ func (r *Recorder) drainTCP() {
 			c.row.Direction = store.DirPassive
 			c.setOwner(r, e.Owner)
 			if c.row.Inode != 0 {
-				t.byInode[c.row.Inode] = c
+				t.byInode[uint64(c.row.Inode)] = c
 			}
 		case bpftcp.AppClose:
 			if c == nil {
@@ -456,8 +467,8 @@ func (t *tcpTracker) finish(c *tconn, sk uint64, ts int64, final int) {
 		t.lingering[c.tuple()] = c
 	}
 	delete(t.conns, sk)
-	if t.byInode[c.row.Inode] == c {
-		delete(t.byInode, c.row.Inode)
+	if t.byInode[uint64(c.row.Inode)] == c {
+		delete(t.byInode, uint64(c.row.Inode))
 	}
 	t.recentClosed[sk] = c
 	t.closedNow = append(t.closedNow, c)
@@ -477,7 +488,7 @@ func (t *tcpTracker) adopt(r *Recorder, e bpftcp.Event, ts int64) *tconn {
 		return c
 	}
 	c := t.newConn(r, ts, store.SrcEBPF)
-	c.sk = e.SK
+	c.sk, c.row.NetNS = e.SK, e.NetNS
 	c.row.FirstState = uint8(e.New)
 	switch {
 	case e.Old == bpftcp.Close && e.New == bpftcp.SynSent:
@@ -509,6 +520,7 @@ func (r *Recorder) prepareKeyframe(ts int64) bool {
 		r.log.Errorf("keyframe: list sockets: %v", err)
 		return false
 	}
+	list, t.pendingNS = r.otherNetNSSockets(list)
 	t.pendingDump, t.dumpStart, t.lastKeyframe = list, ts, time.Now()
 	t.pendingInode = map[uint64]bool{}
 	for _, s := range list {
@@ -534,7 +546,8 @@ func (t *tcpTracker) dumpRow(r *Recorder, b *store.Batch, s sockdiag.Socket, kf 
 	if c == nil {
 		c = t.newConn(r, start, store.SrcKeyframe)
 		c.row.Family, c.row.LAddr, c.row.LPort, c.row.RAddr, c.row.RPort = kf.Family, kf.LAddr, kf.LPort, kf.RAddr, kf.RPort
-		c.row.Inode, c.row.FirstState, c.state, c.row.IfName = s.Inode, kf.State, s.State, store.NameOf(ifName(s.IfIndex))
+		c.row.NetNS = kf.NetNS
+		c.row.Inode, c.row.FirstState, c.state, c.row.IfName = uint32(s.Inode), kf.State, s.State, store.NameOf(ifName(s.IfIndex))
 		c.row.V6Only = s.V6Only
 		if s.State == bpftcp.Listen {
 			c.row.Direction = store.DirListen
@@ -576,8 +589,11 @@ func (t *tcpTracker) dumpRow(r *Recorder, b *store.Batch, s sockdiag.Socket, kf 
 // dump is not atomic.
 func (r *Recorder) keyframe(b *store.Batch) {
 	t := r.tcp
-	list, start := t.pendingDump, t.dumpStart
-	t.pendingDump, t.pendingInode = nil, nil
+	list, start, covered := t.pendingDump, t.dumpStart, t.pendingNS
+	t.pendingDump, t.pendingInode, t.pendingNS = nil, nil, nil
+	if covered == nil { // a dump set directly (tests): the host's only
+		covered = map[uint32]bool{0: true}
+	}
 	if list == nil {
 		return
 	}
@@ -608,7 +624,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 	for _, s := range list {
 		kf := store.KeyframeRow{TS: start, Proto: store.ProtoOf(s.Proto), Family: uint8(s.Family), LAddr: store.AddrOf(s.LAddr),
 			LPort: uint16(s.LPort), RAddr: store.AddrOf(s.RAddr), RPort: uint16(s.RPort), Inode: s.Inode, State: uint8(s.State),
-			RecvQ: int64(s.RxQ), SendQ: int64(s.TxQ), UID: int32(s.UID), FD: -1, V6Only: s.V6Only}
+			RecvQ: int64(s.RxQ), SendQ: int64(s.TxQ), UID: int32(s.UID), FD: -1, V6Only: s.V6Only, NetNS: s.NetNS}
 		if h, ok := t.holders[s.Inode]; ok && s.Inode != 0 {
 			kf.PID, kf.StartTime, kf.FD = int32(h.key.pid), h.key.start, int32(h.fd)
 		}
@@ -618,7 +634,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 			continue
 		}
 		rec.DumpRows++
-		tp := tuple{kf.LAddr, kf.RAddr, kf.LPort, kf.RPort, kf.Family}
+		tp := tuple{kf.LAddr, kf.RAddr, kf.LPort, kf.RPort, kf.Family, kf.NetNS}
 		inDump[tp] = true
 		c := known[tp]
 		if c != nil && c.row.OpenTS > start && int(c.row.FirstState) != bpftcp.SynSent && c.row.Direction != store.DirListen &&
@@ -637,7 +653,7 @@ func (r *Recorder) keyframe(b *store.Batch) {
 	}
 	// Open in events but gone from the dump: their close was missed.
 	for tp, c := range open {
-		if inDump[tp] || c.lastEvent >= start || c.row.OpenTS >= start || c.row.LPort == 0 {
+		if inDump[tp] || c.lastEvent >= start || c.row.OpenTS >= start || c.row.LPort == 0 || !covered[c.row.NetNS] {
 			continue
 		}
 		if !initial {
@@ -647,8 +663,8 @@ func (r *Recorder) keyframe(b *store.Batch) {
 		t.closedNow = append(t.closedNow, c) // written by flushTCP
 		delete(t.conns, c.sk)
 		delete(t.unattached, tp)
-		if t.byInode[c.row.Inode] == c {
-			delete(t.byInode, c.row.Inode)
+		if t.byInode[uint64(c.row.Inode)] == c {
+			delete(t.byInode, uint64(c.row.Inode))
 		}
 		b.Guard = append(b.Guard, store.GuardEvent{TS: start, Kind: "tcp_reconciled",
 			Detail: "connection open in events but not in the keyframe: " + c.text()})

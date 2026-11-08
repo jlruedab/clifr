@@ -332,7 +332,7 @@ func (s *Store) Write(b *store.Batch) error {
 			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source, r.Exe = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source, u.Exe
 			r.Argv0Len = int32(u.Argv0Len)
 			r.ExecTS = u.ExecTS
-			r.Label, r.Cgroup, r.RUID = u.Label, u.Cgroup, int32(u.RUID)
+			r.Label, r.Cgroup, r.RUID, r.NetNS = u.Label, u.Cgroup, int32(u.RUID), int64(u.NetNS)
 			if u.CmdlinePad != 0 {
 				r.CmdlinePad = int32(u.CmdlinePad)
 			}

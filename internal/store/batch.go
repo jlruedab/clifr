@@ -31,6 +31,9 @@ type ProcRow struct {
 	// 0: unknown, an event-only process).
 	CmdlinePad int
 	Cgroup     string // /proc/<pid>/cgroup
+	// NetNS: the network namespace (inode of /proc/<pid>/ns/net), 0 for the
+	// host's (schema 10), read with the cgroup.
+	NetNS uint32
 }
 
 // ProcUpdate changes slow-moving attributes (re-read at exec or fd walks).
@@ -45,6 +48,7 @@ type ProcUpdate struct {
 	Label, Cgroup string
 	RUID          int
 	CmdlinePad    int
+	NetNS         uint32
 }
 
 // ProcExit records how a process ended (an exit event or an OOM kill); nil
@@ -165,7 +169,6 @@ type TCPConn struct {
 	ID          int64
 	StartTime   int64 // owner's start time (with PID, the process key)
 	OwnerUntil  int64 // the application closed the socket
-	Inode       uint64
 	OpenTS      int64
 	CloseTS     int64
 	LingerUntil int64 // the time-wait socket's end (estimated, or exact from an event)
@@ -174,6 +177,9 @@ type TCPConn struct {
 	RAddr       Addr
 	PID         int32 // owner (connect, listen or accept); 0: unknown
 	FD          int32 // owner's fd; -1: unknown
+	// Inode: 32 bits (sockfs numbers come from get_next_ino, and sock_diag
+	// reports them as 32-bit idiag_inode); with NetNS the row stays 128 bytes.
+	Inode       uint32
 	LPort       uint16
 	RPort       uint16
 	Retransmits uint32
@@ -190,6 +196,9 @@ type TCPConn struct {
 	Source      ConnSource
 	V6Only      bool // IPv6 socket that does not accept IPv4 (known for listeners)
 	IfName      Name // bound to a device (from a keyframe), as ss shows "addr%if"
+	// NetNS: the socket's network namespace (inode number), 0 for the host's
+	// (schema 10): the same addresses exist in many (containers, pods).
+	NetNS uint32
 }
 
 type TCPTransition struct {
@@ -219,6 +228,7 @@ type KeyframeRow struct {
 	State        uint8
 	Proto        Proto
 	V6Only       bool
+	NetNS        uint32 // 0: the host's
 }
 
 // ReconcileRow compares a keyframe with the event state: connections in the

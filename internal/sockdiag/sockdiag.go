@@ -32,6 +32,10 @@ type Socket struct {
 	// kernel reports it for listening and unconnected sockets; ss prints the
 	// unspecified address of the others as "*".
 	V6Only bool
+	// NetNS: the network namespace the socket was listed in (inode number),
+	// 0 for the host's (sock_diag); set by the recorder for other namespaces,
+	// read from /proc/<pid>/net.
+	NetNS uint32
 }
 
 const (

@@ -489,6 +489,25 @@ func (f FS) ReadLabel(pid int) (l string, err error) {
 
 // ReadCgroup returns /proc/<pid>/cgroup without its final newline: one line
 // per hierarchy, "0::/path" on the unified hierarchy (cgroup v2).
+// ReadNetNS returns the process's network namespace: the inode number in
+// its /proc/<pid>/ns/net link ("net:[4026531840]").
+func (f FS) ReadNetNS(pid int) (uint32, error) {
+	l, err := os.Readlink(f.path(strconv.Itoa(pid), "ns", "net"))
+	if err != nil {
+		return 0, err
+	}
+	s, ok := strings.CutPrefix(l, "net:[")
+	if !ok || !strings.HasSuffix(s, "]") {
+		return 0, fmt.Errorf("ns/net of %d: %q", pid, l)
+	}
+	n, err := strconv.ParseUint(strings.TrimSuffix(s, "]"), 10, 32)
+	return uint32(n), err
+}
+
+// PIDDir is /proc/<pid> (under the root): its net/ files are the process's
+// network namespace's.
+func (f FS) PIDDir(pid int) string { return f.path(strconv.Itoa(pid)) }
+
 func (f FS) ReadCgroup(pid int) (c string, err error) {
 	err = f.readPID(pid, "cgroup", func(b []byte) error { c = strings.TrimRight(string(b), "\n"); return nil })
 	return

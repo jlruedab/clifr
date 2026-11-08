@@ -50,6 +50,7 @@ type processRow struct {
 	OOMKilled  int32  `parquet:"oom_killed"`
 	Label      string `parquet:"label,dict"` // schema 8
 	Cgroup     string `parquet:"cgroup,dict"`
+	NetNS      int64  `parquet:"netns"`
 	RUID       int32  `parquet:"ruid"`
 	CmdlinePad int32  `parquet:"cmdline_pad"`
 }
@@ -241,6 +242,7 @@ type tcpConnRow struct {
 	Source         string `parquet:"source,dict"`
 	LastSeen       int64  `parquet:"last_seen,optional"`
 	V6Only         int32  `parquet:"v6only"`
+	NetNS          int64  `parquet:"netns"`
 }
 
 type tcpTransRow struct {
@@ -269,6 +271,7 @@ type keyframeRow struct {
 	StartTime int64  `parquet:"start_time"`
 	FD        int32  `parquet:"fd"`
 	V6Only    int32  `parquet:"v6only"`
+	NetNS     int64  `parquet:"netns"`
 }
 
 type reconcileRow struct {
@@ -289,14 +292,14 @@ func tcpConnOf(r *tcpConnRow, c *store.TCPConn, a *addrCache) {
 		CloseTS: c.CloseTS, FirstState: int32(c.FirstState), FinalState: int32(c.FinalState),
 		LingerState: int32(c.LingerState), LingerUntil: c.LingerUntil, Retransmits: int32(c.Retransmits),
 		ResetsSent: int32(c.ResetsSent), ResetsReceived: int32(c.ResetsReceived), Source: c.Source.String(),
-		LastSeen: c.LastSeen, V6Only: b2i(c.V6Only)}
+		LastSeen: c.LastSeen, V6Only: b2i(c.V6Only), NetNS: int64(c.NetNS)}
 }
 
 func keyframeOf(r *keyframeRow, k *store.KeyframeRow, a *addrCache) {
 	*r = keyframeRow{TS: k.TS, Proto: k.Proto.String(), Family: int32(k.Family), LAddr: a.text(k.LAddr, k.Family),
 		LPort: int32(k.LPort), RAddr: a.text(k.RAddr, k.Family), RPort: int32(k.RPort), Inode: int64(k.Inode),
 		State: int32(k.State), RecvQ: k.RecvQ, SendQ: k.SendQ, UID: k.UID, ConnID: k.ConnID, PID: k.PID,
-		StartTime: k.StartTime, FD: k.FD, V6Only: b2i(k.V6Only)}
+		StartTime: k.StartTime, FD: k.FD, V6Only: b2i(k.V6Only), NetNS: int64(k.NetNS)}
 }
 
 // addrCache keeps the text of the addresses written recently: a busy
@@ -362,7 +365,8 @@ func processOf(p store.ProcRow) processRow {
 		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
-		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), CmdlinePad: int32(p.CmdlinePad)}
+		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), CmdlinePad: int32(p.CmdlinePad),
+		NetNS: int64(p.NetNS)}
 }
 
 func i32p(p *int) *int32 {

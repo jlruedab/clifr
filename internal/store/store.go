@@ -20,9 +20,10 @@ import (
 // sys_samples, uname in meta; 4: net_counters; 5: links, addrs, routing; 6: kmsg; 7: units;
 // 8: process fields (faults, scheduling, SHR, context switches, wchan,
 // label, cgroup); 9: snapshots (whole files: swaps, modules, hostname),
-// blockdevs, neighs.
+// blockdevs, neighs; 10 (2026-11-08): netns in processes, tcp_conns and
+// tcp_keyframes (containers' connections: other network namespaces).
 // Readers refuse versions newer than theirs.
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 type DB struct {
 	*sql.DB

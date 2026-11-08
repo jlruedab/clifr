@@ -3,6 +3,8 @@ package recorder
 import (
 	"fmt"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -448,5 +450,82 @@ func TestTimeWaitInferred(t *testing.T) {
 	}
 	if r.tcp.twInferred != 2 {
 		t.Errorf("%d time-wait starts inferred, want 2", r.tcp.twInferred)
+	}
+}
+
+// Connections in another network namespace (a container) with the same
+// addresses as the host's are separate connections; a keyframe reads that
+// namespace through one of its processes (/proc/<pid>/net/tcp) and does not
+// close them as missed; a namespace it could not read is not judged.
+func TestOtherNetNS(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcp = newTCPTracker(nil)
+	const host, container = 111, 222
+	r.hostNetNS = host
+	// The container's process: its namespace link and its namespace's sockets
+	// (127.0.0.1:40000 -> 127.0.0.1:80, ESTABLISHED, inode 4242).
+	fp.set(50, "app", 100, 0)
+	os.MkdirAll(filepath.Join(fp.root, "50", "ns"), 0o755)
+	os.Symlink(fmt.Sprintf("net:[%d]", container), filepath.Join(fp.root, "50", "ns", "net"))
+	os.MkdirAll(filepath.Join(fp.root, "50", "net"), 0o755)
+	os.WriteFile(filepath.Join(fp.root, "50", "net", "tcp"), []byte(
+		"  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"+
+			"   0: 0100007F:9C40 0100007F:0050 01 00000000:00000000 00:00000000 00000000     0        0 4242 1\n"), 0o644)
+	r.procs[procKey{pid: 50, start: 1}] = &procEntry{key: procKey{pid: 50, start: 1}, upd: store.ProcUpdate{NetNS: container}}
+
+	ev := func(sk uint64, old, new int, ns uint32) bpftcp.Event {
+		e := tcpEvent(sk, old, new, "127.0.0.1", 40000, "127.0.0.1", 80)
+		e.NetNS = ns
+		return e
+	}
+	r.tcp.queue = []bpftcp.Event{ev(7, 7, 2, host), ev(7, 2, 1, host), ev(8, 7, 2, container), ev(8, 2, 1, container)}
+	var b store.Batch
+	r.applyTCP(&b)
+	r.flushTCP(1000, &b)
+	if len(b.TCPConns) != 2 {
+		t.Fatalf("same addresses in two namespaces: %d connections, want 2: %+v", len(b.TCPConns), b.TCPConns)
+	}
+	ns := map[uint32]bool{}
+	for _, c := range b.TCPConns {
+		ns[c.NetNS] = true
+	}
+	if !ns[0] || !ns[container] {
+		t.Errorf("namespaces written: %v, want 0 (host) and %d", ns, container)
+	}
+
+	// A later keyframe: the host's dump has the host's connection, the
+	// container's comes from its process's /proc/50/net/tcp.
+	r.tcp.keyframes = 1
+	host1 := []sockdiag.Socket{{Proto: "tcp", Family: 4, State: 1, LAddr: netip.MustParseAddr("127.0.0.1"), LPort: 40000,
+		RAddr: netip.MustParseAddr("127.0.0.1"), RPort: 80, Inode: 4141}}
+	r.tcp.pendingDump, r.tcp.pendingNS = r.otherNetNSSockets(host1)
+	r.tcp.dumpStart = 100_000
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.keyframe(&b)
+	r.flushTCP(100_000, &b)
+	for _, g := range b.Guard {
+		t.Errorf("guard event: %+v (a connection closed as missed)", g)
+	}
+	var kfNS []uint32
+	for _, k := range b.Keyframes {
+		kfNS = append(kfNS, k.NetNS)
+	}
+	if len(b.Keyframes) != 2 || kfNS[0] == kfNS[1] {
+		t.Errorf("keyframe rows' namespaces: %v, want one of each", kfNS)
+	}
+
+	// The container's process is gone: its namespace is not read, and its
+	// connection is not closed for being missing from the dump.
+	os.Remove(filepath.Join(fp.root, "50", "ns", "net"))
+	r.tcp.pendingDump, r.tcp.pendingNS = r.otherNetNSSockets(host1)
+	r.tcp.dumpStart = 200_000
+	b = store.Batch{}
+	r.applyTCP(&b)
+	r.keyframe(&b)
+	r.flushTCP(200_000, &b)
+	for _, g := range b.Guard {
+		t.Errorf("unread namespace judged: %+v", g)
 	}
 }

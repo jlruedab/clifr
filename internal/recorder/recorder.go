@@ -96,10 +96,14 @@ type Recorder struct {
 	cgroups map[string]cgroupSeen
 
 	listSockets func() ([]sockdiag.Socket, error)
-	sockSource  string // "sock_diag" or "proc_net"
-	socks       map[sockKey]*sockEntry
-	byInode     map[uint64]*sockEntry
-	owners      map[ownKey]*ownEntry
+	// hostNetNS: the host's network namespace (init's), written as 0;
+	// connections and processes elsewhere (containers, pods) keep their
+	// namespace's number (schema 10).
+	hostNetNS  uint32
+	sockSource string // "sock_diag" or "proc_net"
+	socks      map[sockKey]*sockEntry
+	byInode    map[uint64]*sockEntry
+	owners     map[ownKey]*ownEntry
 
 	events       *eventQueue // nil if the proc connector is unavailable
 	tcp          *tcpTracker // nil: v1 socket sampling
@@ -200,6 +204,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]cgroupSeen{}}
 	r.initSockets()
+	r.hostNetNS = r.readHostNetNS()
 	if r.cfg.FDFullEvery == 0 {
 		r.cfg.FDFullEvery = 5
 	}
@@ -711,17 +716,17 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 	if err != nil {
 		return nil
 	}
-	label, cgroup := r.readLabel(key.pid, ""), r.readCgroup(key.pid, "")
+	label, cgroup, netns := r.readLabel(key.pid, ""), r.readCgroup(key.pid, ""), r.readNetNS(key.pid, 0)
 	r.noteCgroup(cgroup, ts, b)
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
 		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, CmdlinePad: pad, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
-			Label: label, Cgroup: cgroup}}
+			Label: label, Cgroup: cgroup, NetNS: netns}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
 		PPID: st.PPID, UID: status.UID, RUID: status.RUID, CmdlinePad: pad, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
-		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup}
+		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup, NetNS: netns}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
 			// Seen first as a zombie: its exec event has the command line.
@@ -758,7 +763,7 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 	if haveStatus {
 		u.UID, u.RUID = status.UID, status.RUID
 	}
-	u.Label, u.Cgroup = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup)
+	u.Label, u.Cgroup, u.NetNS = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup), r.readNetNS(e.key.pid, u.NetNS)
 	r.noteCgroup(u.Cgroup, ts, b)
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
@@ -805,6 +810,36 @@ func (r *Recorder) readLabel(pid int, old string) string {
 		return l
 	}
 	return old
+}
+
+// readNetNS returns the process's network namespace, 0 for the host's, or
+// old when it cannot be read (one readlink, with the cgroup: when the
+// process is first sampled and on fd walks).
+func (r *Recorder) readNetNS(pid int, old uint32) uint32 {
+	n, err := r.fs.ReadNetNS(pid)
+	if err != nil {
+		return old
+	}
+	return r.netnsID(n)
+}
+
+// netnsID is how a namespace is written: 0 for the host's.
+func (r *Recorder) netnsID(n uint32) uint32 {
+	if n == r.hostNetNS {
+		return 0
+	}
+	return n
+}
+
+// readHostNetNS is init's network namespace (the host's), else clifrd's own.
+func (r *Recorder) readHostNetNS() uint32 {
+	if n, err := r.fs.ReadNetNS(1); err == nil {
+		return n
+	}
+	if n, err := procfs.New("/proc").ReadNetNS(os.Getpid()); err == nil {
+		return n
+	}
+	return 0
 }
 
 func (r *Recorder) readCgroup(pid int, old string) string {
