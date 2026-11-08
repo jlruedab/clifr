@@ -32,7 +32,9 @@ type Container struct {
 // Kubernetes (cri-containerd-ID.scope, crio-ID.scope), and the cgroupfs
 // driver's /docker/ID and /libpod_parent/libpod-ID. A conmon scope
 // (libpod-conmon-, crio-conmon-) is the runtime's monitor, not the
-// container.
+// container. LXC, LXD and Incus (the user, 2026-11-08): the payload cgroup
+// lxc.payload.NAME (LXC 4+, cgroup v2 and v1), or /lxc/NAME (LXC 3); the
+// container's name is its id (lxc.monitor.NAME is LXC's monitor).
 var containerName = regexp.MustCompile(`^(docker|libpod|cri-containerd|crio)-([0-9a-f]{64})(\.scope)?$`)
 var containerHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -41,6 +43,12 @@ var containerHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 func ContainerOf(cgroup string) (id, runtime string) {
 	parts := strings.Split(strings.Trim(cgroup, "/"), "/")
 	for i, part := range parts {
+		if name, ok := strings.CutPrefix(part, "lxc.payload."); ok && name != "" {
+			return name, "lxc"
+		}
+		if i == 1 && parts[0] == "lxc" && part != "" {
+			return part, "lxc"
+		}
 		if m := containerName.FindStringSubmatch(part); m != nil {
 			rt := map[string]string{"docker": "docker", "libpod": "podman", "cri-containerd": "containerd", "crio": "cri-o"}[m[1]]
 			return m[2], rt
@@ -168,13 +176,21 @@ func PrintContainers(w io.Writer, cs []Container, rangeView, noTrunc bool) {
 	if noTrunc {
 		idw = 64
 	}
+	for _, c := range cs { // an LXC container's id is its name: never cut
+		if !containerHex.MatchString(c.ID) {
+			idw = max(idw, len(c.ID))
+		}
+	}
 	if rangeView {
 		fmt.Fprintf(w, "%-*s  %-10s  %-19s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", "RUNTIME", "FIRST SEEN", "LAST SEEN", "PROCS", "PID", "COMMAND")
 	} else {
 		fmt.Fprintf(w, "%-*s  %-10s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", "RUNTIME", "STARTED", "PROCS", "PID", "COMMAND")
 	}
 	for _, c := range cs {
-		id := c.ID[:idw]
+		id := c.ID
+		if containerHex.MatchString(id) {
+			id = id[:min(idw, len(id))]
+		}
 		if rangeView {
 			last := FormatMS(c.LastMS)
 			if c.Running {

@@ -778,7 +778,7 @@ func cglsTool() *tool {
 func containersTool() *tool {
 	return &tool{
 		name: "containers", synopsis: "[-q] [--no-trunc]",
-		about: "clifr only: containers found from their processes' cgroups (docker, podman, containerd, CRI-O)",
+		about: "clifr only: containers found from their processes' cgroups (docker, podman, containerd, CRI-O, LXC/LXD/Incus)",
 		opts: []opt{
 			{short: 'q', help: "container ids only"},
 			{long: "no-trunc", help: "the whole 64-character id"},
@@ -787,7 +787,9 @@ func containersTool() *tool {
 		notes: []string{
 			"A container is known by the cgroup of its processes (docker-ID.scope, libpod-ID.scope,",
 			"cri-containerd-ID.scope, crio-ID.scope, or the cgroupfs driver's /docker/ID): its id and runtime",
-			"only. Names, images, ports and states are the runtime's and are not recorded; a container",
+			"only. LXC, LXD and Incus: lxc.payload.NAME (or LXC 3's /lxc/NAME), the name as the id, runtime",
+			"lxc (lxc.monitor.NAME is LXC's monitor process, not the container). Docker's and the other",
+			"runtimes' names, images, ports and states are the runtime's and are not recorded; a container",
 			"without processes (created, exited) is not seen. PID and COMMAND: its earliest process.",
 			"--at: the containers with processes at the sample at or before T, STARTED = their first",
 			"process's start. --since: every container with processes in the range, with first and last",
@@ -820,8 +822,8 @@ func containersTool() *tool {
 						if p.has("q") {
 							for _, x := range cs {
 								id := x.ID
-								if !p.has("no-trunc") {
-									id = id[:12]
+								if !p.has("no-trunc") && x.Runtime != "lxc" { // an LXC id is its name
+									id = id[:min(12, len(id))]
 								}
 								fmt.Fprintln(w, id)
 							}
