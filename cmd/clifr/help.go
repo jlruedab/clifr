@@ -88,6 +88,11 @@ Other commands:
   clifr verify         compare real tool output saved by clifrd --verify-every
                        with the reconstruction
   clifr export TABLE   one recorded table as CSV
+  clifr license        the commercial licence that --host needs (show it);
+                       clifr license install FILE installs one (as root: for
+                       the whole system, /etc/clifr/clifr.lic). Local data,
+                       bundles and sosreports need no licence.
+  -l, --license FILE   the licence file to use (or CLIFR_LICENSE)
 
 Environment variables:
   CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,

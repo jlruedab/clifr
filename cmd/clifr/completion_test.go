@@ -39,7 +39,7 @@ func TestCompletion(t *testing.T) {
 	}
 	want = append([]string{}, toolOrder...)
 	for s := range subcommands {
-		if s != "stats" && s != "list" && s != "license" { // stats: info's old name; not in this release
+		if s != "stats" && s != "list" { // stats: info's old name; list: not in this release
 			want = append(want, s)
 		}
 	}

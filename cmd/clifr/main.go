@@ -216,8 +216,6 @@ func checkLater(g *globals) error {
 		return errors.New("--tls-ca is not used: clifr pins clifrd's own certificate on first use (--tls-fingerprint)")
 	case g.host == "" && g.tlsFP != "":
 		return usageError{errors.New("--tls-fingerprint is for --host")}
-	case g.lic != "":
-		return errors.New("--license is not needed: this release reads local data only")
 	}
 	return nil
 }
@@ -492,7 +490,7 @@ func runSub(g *globals, sub string, args []string) error {
 		}
 		return runToolAt(g, words, append([]string(nil), g.ats...))
 	case "license":
-		return errors.New("licences are not needed: this release reads local data only")
+		return licenseCmd(g, args)
 	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
