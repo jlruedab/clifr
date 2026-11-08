@@ -404,7 +404,7 @@ Notes:
 
 - `--host` is `HOST`, `HOST:PORT` or `https://HOST:PORT` (port 8443 by default). To a loopback address clifr uses plain HTTP, as clifrd serves it without `serve_tls_config` (useful through an SSH tunnel: `ssh -L 8443:127.0.0.1:8443 web01` with `serve: 127.0.0.1:8443` on the server).
 - clifrd serves only the recording's data files, to token holders. It never serves the token file or its TLS key, and the sos plugin never collects the token file.
-- With the metrics drop-in installed too, the serve drop-in's `IPAddressAllow=any` is what lets clients in; narrow it to your admin networks there.
+- With the metrics drop-in installed too, the serve drop-in's `IPAddressAllow=any` is what lets clients in; narrow it to your admin networks there. On cgroup v1 (RHEL 8 by default) systemd does not enforce these IP lists (it logs so): use the firewall.
 - Serving is read-only and limited to four transfers at a time, at the recorder's low CPU and I/O priority.
 - `--host` is for commercial licence holders: clifr asks for a licence file (`clifr license install FILE`, checked offline; an expired one only prints a reminder). Bundles, sosreports and local recordings never need one. See [LICENSING.md](LICENSING.md).
 - User names are the recorded host's (clifrd records its `/etc/passwd` names, uid and name only), here and in bundles. Recordings made before 2026-11-08 do not have them: clifr then names users with this machine's passwd and says so in a `# user names:` line.
@@ -1058,6 +1058,7 @@ basic_auth_users:
 - The file and the certificate files are checked at each connection and request, as Node Exporter does: a renewed certificate or a new password applies without a restart. An invalid file at start stops clifrd; an invalid edit later is logged and the previous settings kept.
 - Without `tls_server_config` (only `basic_auth_users`, say) the address must still be loopback: passwords are not sent over a network in clear.
 - In the systemd drop-in, uncomment `IPAddressAllow=` with the Prometheus server's address (it allows only loopback otherwise).
+- On cgroup v1 systems (RHEL 8 by default) systemd cannot enforce the drop-ins' `IPAddressDeny=`/`IPAddressAllow=` and logs `... configures an IP firewall ..., but the local system does not support BPF/cgroup based firewalling`. clifrd's own rules still hold (no address but loopback without TLS; passwords or client certificates as configured), but limit who may connect with the firewall there (firewalld).
 
 Prometheus then scrapes it with:
 

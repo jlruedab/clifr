@@ -1,9 +1,9 @@
 #!/bin/bash
 # Run as root inside a test VM by packaging/vm.sh test: WHAT is any of
-# service ebpf e2e truth sos.
+# service ebpf e2e truth tls sos.
 set -uo pipefail
 T=$(dirname "$(readlink -f "$0")")
-what=${*:-service ebpf e2e truth sos}
+what=${*:-service ebpf e2e truth tls sos}
 pass=0 fail=0
 ok() { echo "PASS $*"; pass=$((pass + 1)); }
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
@@ -78,6 +78,81 @@ if has truth; then
 	echo "$out" | grep -E 'DIFF' | head -10
 	echo "$sum" | grep -q '^0 of' && ok "ground truth small: $sum" || bad "ground truth small: ${sum:-no result}"
 	systemctl start clifrd
+fi
+
+if has tls; then
+	# --metrics and --serve with the admin's certificate (one Node Exporter web
+	# configuration file for both) under the unit and its drop-ins, reached at
+	# this VM's own address (not loopback).
+	ip=$(hostname -I | awk '{print $1}')
+	d=/etc/clifr/tlstest
+	rm -rf $d && mkdir -m 700 $d && cd $d || exit 1
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key -out ca.crt -days 1 -subj /CN=vmtest-ca 2>/dev/null
+	openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout srv.key -out srv.csr -subj /CN=clifrd 2>/dev/null
+	echo "subjectAltName=IP:$ip,IP:127.0.0.1" >ext
+	openssl x509 -req -in srv.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out srv.crt -days 1 -extfile ext 2>/dev/null
+	cp ca.crt /tmp/vmtest-ca.crt && chmod 644 /tmp/vmtest-ca.crt
+	# bcrypt of "vmtest-pw" (cost 10)
+	printf 'tls_server_config:\n  cert_file: srv.crt\n  key_file: srv.key\nbasic_auth_users:\n  prom: %s\n' \
+		'$2b$10$Q8gBI1CaFT9/r2Az2PsZI.CdKi9QtcHbHNBOahVHhTbtF6CZSwlK6' >web.yml
+	chmod 600 web.yml srv.key ca.key
+	token=$(clifrd token new --file $d/tokens --comment vmtest 2>&1 | grep -o 'clifr_[A-Za-z0-9_-]*' | head -1)
+	cp /etc/clifr/clifrd.yml /etc/clifr/clifrd.yml.vmtest 2>/dev/null || : >/etc/clifr/clifrd.yml.vmtest
+	printf '\nmetrics: ":19100"\nmetrics_tls_config: %s/web.yml\n' $d >>/etc/clifr/clifrd.yml
+	dropins=/etc/systemd/system/clifrd.service.d
+	mkdir -p $dropins
+	restart() { # restart and wait until clifrd logs $1
+		local since
+		since=$(date '+%Y-%m-%d %H:%M:%S')
+		systemctl daemon-reload && systemctl restart clifrd
+		for _ in $(seq 1 60); do [ "$(journalctl -u clifrd --since "$since" -o cat | grep -c "$1")" -gt 0 ] && return 0; sleep 1; done
+		echo "   clifrd did not log '$1':"; journalctl -u clifrd --since "$since" -o cat | tail -5
+	}
+	scrape() { curl -s -o /dev/null -m 5 -w '%{http_code}' --cacert $d/ca.crt "$@" "https://$ip:19100/metrics"; }
+
+	install -m 0644 /usr/share/clifr/clifrd-metrics.conf $dropins/metrics.conf
+	restart "metrics at https://"
+	c=$(scrape -u prom:vmtest-pw)
+	if [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ]; then
+		[ "$c" = 000 ] && ok "tls: metrics at $ip blocked by the shipped drop-in (loopback-only IP)" || bad "tls: metrics at $ip answered $c with the shipped drop-in"
+	else # cgroup v1 (RHEL 8): systemd cannot enforce IPAddressDeny/Allow, and says so
+		[ "$(journalctl -b -o cat | grep -c "does not support BPF/cgroup based firewalling")" -gt 0 ] &&
+			ok "tls: cgroup v1: systemd logs that the drop-in's IP firewall is not enforced (answered $c; documented)" ||
+			bad "tls: cgroup v1 without systemd's firewall warning (answered $c)"
+	fi
+	sed -i "s|^#IPAddressAllow=.*|IPAddressAllow=$ip|" $dropins/metrics.conf
+	restart "metrics at https://"
+	c1=$(scrape -u prom:vmtest-pw) c2=$(scrape) c3=$(scrape -u prom:wrong)
+	[ "$c1" = 200 ] && [ "$c2" = 401 ] && [ "$c3" = 401 ] && ok "tls: metrics over TLS at $ip: password 200, none 401, wrong 401" ||
+		bad "tls: metrics: password $c1, none $c2, wrong $c3"
+	n=$(curl -s -m 5 --cacert $d/ca.crt -u prom:vmtest-pw "https://$ip:19100/metrics" | grep -c '^node_cpu_seconds_total')
+	[ "$n" -gt 0 ] && ok "tls: metrics body: $n node_cpu_seconds_total series" || bad "tls: no node_cpu_seconds_total"
+	m=$(curl -s -m 5 "http://$ip:19100/metrics" | grep -c '^node_')
+	[ "$m" -eq 0 ] && ok "tls: plain HTTP gets no metrics" || bad "tls: plain HTTP got $m metrics"
+
+	printf 'serve: ":18443"\nserve_tokens: %s/tokens\nserve_tls_config: %s/web.yml\n' $d $d >>/etc/clifr/clifrd.yml
+	install -m 0644 /usr/share/clifr/clifrd-serve.conf $dropins/serve.conf
+	restart "serve: recording served at https://"
+	journalctl -u clifrd -b -o cat | grep "serve: recording served" | tail -1 | sed 's/^/   /'
+	rm -f ~tester/.config/clifr/known_hosts
+	out=$(su - tester -c "CLIFR_TOKEN=$token clifr --host https://$ip:18443 --tls-ca /tmp/vmtest-ca.crt info" 2>&1 </dev/null)
+	echo "$out" | grep -q '^Recording:' && ok "tls: clifr --host --tls-ca: $(echo "$out" | grep '^Recording:')" ||
+		bad "tls: clifr --host --tls-ca: $(echo "$out" | tail -3)"
+	[ ! -e ~tester/.config/clifr/known_hosts ] && ok "tls: nothing pinned with --tls-ca" || bad "tls: known_hosts written with --tls-ca"
+	out=$(su - tester -c "CLIFR_TOKEN=$token clifr --host https://$ip:18443 info" 2>&1 </dev/null)
+	echo "$out" | grep -q "not known yet" && ok "tls: without --tls-ca (not a system CA): asks for a pin" || bad "tls: without --tls-ca: $(echo "$out" | tail -2)"
+	c=$(curl -s -o /dev/null -m 5 -w '%{http_code}' --cacert $d/ca.crt --tls-max 1.2 "https://$ip:18443/v1/info")
+	[ "$c" = 000 ] && ok "tls: --serve refuses TLS 1.2" || bad "tls: --serve answered $c to TLS 1.2"
+	[ "$(scrape -u prom:vmtest-pw)" = 200 ] && ok "tls: metrics still 200 with both drop-ins" || bad "tls: metrics with both drop-ins"
+	if $rhel; then
+		n=$(grep -c 'avc: *denied.*clifrd' /var/log/audit/audit.log 2>/dev/null)
+		[ "${n:-0}" -eq 0 ] && ok "tls: no SELinux denials" || bad "tls: $n SELinux denials"
+	fi
+	# Back to the shipped configuration.
+	mv /etc/clifr/clifrd.yml.vmtest /etc/clifr/clifrd.yml
+	rm -f $dropins/metrics.conf $dropins/serve.conf /tmp/vmtest-ca.crt
+	cd / && rm -rf $d
+	systemctl daemon-reload && systemctl restart clifrd
 fi
 
 if has sos; then

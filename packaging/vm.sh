@@ -5,7 +5,7 @@
 #   packaging/vm.sh up NAME IMAGE OSINFO   boot NAME from a cloud image in
 #                                          /var/lib/libvirt/images (copy on write)
 #   packaging/vm.sh test NAME [WHAT]       install dist/'s packages and test;
-#                                          WHAT: service ebpf e2e truth sos (default all)
+#                                          WHAT: service ebpf e2e truth tls sos (default all)
 #   packaging/vm.sh ssh NAME [COMMAND]     a shell or a command on NAME
 #   packaging/vm.sh down NAME              delete NAME and its disks
 #
@@ -79,7 +79,7 @@ ssh)
 	;;
 test)
 	n=$2; shift 2
-	what=${*:-service ebpf e2e truth sos}
+	what=${*:-service ebpf e2e truth tls sos}
 	a=$(ip "$n")
 	on "$n" 'rm -rf ~/t && mkdir -p ~/t/pkg ~/t/test/e2e ~/t/test/truth ~/t/bench/results'
 	scp -q "${sshopts[@]}" dist/*.deb dist/*.rpm "tester@$a:t/pkg/"
