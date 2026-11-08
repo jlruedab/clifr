@@ -87,11 +87,20 @@ clifr --since yesterday --until today "ps aux"    # all of yesterday
 clifr --since "1 hour ago" events             # --until defaults to now
 ```
 
-Times are in the local time zone of the machine running clifr; `--tz ZONE` (or `CLIFR_TZ`) changes it, which matters when you read another host's recording. The first line on stderr always says how the time was understood:
+Times are in the local time zone of the machine running clifr; `--tz ZONE` (or `CLIFR_TZ`) changes it, which matters when you read another host's recording. The first line on stderr always says how the time was understood, and the next which host the recording is of (its host name then, and machine-id), so a bundle or a directory of several hosts' data cannot be mistaken for another:
 
 ```
 # time: at 2026-11-05 13:20:15 CET (UTC+01:00)
+# host: web01 (machine-id 141c779d)
 ```
+
+With `--host` the `# remote:` line names the host instead. A moment (`--at`) after the last sample on disk is an error (exit 1: `... is after the end of the recording (last sample 13:15:02): clifrd writes to disk every 5m0s ...`); a range that runs past it (`--since` without `--until` means until now) is answered up to that sample, with a warning:
+
+```
+# warning: the recording ends at 2026-11-05 13:15:02, 4m33s before the end of the range (2026-11-05 13:19:35): nothing later is in this answer. clifrd writes to disk every 5m0s, ...
+```
+
+clifrd keeps the newest samples in memory and writes them every flush interval (`intervals.flush`, 5 minutes by default), so the last minutes before now are not on disk yet: ask again after the next flush.
 
 ### What is recorded: `clifr info`
 
@@ -245,7 +254,7 @@ An AI assistant or agent (Claude Code, Copilot CLI, a local LLM with a shell too
 
 **1. Always `--json --plain`, and keep stderr.** `--json` prints JSON Lines on stdout. `--plain` makes sure the pager never starts, even when the agent's shell is a pseudo-terminal. stderr carries two kinds of lines, and the agent should read both:
 
-- lines starting with `#` say how the request was understood and where the data come from: `# time: at 2026-11-05 12:20:00 UTC (UTC+00:00)`, `# ps at 2026-11-05 12:20:00, reconstructed from sample at 2026-11-05 12:19:48 (548 processes)`, `# events lost in this window (…): short-lived processes or connections may be missing`;
+- lines starting with `#` say how the request was understood and where the data come from: `# time: at 2026-11-05 12:20:00 UTC (UTC+00:00)`, `# host: web01 (machine-id 141c779d)` (check it is the host you meant), `# warning: the recording ends at ...` (the range runs past the data on disk: the answer stops there), `# ps at 2026-11-05 12:20:00, reconstructed from sample at 2026-11-05 12:19:48 (548 processes)`, `# events lost in this window (…): short-lived processes or connections may be missing`;
 - lines starting with `clifr:` are errors.
 
 **2. Exit codes.**
@@ -317,7 +326,11 @@ and similar tools showed at a past time, run clifr instead of guessing:
   host's time zone). Convert times to UTC yourself; ISO 8601 and epoch input are not accepted.
 - stdout is JSON Lines; times are Unix ms. Read stderr: "#" lines say which sample the data
   come from and whether events were lost; "clifr:" lines are errors.
-- Exit 1 = nothing recorded for that request (outside the range, a gap): say so, do not retry.
+- Check the "# host:" (or "# remote:") line names the host you meant.
+- Exit 1 = nothing recorded for that request (outside the range, a gap): say so, do not retry,
+  except "after the end of the recording": the data are not flushed yet (every 5 min by
+  default): retry after the next flush. A "# warning: the recording ends at" line on a range
+  means the same for its last minutes.
   Exit 2 = unsupported option or bad time: read the message and `clifr help COMMAND`.
 - Fields listed in "sampled" come from a periodic sample (at sample_ts_ms); others are exact.
   Say which when you report. Short-lived processes are only in "events" and "life".

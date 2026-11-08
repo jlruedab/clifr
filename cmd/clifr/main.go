@@ -419,6 +419,8 @@ func runToolAt(g *globals, words []string, diff []string) error {
 	if _, err := query.LoadUsers(c.db, at); err != nil {
 		return err
 	}
+	// Which host this is, and whether the moment is past the data on disk.
+	query.RecordingHeaders(c.db, c.w, g.host != "")
 	// The commands whose output differs between tool versions say which
 	// version's they follow, unless it is the current one.
 	if styled[t.name] {

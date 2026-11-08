@@ -169,14 +169,18 @@ func Covered(db *store.DB, t int64) error {
 		return fmt.Errorf("nothing was recorded at %s: no samples from %s to %s (clifrd was not running)",
 			FormatMS(t), FormatMS(prev.Int64), FormatMS(next.Int64))
 	}
-	flush := "every flush interval"
+	return fmt.Errorf("%s is after the end of the recording (last sample %s): clifrd writes to disk %s, "+
+		"so the latest minutes may not be there yet, or it was not running", FormatMS(t), FormatMS(prev.Int64), flushEvery(db))
+}
+
+// flushEvery is how often clifrd writes to disk, as text ("every 5m0s").
+func flushEvery(db *store.DB) string {
 	var v string
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'flush_interval_s'`).Scan(&v)
 	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
-		flush = "every " + fmtDur(int64(f*1000))
+		return "every " + fmtDur(int64(f*1000))
 	}
-	return fmt.Errorf("%s is after the end of the recording (last sample %s): clifrd writes to disk %s, "+
-		"so the latest minutes may not be there yet, or it was not running", FormatMS(t), FormatMS(prev.Int64), flush)
+	return "every flush interval"
 }
 
 // IntervalMS is the recorder's sample interval from the metadata (30 s if
