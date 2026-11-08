@@ -15,15 +15,18 @@ import (
 // and the runtime are known (names, images and states are the runtime's,
 // not in /proc).
 type Container struct {
-	ID        string `json:"id"`
-	Runtime   string `json:"runtime"`
-	Cgroup    string `json:"cgroup"`
-	StartMS   int64  `json:"start_ms"`  // the earliest start of its processes
-	LastMS    int64  `json:"last_ms"`   // over a range: when its last process was last seen
-	Running   bool   `json:"running"`   // processes alive at the end of the range (or at T)
-	Procs     int    `json:"processes"` // processes seen (at T: alive)
-	MainPID   int    `json:"main_pid"`  // its earliest process
-	Command   string `json:"command"`
+	ID      string `json:"id"`
+	Runtime string `json:"runtime"`
+	Cgroup  string `json:"cgroup"`
+	StartMS int64  `json:"start_ms"`  // the earliest start of its processes
+	LastMS  int64  `json:"last_ms"`   // over a range: when its last process was last seen
+	Running bool   `json:"running"`   // processes alive at the end of the range (or at T)
+	Procs   int    `json:"processes"` // processes seen (at T: alive)
+	MainPID int    `json:"main_pid"`  // its earliest process
+	Command string `json:"command"`
+	// NetNS: its earliest process's network namespace (0: the host's, also
+	// for recordings before 2026-11-08); ss -N ID shows its sockets.
+	NetNS     uint32 `json:"netns"`
 	startedAt int64  // MainPID's start, to pick it
 }
 
@@ -85,6 +88,7 @@ type containerProc struct {
 	startMS, endMS int64 // endMS: last seen (openEnd: still open)
 	cgroup         string
 	command        string
+	netns          uint32
 }
 
 func groupContainers(procs []containerProc, end int64) []Container {
@@ -110,7 +114,7 @@ func groupContainers(procs []containerProc, end int64) []Container {
 		c.LastMS = max(c.LastMS, min(p.endMS, end))
 		c.Running = c.Running || p.endMS >= end
 		if p.startMS < c.startedAt || p.startMS == c.startedAt && p.pid < c.MainPID {
-			c.MainPID, c.Command, c.startedAt = p.pid, p.command, p.startMS
+			c.MainPID, c.Command, c.startedAt, c.NetNS = p.pid, p.command, p.startMS, p.netns
 		}
 	}
 	out := make([]Container, 0, len(byID))
@@ -141,7 +145,7 @@ func ContainersAt(db *store.DB, t int64) ([]Container, int64, error) {
 	for _, p := range procs {
 		if p.cgroup.String != "" {
 			cps = append(cps, containerProc{pid: p.pid, ppid: p.ppid, startMS: p.startMS, endMS: openEnd,
-				cgroup: p.cgroup.String, command: commandOf(p.cmdline, p.comm, p.state.String)})
+				cgroup: p.cgroup.String, command: commandOf(p.cmdline, p.comm, p.state.String), netns: uint32(p.netns.Int64)})
 		}
 	}
 	return groupContainers(cps, s), s, nil
@@ -149,7 +153,7 @@ func ContainersAt(db *store.DB, t int64) ([]Container, int64, error) {
 
 // ContainersBetween lists the containers with processes seen in [from, to].
 func ContainersBetween(db *store.DB, from, to int64) ([]Container, error) {
-	rows, err := db.Query(`SELECT pid, ppid, start_time, COALESCE(ended, last_seen, ?3), cgroup, cmdline, comm
+	rows, err := db.Query(`SELECT pid, ppid, start_time, COALESCE(ended, last_seen, ?3), cgroup, cmdline, comm, COALESCE(netns, 0)
 		FROM processes WHERE cgroup IS NOT NULL AND cgroup != '' AND first_seen <= ?2
 		  AND COALESCE(ended, last_seen, ?3) >= ?1`, from, to, openEnd)
 	if err != nil {
@@ -160,7 +164,7 @@ func ContainersBetween(db *store.DB, from, to int64) ([]Container, error) {
 	for rows.Next() {
 		var p containerProc
 		var cmdline, comm string
-		if err := rows.Scan(&p.pid, &p.ppid, &p.startMS, &p.endMS, &p.cgroup, &cmdline, &comm); err != nil {
+		if err := rows.Scan(&p.pid, &p.ppid, &p.startMS, &p.endMS, &p.cgroup, &cmdline, &comm, &p.netns); err != nil {
 			return nil, err
 		}
 		p.command = commandOf(cmdline, comm, "")

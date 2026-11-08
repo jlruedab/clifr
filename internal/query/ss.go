@@ -16,6 +16,9 @@ import (
 // dport and sport joined with "and".
 type SockFilter struct {
 	conds []sockCond
+	// NetNS: the network namespace shown (0: the host's, as the real tools
+	// on the host; ss -N picks another). Applied in the queries.
+	NetNS uint32
 }
 
 type sockCond struct {

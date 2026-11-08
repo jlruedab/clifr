@@ -62,8 +62,8 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 		FROM tcp_conns c
 		LEFT JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
 		LEFT JOIN tcp_keyframes k ON k.ts = ?2 AND k.conn_id = c.id
-		WHERE c.open_ts <= ?1
-		  AND (c.close_ts > ?1 OR (c.close_ts IS NULL AND c.last_seen >= ?1) OR c.linger_until >= ?1)`, t, kf)
+		WHERE c.open_ts <= ?1 AND COALESCE(c.netns, 0) = ?3
+		  AND (c.close_ts > ?1 OR (c.close_ts IS NULL AND c.last_seen >= ?1) OR c.linger_until >= ?1)`, t, kf, f.NetNS)
 	if err != nil {
 		return nil, kf, err
 	}
@@ -128,7 +128,7 @@ func udpAt(db *store.DB, kf int64, f SockFilter) ([]SSRow, error) {
 		SELECT k.laddr, k.lport, k.raddr, k.rport, k.inode, k.state, k.recv_q, k.send_q, k.pid, k.fd, COALESCE(p.comm, ''),
 		       COALESCE(k.v6only, 1)
 		FROM tcp_keyframes k LEFT JOIN processes p ON p.pid = k.pid AND p.start_time = k.start_time
-		WHERE k.ts = ?1 AND k.proto = 'udp'`, kf)
+		WHERE k.ts = ?1 AND k.proto = 'udp' AND COALESCE(k.netns, 0) = ?2`, kf, f.NetNS)
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +209,8 @@ func connsInRange(db *store.DB, from, to int64, f SockFilter) ([]rangeConn, erro
 		       COALESCE(p.id, 0), COALESCE(p.cmdline, '')
 		FROM tcp_conns c
 		LEFT JOIN processes p ON p.pid = c.pid AND p.start_time = c.start_time
-		WHERE c.open_ts <= ?2 AND COALESCE(c.close_ts, c.last_seen) >= ?1
-		ORDER BY c.open_ts, c.id`, from, to)
+		WHERE c.open_ts <= ?2 AND COALESCE(c.close_ts, c.last_seen) >= ?1 AND COALESCE(c.netns, 0) = ?3
+		ORDER BY c.open_ts, c.id`, from, to, f.NetNS)
 	if err != nil {
 		return nil, err
 	}

@@ -487,6 +487,9 @@ chooses one; a line on stderr says when a style other than current is used.
 - `ss` needs `-t` and/or `-u`; `-a` all, `-l` listening only, otherwise
   connected sockets only (as ss); `-p` owners, `-n` numeric ports (without
   it, names from `/etc/services` of the machine running clifr), `-4`/`-6`.
+  The host's network namespace, as ss on the host; `-N CONTAINER|PID` a
+  container's (id prefix or LXC name, as `clifr containers` lists them) or a
+  process's namespace instead (recorded since 2026-11-08).
   Filters: `dst IP[/len][:port]`, `src ...`, `dport = :N`, `sport = :N`,
   joined with `and`. With events, connections, states and owners at a moment
   are exact (queues come from the last keyframe); a range summarizes TCP
@@ -982,9 +985,13 @@ continuous eBPF tracer, not a metrics exporter.
   2026-10-13 do not have the IPV6_V6ONLY flag, so a listener the real `ss` prints as `*:port`
   appears there as `[::]:port`. A listener's backlog (Send-Q) is 0 until
   the next keyframe, like the other queue values.
-- **Namespaces**: only the host network namespace's sockets and the host's
-  mount namespace (init's: under the shipped unit clifrd's own is a
-  sandboxed copy) are recorded. Under the unit, `clifr verify`'s captures
+- **Namespaces**: TCP and UDP sockets of every network namespace since
+  2026-11-08 (containers, pods; `ss -N`), the host's only before. In other
+  namespaces queues come from `/proc/PID/net` at keyframes (sock_diag would
+  need `setns`, i.e. CAP_SYS_ADMIN): a listener's Send-Q (backlog) is 0 and
+  an IPv6-only listener shows as `[::]`, not `*`. Only the host's mount
+  namespace (init's: under the shipped unit clifrd's own is a sandboxed
+  copy) is recorded. Under the unit, `clifr verify`'s captures
   of mount, df, findmnt and lsblk run in that sandbox, so their comparisons
   are only meaningful when clifrd runs outside it. A user's FUSE mount
   without allow_other refuses statfs to root, so `df` leaves it out (as a

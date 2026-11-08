@@ -794,7 +794,8 @@ func containersTool() *tool {
 			"--at: the containers with processes at the sample at or before T, STARTED = their first",
 			"process's start. --since: every container with processes in the range, with first and last",
 			"seen (running: processes still alive at the end). Processes only seen through exec/exit events",
-			"have no cgroup and do not count. Recorded since 2026-10-22.",
+			"have no cgroup and do not count. Recorded since 2026-10-22. --json: netns, its network",
+			"namespace (0: the host's); ss -N ID lists its sockets.",
 		},
 		examples: []string{`clifr --at "02:45" containers`, `clifr --since yesterday --until today "containers --no-trunc"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {

@@ -128,6 +128,14 @@ wait for the user's go-ahead.
   row per id (closed row first). Ids = run start (Unix s) × 1e9 + counter, for every table
   of `pqstore.EntityTables` (fds_held's began at 1 in every run until 2026-11-07, so readers
   keep one fds_held row per id and first_seen: older recordings reuse its ids across runs).
+- Network namespaces (schema 10, 2026-11-08): `netns` in `processes`, `tcp_conns` and
+  `tcp_keyframes` (the namespace's inode number; 0 = the host's, init's; NULL before). The eBPF
+  events carry it (`skc_net.net->ns.inum`, in the former padding); connections are keyed by
+  namespace and addresses (127.0.0.1 exists in every pod). A process's namespace is read with its
+  cgroup. Keyframes read each other namespace through one of its processes' /proc/PID/net/*
+  (no setns: that needs CAP_SYS_ADMIN) and judge only the namespaces they read. `ss`/`netstat`
+  show the host's; `ss -N CONTAINER|PID` another (`query.NetNSOf`). TCPConn.Inode is 32 bits
+  (socket inodes are) so the row stays 128 bytes.
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
   newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;
@@ -295,8 +303,8 @@ wait for the user's go-ahead.
   `query.UserName`. Older recordings: this machine's names (a header says so when the machine-id
   differs). Never use `user.LookupId` for a recorded uid when the recording has names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
-  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 9 since
-  2026-10-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 10 since
+  2026-11-08; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

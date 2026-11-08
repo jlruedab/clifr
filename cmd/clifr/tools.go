@@ -55,7 +55,7 @@ func init() {
 	addTool(topTool())
 	addTool(pstreeTool())
 	addTool(&tool{
-		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [FILTER] | -s",
+		name: "ss", diff: true, synopsis: "-t|-u [-a|-l] [-n] [-p] [-4|-6] [-N CONTAINER|PID] [FILTER] | -s",
 		about: "TCP and UDP sockets",
 		opts: []opt{
 			{short: 't', long: "tcp", help: "TCP sockets"},
@@ -67,10 +67,15 @@ func init() {
 			{short: '4', long: "ipv4", help: "only IPv4 sockets"},
 			{short: '6', long: "ipv6", help: "only IPv6 sockets"},
 			{short: 's', long: "summary", help: "socket counts by protocol (from /proc/net/sockstat, recorded since schema 3)"},
+			{short: 'N', long: "net", arg: "CONTAINER|PID", help: "the sockets of a container's or process's network namespace instead of the host's"},
 		},
 		window: true,
 		notes: []string{
 			"FILTER: dst|src ADDR[/LEN][:PORT], dport|sport = :PORT, joined with \"and\".",
+			"Without -N the host's network namespace, as ss on the host shows it. -N CONTAINER (an id or",
+			"its first 4+ digits, or an LXC name, as clifr containers lists them) or -N PID: that one's",
+			"namespace at T (recorded since 2026-11-08). In other namespaces Recv-Q/Send-Q come from",
+			"/proc/PID/net: a listener's Send-Q (backlog) is 0 and IPv6-only listeners show as [::].",
 			"Without -a or -l only connected sockets are shown, as by ss. Without -n port numbers are",
 			"resolved with /etc/services of the machine running clifr.",
 			"TCP from events: connections, states and owners exact; Recv-Q/Send-Q from the keyframe (sampled).",
@@ -142,7 +147,7 @@ func init() {
 func prepareSS(p parsed, c *runCtx) (func() error, error) {
 	if p.has("summary") {
 		if len(p.set) > 1 || len(p.pos) > 0 {
-			return nil, errors.New("ss: -s takes no other option or filter")
+			return nil, errors.New("ss: -s takes no other option or filter (its counts are the host's)")
 		}
 		if c.w.IsRange() {
 			return nil, errors.New("ss: -s needs --at")
@@ -172,7 +177,22 @@ func prepareSS(p parsed, c *runCtx) (func() error, error) {
 	}
 	v := query.SSView{All: p.has("all"), Listening: p.has("listening"), Process: p.has("processes"),
 		Numeric: p.has("numeric"), V4: p.has("ipv4"), V6: p.has("ipv6")}
-	return func() error { return runSS(c, tcp, udp, filter, v) }, nil
+	spec := p.set["net"]
+	return func() error {
+		if spec != "" { // another network namespace: resolved at T (a range: its end)
+			at := c.w.At
+			if c.w.IsRange() {
+				at = c.w.To
+			}
+			ns, label, err := query.NetNSOf(c.db, at, spec)
+			if err != nil {
+				return fmt.Errorf("ss: %w", err)
+			}
+			filter.NetNS = ns
+			c.header("network namespace %s: %s", query.NetNSText(ns), label)
+		}
+		return runSS(c, tcp, udp, filter, v)
+	}, nil
 }
 
 func runSS(c *runCtx, tcp, udp bool, filter query.SockFilter, v query.SSView) error {

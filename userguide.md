@@ -236,7 +236,10 @@ START                   END                        DURATION     PID    PPID EXIT
 ```sh
 clifr --since "2 days ago" oom              # every OOM kill, with the largest processes at the time
 clifr --at "2026-11-05 13:20" containers    # containers whose processes were seen (by cgroup)
+clifr --at "2026-11-05 13:20" "ss -tanp -N web1"   # a container's sockets (its id prefix, LXC name or a PID)
 ```
+
+`ss` and `netstat` show the host's network namespace, as they do on the host. A container or pod usually has its own: its connections are recorded too (since 2026-11-08), and `ss -N` shows them. In those namespaces Recv-Q and Send-Q come from `/proc/PID/net` at each keyframe, so a listener's backlog shows as 0.
 
 ### JSON output for scripts
 
