@@ -763,7 +763,10 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 	if haveStatus {
 		u.UID, u.RUID = status.UID, status.RUID
 	}
-	u.Label, u.Cgroup, u.NetNS = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup), r.readNetNS(e.key.pid, u.NetNS)
+	// (The network namespace is read when first sampled and at an exec only:
+	// a readlink per process per fd walk was 20-50 ms of every walk with
+	// 2,000-10,000 processes, benchmark 20261109-0031.)
+	u.Label, u.Cgroup = r.readLabel(e.key.pid, u.Label), r.readCgroup(e.key.pid, u.Cgroup)
 	r.noteCgroup(u.Cgroup, ts, b)
 	// A zombie's cmdline reads as empty; keep the command line it had (ps
 	// shows zombies as "[comm] <defunct>" from the state anyway).
@@ -813,8 +816,8 @@ func (r *Recorder) readLabel(pid int, old string) string {
 }
 
 // readNetNS returns the process's network namespace, 0 for the host's, or
-// old when it cannot be read (one readlink, with the cgroup: when the
-// process is first sampled and on fd walks).
+// old when it cannot be read (one readlink: when the process is first
+// sampled and at an exec).
 func (r *Recorder) readNetNS(pid int, old uint32) uint32 {
 	n, err := r.fs.ReadNetNS(pid)
 	if err != nil {

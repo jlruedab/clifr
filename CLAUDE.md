@@ -131,9 +131,14 @@ wait for the user's go-ahead.
 - Network namespaces (schema 10, 2026-11-08): `netns` in `processes`, `tcp_conns` and
   `tcp_keyframes` (the namespace's inode number; 0 = the host's, init's; NULL before). The eBPF
   events carry it (`skc_net.net->ns.inum`, in the former padding); connections are keyed by
-  namespace and addresses (127.0.0.1 exists in every pod). A process's namespace is read with its
-  cgroup. Keyframes read each other namespace through one of its processes' /proc/PID/net/*
-  (no setns: that needs CAP_SYS_ADMIN) and judge only the namespaces they read. `ss`/`netstat`
+  namespace and addresses (127.0.0.1 exists in every pod). A process's namespace is read when it is
+  first sampled and at an exec (not on fd walks: 20-50 ms a walk). Keyframes read each other namespace through one of its processes' /proc/PID/net/*
+  (no setns: that needs CAP_SYS_ADMIN) and judge only the namespaces they read. Each tcp/tcp6
+  read walks the kernel's whole established hash (~2 ms each on 64 GB, whatever the socket
+  count; udp ~50 µs): UDP files every keyframe, TCP files only for namespaces with open TCP
+  connections, once when first seen and all at a run's first keyframe, within 100 ms a keyframe
+  (`netnsTCPBudget`, least recently read first); a namespace's first TCP read adopts as an
+  initial keyframe. 100 namespaces, 2,100 sockets: keyframe sample 127 ms (host only 17 ms). `ss`/`netstat`
   show the host's; `ss -N CONTAINER|PID` another (`query.NetNSOf`). TCPConn.Inode is 32 bits
   (socket inodes are) so the row stays 128 bytes.
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,

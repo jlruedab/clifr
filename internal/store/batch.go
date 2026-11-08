@@ -32,7 +32,7 @@ type ProcRow struct {
 	CmdlinePad int
 	Cgroup     string // /proc/<pid>/cgroup
 	// NetNS: the network namespace (inode of /proc/<pid>/ns/net), 0 for the
-	// host's (schema 10), read with the cgroup.
+	// host's (schema 10), read when the process is first sampled and at an exec.
 	NetNS uint32
 }
 

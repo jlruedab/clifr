@@ -475,7 +475,11 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 					u.Comm, u.Cmdline, u.Argv0Len, u.UID, u.Exe, u.ExecTS = ev.attrs.Comm, ev.attrs.Cmdline, ev.attrs.Argv0Len,
 						ev.attrs.UID, ev.attrs.Exe, ev.attrs.ExecTS
 					u.Label = r.readLabel(ev.pid, u.Label) // an exec can change it (SELinux transitions)
-					u.CmdlinePad = 1                       // a new argument area
+					// A process changes network namespace by setns or unshare,
+					// which tools do just before an exec (ip netns exec,
+					// container runtimes): read at the exec, not on fd walks.
+					u.NetNS = r.readNetNS(ev.pid, u.NetNS)
+					u.CmdlinePad = 1 // a new argument area
 					if u != e.upd {
 						e.upd = u
 						b.ProcUpdates = append(b.ProcUpdates, u)
