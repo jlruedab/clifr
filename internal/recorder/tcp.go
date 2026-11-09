@@ -106,6 +106,7 @@ type tcpTracker struct {
 	pendingInode map[uint64]bool
 	dumpStart    int64
 	netnsRead    int64 // other network namespaces read at keyframes (cumulative)
+	netnsEmpty   int64 // of those, without TCP sockets (sockstat): no table walk
 	// pendingNS: the namespaces the pending dump lists (0: the host's); a
 	// connection elsewhere is not judged by that keyframe.
 	pendingNS map[uint32]bool
@@ -255,6 +256,7 @@ func (t *tcpTracker) stats(ts int64) []store.StatRow {
 	}
 	if t.netnsRead > 0 { // other network namespaces read at keyframes
 		t.received["tcp_netns_keyframe_reads"] = t.netnsRead
+		t.received["tcp_netns_keyframe_empty"] = t.netnsEmpty
 	}
 	var out []store.StatRow
 	seen := map[string]bool{}

@@ -88,7 +88,15 @@ func (r *Recorder) otherNetNSSockets(list []sockdiag.Socket) ([]sockdiag.Socket,
 			if n, err := r.fs.ReadNetNS(pid); err != nil || n != ns {
 				continue
 			}
-			socks, err := sockdiag.ReadProcNetProtos(r.fs.PIDDir(pid), wantTCP, true)
+			// A namespace without TCP sockets (sockstat: none in use, none in
+			// time-wait; a browser's sandboxes, most services' private
+			// networks) needs no table walk: nothing is there.
+			tcp := wantTCP
+			if st, err := r.fs.ReadSockStatPID(pid); wantTCP && err == nil && st.TCPInUse == 0 && st.TCP6InUse == 0 && st.TCPTW == 0 {
+				tcp = false
+				t.netnsEmpty++
+			}
+			socks, err := sockdiag.ReadProcNetProtos(r.fs.PIDDir(pid), tcp, true)
 			if err != nil {
 				continue
 			}

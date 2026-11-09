@@ -330,7 +330,15 @@ type SockStat struct {
 	Raw6InUse, Frag6InUse, Frag6Memory           uint64
 }
 
-func (f FS) ReadSockStat() (SockStat, error) {
+func (f FS) ReadSockStat() (SockStat, error) { return f.readSockStat("net") }
+
+// ReadSockStatPID is /proc/<pid>/net/sockstat and sockstat6: the counters of
+// the process's network namespace (no table walk: a few µs).
+func (f FS) ReadSockStatPID(pid int) (SockStat, error) {
+	return f.readSockStat(strconv.Itoa(pid) + "/net")
+}
+
+func (f FS) readSockStat(dir string) (SockStat, error) {
 	var s SockStat
 	vals := map[string]*uint64{
 		"sockets used": &s.Used, "TCP inuse": &s.TCPInUse, "TCP orphan": &s.TCPOrphan, "TCP tw": &s.TCPTW,
@@ -354,12 +362,12 @@ func (f FS) ReadSockStat() (SockStat, error) {
 			}
 		}
 	}
-	b, err := os.ReadFile(f.path("net/sockstat"))
+	b, err := os.ReadFile(f.path(dir + "/sockstat"))
 	if err != nil {
 		return s, err
 	}
 	parse(b)
-	if b, err := os.ReadFile(f.path("net/sockstat6")); err == nil {
+	if b, err := os.ReadFile(f.path(dir + "/sockstat6")); err == nil {
 		parse(b)
 	}
 	return s, nil
