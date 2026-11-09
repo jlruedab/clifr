@@ -113,6 +113,9 @@ type tcpTracker struct {
 	// files were last read (netns.go); dumpSeq counts keyframes.
 	nsTCPRead map[uint32]int64
 	dumpSeq   int64
+	// nsInitial: namespaces present at the run's first keyframe whose TCP
+	// files were not read yet (the budget): read at the next keyframes.
+	nsInitial map[uint32]bool
 	// pendingFirst: namespaces whose TCP files the pending dump read for the
 	// first time: their connections are adopted as at a run's first
 	// keyframe (they may predate the run), not counted as missed events.

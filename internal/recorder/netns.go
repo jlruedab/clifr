@@ -18,13 +18,18 @@ import (
 // Cost (measured 2026-11-08): each TCP file read walks the kernel's whole
 // established hash table, about 2 ms on a 64 GB machine however few sockets
 // the namespace has (4 ms a namespace, tcp and tcp6); the UDP files take
-// about 50 µs. So the UDP files are read for every namespace at every
+// about 50 µs, and more under load (each walk visits every socket of every
+// namespace). So the UDP files are read for every namespace at every
 // keyframe (UDP has no events), and the TCP files only for a namespace with
-// TCP connections open in the event state, once when it is first seen, and
-// for all at a run's first keyframe (connections older than clifrd); within
-// netnsTCPBudget per keyframe, the least recently read first: the rest wait
-// for the next keyframe. Events record their connections meanwhile; only
-// queues (Recv-Q/Send-Q) and missed events wait.
+// TCP connections open in the event state, and for the namespaces that
+// existed at the run's first keyframe (connections older than clifrd, which
+// no event announced) until each was read once; within netnsTCPBudget per
+// keyframe, the least recently read first: the rest wait for the next
+// keyframe. A namespace that appears later gets its connections through
+// events (a desktop's browser makes one empty namespace per content process,
+// a new one every few minutes: reading each once cost 100+ ms a keyframe,
+// benchmark A/B 20261109-1047). Only queues (Recv-Q/Send-Q) and missed
+// events wait.
 const netnsTCPBudget = 100 * time.Millisecond
 
 // otherNetNSSockets appends to list (the host's dump) the sockets of the
@@ -55,7 +60,12 @@ func (r *Recorder) otherNetNSSockets(list []sockdiag.Socket) ([]sockdiag.Socket,
 	for _, c := range t.unattached {
 		active[c.row.NetNS] = true
 	}
-	initial := t.keyframes == 0
+	if t.keyframes == 0 { // the namespaces that predate the run: each read once
+		t.nsInitial = map[uint32]bool{}
+		for ns := range byNS {
+			t.nsInitial[ns] = true
+		}
+	}
 	order := make([]uint32, 0, len(byNS))
 	for ns := range byNS {
 		order = append(order, ns)
@@ -69,7 +79,7 @@ func (r *Recorder) otherNetNSSockets(list []sockdiag.Socket) ([]sockdiag.Socket,
 	})
 	start := time.Now()
 	for _, ns := range order {
-		wantTCP := (initial || t.nsTCPRead[ns] == 0 || active[ns]) && time.Since(start) < netnsTCPBudget
+		wantTCP := (t.nsInitial[ns] || active[ns]) && time.Since(start) < netnsTCPBudget
 		pids := byNS[ns]
 		slices.Sort(pids) // the oldest process first: least likely to be gone
 		for _, pid := range pids {
@@ -91,6 +101,7 @@ func (r *Recorder) otherNetNSSockets(list []sockdiag.Socket) ([]sockdiag.Socket,
 				if t.nsTCPRead[ns] == 0 { // its first read: as a run's first keyframe for it
 					t.pendingFirst[ns] = true
 				}
+				delete(t.nsInitial, ns)
 				t.nsTCPRead[ns] = t.dumpSeq + 1 // 0: never read
 				t.netnsRead++
 			}
@@ -101,6 +112,11 @@ func (r *Recorder) otherNetNSSockets(list []sockdiag.Socket) ([]sockdiag.Socket,
 	for ns := range t.nsTCPRead { // namespaces gone
 		if byNS[ns] == nil {
 			delete(t.nsTCPRead, ns)
+		}
+	}
+	for ns := range t.nsInitial {
+		if byNS[ns] == nil {
+			delete(t.nsInitial, ns)
 		}
 	}
 	return list, covered
