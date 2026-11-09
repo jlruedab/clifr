@@ -141,6 +141,14 @@ wait for the user's go-ahead.
   initial keyframe. 100 namespaces, 2,100 sockets: keyframe sample 127 ms (host only 17 ms). `ss`/`netstat`
   show the host's; `ss -N CONTAINER|PID` another (`query.NetNSOf`). TCPConn.Inode is 32 bits
   (socket inodes are) so the row stays 128 bytes.
+- Container names (2026-11-09, `recorder/ctrnames.go`): `snapshots` source "containers", one
+  line per container id, "runtime\tname\timage\tpod\tnamespace\tproject", every 5 min and at
+  the next system sample after a process shows up in a new container (`noteContainer`, cached
+  per cgroup text). From Docker's API (`GET /containers/json` on /var/run/docker.sock, the
+  user's choice), rootful Podman's containers.json (id, names, image only), the kubelet's
+  /var/log/containers link names (a listing). Never a file with a container's environment
+  (Docker's config.v2.json, OCI config.json). `internal/ctr`: container ids from cgroups (pure
+  Go, shared). `query.nameContainers`: the newest names from 10 min before a window.
 - TCP with events (`meta tcp` starts with "events"): `tcp_conns` (one row per connection,
   newest version wins), `tcp_transitions` (ordered by ts, seq), `tcp_keyframes` (full dumps:
   queues, UDP), `reconcile`. The v1 sockets/sock_samples/sock_owners stay empty then;

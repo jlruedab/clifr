@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"clifr/internal/ctr"
 	"clifr/internal/store"
 )
 
@@ -16,9 +17,9 @@ import (
 // another (a container's, a process's).
 
 // NetNSOf resolves ss -N SPEC at t: a PID (the process alive at t), or a
-// container (an id of at least 4 hex digits or its prefix, or an LXC name, as
-// clifr containers lists them) to its network namespace, with a label for
-// the header.
+// container (an id of at least 4 hex digits or its prefix, its name, its pod
+// or NAMESPACE/POD/CONTAINER, or an LXC name, as clifr containers lists them)
+// to its network namespace, with a label for the header.
 func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err error) {
 	// Alive at the sample at or before t, as ps sees them.
 	if s, err := SnapshotAt(db, t, false); err == nil {
@@ -40,6 +41,11 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 		}
 		return uint32(n.Int64), fmt.Sprintf("process %d (%s)", pid, comm), nil
 	}
+	names := containerNames(db, t, t) // a container's runtime name, pod or NAMESPACE/POD/CONTAINER
+	named := func(id string) bool {
+		n, ok := names[id]
+		return ok && spec != "" && (n.name == spec || n.display() == spec || n.pod == spec)
+	}
 	rows, err := db.Query(`SELECT netns, cgroup FROM processes WHERE cgroup IS NOT NULL AND cgroup != ''
 		  AND first_seen <= ?1 AND COALESCE(ended, last_seen, ?2) >= ?1`, t, openEnd)
 	if err != nil {
@@ -60,7 +66,7 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 			if id == "" {
 				continue
 			}
-			if id == spec || len(spec) >= 4 && containerHex.MatchString(id) && strings.HasPrefix(id, spec) {
+			if id == spec || len(spec) >= 4 && ctr.IsHexID(id) && strings.HasPrefix(id, spec) || named(id) {
 				ids[id] = rt
 				if !n.Valid {
 					noNS = true
@@ -81,7 +87,21 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 	case len(ids) == 0:
 		return 0, "", fmt.Errorf("-N %s: no container or process %q with processes at %s (clifr containers lists them)", spec, spec, FormatMS(t))
 	case len(ids) > 1:
-		return 0, "", fmt.Errorf("-N %s: %d containers match; give more of the id", spec, len(ids))
+		// A pod's containers share its namespace: one answer if they all do.
+		common, same, first := uint32(0), true, true
+		for id := range ids {
+			for ns := range count[id] {
+				if first {
+					common, first = ns, false
+				} else if ns != common {
+					same = false
+				}
+			}
+		}
+		if same && !first {
+			return common, fmt.Sprintf("%d containers %q", len(ids), spec), nil
+		}
+		return 0, "", fmt.Errorf("-N %s: %d containers match, in different namespaces; give more of the id or name", spec, len(ids))
 	}
 	for id, rt := range ids {
 		if noNS && len(count[id]) == 0 {
@@ -94,8 +114,11 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 			}
 		}
 		short := id
-		if containerHex.MatchString(id) {
+		if ctr.IsHexID(id) {
 			short = id[:12]
+		}
+		if n := names[id].display(); n != "" && n != short {
+			short += " " + n
 		}
 		return best, fmt.Sprintf("container %s (%s)", short, rt), nil
 	}

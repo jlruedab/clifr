@@ -89,9 +89,11 @@ func (r *Recorder) sampleSnapshots(ts int64, b *store.Batch, fail func(string, e
 	}
 	if s.sysfs {
 		sources = append(sources, machineSnaps...)
+		sources = append(sources, snapReader{"containers", r.readContainerNames, containerNamesMS})
 	}
 	for _, src := range sources {
-		if st := s.snaps[src.name]; st != nil && src.everyMS > 0 && ts-st.read < src.everyMS {
+		early := src.name == "containers" && r.ctrNew // a new container: its name now
+		if st := s.snaps[src.name]; st != nil && src.everyMS > 0 && ts-st.read < src.everyMS && !early {
 			continue
 		}
 		lines, err := src.read()

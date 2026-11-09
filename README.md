@@ -371,10 +371,13 @@ chooses one; a line on stderr says when a style other than current is used.
   between two samples are not in it. Recorded since 2026-10-22.
 - `containers [-q] [--no-trunc]` (clifr only): the containers whose
   processes were seen, known by their cgroups (docker, podman, containerd,
-  CRI-O; LXC, LXD and Incus by their name): id, runtime, start, processes and
-  the earliest one; over a range first and last seen. Other names, images
-  and states are the runtime's and are not recorded; a container without
-  processes is not seen.
+  CRI-O; LXC, LXD and Incus by their name): id, name, runtime, start,
+  processes and the earliest one; over a range first and last seen. Names
+  since 2026-11-09: Docker's from its API's container list (read-only, on
+  /var/run/docker.sock), rootful Podman's from its storage's list, Kubernetes
+  pods' from the kubelet's /var/log/containers link names; never from a file
+  that holds a container's environment. States and ports are not recorded; a
+  container without processes is not seen.
 - `systemd-cgls [-l] [-k]`: the process tree by control group, as
   systemd-cgls prints it without arguments (cgroups in cgroupfs order,
   delegated ones marked, command lines cut to `$COLUMNS` or 80 unless

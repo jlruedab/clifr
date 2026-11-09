@@ -3,11 +3,9 @@ package query
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"sort"
-	"strings"
 
-	"clifr/internal/procfs"
+	"clifr/internal/ctr"
 	"clifr/internal/store"
 )
 
@@ -26,62 +24,23 @@ type Container struct {
 	Command string `json:"command"`
 	// NetNS: its earliest process's network namespace (0: the host's, also
 	// for recordings before 2026-11-08); ss -N ID shows its sockets.
-	NetNS     uint32 `json:"netns"`
+	NetNS uint32 `json:"netns"`
+	// Name: as its runtime names it (Kubernetes: NAMESPACE/POD/CONTAINER;
+	// LXC: its id), and the image, pod, namespace and Compose project; ""
+	// when not recorded (before 2026-11-09, or a runtime without names).
+	Name      string `json:"name"`
+	Image     string `json:"image,omitempty"`
+	Pod       string `json:"pod,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Project   string `json:"compose_project,omitempty"`
 	startedAt int64  // MainPID's start, to pick it
 }
 
-// Container cgroup names: docker and podman with the systemd cgroup driver
-// (docker-ID.scope, libpod-ID.scope), containerd and CRI-O under
-// Kubernetes (cri-containerd-ID.scope, crio-ID.scope), and the cgroupfs
-// driver's /docker/ID and /libpod_parent/libpod-ID. A conmon scope
-// (libpod-conmon-, crio-conmon-) is the runtime's monitor, not the
-// container. LXC, LXD and Incus (the user, 2026-11-08): the payload cgroup
-// lxc.payload.NAME (LXC 4+, cgroup v2 and v1), or /lxc/NAME (LXC 3); the
-// container's name is its id (lxc.monitor.NAME is LXC's monitor).
-var containerName = regexp.MustCompile(`^(docker|libpod|cri-containerd|crio)-([0-9a-f]{64})(\.scope)?$`)
-var containerHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
 // ContainerOf returns the container id and runtime for a cgroup path, or
-// "" when it is not in a container.
-func ContainerOf(cgroup string) (id, runtime string) {
-	parts := strings.Split(strings.Trim(cgroup, "/"), "/")
-	for i, part := range parts {
-		if name, ok := strings.CutPrefix(part, "lxc.payload."); ok && name != "" {
-			return name, "lxc"
-		}
-		if i == 1 && parts[0] == "lxc" && part != "" {
-			return part, "lxc"
-		}
-		if m := containerName.FindStringSubmatch(part); m != nil {
-			rt := map[string]string{"docker": "docker", "libpod": "podman", "cri-containerd": "containerd", "crio": "cri-o"}[m[1]]
-			return m[2], rt
-		}
-		if containerHex.MatchString(part) && i > 0 {
-			switch {
-			case parts[i-1] == "docker":
-				return part, "docker"
-			case strings.HasPrefix(parts[0], "kubepods"):
-				return part, "kubernetes"
-			}
-		}
-	}
-	return "", ""
-}
+// "" when it is not in a container (internal/ctr).
+func ContainerOf(cgroup string) (id, runtime string) { return ctr.Of(cgroup) }
 
-// cgroupPaths returns every cgroup line's path of /proc/<pid>/cgroup: on
-// cgroup v1 a container may show in a controller's hierarchy only.
-func cgroupPaths(cg string) []string {
-	var out []string
-	if p, _, ok := procfs.SystemdCgroup(cg); ok {
-		out = append(out, p)
-	}
-	for _, l := range strings.Split(cg, "\n") {
-		if i := strings.LastIndexByte(l, ':'); i >= 0 {
-			out = append(out, l[i+1:])
-		}
-	}
-	return out
-}
+func cgroupPaths(cg string) []string { return ctr.Paths(cg) }
 
 type containerProc struct {
 	pid, ppid      int
@@ -148,7 +107,9 @@ func ContainersAt(db *store.DB, t int64) ([]Container, int64, error) {
 				cgroup: p.cgroup.String, command: commandOf(p.cmdline, p.comm, p.state.String), netns: uint32(p.netns.Int64)})
 		}
 	}
-	return groupContainers(cps, s), s, nil
+	cs := groupContainers(cps, s)
+	nameContainers(db, cs, s, s)
+	return cs, s, nil
 }
 
 // ContainersBetween lists the containers with processes seen in [from, to].
@@ -170,7 +131,12 @@ func ContainersBetween(db *store.DB, from, to int64) ([]Container, error) {
 		p.command = commandOf(cmdline, comm, "")
 		cps = append(cps, p)
 	}
-	return groupContainers(cps, to), rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	cs := groupContainers(cps, to)
+	nameContainers(db, cs, from, to)
+	return cs, nil
 }
 
 // PrintContainers prints one line per container: at a moment (since: the
@@ -181,28 +147,36 @@ func PrintContainers(w io.Writer, cs []Container, rangeView, noTrunc bool) {
 		idw = 64
 	}
 	for _, c := range cs { // an LXC container's id is its name: never cut
-		if !containerHex.MatchString(c.ID) {
+		if !ctr.IsHexID(c.ID) {
 			idw = max(idw, len(c.ID))
 		}
 	}
+	nw := len("NAME")
+	for _, c := range cs {
+		nw = max(nw, len(c.Name))
+	}
 	if rangeView {
-		fmt.Fprintf(w, "%-*s  %-10s  %-19s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", "RUNTIME", "FIRST SEEN", "LAST SEEN", "PROCS", "PID", "COMMAND")
+		fmt.Fprintf(w, "%-*s  %-*s  %-10s  %-19s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", nw, "NAME", "RUNTIME", "FIRST SEEN", "LAST SEEN", "PROCS", "PID", "COMMAND")
 	} else {
-		fmt.Fprintf(w, "%-*s  %-10s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", "RUNTIME", "STARTED", "PROCS", "PID", "COMMAND")
+		fmt.Fprintf(w, "%-*s  %-*s  %-10s  %-19s  %5s  %7s  %s\n", idw, "CONTAINER ID", nw, "NAME", "RUNTIME", "STARTED", "PROCS", "PID", "COMMAND")
 	}
 	for _, c := range cs {
 		id := c.ID
-		if containerHex.MatchString(id) {
+		if ctr.IsHexID(id) {
 			id = id[:min(idw, len(id))]
+		}
+		name := c.Name
+		if name == "" {
+			name = "-"
 		}
 		if rangeView {
 			last := FormatMS(c.LastMS)
 			if c.Running {
 				last = "running"
 			}
-			fmt.Fprintf(w, "%-*s  %-10s  %-19s  %-19s  %5d  %7d  %s\n", idw, id, c.Runtime, FormatMS(c.StartMS), last, c.Procs, c.MainPID, c.Command)
+			fmt.Fprintf(w, "%-*s  %-*s  %-10s  %-19s  %-19s  %5d  %7d  %s\n", idw, id, nw, name, c.Runtime, FormatMS(c.StartMS), last, c.Procs, c.MainPID, c.Command)
 		} else {
-			fmt.Fprintf(w, "%-*s  %-10s  %-19s  %5d  %7d  %s\n", idw, id, c.Runtime, FormatMS(c.StartMS), c.Procs, c.MainPID, c.Command)
+			fmt.Fprintf(w, "%-*s  %-*s  %-10s  %-19s  %5d  %7d  %s\n", idw, id, nw, name, c.Runtime, FormatMS(c.StartMS), c.Procs, c.MainPID, c.Command)
 		}
 	}
 }

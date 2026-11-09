@@ -94,6 +94,11 @@ type Recorder struct {
 	ids   map[string]int64 // next id per table
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
 	cgroups map[string]cgroupSeen
+	// ctrSeen: the containers seen in processes' cgroups; ctrNew: one was
+	// new since the names were read (ctrnames.go).
+	ctrSeen    map[string]bool
+	ctrCgroups map[string]bool // cgroup texts already checked for a container
+	ctrNew     bool
 
 	listSockets func() ([]sockdiag.Socket, error)
 	// hostNetNS: the host's network namespace (init's), written as 0;

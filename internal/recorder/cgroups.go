@@ -24,6 +24,7 @@ type cgroupSeen struct {
 // are unchanged too. Only on the real /proc: fixtures have no cgroup file
 // system.
 func (r *Recorder) noteCgroup(cgroup string, ts int64, b *store.Batch) {
+	r.noteContainer(cgroup)
 	if !r.sys.sysfs {
 		return
 	}
