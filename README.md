@@ -60,10 +60,15 @@ not yet shown to be viable for production:
    `ps`, `top`, `pidstat` and `systemd-cgls` were wrong or empty. Everything
    else `clifr verify` checked matched to the end. A run longer than its
    retention with the fixes is still to do.
-2. **One machine, one kernel** (Ubuntu 26.04, kernel 7.0, bare metal). The
-   targets RHEL 8.2+/9 and Ubuntu 22.04+ and their fallback paths (perf
-   buffer, classic tracepoints, proc connector) are untested there; the
-   arm64 objects have never run.
+2. **Benchmarked on one machine** (Ubuntu 26.04, kernel 7.0, bare metal).
+   The targets are tested in KVM virtual machines: Rocky Linux 8.10 (kernel
+   4.18, cgroup v1), AlmaLinux 9.8 (5.14) and Ubuntu 22.04 (5.15) pass the
+   installed packages under the shipped unit, `--test-ebpf` in all three
+   modes (ring buffer and fentry/tp_btf; perf buffer and classic
+   tracepoints; kprobes), the end-to-end test, the small ground truth, the
+   sos plugin and the network features (`packaging/vm.sh`). Not measured
+   there: cost (the benchmarks ran only here). Untested: the proc connector
+   fallback, and arm64 (its objects have never run).
 3. **Synthetic load only**: pgbench and a load generator over loopback; no
    real server with many peers and containers.
 4. **Known open issues**: see [Limitations](#limitations).
@@ -75,11 +80,10 @@ not yet shown to be viable for production:
    the AGPL-3.0 ([License](#license));
    there is no package repository, signing or published checksums yet.
 
-To call it viable: a soak test of 3–7 days with a realistic mixed load
-(memory, disk and data checked daily); `--test-ebpf`, the e2e test and the
-small ground truth on RHEL 9, RHEL 8.x and Ubuntu 22.04 (VMs are enough);
-and a short recording on a real server checked with `clifr verify`. About a
-week, mostly unattended.
+To call it viable: a soak test longer than the retention (3–7 days) with a
+realistic mixed load (memory, disk and data checked daily), and a short
+recording on a real server checked with `clifr verify`. About a week, mostly
+unattended.
 
 ## Build
 
