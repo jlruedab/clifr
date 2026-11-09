@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"clifr/internal/license"
 	"clifr/internal/remote"
 	"clifr/internal/webconfig"
 	"clifr/internal/webconfig/webtest"
@@ -23,8 +22,6 @@ func TestRemoteQueryCA(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
 	t.Setenv("CLIFR_TOKEN", "")
 	t.Setenv("CLIFR_TLS_CA", "")
-	t.Setenv("CLIFR_LICENSE", writeLicense(t, testLicenseKey(t), license.License{ID: "CL-T", Customer: "Test",
-		Issued: "2026-11-08", Features: []string{license.FeatureRemote}}))
 	dir, at := testRecording(t)
 	tokPath := filepath.Join(t.TempDir(), "serve-tokens")
 	token, err := remote.AddToken(tokPath, "test")

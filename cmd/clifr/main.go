@@ -36,7 +36,7 @@ type globals struct {
 	number                    int
 	json, interactive, plain  bool
 	dataDir, style            string
-	host, token, tlsCA, lic   string
+	host, token, tlsCA        string
 	tlsFP                     string // --tls-fingerprint: the expected certificate of --host on first use
 	version, help, verbose    bool
 }
@@ -82,7 +82,6 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
 	str(&g.tlsCA, "", "tls-ca", os.Getenv("CLIFR_TLS_CA"))
 	str(&g.tlsFP, "", "tls-fingerprint", os.Getenv("CLIFR_TLS_FINGERPRINT"))
-	str(&g.lic, "l", "license", os.Getenv("CLIFR_LICENSE"))
 	boolean(&g.version, "v", "version")
 	boolean(&g.help, "h", "help")
 	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
@@ -104,7 +103,7 @@ type usageError struct{ error }
 
 // subcommands are clifr's own commands; everything else names a recorded tool.
 var subcommands = map[string]bool{"help": true, "info": true, "stats": true, "verify": true, "export": true,
-	"diff": true, "list": true, "license": true}
+	"diff": true, "list": true}
 
 func run(args []string) error {
 	var g globals
@@ -493,8 +492,6 @@ func runSub(g *globals, sub string, args []string) error {
 			return usageError{errors.New(`usage: clifr diff --at A --at B "COMMAND [ARGS]"`)}
 		}
 		return runToolAt(g, words, append([]string(nil), g.ats...))
-	case "license":
-		return licenseCmd(g, args)
 	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}

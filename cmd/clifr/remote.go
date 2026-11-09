@@ -83,9 +83,6 @@ func hostURL(h string) (base, hostport string, err error) {
 }
 
 func connect(g *globals) (*remoteHost, error) {
-	if err := checkRemoteLicense(g); err != nil {
-		return nil, err
-	}
 	if g.token == "" {
 		return nil, usageError{errors.New("--host needs a token: --token TOKEN or CLIFR_TOKEN (on the server: clifrd token new)")}
 	}
