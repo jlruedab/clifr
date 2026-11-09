@@ -424,7 +424,6 @@ Notes:
 - clifrd serves only the recording's data files, to token holders. It never serves the token file or its TLS key, and the sos plugin never collects the token file.
 - With the metrics drop-in installed too, the serve drop-in's `IPAddressAllow=any` is what lets clients in; narrow it to your admin networks there. On cgroup v1 (RHEL 8 by default) systemd does not enforce these IP lists (it logs so): use the firewall.
 - Serving is read-only and limited to four transfers at a time, at the recorder's low CPU and I/O priority.
-- `--host` is for commercial licence holders: clifr asks for a licence file (`clifr license install FILE`, checked offline; an expired one only prints a reminder). Bundles, sosreports and local recordings never need one. See [LICENSING.md](LICENSING.md).
 - User names are the recorded host's (clifrd records its `/etc/passwd` names, uid and name only), here and in bundles. Recordings made before 2026-11-08 do not have them: clifr then names users with this machine's passwd and says so in a `# user names:` line.
 
 ### Output styles

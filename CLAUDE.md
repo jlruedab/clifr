@@ -39,8 +39,9 @@ wait for the user's go-ahead.
 - Storage: Parquet (`github.com/parquet-go/parquet-go`, zstd, dictionary
   encoding) behind a small interface (`store.Backend`). No SQLite.
 - Other dependencies only with the user's approval.
-- License (2026-11-06): `AGPL-3.0-only` with a commercial license on the side and a CLA
-  (`LICENSING.md`, `CLA.md`); the `.bpf.c` files are `GPL-2.0-only OR BSD-2-Clause` and
+- License: `AGPL-3.0-only` (`LICENSING.md`; no commercial license and no licence checks: the
+  user, 2026-11-09); contributions signed off under the DCO (`DCO`, `CONTRIBUTING.md`); the
+  `.bpf.c` files are `GPL-2.0-only OR BSD-2-Clause` and
   declare "Dual BSD/GPL" (the kernel's GPL-only helpers need a GPL-compatible string);
   the sos plugin `deploy/sos/clifr.py` is `GPL-2.0-only` with sos's header (2026-11-07: it
   runs inside sos, which is GPLv2-only; flake8- and pylint-clean with sos's settings).

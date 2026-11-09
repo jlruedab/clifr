@@ -106,9 +106,9 @@ for p in clifr clifrd; do
 		Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 		Upstream-Name: clifr
 		Upstream-Contact: $maintainer
-		Comment: clifr is dual-licensed: AGPL-3.0-only, or a commercial license
-		 from the copyright holder (see LICENSING.md). Third-party software and
-		 its licenses: THIRD_PARTY_NOTICES in this directory.
+		Comment: clifr is licensed under AGPL-3.0-only (see LICENSING.md).
+		 Third-party software and its licenses: THIRD_PARTY_NOTICES in this
+		 directory.
 
 		Files: *
 		Copyright: 2026 Jorge L. Rueda B.

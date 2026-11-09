@@ -62,7 +62,7 @@ type fileConfig struct {
 // notYet names settings of the clifrd.yml spec that this release rejects.
 var notYet = map[string]string{
 	"memory_limit": "use gc_heap_target: a hard memory limit makes the garbage collector run continuously (CPU); the systemd unit's MemoryMax is the hard limit",
-	"encryption":   "encryption is not available in this release",
+	"encryption":   "clifrd does not encrypt its data (protect the data directory and bundles by file permissions)",
 }
 
 // applyConfig reads the configuration file and sets every flag it gives

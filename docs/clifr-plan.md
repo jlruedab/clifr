@@ -7,15 +7,16 @@ Agreed with the user on 2026-10-19. Spec: `docs/clifr command line flight.txt` (
 `docs/clifr command line flight.txt` (the user's spec) defines the product
 interface: `clifr` (query CLI, today `sosv`) and `clifrd` (agent, today
 `sosv-record`), new option names, new commands (netstat, free, df, mount,
-diff, info, help, list, license), range views, JSON with provenance, an
-interactive pager, a YAML config, redaction, push to sos-vault, remote query,
-Prometheus metrics, encryption and licensing. The request: review it, say what
-is missing, and plan the work to a viable product.
+diff, info, help, list), range views, JSON with provenance, an
+interactive pager, a YAML config, redaction, push to sos-vault, remote query
+and Prometheus metrics (the spec's encryption and licensing were dropped by the
+user on 2026-11-09). The request: review it, say what is missing, and plan the
+work to a viable product.
 
 Decisions taken with the user (2026-10-19):
-- **First viable release is local-only.** Network (push, `--host`, `/metrics`),
-  TLS, encryption and licensing are a later phase; the CLAUDE.md "no network,
-  encryption" constraint is lifted only when that phase starts.
+- **First viable release is local-only.** Network (push, `--host`, `/metrics`)
+  and TLS are a later phase; the CLAUDE.md "no network" constraint is lifted
+  only when that phase starts.
 - **Remote query = serve files:** clifrd (or sos-vault) serves the Parquet
   files of a window; `clifr` reconstructs locally. clifrd stays pure Go, static,
   no query engine.
@@ -51,9 +52,6 @@ Problems to resolve in the spec:
    interfaces and pressure, which clifrd does not collect today (new collectors).
 7. **"clifr list COMMAND"** is unclear (list of what?). Proposal: drop it and
    let `clifr help` list commands and `clifr help COMMAND` the options.
-8. **Licence check in an open binary** is easy to remove; that fits the
-   quoted principle (value from remote/fleet/sos-vault, not lock-in) — keep
-   the check light.
 
 Missing from the spec:
 - **The clifr-only views that are the product's edge:** process lifetimes
@@ -174,7 +172,7 @@ for a busy server). Rules for the whole phase: every network feature is
 opt-in and off by default (a default install has no listening port and no
 outbound connection); the unit keeps `RestrictAddressFamilies=AF_NETLINK
 AF_UNIX`, a packaged drop-in adds AF_INET/AF_INET6 for a feature that is
-turned on; no phone-home or telemetry; licences checked offline.
+turned on; no phone-home or telemetry.
 - **7.1 `/metrics`** (1–1.5 weeks): `clifrd --metrics 127.0.0.1:9100`
   (`metrics:` in clifrd.yml). Decisions (the user, 2026-11-07): the text
   exposition format written by hand (no Prometheus client library); loopback
@@ -219,7 +217,7 @@ turned on; no phone-home or telemetry; licences checked offline.
   non-interactive use; a changed certificate is an error); plain HTTP only on
   loopback; per-file transfer with a cache (`/v1/files` lists a window's
   files with SHA-256, as `bundle.Select`; clifr fetches the ones it lacks and
-  queries exactly the listed set); no licence check until 7.3.
+  queries exactly the listed set).
   - 7.2a (done 2026-11-07): clifrd side (`--serve`, `clifrd token`, the
     certificate, `/v1/info`, `/v1/files`, `/v1/file`).
   - 7.2b (done 2026-11-07): clifr side (`--host`, pinning, cache). On the
@@ -231,61 +229,9 @@ turned on; no phone-home or telemetry; licences checked offline.
     user names came from the reading machine's passwd: clifrd now records
     the host's (snapshots source "passwd", the user's choice). 7.2 is
     complete.
-- **7.3 Licensing** (3–5 days; planned 2026-11-08). The CLA review is not a
-  prerequisite: the CLA concerns outside contributions, this is the
-  copyright holder's own code checking its own licence.
-  - **Decisions (the user, 2026-11-08):** every use of `clifr --host` needs a
-    commercial licence; reading local data stays free (`--data-dir`: the
-    host's own recording, bundles, sosreports), and so does `clifrd --serve`
-    (the server). An expired licence is a warning on stderr, never a refusal.
-  - **Defaults, until the user says otherwise:**
-    - Fields: `id`, `customer`, `contact`, `issued`, `expires` (a date, or
-      none), `features` (`["remote"]`). No host count: --host is gated as a
-      whole.
-    - `clifr license` shows the installed licence and whether it is valid;
-      `clifr license install FILE` checks a file and installs it. The spec's
-      `license key` is read as "show the licence" (there is no machine key to
-      bind it to: licences are not tied to machines).
-    - Lookup order: `--license FILE`, `CLIFR_LICENSE`, then
-      `~/.config/clifr/license`, then `/etc/clifr/clifr.lic` (system-wide,
-      the spec's default). `install` writes the user's file, or the system
-      one with `--system` (root).
-  - **Format:** a text file, so it can be pasted in a mail or a ticket:
-    `-----BEGIN CLIFR LICENSE-----`, base64 of the JSON fields, a
-    `-----SIGNATURE-----` line with the base64 Ed25519 signature of those
-    bytes, `-----END CLIFR LICENSE-----`. Ed25519 from Go's standard library
-    (no new dependency). Unknown fields are kept and ignored (later versions
-    may add some).
-  - **Checking:** offline only; no network, no phone-home, no machine
-    fingerprint. clifr embeds the public keys (a list, so a key can be
-    rotated: licences signed by an old key stay valid until it is removed).
-    `--host` without a valid licence: an error naming what is wrong
-    (missing, not signed by a known key, damaged, not for "remote") and how
-    to get one. Expired: `# licence LICENSE-ID of CUSTOMER expired on DATE
-    (clifr --host keeps working; renew: CONTACT)` on every --host query. No
-    obfuscation: under the AGPL anyone may remove the check from their own
-    build; it marks commercial use, it does not police it.
-  - **Issuing (the copyright holder's side):** `clifr-license`, a small tool
-    in `tools/clifr-license/`, built separately and never packaged: `keygen`
-    (an Ed25519 key pair; the private key file mode 600, to be kept offline
-    with a backup), `sign` (fields from flags, the private key from a file
-    given on the command line; prints the licence), `verify`. The private
-    key is never in the repository. The user generates the production key
-    pair and gives the public half to be embedded in the source
-    (`productionKeys`; the user, 2026-11-08: in the source, not injected at
-    build time). Until then the gate is dormant (the user, 2026-11-08:
-    merged before the key exists): a build without a production key asks
-    for no licence; adding the key turns the gate on.
-  - **Steps:** 7.3a (done 2026-11-08) the format, verification and `clifr
-    license`, with test keys; 7.3b (done 2026-11-08) the gate on --host and
-    its messages; 7.3c `clifr-license`,
-    the key ceremony (the user, offline), docs (README "License",
-    LICENSING.md, user guide's --host section, man page), merge with the
-    production public key. Tests: valid, expired (a warning), tampered
-    fields, a signature by an unknown key, the wrong feature, a damaged
-    file, the lookup order, --data-dir never asks for a licence.
-- **7.4 Encryption** (3–5 days): bundles and pushes to a public key, not
-  data at rest (local `clifr` could not read it).
+- **7.3 Licensing and 7.4 Encryption: dropped** (the user, 2026-11-09, after
+  a business review): clifr is AGPL-3.0-only, with no commercial license and no
+  licence check; bundles and pushes are not encrypted by clifr.
 - **7.5 Push to sos-vault**: needs sos-vault's ingestion API; may not be
   needed if route A (a minimal `sos report` uploaded through sos-vault's
   existing API, `docs/sos-vault-integration.md`) is enough. Open (the user).

@@ -2,25 +2,17 @@
 
 Thank you for considering a contribution. Bug reports, test results from other distributions and kernels, and pull requests are all welcome.
 
-## Before you send code: the Contributor License Agreement
+## Before you send code: sign off your commits (DCO)
 
-clifr is offered under the AGPL-3.0 **and** under a commercial license (see [LICENSING.md](LICENSING.md)). To keep that possible, every code or documentation contribution must be covered by the [Contributor License Agreement](CLA.md) (CLA). You keep the copyright of your contribution; the CLA gives the project's copyright holder the right to distribute it under both licenses.
+clifr is licensed under the AGPL-3.0, with the eBPF programs and the sos plugin under their own licenses (see [LICENSING.md](LICENSING.md)); a contribution is made under the license of the files it changes. There is no agreement to sign. Instead, every commit carries a sign-off with your real name, certifying the [Developer Certificate of Origin](DCO) (version 1.1): that you wrote the change, or otherwise have the right to submit it under the project's open-source license.
 
-To agree, include this line in the description of your pull request, or of the first one if you send several:
-
-```
-I have read the clifr Contributor License Agreement (CLA.md, version 1.0) and agree to its terms.
-```
-
-and sign off each commit with your real name (`git commit -s`), which adds:
+Sign off with `git commit -s`, which adds:
 
 ```
 Signed-off-by: Your Name <you@example.com>
 ```
 
-If you contribute as part of your job, make sure your employer allows it, or have the employer agree to the CLA as well (see the CLA, section 4).
-
-Pull requests without the CLA statement cannot be merged. Bug reports and discussions need no CLA.
+If you contribute as part of your job, make sure your employer allows it. Pull requests with commits that are not signed off cannot be merged; bug reports and discussions need no sign-off.
 
 ## What makes a contribution easy to accept
 

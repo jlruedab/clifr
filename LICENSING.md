@@ -2,7 +2,7 @@
 
 Copyright © 2026 Jorge L. Rueda B. <jlrueda@gmail.com>
 
-clifr is **dual-licensed**: you may use it under the open-source license below, or under a commercial license.
+clifr is open-source software under the GNU AGPL-3.0, with the exceptions below for the eBPF programs and the sos plugin.
 
 ## Open source: GNU AGPL-3.0
 
@@ -15,20 +15,6 @@ What this means in practice (a summary, not a substitute for the license):
 - You may run clifr on any number of machines, for any purpose, including in a company, at no cost.
 - You may study, change and redistribute it. If you distribute clifr or a modified version, you must do so under the AGPL-3.0, with the corresponding source code.
 - If you modify clifr and let people interact with the modified version over a network (for example, as part of a hosted service), you must offer those users the source code of your modified version (AGPL-3.0 section 13).
-
-## Commercial license
-
-If the AGPL-3.0's obligations do not suit you — for example, you want to ship clifr, or a product built on it, without releasing your source code, or embed it in a proprietary appliance or service — a commercial license is available from the copyright holder:
-
-**Jorge L. Rueda B. — <jlrueda@gmail.com>**
-
-The commercial license is a separate agreement; nothing in this repository grants it.
-
-### The licence file for `clifr --host`
-
-Querying another host's recording (`clifr --host`) is meant for commercial licence holders. clifr asks for a licence file for it: a text file signed by the copyright holder, checked offline against the public key built into clifr, with no network connection, no tracking and no tie to a machine. Install it with `clifr license install FILE` (as root for the whole system, `/etc/clifr/clifr.lic`; otherwise for the user) and check it with `clifr license`. An expired licence only makes clifr print a reminder; `--host` keeps working. Reading local recordings, bundles and sosreports never needs a licence, and neither does `clifrd --serve`. Builds made before the copyright holder's public key is added do not ask for a licence at all.
-
-This check does not limit the rights the AGPL-3.0 grants: under it you may study, change and redistribute clifr, the check included. (This paragraph is part of the legal review noted in the project's HANDOFF.)
 
 ## eBPF programs
 
@@ -72,7 +58,7 @@ The binaries include third-party Go modules under their own permissive licenses 
 
 ## Contributions
 
-Contributions are welcome under the [Contributor License Agreement](CLA.md), which lets the copyright holder offer every part of clifr under both licenses. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome under the licenses above, each file under its own, with a Developer Certificate of Origin sign-off on every commit (`Signed-off-by:`, `git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Trademark
 

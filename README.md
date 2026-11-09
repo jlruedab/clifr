@@ -72,7 +72,7 @@ not yet shown to be viable for production:
 6. **Packages, but no delivery yet.** The .deb and .rpm packages (x86_64),
    the bundle and the sos plugin exist and are tested in containers and VMs
    (see [Build](#build) and the [installation guide](install.md)), under
-   the AGPL-3.0 with a commercial license on the side ([License](#license));
+   the AGPL-3.0 ([License](#license));
    there is no package repository, signing or published checksums yet.
 
 To call it viable: a soak test of 3–7 days with a realistic mixed load
@@ -1014,10 +1014,8 @@ continuous eBPF tracer, not a metrics exporter.
 
 Copyright © 2026 Jorge L. Rueda B.
 
-clifr is dual-licensed: under the [GNU Affero General Public License v3.0](LICENSE)
-(`AGPL-3.0-only`), or under a commercial license from the copyright holder for
-uses the AGPL does not allow. The eBPF programs are `GPL-2.0-only OR
-BSD-2-Clause`. `clifr --host` (another host's recording) asks for a commercial
-licence file, checked offline (`clifr license`, `clifr license install FILE`;
-not yet in builds without the issuer's key). See [LICENSING.md](LICENSING.md); contributions need the
-[Contributor License Agreement](CLA.md) ([CONTRIBUTING.md](CONTRIBUTING.md)).
+clifr is licensed under the [GNU Affero General Public License v3.0](LICENSE)
+(`AGPL-3.0-only`). The eBPF programs are `GPL-2.0-only OR BSD-2-Clause`, the
+sos plugin `GPL-2.0-only`. See [LICENSING.md](LICENSING.md); contributions are
+signed off under the [Developer Certificate of Origin](DCO)
+([CONTRIBUTING.md](CONTRIBUTING.md)).
