@@ -109,6 +109,9 @@ if has tls; then
 		echo "   clifrd did not log '$1':"; journalctl -u clifrd --since "$since" -o cat | tail -5
 	}
 	scrape() { curl -s -o /dev/null -m 5 -w '%{http_code}' --cacert $d/ca.crt "$@" "https://$ip:19100/metrics"; }
+	# /metrics answers 503 until the first sample is published (after the
+	# "metrics at" line): wait for it, up to a minute.
+	ready() { for _ in $(seq 1 60); do [ "$(scrape -u prom:vmtest-pw)" != 503 ] && return 0; sleep 1; done; }
 
 	install -m 0644 /usr/share/clifr/clifrd-metrics.conf $dropins/metrics.conf
 	restart "metrics at https://"
@@ -122,6 +125,7 @@ if has tls; then
 	fi
 	sed -i "s|^#IPAddressAllow=.*|IPAddressAllow=$ip|" $dropins/metrics.conf
 	restart "metrics at https://"
+	ready
 	c1=$(scrape -u prom:vmtest-pw) c2=$(scrape) c3=$(scrape -u prom:wrong)
 	[ "$c1" = 200 ] && [ "$c2" = 401 ] && [ "$c3" = 401 ] && ok "tls: metrics over TLS at $ip: password 200, none 401, wrong 401" ||
 		bad "tls: metrics: password $c1, none $c2, wrong $c3"
