@@ -1,7 +1,9 @@
 package recorder
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -37,6 +39,14 @@ type sockNames struct {
 // process (and deleted files at once) in fds_held; "all" is v1 (open_files).
 func (r *Recorder) heldMode() bool { return r.cfg.FDMode != "all" }
 
+// walkCheckFDs: the memory guard runs during an open-file walk every this
+// many fds read (a heap reading: microseconds).
+var walkCheckFDs = 64 << 10
+
+// maxNewHeldPerWalk: new held files recorded in one walk at most; the rest
+// on the next ones. A variable for tests.
+var maxNewHeldPerWalk = 200_000
+
 // walkFDs reads /proc/<pid>/fd. With all=false it only walks processes that
 // held inet sockets at their last walk and processes first seen in this
 // sample, and only looks at socket fds (v1 ownership). With all=true it
@@ -58,20 +68,90 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 	if all && r.tcp != nil {
 		r.tcp.markQueued()
 	}
+	if all {
+		r.walkNewHeld, r.walkHeldDeferred = 0, 0
+	}
 	if all && r.heldMode() {
 		r.fdWalks++
 		every := r.cfg.FDFullEvery
 		full = every <= 1 || r.fdWalks%uint64(every) == 1
 	}
 	walked, presumed := 0, 0
+	checked, refused := 0, 0 // work at the last memory check; processes refused this walk
+	var refusedTop string
+	work := 0 // fds read plus entries presumed unchanged: what the walk costs
+	capped, cappedMax := 0, 0
+	var cappedTop string
+	// overCap stops tracking a process holding more open files than
+	// --max-files-per-process: one such process costs about 200 bytes per
+	// entry, 100 MB for the half million an unprivileged user may hold
+	// (attack test, 2026-11-10). Its TCP connections and owners come from
+	// the events; it stays untracked until it exits.
+	// refuse untracks a process holding many files while the guard sheds
+	// and the heap is still above it.
+	refuse := func(p *procEntry) bool {
+		if p.noFiles || !r.memShed || r.cfg.MemoryGuard <= 0 || r.heapNow() <= uint64(r.cfg.MemoryGuard) {
+			return false
+		}
+		if refused == 0 {
+			refusedTop = fmt.Sprintf(" (first: pid %d (%s))", p.key.pid, p.upd.Comm)
+		}
+		refused++
+		r.closeFiles(p, b)
+		p.noFiles = true
+		return true
+	}
+	overCap := func(p *procEntry, n int) bool {
+		if r.cfg.MaxFilesPerProcess <= 0 || n <= r.cfg.MaxFilesPerProcess {
+			return false
+		}
+		if n > cappedMax {
+			cappedMax, cappedTop = n, fmt.Sprintf(" (most: pid %d (%s) with %d)", p.key.pid, p.upd.Comm, n)
+		}
+		capped++
+		r.closeFiles(p, b)
+		p.noFiles = true
+		return true
+	}
 	for _, p := range r.procs {
 		if p.closed || !(all || p.owns || p.born == r.gen) {
 			continue
 		}
+		// Untracked by the memory guard: with TCP from events nothing in its
+		// fds is needed (owners come from the events), so it is not read at
+		// all; a process can hold half a million fds, and reading them took
+		// up to 74 s a walk in the attack test (2026-11-10).
+		if all && p.noFiles && r.tcp != nil {
+			continue
+		}
+		count, haveCount := 0, false
+		if all {
+			count, haveCount = r.fs.FDCount(p.key.pid) // Linux 6.2+: the size of /proc/<pid>/fd
+			if haveCount && !p.noFiles && overCap(p, count) && r.tcp != nil {
+				continue // not even read
+			}
+		}
 		if all && !full && p.files != nil && p.born != r.gen && !(r.tcp != nil && r.tcp.fdActive[p.key.pid]) {
-			if n, ok := r.fs.FDCount(p.key.pid); ok && n == p.fdCount {
+			if haveCount && count == p.fdCount {
+				work += len(p.files)
 				r.presumeFiles(p, ts, names, b)
 				presumed++
+				continue
+			}
+		}
+		// The memory guard during the walk: one walk once took the recorder
+		// from 136 to 761 MiB (4 million fds in 8 processes) before the
+		// per-sample check could act. Every walkCheckFDs fds read the guard
+		// runs; while it sheds and the heap is still above it, the processes
+		// walked after that are not tracked (with TCP from events, not even
+		// read).
+		if all && r.cfg.MemoryGuard > 0 {
+			if work-checked >= walkCheckFDs {
+				checked = work
+				r.checkMemoryAt(time.UnixMilli(ts), b, r.heapNow())
+			}
+			big := len(p.files) > shedMinFiles || haveCount && count > shedMinFiles
+			if big && refuse(p) && r.tcp != nil {
 				continue
 			}
 		}
@@ -80,6 +160,13 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 			continue // vanished or not permitted; entries are kept until the process closes
 		}
 		nfd += len(fds)
+		work += len(fds)
+		if all && len(fds) > shedMinFiles && refuse(p) && r.tcp != nil {
+			continue // no fd count before reading (kernels before 6.2)
+		}
+		if all && !p.noFiles && overCap(p, len(fds)) && r.tcp != nil {
+			continue // older kernels: known only once read
+		}
 		r.observeOwners(p, fds, ts, b)
 		if all && p.noFiles {
 			for _, fd := range fds {
@@ -91,6 +178,22 @@ func (r *Recorder) walkFDs(ts int64, all bool, b *store.Batch) int {
 			r.observeFiles(p, fds, ts, names, b)
 			walked++
 		}
+	}
+	if r.walkHeldDeferred > 0 {
+		b.Stats = append(b.Stats, store.StatRow{TS: ts, Source: "fd_walk_held_deferred", Events: int64(r.walkHeldDeferred)})
+	}
+	if capped > 0 {
+		detail := fmt.Sprintf("%d processes hold more than %d open files (--max-files-per-process): their open files are not tracked%s",
+			capped, r.cfg.MaxFilesPerProcess, cappedTop)
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "files_capped", Detail: detail})
+		r.log.Warnf("%s", detail)
+	}
+	if refused > 0 {
+		detail := fmt.Sprintf("recorder live heap still above the %d MiB memory guard during the open-file walk: %d more processes not tracked%s",
+			r.cfg.MemoryGuard>>20, refused, refusedTop)
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "memory_shed", Detail: detail})
+		r.log.Warnf("memory guard: %s", detail)
+		freeOSMemory()
 	}
 	if all && r.tcp != nil {
 		r.tcp.fdActive = map[int]bool{}
@@ -173,6 +276,14 @@ func (r *Recorder) storeHeld(p *procEntry, k fileKey, e *fileEntry, names sockNa
 	if e.walks < 2 && !deleted {
 		return
 	}
+	// Each new held file costs a stat, an fdinfo read and a row: 2.4
+	// million of them took one walk 78 s in the attack test (2026-11-10).
+	// Beyond the limit they wait for the next walk (first_seen stays).
+	if r.walkNewHeld >= maxNewHeldPerWalk {
+		r.walkHeldDeferred++
+		return
+	}
+	r.walkNewHeld++
 	if r.ownedSocket(p, k.procFD()) {
 		e.id = -1 // tcp_conns (or the keyframe) already says who holds it
 		return

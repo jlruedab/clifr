@@ -47,12 +47,15 @@ type Config struct {
 	ProcIO           bool          // read /proc/<pid>/io
 	Redact           []string      // regular expressions masked in command lines before they are stored
 	MaxCmdline       int           // bytes of a command line stored (0: all)
-	MemoryGuard      int64         // live heap above which the memory guard sheds data (0: off)
-	Metrics          bool          // publish a metrics.Snapshot after each sample (clifrd --metrics)
-	FDInterval       time.Duration
-	Duration         time.Duration // 0 = until signalled
-	ProcRoot         string
-	CPUBudget        float64 // fraction of one core, e.g. 0.02; 0 disables the guard
+	// MaxFilesPerProcess: a process holding more open files is not tracked
+	// (0: no limit).
+	MaxFilesPerProcess int
+	MemoryGuard        int64 // live heap above which the memory guard sheds data (0: off)
+	Metrics            bool  // publish a metrics.Snapshot after each sample (clifrd --metrics)
+	FDInterval         time.Duration
+	Duration           time.Duration // 0 = until signalled
+	ProcRoot           string
+	CPUBudget          float64 // fraction of one core, e.g. 0.02; 0 disables the guard
 	// BudgetWindow is how much recent CPU history the budget guard looks at.
 	BudgetWindow time.Duration
 	VerifyEvery  time.Duration
@@ -110,19 +113,22 @@ type Recorder struct {
 	byInode    map[uint64]*sockEntry
 	owners     map[ownKey]*ownEntry
 
-	events       *eventQueue // nil if the proc connector is unavailable
-	tcp          *tcpTracker // nil: v1 socket sampling
-	fdWalks      uint64      // full fd walks so far
-	redact       Redactor
-	mounts       *mountWatch
-	net          *netWatch // interface addresses
-	kmsg         *kmsgWatch
-	units        *unitWatch
-	fsUsage      fsUsage
-	lostReported int
-	evProcs      map[procKey]*evProc // known from events, not (yet) sampled
-	evByPID      map[int]procKey
-	byPID        map[int]*procEntry
+	events  *eventQueue // nil if the proc connector is unavailable
+	tcp     *tcpTracker // nil: v1 socket sampling
+	fdWalks uint64      // full fd walks so far
+	// walkNewHeld, walkHeldDeferred: new held files recorded in this walk,
+	// and those left for the next walk (maxNewHeldPerWalk).
+	walkNewHeld, walkHeldDeferred int
+	redact                        Redactor
+	mounts                        *mountWatch
+	net                           *netWatch // interface addresses
+	kmsg                          *kmsgWatch
+	units                         *unitWatch
+	fsUsage                       fsUsage
+	lostReported                  int
+	evProcs                       map[procKey]*evProc // known from events, not (yet) sampled
+	evByPID                       map[int]procKey
+	byPID                         map[int]*procEntry
 	// pending holds rows produced outside a sample (skips, guard events);
 	// they are written with the next sample's transaction.
 	pending   store.Batch
@@ -139,8 +145,9 @@ type Recorder struct {
 	memShed         bool         // the memory guard is shedding
 	memShedAt       time.Time    // when it last shed
 	heapLive        func() uint64
-	lastCmdlineCut  int64  // of those, already reported
-	afterSample     func() // test hook
+	heapNow         func() uint64 // the heap with its uncollected garbage (heapObjects)
+	lastCmdlineCut  int64         // of those, already reported
+	afterSample     func()        // test hook
 	// With cfg.Metrics: the next snapshot, built by the sampling loop, and
 	// the published one, read by /metrics (never changed once published).
 	live metrics.Snapshot
@@ -204,7 +211,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, heapLive: liveHeap, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
+	r := &Recorder{cfg: cfg, fs: fs, db: db, log: logger, redact: redact, heapLive: liveHeap, heapNow: heapObjects, boot: preciseBootMS(fs, btime), sys: newSysSampler(cfg.ProcRoot),
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]cgroupSeen{}}

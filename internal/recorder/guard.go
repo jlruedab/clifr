@@ -3,6 +3,7 @@ package recorder
 import (
 	"cmp"
 	"fmt"
+	"runtime/debug"
 	"runtime/metrics"
 	"slices"
 	"time"
@@ -88,6 +89,13 @@ func (r *Recorder) checkBudget(now time.Time, cpuUS, fdUS int64, b *store.Batch)
 	r.cpuHist = []cpuPoint{{now, cpuUS, fdUS}}
 }
 
+// shedMinFiles: the memory guard never untracks a process holding this
+// many open files or fewer; it is the processes holding many that make the
+// recorder big, and untracking the rest (kernel threads, desktop programs:
+// 323 of them in the attack test, 2026-11-10) loses data for nothing. A
+// variable for tests.
+var shedMinFiles = 1000
+
 // shedCmdline: while the memory guard sheds, command lines read are cut
 // to this many bytes (at most --max-cmdline).
 const shedCmdline = 4096
@@ -95,6 +103,18 @@ const shedCmdline = 4096
 // liveHeap is the Go heap still in use after the last collection.
 func liveHeap() uint64 {
 	s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(s)
+	if s[0].Value.Kind() != metrics.KindUint64 {
+		return 0
+	}
+	return s[0].Value.Uint64()
+}
+
+// heapObjects is the heap's current size, the live objects and the garbage
+// not yet collected: an upper bound of the live heap that does not wait for
+// a collection.
+func heapObjects() uint64 {
+	s := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
 	metrics.Read(s)
 	if s[0].Value.Kind() != metrics.KindUint64 {
 		return 0
@@ -114,11 +134,17 @@ func liveHeap() uint64 {
 // unit's MemoryMax kills the recorder, which restarts into the same state.
 // It runs once per sample.
 func (r *Recorder) checkMemory(now time.Time, b *store.Batch) {
+	r.checkMemoryAt(now, b, r.heapLive())
+}
+
+// checkMemoryAt is checkMemory with the heap size given: during an open-file
+// walk the current heap (heapNow), as the live heap is only measured at
+// each collection and lagged 150 MiB behind a walk in the attack test.
+func (r *Recorder) checkMemoryAt(now time.Time, b *store.Batch, live uint64) {
 	guard := uint64(r.cfg.MemoryGuard)
 	if guard == 0 {
 		return
 	}
-	live := r.heapLive()
 	ts := now.UnixMilli()
 	switch {
 	case live > guard && (!r.memShed || now.Sub(r.memShedAt) >= r.cfg.BudgetWindow):
@@ -133,7 +159,12 @@ func (r *Recorder) checkMemory(now time.Time, b *store.Batch) {
 		}
 		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "memory_shed", Detail: detail})
 		r.log.Warnf("memory guard: %s", detail)
-	case r.memShed && live < guard/4*3:
+		freeOSMemory()
+	case r.memShed && live < guard/4*3 && now.Sub(r.memShedAt) >= r.cfg.BudgetWindow:
+		// Back only a budget window after the last shed: right after it the
+		// freed memory just returned makes the heap look small, and the
+		// next walk would build it up again (three sheds in four minutes in
+		// the attack test, 2026-11-10).
 		r.memShed = false
 		r.cmdlineShed.Store(false)
 		detail := fmt.Sprintf("recorder live heap %d MiB below 3/4 of the %d MiB memory guard: command lines read up to --max-cmdline again",
@@ -166,8 +197,8 @@ func (r *Recorder) shedFiles(b *store.Batch) (procs, entries int, top string) {
 	}
 	slices.SortFunc(list, func(x, y *procEntry) int { return cmp.Compare(len(y.files), len(x.files)) })
 	for _, p := range list {
-		if 2*entries >= total {
-			break
+		if 2*entries >= total || len(p.files) <= shedMinFiles {
+			break // never the processes with few files (the sort puts them last)
 		}
 		if procs == 0 {
 			top = fmt.Sprintf(" (most: pid %d (%s) with %d)", p.key.pid, p.upd.Comm, len(p.files))
@@ -179,3 +210,10 @@ func (r *Recorder) shedFiles(b *store.Batch) (procs, entries int, top string) {
 	}
 	return procs, entries, top
 }
+
+// freeOSMemory returns the memory just shed to the system. Go keeps freed
+// heap for reuse, so after shedding the recorder's RSS stayed near the
+// unit's MemoryMax for minutes (743 of 768 MiB in the attack test,
+// 2026-11-10) although the live heap was below the guard. A variable for
+// tests.
+var freeOSMemory = debug.FreeOSMemory

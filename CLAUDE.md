@@ -197,6 +197,14 @@ wait for the user's go-ahead.
   socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read
   when its fd count (size of /proc/<pid>/fd, Linux 6.2+) is unchanged and it had no TCP
   activity, except every `--fd-full-every` walks. "all" = v1 `open_files` (with `--tcp sample`).
+  A process holding more than `--max-files-per-process` (131072) fds is not tracked (`noFiles`,
+  guard event `files_capped`; known from the fd count on 6.2+, else after one read) and, with
+  TCP events, not read again; the memory guard also runs inside the walk (every
+  `walkCheckFDs` fds read or presumed, on the current heap `heapObjects`) and returns freed
+  memory (`debug.FreeOSMemory`); it untracks only processes with more than `shedMinFiles`
+  (1000) files, reports memory_ok only a budget window after the last shed, and at most
+  `maxNewHeldPerWalk` (200,000) new held files are stored per walk (`fd_walk_held_deferred`).
+  `cmd/clifrd/gc.go` `setSoftLimit`: Go's memory limit = 80% of the cgroup's memory.max.
 - Mounts: `mounts` table (present/mount/unmount/remount; the whole table as `present` rows at start and
   hourly, each snapshot replacing the table, so retention never removes a running run's base) from POLLPRI on mountinfo, opened
   with raw open(2): Go's own epoll would consume the kernel's change notification. Since

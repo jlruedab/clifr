@@ -160,6 +160,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
+| `--max-files-per-process` | 131072 | a process holding more open files is not tracked (any user can hold half a million; a `files_capped` guard event names it; its TCP connections still come from events); `0` = no limit |
 | `--max-cmdline` | 64K | bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments) and counted as `cmdline_cut` in `clifr info`; `0` = all |
 | `--memory-guard` | 384M | live Go heap above which the recorder sheds data rather than reach the unit's `MemoryMax`: command lines are cut to 4K and the open files of the processes holding the most are no longer tracked (half of all entries; again after `--budget-window` if still above); a `memory_shed` guard event says so, `memory_ok` when the heap is below 3/4 of it; `0` = off |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
@@ -181,9 +182,15 @@ lists them with their defaults (`data_dir`, `retention`, `max_size`,
 and token options, URL credentials and `key=value` secrets). A flag on the
 command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
 Unknown settings are rejected. `memory_limit` of the product spec is not
-accepted: a Go memory limit makes the collector run continuously when the
-live heap reaches it (11% of one core at 100,000 connections), so the soft
-setting is `gc_heap_target` and the hard limit the unit's `MemoryMax`.
+accepted: a Go memory limit near the live heap makes the collector run
+continuously (11% of one core at 100,000 connections), so the soft setting
+is `gc_heap_target` and the hard limit the unit's `MemoryMax`. clifrd does
+set Go's memory limit to 80% of its cgroup's limit (614 MiB under the
+shipped unit, logged at start; not with `GOGC` or `GOMEMLIMIT` in the
+environment): far above the live heap, which the memory guard keeps near
+384 MiB, it only stops uncollected garbage from reaching `MemoryMax` (an
+attack took the recorder to 700 of 768 MiB without it, 595 with it; at the
+busy load no difference, 2026-11-10).
 
 What is recorded:
 

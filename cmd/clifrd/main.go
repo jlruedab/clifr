@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"clifr/internal/metrics"
+	"clifr/internal/procfs"
 	"clifr/internal/recorder"
 	"clifr/internal/remote"
 	"clifr/internal/webconfig"
@@ -86,6 +87,7 @@ func run(args []string) error {
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")
 	fs.StringVar(&c.Events, "events", "auto", "process events: auto (eBPF, else the proc connector), ebpf, proc_connector or none")
 	fs.StringVar(&c.FDMode, "fd-mode", "held", "open files: held (fds held across two walks, and deleted files) or all (v1: every fd)")
+	fs.IntVar(&c.MaxFilesPerProcess, "max-files-per-process", 131072, "open files tracked per process: a process holding more is not tracked (a guard event names it; TCP connections and owners come from events and stay; 0 = no limit)")
 	fs.IntVar(&c.FDFullEvery, "fd-full-every", 5, "held mode: read every process's fds on every n-th walk (others only when their fd count changed)")
 	fs.StringVar(&c.TCP, "tcp", "auto", "TCP: auto (eBPF events and keyframes, else v1 sampling), ebpf, or sample (v1: a socket dump every interval)")
 	fs.DurationVar(&c.KeyframeInterval, "keyframe-interval", 5*time.Minute, "with TCP events: full socket dump (queues, UDP, reconciliation) this often")
@@ -167,6 +169,11 @@ func run(args []string) error {
 			go tuneGC(uint64(target), 5*time.Second, stop)
 		} else {
 			debug.SetGCPercent(gcPercentMin)
+		}
+		if cg, err := procfs.New("/proc").ReadCgroup(os.Getpid()); err == nil {
+			if l := setSoftLimit(cg); l > 0 {
+				logger.Printf("memory: Go memory limit %d MiB (%.0f%% of the cgroup's %d MiB)", l>>20, 100*softLimitShare, int64(float64(l)/softLimitShare)>>20)
+			}
 		}
 	}
 	if *bpfStats {

@@ -1307,6 +1307,8 @@ cpu_budget: 2%         # of one core over 5 minutes; above it the fd interval is
                        # lengthened when fd walks are a quarter of the cost or more
 gc_heap_target: 256M   # heap up to which garbage is collected at Go's default rate
 max_cmdline: 64K       # bytes of each command line stored; longer ones are cut
+max_files_per_process: 131072 # a process holding more open files is not tracked
+                       # (a guard event names it; its TCP connections still are)
 memory_guard: 384M     # live heap above which data is shed (guard event) before
                        # the unit's MemoryMax (768M) is reached
 ```
@@ -1314,7 +1316,8 @@ memory_guard: 384M     # live heap above which data is shed (guard event) before
 - **`cpu_budget`**: the recorder's own CPU target, averaged over 5 minutes. Above it, clifrd walks open files less often (doubling the interval, up to 1 hour) and records a `guard` event (`clifr events --type guard`). It never drops events to save CPU.
 - **`gc_heap_target`**: a memory/CPU trade-off of Go's garbage collector. Lower uses less memory and a little more CPU.
 - **`max_cmdline`**: command lines longer than this are cut (any user can start a process with megabytes of arguments). `clifr info` lists the cuts as `cmdline_cut` when there were any. `0` stores them whole.
-- **`memory_guard`**: if the recorder's memory grows past this (a machine with far more processes, files or connections than usual), it stops tracking the open files of the processes holding the most and cuts command lines to 4 KB. A `memory_shed` guard event and a journal warning say so. It is the step before the unit's hard limit, where the kernel would kill the recorder (it is restarted, losing up to 5 minutes).
+- **`max_files_per_process`**: any user can open half a million files in one process, and each tracked open file costs the recorder some 200 bytes of memory. A process holding more than this many is not tracked at all: a `files_capped` guard event (`clifr events --type guard`) and a journal warning name it, `clifr lsof` shows none of its files, and its TCP connections and their owners are still recorded (they come from kernel events). Raise it for a database that really keeps more files open. In a test, 8 processes holding 500,000 files each took the recorder to 761 MiB without it, 170 MiB with it.
+- **`memory_guard`**: if the recorder's memory grows past this (a machine with far more processes, files or connections than usual), it stops tracking the open files of the processes holding the most and cuts command lines to 4 KB. It also checks during each open-file walk, so a single walk cannot overshoot, gives the freed memory back to the system at once, untracks only processes holding more than 1,000 files, and records at most 200,000 newly held files per walk (the rest on the next walks). As a last net clifrd sets the Go runtime's memory limit to 80% of the unit's `MemoryMax`, so uncollected garbage cannot reach it either. A `memory_shed` guard event and a journal warning say so. It is the step before the unit's hard limit, where the kernel would kill the recorder (it is restarted, losing up to 5 minutes).
 
 ```yaml
 redact:
@@ -1360,6 +1363,7 @@ Options on the command line override the file. `CLIFR_DATA_DIR` in the environme
 | `--gc-heap-target SIZE` | `gc_heap_target` | `256M` | Garbage-collector tuning. |
 | `--memory-guard SIZE` | `memory_guard` | `384M` | Shed data above this heap size (`0` = off). |
 | `--max-cmdline SIZE` | `max_cmdline` | `64K` | Command-line length stored (`0` = all). |
+| `--max-files-per-process N` | `max_files_per_process` | `131072` | A process holding more open files is not tracked (`0` = no limit). |
 | `--redact REGEX` | `redact` | none | Mask in command lines; repeatable. |
 | `--log-level LEVEL` | `log_level` | `info` | `error`, `warn`, `info`, `debug`. |
 | `--verify-every DUR` | | off | Also save the real tools' output this often, for `clifr verify` (testing accuracy; costs CPU). |

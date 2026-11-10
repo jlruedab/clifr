@@ -590,6 +590,8 @@ func TestMemoryGuard(t *testing.T) {
 	defer r.db.Close()
 	r.cfg.MemoryGuard = 100 << 20
 	r.cfg.MaxCmdline = 64 << 10
+	defer func(n int) { shedMinFiles = n }(shedMinFiles)
+	shedMinFiles = 0 // these test processes hold few files
 	r.cfg.BudgetWindow = 5 * time.Minute
 	var live uint64
 	r.heapLive = func() uint64 { return live }
@@ -635,8 +637,14 @@ func TestMemoryGuard(t *testing.T) {
 	if len(b.Guard) != 2 || r.maxCmdline() != shedCmdline {
 		t.Fatalf("between: %+v", b.Guard)
 	}
+	// Below 3/4 but within a budget window of the last shed (at 6 min):
+	// not yet, the heap right after a shed looks small.
 	live = 70 << 20
 	r.checkMemory(t0.Add(8*time.Minute), b)
+	if len(b.Guard) != 2 {
+		t.Fatalf("recovered too soon: %+v", b.Guard)
+	}
+	r.checkMemory(t0.Add(11*time.Minute), b)
 	if len(b.Guard) != 3 || b.Guard[2].Kind != "memory_ok" || r.maxCmdline() != 64<<10 || !r.procs[procKey{pid: 100}].noFiles {
 		t.Fatalf("recovered: %+v, max cmdline %d", b.Guard, r.maxCmdline())
 	}
@@ -862,5 +870,128 @@ func TestMetricsSnapshot(t *testing.T) {
 	}
 	if first.Samples != 1 || first.Stats["ebpf_exec"] != [2]int64{3, 1} {
 		t.Errorf("the first snapshot changed: %d samples, %v", first.Samples, first.Stats)
+	}
+}
+
+// TestMemoryGuardDuringWalk: the guard also runs during an open-file walk,
+// and while it sheds with the heap still above it the processes walked
+// after that are not tracked. (An attack once took the recorder from 136 to
+// 761 MiB in a single walk, before the per-sample check could act.)
+func TestMemoryGuardDuringWalk(t *testing.T) {
+	fp := newFakeProc(t)
+	for i := range 4 {
+		pid := 10 + i
+		fp.set(pid, fmt.Sprintf("hog%d", i), 100+i, 0)
+		for fd := range 10 {
+			fp.setFD(pid, fd, fmt.Sprintf("/data/f%d", fd))
+		}
+	}
+	r, _ := newTestRecorder(t, fp.root)
+	defer r.db.Close()
+	r.cfg.MemoryGuard = 15 << 20
+	r.cfg.BudgetWindow = 5 * time.Minute
+	// The heap: 1 MiB per tracked file.
+	r.heapLive = func() uint64 {
+		n := 0
+		for _, p := range r.procs {
+			n += len(p.files)
+		}
+		return uint64(n) << 20
+	}
+	r.heapNow = r.heapLive
+	frees := 0
+	defer func(c, m int, f func()) { walkCheckFDs, shedMinFiles, freeOSMemory = c, m, f }(walkCheckFDs, shedMinFiles, freeOSMemory)
+	walkCheckFDs, shedMinFiles, freeOSMemory = 1, 5, func() { frees++ }
+
+	must(t, r.sample(time.UnixMilli(1790001000000), false)) // the processes, no walk yet
+	b := &store.Batch{}
+	r.walkFDs(1790001030000, true, b)
+	untracked, tracked := 0, 0
+	for _, p := range r.procs {
+		if p.noFiles {
+			untracked++
+		}
+		tracked += len(p.files)
+	}
+	// Walked: 10 files, 20, then over the guard: the largest (10) shed;
+	// 20 again: the last process is refused.
+	if untracked != 2 || tracked != 20 || frees != 2 {
+		t.Errorf("untracked %d (want 2), tracked files %d (want 20), memory returned %d times (want 2)", untracked, tracked, frees)
+	}
+	var kinds []string
+	for _, g := range b.Guard {
+		kinds = append(kinds, g.Kind+": "+g.Detail)
+	}
+	if len(b.Guard) != 2 || !strings.Contains(b.Guard[1].Detail, "during the open-file walk: 1 more processes not tracked") {
+		t.Errorf("guard events:\n%s", strings.Join(kinds, "\n"))
+	}
+}
+
+// TestFilesCap: a process holding more open files than MaxFilesPerProcess is
+// not tracked, and a guard event names it; the others are tracked as usual.
+func TestFilesCap(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "hog", 100, 0)
+	for fd := range 30 {
+		fp.setFD(10, fd, fmt.Sprintf("/data/f%d", fd))
+	}
+	fp.set(11, "normal", 101, 0)
+	for fd := range 5 {
+		fp.setFD(11, fd, fmt.Sprintf("/data/g%d", fd))
+	}
+	r, _ := newTestRecorder(t, fp.root)
+	defer r.db.Close()
+	r.cfg.MaxFilesPerProcess = 20
+	must(t, r.sample(time.UnixMilli(1790001000000), false))
+	b := &store.Batch{}
+	r.walkFDs(1790001030000, true, b)
+	hog, normal := r.procs[procKey{pid: 10, start: r.boot + 100*1000/100}], r.procs[procKey{pid: 11, start: r.boot + 101*1000/100}]
+	if hog == nil || normal == nil {
+		t.Fatalf("processes not found: %v", r.procs)
+	}
+	if !hog.noFiles || len(hog.files) != 0 || normal.noFiles || len(normal.files) == 0 {
+		t.Errorf("hog untracked %v (%d files), normal untracked %v (%d files)", hog.noFiles, len(hog.files), normal.noFiles, len(normal.files))
+	}
+	if len(b.Guard) != 1 || b.Guard[0].Kind != "files_capped" ||
+		!strings.Contains(b.Guard[0].Detail, "1 processes hold more than 20 open files (--max-files-per-process): their open files are not tracked (most: pid 10 (hog) with 30)") {
+		t.Errorf("guard events: %+v", b.Guard)
+	}
+}
+
+// TestHeldPerWalkLimit: at most maxNewHeldPerWalk new held files are
+// recorded in one walk; the rest on the next walks (their first_seen kept).
+func TestHeldPerWalkLimit(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "many", 100, 0)
+	for fd := range 10 {
+		fp.setFD(10, fd, fmt.Sprintf("/data/f%d", fd))
+	}
+	r, _ := newTestRecorder(t, fp.root)
+	defer r.db.Close()
+	defer func(n int) { maxNewHeldPerWalk = n }(maxNewHeldPerWalk)
+	maxNewHeldPerWalk = 3
+	must(t, r.sample(time.UnixMilli(1790001000000), false))
+	var got []int
+	var deferred []int64
+	for w := range 3 {
+		b := &store.Batch{}
+		r.walkFDs(1790001030000+int64(w)*60_000, true, b)
+		got = append(got, len(b.HeldInserts))
+		var d int64
+		for _, s := range b.Stats {
+			if s.Source == "fd_walk_held_deferred" {
+				d = s.Events
+			}
+		}
+		deferred = append(deferred, d)
+		for _, h := range b.HeldInserts {
+			if h.FirstSeen != 1790001030000 {
+				t.Errorf("fd %d: first seen %d, want the first walk's", h.FD, h.FirstSeen)
+			}
+		}
+	}
+	// First walk: seen once, nothing stored; then 3 a walk, 7 and 4 waiting.
+	if fmt.Sprint(got) != "[0 3 3]" || fmt.Sprint(deferred) != "[0 7 4]" {
+		t.Errorf("held inserts per walk %v (want [0 3 3]), deferred %v (want [0 7 4])", got, deferred)
 	}
 }
