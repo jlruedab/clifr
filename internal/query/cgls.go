@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,9 @@ type CgroupInfo struct {
 	Delegate bool
 	ID       int64  // 0: not recorded (before the id was)
 	Xattrs   string // "name=value" lines
+	// TrustedDerived: Xattrs has trusted.* lines derived from their user.*
+	// copies (deriveTrusted), not recorded.
+	TrustedDerived bool
 }
 
 // CglsAt returns the processes of the sample at or before t with their
@@ -86,14 +90,93 @@ func CglsAt(db *store.DB, t int64) ([]CglsProc, map[string]CgroupInfo, int64, er
 		ci.Delegate = d == 1
 		info[p] = ci
 	}
-	return out, info, s, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, 0, err
+	}
+	deriveTrusted(info)
+	return out, info, s, nil
+}
+
+// trustedMirrored are the attributes systemd's system manager writes to a
+// unit's cgroup twice, as trusted.NAME and user.NAME with the same value
+// (systemd 252 and later; seen on RHEL 9 and Ubuntu 26.04, 2026-11-10).
+var trustedMirrored = []string{"invocation_id", "delegate"}
+
+// deriveTrusted puts back the trusted.* attributes clifrd could not read.
+// Without CAP_SYS_ADMIN (clifrd under its unit) the kernel leaves trusted.*
+// names out of listxattr, so the recording has only the user.* copies; then
+// no recorded cgroup has a trusted.* name while systemd's user.invocation_id
+// is there. In that case the trusted.* copy of each mirrored attribute is
+// added after the user.* lines, in their order, as the kernel lists them
+// (5.14 and 7.0 alike: user.invocation_id, user.delegate,
+// trusted.invocation_id, trusted.delegate). Only for cgroups without a
+// delegated ancestor: below one (a user's systemd manager, a container
+// runtime) the manager is unprivileged and writes no trusted.* attributes.
+// Other trusted.* attributes (systemd-oomd's) have no user.* copy and stay
+// missing.
+func deriveTrusted(info map[string]CgroupInfo) {
+	readable, mirrored := false, false
+	for _, ci := range info {
+		for _, l := range strings.Split(ci.Xattrs, "\n") {
+			if strings.HasPrefix(l, "trusted.") {
+				readable = true
+			}
+			if strings.HasPrefix(l, "user.invocation_id=") {
+				mirrored = true
+			}
+		}
+	}
+	if readable || !mirrored {
+		return
+	}
+	for p, ci := range info {
+		if delegatedAncestor(info, p) {
+			continue
+		}
+		var add []string
+		for _, l := range strings.Split(strings.TrimSuffix(ci.Xattrs, "\n"), "\n") {
+			name, val, ok := strings.Cut(l, "=")
+			if ok && strings.HasPrefix(name, "user.") && slices.Contains(trustedMirrored, strings.TrimPrefix(name, "user.")) {
+				add = append(add, "trusted."+strings.TrimPrefix(name, "user.")+"="+val)
+			}
+		}
+		if len(add) > 0 {
+			ci.Xattrs = strings.TrimSuffix(ci.Xattrs, "\n") + "\n" + strings.Join(add, "\n") + "\n"
+			ci.TrustedDerived = true
+			info[p] = ci
+		}
+	}
+}
+
+// delegatedAncestor reports whether a cgroup above cg (not cg itself) is
+// delegated.
+func delegatedAncestor(info map[string]CgroupInfo, cg string) bool {
+	for p := cg; p != "/" && p != "." && p != ""; {
+		p = path.Dir(p)
+		if info[p].Delegate {
+			return true
+		}
+	}
+	return false
+}
+
+// TrustedDerived reports whether any cgroup's trusted.* attributes were
+// derived from their user.* copies (deriveTrusted).
+func TrustedDerived(info map[string]CgroupInfo) bool {
+	for _, ci := range info {
+		if ci.TrustedDerived {
+			return true
+		}
+	}
+	return false
 }
 
 // cglsCommand is systemd's get_process_cmdline for a room of columns (-1:
 // no limit): it reads at most room bytes of /proc/<pid>/cmdline (NULs
 // become spaces, trailing whitespace is dropped), escapes control
-// characters and backslashes as \xNN, and ends in an ellipsis when the file
-// was longer than that or the escaped text does not fit.
+// characters as \xNN (not backslashes: systemd 239, 249, 252 and 259 all
+// print "a\b" as is, checked 2026-11-10), and ends in an ellipsis when the
+// file was longer than that or the escaped text does not fit.
 func cglsCommand(p CglsProc, room int, ascii bool) string {
 	raw := p.Command + strings.Repeat(" ", p.pad-1) // the NUL padding, as spaces (the final NUL ends it)
 	cut := false
@@ -108,7 +191,7 @@ func cglsCommand(p CglsProc, room int, ascii bool) string {
 	var units []string // one per input byte: itself or its escape
 	for i := 0; i < len(raw); i++ {
 		c := raw[i]
-		if c < 0x20 || c == 0x7f || c == '\\' || ascii && c >= 0x80 {
+		if c < 0x20 || c == 0x7f || ascii && c >= 0x80 {
 			units = append(units, fmt.Sprintf("\\x%02x", c))
 		} else {
 			units = append(units, string(c))

@@ -768,6 +768,9 @@ func cglsTool() *tool {
 				}
 				o.Style = query.StyleAt(c.db, s).SystemdCgls
 				c.header("systemd-cgls at %s, from the sample at %s", query.FormatMS(c.w.At), query.FormatMS(s))
+				if o.Style == "252" && query.TrustedDerived(info) {
+					c.header("trusted.* attributes derived from their user.* copies (clifrd ran without CAP_SYS_ADMIN, which reading them needs)")
+				}
 				return c.emit(procs, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: s} },
 					func(w io.Writer) { query.PrintCgls(w, procs, info, o) })
 			}, nil

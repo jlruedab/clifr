@@ -258,7 +258,10 @@ wait for the user's go-ahead.
   NUL bytes after the command line (1 normally; more when a process rewrote its arguments:
   systemd-cgls counts them). `cgroups` table (path in systemd's hierarchy, `delegate`: systemd's
   trusted.delegate/user.delegate xattr, `cgroup_id` (the directory's inode: systemd 252 prints
-  it), `xattrs` (user.*/trusted.* as name=value lines)) written when a run first sees a path (a
+  it), `xattrs` (user.*/trusted.* as name=value lines; under the unit, without CAP_SYS_ADMIN,
+  no trusted.*: `query.deriveTrusted` adds systemd's mirrored trusted.invocation_id/delegate
+  from the user.* copies when no recorded cgroup has a trusted.* name, except below a
+  delegated cgroup)) written when a run first sees a path (a
   process's cgroup or an ancestor), when its inode changes (recreated) and hourly; loaded whole. Sibling cgroups are listed in kernfs order (the
   kernel's name hash, `query.kernfsHash`), so the directory tree itself is not recorded.
 - `snapshots` (schema 9): files read whole at system samples, one row per line
