@@ -138,8 +138,8 @@ func TestIncident(t *testing.T) {
 	// Background load and the recorder.
 	load := start(t, exec.Command(filepath.Join(dir, "load"), "--profile", "light"), "READY")
 	defer stop(load)
-	rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data, "--interval", "2s", "--fd-interval", "10s",
-		"--redact", `e2e-secret=(\S+)`)
+	rec := exec.Command(filepath.Join(dir, "clifrd"), recorderArgs("--config", "/dev/null", "--data-dir", data, "--interval", "2s", "--fd-interval", "10s",
+		"--redact", `e2e-secret=(\S+)`)...)
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {
@@ -371,8 +371,8 @@ func TestRestart(t *testing.T) {
 
 	var mids []time.Time
 	for run := 1; run <= 2; run++ {
-		rec := exec.Command(filepath.Join(dir, "clifrd"), "--config", "/dev/null", "--data-dir", data,
-			"--interval", "2s", "--fd-interval", "4s")
+		rec := exec.Command(filepath.Join(dir, "clifrd"), recorderArgs("--config", "/dev/null", "--data-dir", data,
+			"--interval", "2s", "--fd-interval", "4s")...)
 		recLog, _ := os.Create(filepath.Join(dir, fmt.Sprintf("recorder-%d.log", run)))
 		rec.Stdout, rec.Stderr = recLog, recLog
 		if err := rec.Start(); err != nil {
@@ -544,4 +544,11 @@ func decodeLines(out []byte, v any) error {
 		out = append(append([]byte("["), bytes.ReplaceAll(out, []byte("\n"), []byte(","))...), ']')
 	}
 	return json.Unmarshal(out, v)
+}
+
+// recorderArgs appends CLIFR_TEST_RECORDER_ARGS (space-separated) to the
+// recorder's arguments, to run the test in another mode, e.g.
+// "--events proc_connector".
+func recorderArgs(args ...string) []string {
+	return append(args, strings.Fields(os.Getenv("CLIFR_TEST_RECORDER_ARGS"))...)
 }

@@ -161,7 +161,11 @@ func TestGroundTruth(t *testing.T) {
 		}
 	}()
 
-	rec := exec.Command(filepath.Join(dir, "clifrd"), append([]string{"--config", "/dev/null", "--data-dir", e.data}, sc.recorder...)...)
+	// CLIFR_TEST_RECORDER_ARGS (space-separated) runs the recorder in another
+	// mode, e.g. "--events proc_connector".
+	recArgs := append([]string{"--config", "/dev/null", "--data-dir", e.data}, sc.recorder...)
+	recArgs = append(recArgs, strings.Fields(os.Getenv("CLIFR_TEST_RECORDER_ARGS"))...)
+	rec := exec.Command(filepath.Join(dir, "clifrd"), recArgs...)
 	recLog, _ := os.Create(filepath.Join(dir, "recorder.log"))
 	rec.Stdout, rec.Stderr = recLog, recLog
 	if err := rec.Start(); err != nil {

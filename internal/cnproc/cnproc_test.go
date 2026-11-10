@@ -44,3 +44,16 @@ func TestParse(t *testing.T) {
 		}
 	}
 }
+
+// TestExitStatus: the exit event's code is a wait status (code << 8, or the
+// signal in the low 7 bits; 0x80 is the core-dump flag).
+func TestExitStatus(t *testing.T) {
+	for _, c := range []struct {
+		status    uint32
+		code, sig int
+	}{{0, 0, 0}, {3 << 8, 3, 0}, {255 << 8, 255, 0}, {9, 0, 9}, {0x80 | 11, 0, 11}} {
+		if code, sig := (Event{Kind: Exit, ExitCode: c.status}).ExitStatus(); code != c.code || sig != c.sig {
+			t.Errorf("status %#x: code %d signal %d, want %d %d", c.status, code, sig, c.code, c.sig)
+		}
+	}
+}

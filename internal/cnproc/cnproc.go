@@ -167,3 +167,13 @@ func parseProcEvent(p []byte) (Event, bool) {
 	}
 	return Event{}, false
 }
+
+// ExitStatus splits an exit event's code (the task's exit_code, a wait
+// status) into the exit code or the signal that killed the process, as
+// bpfproc.Event.ExitStatus does.
+func (e Event) ExitStatus() (code, signal int) {
+	if sig := int(e.ExitCode & 0x7f); sig != 0 {
+		return 0, sig
+	}
+	return int(e.ExitCode>>8) & 0xff, 0
+}

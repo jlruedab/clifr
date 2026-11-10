@@ -5,7 +5,9 @@
 #   packaging/vm.sh up NAME IMAGE OSINFO   boot NAME from a cloud image in
 #                                          /var/lib/libvirt/images (copy on write)
 #   packaging/vm.sh test NAME [WHAT]       install dist/'s packages and test;
-#                                          WHAT: service ebpf e2e truth tls sos (default all)
+#                                          WHAT: service ebpf e2e truth tls sos (default all);
+#                                          CLIFR_TEST_RECORDER_ARGS: extra recorder
+#                                          options for e2e and truth
 #   packaging/vm.sh ssh NAME [COMMAND]     a shell or a command on NAME
 #   packaging/vm.sh down NAME              delete NAME and its disks
 #
@@ -85,7 +87,9 @@ test)
 	scp -q "${sshopts[@]}" dist/*.deb dist/*.rpm "tester@$a:t/pkg/"
 	scp -q -r "${sshopts[@]}" dist/vmtest/bin dist/vmtest/e2e.test dist/vmtest/truth.test "tester@$a:t/"
 	scp -q "${sshopts[@]}" packaging/vm-test.sh "tester@$a:t/"
-	on "$n" "sudo bash ~/t/vm-test.sh $what" 2>&1 | tee "$cache/test-$n.log"
+	# CLIFR_TEST_RECORDER_ARGS (e.g. "--events proc_connector") reaches the
+	# e2e and truth tests' recorder.
+	on "$n" "sudo CLIFR_TEST_RECORDER_ARGS='${CLIFR_TEST_RECORDER_ARGS:-}' bash ~/t/vm-test.sh $what" 2>&1 | tee "$cache/test-$n.log"
 	;;
 down)
 	n=$2

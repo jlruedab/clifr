@@ -67,8 +67,10 @@ not yet shown to be viable for production:
    modes (ring buffer and fentry/tp_btf; perf buffer and classic
    tracepoints; kprobes), the end-to-end test, the small ground truth, the
    sos plugin and the network features (`packaging/vm.sh`). Not measured
-   there: cost (the benchmarks ran only here). Untested: the proc connector
-   fallback, and arm64 (its objects have never run).
+   there: cost (the benchmarks ran only here). The proc
+   connector fallback (process events without eBPF) passes the e2e test and
+   the small ground truth here and in the three VMs, except OOM kills, which
+   only eBPF records. Untested: arm64 (its objects have never run).
 3. **Synthetic load only**: pgbench and a load generator over loopback; no
    real server with many peers and containers.
 4. **Known open issues**: see [Limitations](#limitations).
@@ -153,7 +155,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--retention` / `--max-size` | 72h / 2G | delete old data; the oldest hours go first above the size cap (`0` = none) |
 | `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
-| `--events` | auto | process events: eBPF, else the kernel proc connector, else none |
+| `--events` | auto | process events: eBPF, else the kernel proc connector (no OOM kills then), else none |
 | `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
 | `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |

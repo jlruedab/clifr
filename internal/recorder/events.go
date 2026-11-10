@@ -426,6 +426,13 @@ func (r *Recorder) eventTTY(pe *procEvent, e bpfproc.Event) {
 func (r *Recorder) enrich(e cnproc.Event) procEvent {
 	kind := map[cnproc.Kind]evKind{cnproc.Fork: evFork, cnproc.Exec: evExec, cnproc.Exit: evExit}[e.Kind]
 	pe := procEvent{kind: kind, pid: e.PID, ts: wallMS(e.TimestampNS)}
+	if kind == evExit { // exactly one of exitCode and signal, as from eBPF
+		if code, sig := e.ExitStatus(); sig != 0 {
+			pe.signal = &sig
+		} else {
+			pe.exitCode = &code
+		}
+	}
 	st, err := r.fs.ReadStat(e.PID)
 	if err != nil {
 		return pe
