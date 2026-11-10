@@ -44,5 +44,10 @@ duckdb=
 		sep "DuckDB $dv"
 		cat "$f"
 	fi
+	if [ "$(basename "$bin")" = clifr ]; then
+		# The sentences of clifr's netstat -s are net-tools' own.
+		sep "net-tools 2.10 (text of netstat -s)"
+		cat "$here/notices/net-tools.txt"
+	fi
 } >"$out"
 echo "   $(basename "$bin"): $(wc -l <<<"$deps") Go modules${duckdb:+, DuckDB}: $out"

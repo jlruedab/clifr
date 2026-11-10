@@ -56,6 +56,10 @@ The plugin for sos report, `deploy/sos/clifr.py` (installed into sos's plugin di
 
 The binaries include third-party Go modules under their own permissive licenses (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0), all compatible with the AGPL-3.0. Their copyright and license texts are shipped with the packages in `/usr/share/doc/clifr*/THIRD_PARTY_NOTICES`.
 
+## net-tools text in `clifr netstat -s`
+
+`clifr netstat -s` prints each counter in the same sentence as net-tools' `netstat -s` (for example "%d incoming packets delivered"), so that its output matches the real tool word for word. Those 188 sentences and the section headings are taken from net-tools 2.10's `statistics.c` ("Copyright 1997,1999,2000 Andi Kleen. Subject to the GPL."); the code that prints them, `internal/query/netstat_stats.go`, is clifr's own. As `statistics.c` names no GPL version, section 9 of the GPL lets any version be chosen: clifr uses the sentences under the GPLv3, which may be combined with AGPL-3.0 code (section 13 of both licenses). The attribution is in `/usr/share/doc/clifr/THIRD_PARTY_NOTICES` and `packaging/notices/net-tools.txt`.
+
 ## Contributions
 
 Contributions are welcome under the licenses above, each file under its own, with a Developer Certificate of Origin sign-off on every commit (`Signed-off-by:`, `git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md).

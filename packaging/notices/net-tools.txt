@@ -1,0 +1,24 @@
+net-tools 2.10: the text of `clifr netstat -s`
+
+clifr's `netstat -s` prints each protocol counter in the sentence that
+net-tools' netstat prints for it (for example "%d incoming packets
+delivered"), so that its output matches the real tool word for word. These
+sentences and the section headings come from net-tools 2.10, file
+statistics.c (https://github.com/ecki/net-tools, tag v2.10); clifr's code
+that prints them was written anew in Go (internal/query/netstat_stats.go).
+
+statistics.c says:
+
+    Copyright 1997,1999,2000 Andi Kleen. Subject to the GPL.
+
+with contributions by Arnaldo Carvalho de Melo and Bernd Eckenfels; the
+package's copyright holders are listed as MicroWalt Corporation (1988-1994),
+Bernd Eckenfels (1995-1996), Andi Kleen (1997-2000) and Donald Becker
+(1997-2000). net-tools is distributed with the GNU General Public License
+version 2 (COPYING); as statistics.c names no version of the GPL, section 9
+of that license allows any version published by the Free Software
+Foundation. clifr uses the sentences under the GNU General Public License
+version 3, which section 13 of both the GPLv3 and the GNU Affero General
+Public License version 3 allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

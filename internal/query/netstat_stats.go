@@ -15,6 +15,13 @@ import (
 // not quite sorted in every table: a counter the search misses prints as
 // "Name: value" when not 0, like a counter that is in no table (net-tools
 // 2.10, statistics.c: "Forwarding: 1", "OutTransmits: 3216438").
+//
+// The sentences and section headings in the tables below are net-tools'
+// own, from net-tools 2.10's statistics.c ("Copyright 1997,1999,2000 Andi
+// Kleen. Subject to the GPL."; no GPL version named, so any version may be
+// chosen): used here under the GPLv3, which may be combined with clifr's
+// AGPL-3.0 code. The code is clifr's. See packaging/notices/net-tools.txt
+// and LICENSING.md.
 
 type statKind int
 
