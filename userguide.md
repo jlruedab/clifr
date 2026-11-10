@@ -1389,6 +1389,7 @@ Subcommands:
 | `CapabilityBoundingSet=` | `CAP_SYS_PTRACE CAP_DAC_READ_SEARCH CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_SYS_RESOURCE CAP_SYSLOG` | Only what it needs: read other processes' fds, the proc connector, eBPF, the kernel log. |
 | `ProtectSystem=strict`, `ProtectHome=read-only` | | Read-only everywhere except `/var/lib/clifr`. |
 | `RestrictAddressFamilies=AF_NETLINK AF_UNIX` | | No IP sockets: the recorder cannot send anything over the network. |
+| `SystemCallFilter=` | `@system-service bpf perf_event_open` | Only the system calls a service needs, plus the two for eBPF; anything else fails with `EPERM` (`SystemCallErrorNumber=EPERM`). |
 | `Group=clifr`, `UMask=0027`, `StateDirectoryMode=0750` | | The recording is readable by root and the `clifr` group only. |
 
 Examples of drop-ins:

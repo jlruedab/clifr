@@ -224,8 +224,10 @@ last flush.
 
 `deploy/clifrd.service` runs the recorder with Nice=10, the idle IO class,
 CPUWeight=10, CPUQuota=50%, MemoryMax=768M, a read-only filesystem except its state
-directory and only the capabilities it needs (listed in the unit; kernels
-before 5.8 need CAP_SYS_ADMIN for eBPF):
+directory, only the capabilities it needs (listed in the unit; kernels
+before 5.8 need CAP_SYS_ADMIN for eBPF) and a system-call filter (systemd's
+`@system-service` set plus `bpf` and `perf_event_open`, all clifrd was seen to
+use; a call outside it fails with EPERM):
 
     # or install the clifrd and clifr packages (see Build), then only the last two lines
     sudo install -m 0755 clifrd /usr/sbin/ && sudo install -m 0755 clifr /usr/bin/

@@ -90,6 +90,14 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
+# System calls: systemd's set for services plus the two eBPF needs (bpf to
+# load the programs and maps, perf_event_open to attach kprobes and
+# tracepoints). Traced on 2026-11-10 (strace -f, 22 min with compaction,
+# retention, --metrics, --serve, mounts; the fallback attach modes;
+# --verify-every): nothing else is used. A call outside the set fails with
+# EPERM (logged by clifrd) instead of killing the recorder.
+SystemCallFilter=@system-service bpf perf_event_open
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target
