@@ -928,7 +928,7 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    clifr --since "2 days ago" "events --type oom"
    ```
 
-   The victim's RSS is the kernel's figure at the kill; the others' are from the last process sample before it.
+   The victim's RSS is the kernel's figure at the kill; the others' are from the last process sample before it. Without eBPF (the proc connector fallback, see `clifrd doctor`) clifr takes the kills from the kernel's "Killed process" lines in the recorded kernel log, and says so under each kill.
 
 2. The memory picture leading up to it: was it processes (anonymous memory, `used`), page cache that could not be freed, or kernel memory?
 

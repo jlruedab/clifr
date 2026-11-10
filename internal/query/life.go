@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -117,7 +118,33 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 		r.Duration = max(r.End-r.Start, 0)
 		out = append(out, r)
 	}
-	return out, nil
+	return out, markLoggedOOM(db, from, to, out)
+}
+
+// markLoggedOOM marks as OOM kills the processes killed by SIGKILL that the
+// kernel log names in an OOM kill line (no OOM event recorded: clifrd
+// without eBPF): same pid, the kill between the start and the end.
+func markLoggedOOM(db *store.DB, from, to int64, rows []LifeRow) error {
+	need := slices.ContainsFunc(rows, func(r LifeRow) bool { return !r.OOMKilled && r.Signal != nil && *r.Signal == 9 })
+	if !need {
+		return nil
+	}
+	kills, err := logOOMKills(db, from, to)
+	if err != nil || len(kills) == 0 {
+		return err
+	}
+	for i := range rows {
+		r := &rows[i]
+		if r.OOMKilled || r.Signal == nil || *r.Signal != 9 {
+			continue
+		}
+		for _, k := range kills {
+			if k.PID == r.PID && k.TS >= r.Start-1_000 && k.TS <= r.End+1_000 {
+				r.OOMKilled = true
+			}
+		}
+	}
+	return nil
 }
 
 const msLayout = "2006-01-02 15:04:05.000"
