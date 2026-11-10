@@ -211,7 +211,10 @@ What is recorded:
   loop backing file and libmount's userspace options.
 - **File-system usage**: statfs of every mounted file system at each sample
   (in a goroutine of its own, so a hung network file system cannot stall the
-  samples), written when it changed.
+  samples), written when it changed. A mount whose statfs does not return
+  within 1 s is skipped until it does (guard events `statfs_stuck`,
+  `statfs_ok`): the others are still measured, and `clifr df` keeps its last
+  usage with a header line saying since when it has not answered.
 - **System-wide counters**, every `--sys-interval` (10 s): `/proc/stat` (per CPU),
   `loadavg`, `meminfo`, the paging counters of `/proc/vmstat` and
   `/proc/diskstats`, as the kernel's raw cumulative values.

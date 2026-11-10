@@ -211,7 +211,11 @@ wait for the user's go-ahead.
   schema 2 also `super_options`, `dev`, `root`, `seq` (position in mountinfo: `mount` and `df`
   list in that order; later mounts are appended), `loop_file`, `user_options` (utab).
 - `fs_samples`: statfs per mount per sample (frsize, blocks, bfree, bavail, files, ffree), written
-  when changed and hourly, in a goroutine that skips rounds while one is still running (hung NFS).
+  when changed and hourly, in a goroutine that skips rounds while one is still running (hung NFS);
+  each mount's statfs is waited for `statfsWait` (1 s), then that mount is stuck (guard event
+  `statfs_stuck`, detail "POINT: statfs ...") and skipped until the call returns (`statfs_ok`, its
+  row then); `query.statfsStalls` marks it in `clifr df` (`DFRow.StatfsStuck`) until statfs_ok or
+  a newer row.
 - Per-sample values (`proc_samples`, `sock_samples`) are written when they change and hourly
   (`store.NetSnapshotMS`): retention would otherwise delete an idle process's only row.
 - System-wide counters: every `--sys-interval` (10 s default; also at every sample) writes one `sys_samples` row, one `cpu_samples` row per CPU

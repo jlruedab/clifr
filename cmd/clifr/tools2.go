@@ -582,7 +582,8 @@ func dfTool() *tool {
 			"Usage from the sample at or before T (sampled; recordings since schema 2). As GNU df: dummy",
 			"and empty file systems, devtmpfs and squashfs are left out, a device mounted more than once is",
 			"listed once (all of them with -a), in mountinfo order. PATH: the file system whose mount point",
-			"holds it.",
+			"holds it. A mount whose statfs stopped answering (a hung NFS server; clifrd waits 1 s, then",
+			"skips it until the call returns) keeps its last usage, and a header line says since when.",
 			"--since: one report per sample with --samples (-e, -n).",
 		},
 		examples: []string{`clifr --at "02:45" "df -h"`, `clifr --at "02:45" "df -h /var/log"`},
@@ -614,6 +615,12 @@ func dfTool() *tool {
 					return fmt.Errorf("df: no file system recorded for some of %s", strings.Join(p.pos, ", "))
 				}
 				c.header("df at %s, usage sampled", query.FormatMS(c.w.At))
+				for _, r := range rows {
+					if r.StatfsStuck != 0 {
+						c.header("%s: statfs not answering since %s (hung server?); usage as of %s",
+							r.Point, query.FormatMS(r.StatfsStuck), query.FormatMS(r.SampleTS))
+					}
+				}
 				return c.emit(rows, func(i int) rowMeta { return meta(&rows[i]) }, func(w io.Writer) { v.print(w, rows) })
 			}, nil
 		},

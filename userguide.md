@@ -221,6 +221,8 @@ TIME                     EVENT        PID DETAIL
 
 Filter it with `--name REGEX` (matched against the command line) and `--type start,exit,oom,mount,unmount,remount,gap,skipped,guard`.
 
+A hung NFS server shows up there too: when statfs of a mount does not answer within a second, clifrd records a `statfs_stuck` guard event and stops asking until the call returns (`statfs_ok`). Meanwhile `clifr df` prints that file system's last usage with a line such as `# /mnt/nfs: statfs not answering since 2026-11-10 22:30:20 (hung server?); usage as of 2026-11-10 22:30:00`, where the real `df` would hang.
+
 `life` lists each process's start, end, duration, pid, parent pid, exit code or signal, and command line:
 
 ```console

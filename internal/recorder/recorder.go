@@ -535,6 +535,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		r.mounts.refresh(store.NetSnapshotMS)
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
 		b.FSSamples = append(b.FSSamples, r.fsUsage.take()...)
+		b.Guard = append(b.Guard, r.fsUsage.takeGuard()...)
 		r.fsUsage.start(ts, r.mounts.table(), r.log)
 	}
 	if r.events != nil {

@@ -71,17 +71,21 @@ func PrintMount(w io.Writer, rows []MountRow) {
 
 // DFRow is one file system as df shows it, in bytes and inodes.
 type DFRow struct {
-	Source        string `json:"filesystem"`
-	FSType        string `json:"type"`
-	Point         string `json:"mounted_on"`
-	SizeBytes     int64  `json:"size_bytes"`
-	UsedBytes     int64  `json:"used_bytes"`
-	AvailBytes    int64  `json:"avail_bytes"`
-	Inodes        int64  `json:"inodes"`
-	IUsed         int64  `json:"iused"`
-	IFree         int64  `json:"ifree"`
-	SampleTS      int64  `json:"sample_ts_ms"`
-	used, nonroot int64  // in blocks, for Use%
+	Source     string `json:"filesystem"`
+	FSType     string `json:"type"`
+	Point      string `json:"mounted_on"`
+	SizeBytes  int64  `json:"size_bytes"`
+	UsedBytes  int64  `json:"used_bytes"`
+	AvailBytes int64  `json:"avail_bytes"`
+	Inodes     int64  `json:"inodes"`
+	IUsed      int64  `json:"iused"`
+	IFree      int64  `json:"ifree"`
+	SampleTS   int64  `json:"sample_ts_ms"`
+	// StatfsStuck: when clifrd's statfs of this mount stopped answering (a
+	// hung network file system), 0 when it answers; the usage is then the
+	// last measured, at SampleTS.
+	StatfsStuck   int64 `json:"statfs_stuck_since_ms,omitempty"`
+	used, nonroot int64 // in blocks, for Use%
 	dev, root     string
 }
 
@@ -127,6 +131,10 @@ func DF(db *store.DB, t int64, sel DFSelect) ([]DFRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	stalls, err := statfsStalls(db, t)
+	if err != nil {
+		return nil, err
+	}
 	var out []DFRow
 	seen := map[string]int{}            // dev -> index in out
 	listAll := StyleAt(db, t).DFListAll // coreutils before 9 lists devtmpfs and squashfs
@@ -151,6 +159,9 @@ func DF(db *store.DB, t int64, sel DFSelect) ([]DFRow, error) {
 			continue
 		}
 		r.Source, r.FSType, r.Point, r.dev, r.root = m.Source, m.FSType, m.Point, m.Dev, m.Root
+		if since, ok := stalls[m.Point]; ok && since >= m.since && r.SampleTS <= since {
+			r.StatfsStuck = since
+		}
 		r.SizeBytes, r.UsedBytes, r.AvailBytes = blocks*frsize, (blocks-bfree)*frsize, bavail*frsize
 		r.used, r.nonroot = blocks-bfree, blocks-bfree+bavail
 		r.IUsed = r.Inodes - r.IFree
@@ -174,6 +185,37 @@ func DF(db *store.DB, t int64, sel DFSelect) ([]DFRow, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// statfsStalls returns, per mount point, when clifrd's statfs of it stopped
+// answering, for the mounts still stuck at t: the last statfs_stuck or
+// statfs_ok guard event at or before t decides (their detail starts with
+// "POINT: statfs ").
+func statfsStalls(db *store.DB, t int64) (map[string]int64, error) {
+	rows, err := db.Query(`SELECT ts, kind, detail FROM guard_events
+		WHERE kind IN ('statfs_stuck', 'statfs_ok') AND ts <= ? ORDER BY ts`, t)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var ts int64
+		var kind, detail string
+		if err := rows.Scan(&ts, &kind, &detail); err != nil {
+			return nil, err
+		}
+		i := strings.LastIndex(detail, ": statfs ")
+		if i < 0 {
+			continue
+		}
+		if p := detail[:i]; kind == "statfs_stuck" {
+			out[p] = ts
+		} else {
+			delete(out, p)
+		}
+	}
+	return out, rows.Err()
 }
 
 // DFFormat holds df's output options.
