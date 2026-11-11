@@ -22,7 +22,7 @@ The product plan (phases 1–7) is in `docs/clifr-plan.md`.
 
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
 1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot`; its benchmark
-configuration and the SQLite backend were removed on 2026-10-21 (the user). `HANDOFF.md` has the current results, the open
+configuration and the SQLite backend were removed on 2026-10-21 (the user). `HANDOFF.md` (local, not in git) has the current results, the open
 items and the history. Do one step at a time, run it, report results, and
 wait for the user's go-ahead.
 
