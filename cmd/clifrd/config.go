@@ -46,18 +46,24 @@ type fileConfig struct {
 		Files         scalar `yaml:"files"`
 		ProcessIO     scalar `yaml:"process_io"`
 	} `yaml:"collectors"`
-	CPUBudget    scalar   `yaml:"cpu_budget"`
-	GCHeapTarget scalar   `yaml:"gc_heap_target"`
-	MaxCmdline   scalar   `yaml:"max_cmdline"`
-	MaxFiles     scalar   `yaml:"max_files_per_process"`
-	MemoryGuard  scalar   `yaml:"memory_guard"`
-	Metrics      scalar   `yaml:"metrics"`
-	MetricsTLS   scalar   `yaml:"metrics_tls_config"`
-	Serve        scalar   `yaml:"serve"`
-	ServeTokens  scalar   `yaml:"serve_tokens"`
-	ServeTLSDir  scalar   `yaml:"serve_tls_dir"`
-	ServeTLS     scalar   `yaml:"serve_tls_config"`
-	Redact       []string `yaml:"redact"`
+	CPUBudget    scalar `yaml:"cpu_budget"`
+	GCHeapTarget scalar `yaml:"gc_heap_target"`
+	MaxCmdline   scalar `yaml:"max_cmdline"`
+	MaxFiles     scalar `yaml:"max_files_per_process"`
+	MemoryGuard  scalar `yaml:"memory_guard"`
+	EventBudget  struct {
+		Processes    scalar `yaml:"processes"`
+		ProcessesMax scalar `yaml:"processes_max"`
+		CmdlineBytes scalar `yaml:"cmdline_bytes"`
+		Connections  scalar `yaml:"connections"`
+	} `yaml:"event_budget"`
+	Metrics     scalar   `yaml:"metrics"`
+	MetricsTLS  scalar   `yaml:"metrics_tls_config"`
+	Serve       scalar   `yaml:"serve"`
+	ServeTokens scalar   `yaml:"serve_tokens"`
+	ServeTLSDir scalar   `yaml:"serve_tls_dir"`
+	ServeTLS    scalar   `yaml:"serve_tls_config"`
+	Redact      []string `yaml:"redact"`
 }
 
 // notYet names settings of the clifrd.yml spec that this release rejects.
@@ -103,6 +109,8 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
 		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
 		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline}, {"max-files-per-process", c.MaxFiles}, {"memory-guard", c.MemoryGuard},
+		{"event-budget-processes", c.EventBudget.Processes}, {"event-budget-processes-max", c.EventBudget.ProcessesMax},
+		{"event-budget-cmdline", c.EventBudget.CmdlineBytes}, {"event-budget-connections", c.EventBudget.Connections},
 		{"metrics", c.Metrics}, {"metrics-tls-config", c.MetricsTLS}, {"serve", c.Serve}, {"serve-tokens", c.ServeTokens}, {"serve-tls-dir", c.ServeTLSDir}, {"serve-tls-config", c.ServeTLS},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
@@ -129,7 +137,9 @@ func yamlName(flagName string) string {
 	for y, f := range map[string]string{"intervals.process": "interval", "intervals.system": "sys-interval", "intervals.files": "fd-interval",
 		"intervals.keyframe": "keyframe-interval", "intervals.flush": "flush-interval",
 		"collectors.process_events": "events", "collectors.tcp": "tcp", "collectors.files": "fd-mode",
-		"collectors.process_io": "proc-io"} {
+		"collectors.process_io": "proc-io", "event_budget.processes": "event-budget-processes",
+		"event_budget.processes_max": "event-budget-processes-max", "event_budget.cmdline_bytes": "event-budget-cmdline",
+		"event_budget.connections": "event-budget-connections"} {
 		if f == flagName {
 			return y
 		}

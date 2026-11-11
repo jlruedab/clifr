@@ -84,6 +84,12 @@ func run(args []string) error {
 	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof and uptime/vmstat/mpstat/iostat output this often")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
 	fs.IntVar(&c.Parquet.FlushRows, "flush-rows", 400_000, "also write them once this many rows are buffered: lowers the heap's peak under load, for more and smaller files (0 = only by time)")
+	flushBytes := fs.String("flush-bytes", "16M", "also write them once the command lines and paths buffered add up to this: a flush needs about three times its data in memory while it writes (0 = not by size)")
+	d := recorder.DefaultEventBudget
+	fs.IntVar(&c.Budget.Processes, "event-budget-processes", d.Processes, "event budget: process events (fork, exec) a second recorded in full, over 10 s windows; above it no /proc reads and command lines cut to 256 bytes (0 = no limit)")
+	fs.IntVar(&c.Budget.ProcessesMax, "event-budget-processes-max", d.ProcessesMax, "event budget: process events a second recorded at all; above it only counted, in an events_shed guard event (0 = no limit)")
+	budgetCmd := fs.String("event-budget-cmdline", "1M", "event budget: command-line bytes a second recorded in full; above it cut to 256 bytes (0 = no limit)")
+	fs.IntVar(&c.Budget.Connections, "event-budget-connections", d.Connections, "event budget: new TCP connections a second recorded; above it only counted, in an events_shed guard event (0 = no limit)")
 	fs.DurationVar(&c.Parquet.Retention, "retention", 72*time.Hour, "delete Parquet data older than this (0 = keep)")
 	fs.StringVar(&c.Events, "events", "auto", "process events: auto (eBPF, else the proc connector), ebpf, proc_connector or none")
 	fs.StringVar(&c.FDMode, "fd-mode", "held", "open files: held (fds held across two walks, and deleted files) or all (v1: every fd)")
@@ -148,6 +154,18 @@ func run(args []string) error {
 		return fmt.Errorf("--max-cmdline: %w", err)
 	}
 	c.MaxCmdline = int(maxCmd)
+	if c.Parquet.FlushBytes, err = parseSize(*flushBytes); err != nil {
+		return fmt.Errorf("--flush-bytes: %w", err)
+	}
+	if c.Budget.CmdlineBytes, err = parseSize(*budgetCmd); err != nil {
+		return fmt.Errorf("--event-budget-cmdline: %w", err)
+	}
+	if c.Budget.Processes < 0 || c.Budget.ProcessesMax < 0 || c.Budget.Connections < 0 {
+		return errors.New("event budget: negative values")
+	}
+	if c.Budget.ProcessesMax > 0 && c.Budget.Processes > c.Budget.ProcessesMax {
+		return errors.New("need --event-budget-processes <= --event-budget-processes-max")
+	}
 	if c.MemoryGuard, err = parseSize(*memGuard); err != nil {
 		return fmt.Errorf("--memory-guard: %w", err)
 	}

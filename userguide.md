@@ -223,6 +223,19 @@ Filter it with `--name REGEX` (matched against the command line) and `--type sta
 
 A hung NFS server shows up there too: when statfs of a mount does not answer within a second, clifrd records a `statfs_stuck` guard event and stops asking until the call returns (`statfs_ok`). Meanwhile `clifr df` prints that file system's last usage with a line such as `# /mnt/nfs: statfs not answering since 2026-11-10 22:30:20 (hung server?); usage as of 2026-11-10 22:30:00`, where the real `df` would hang.
 
+A flood of processes or connections shows up as `events_shed` guard events: above clifrd's [event budget](#clifrd-the-configuration-file), process events are recorded with less detail or only counted, and each event says how many, and from which users and commands. The lists that cover that time say so in a header line:
+
+```console
+$ clifr --since "2026-11-11 01:33" --until "2026-11-11 01:34" "events --type guard"
+# 2 events 2026-11-11 01:33:00 .. 2026-11-11 01:34:00
+# incomplete: process events (fork, exec) above clifrd's event budget were recorded without command lines or only counted (2026-11-11 01:33:03 .. 2026-11-11 01:34:33; clifr events --type guard says how many and from whom)
+TIME                     EVENT        PID DETAIL
+2026-11-11 01:33:03.545  guard          - events_shed: processes: 162741 only counted, 220711 without /proc reads, command lines cut to 256 bytes of 442928 process events (fork, exec) since 01:32:33 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); 16523 of those only counted because the recorder's heap was above the memory guard; most from: uid 1000 flood 244456, uid 1000 true 138957, uid 0 watch.sh 39
+2026-11-11 01:33:33.545  guard          - events_shed: processes: 114545 only counted, 237981 without /proc reads, command lines cut to 256 bytes of 412002 process events (fork, exec) since 01:33:03 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); most from: uid 1000 flood 204509, uid 1000 true 147978, uid 0 watch.sh 39
+```
+
+That was a test: user 1000 ran a program (`flood`) that started `/bin/true` 8,700 times a second with a different 4 KB argument each time. The first numbers say how much was lost; "most from" says who did it (`flood` is the forks, `true` the execs; `watch.sh` was the test's own monitoring script, caught in the same seconds).
+
 `life` lists each process's start, end, duration, pid, parent pid, exit code or signal, and command line:
 
 ```console
@@ -1313,13 +1326,26 @@ max_files_per_process: 131072 # a process holding more open files is not tracked
                        # (a guard event names it; its TCP connections still are)
 memory_guard: 384M     # live heap above which data is shed (guard event) before
                        # the unit's MemoryMax (768M) is reached
+event_budget:          # per second, counted over 10 s windows (0 = no limit)
+  processes: 4000      # process events (fork, exec) recorded in full
+  processes_max: 10000 # above `processes`: no /proc reads, command line cut to
+                       # 256 bytes; above this: only counted (events_shed)
+  cmdline_bytes: 1M    # command-line bytes recorded in full
+  connections: 5000    # new TCP connections recorded; above it only counted
 ```
 
-- **`cpu_budget`**: the recorder's own CPU target, averaged over 5 minutes. Above it, clifrd walks open files less often (doubling the interval, up to 1 hour) and records a `guard` event (`clifr events --type guard`). It never drops events to save CPU.
+- **`cpu_budget`**: the recorder's own CPU target, averaged over 5 minutes. Above it, clifrd walks open files less often (doubling the interval, up to 1 hour) and records a `guard` event (`clifr events --type guard`). It never drops events to save CPU; only the event budget below does, and only during a flood.
 - **`gc_heap_target`**: a memory/CPU trade-off of Go's garbage collector. Lower uses less memory and a little more CPU.
 - **`max_cmdline`**: command lines longer than this are cut (any user can start a process with megabytes of arguments). `clifr info` lists the cuts as `cmdline_cut` when there were any. `0` stores them whole.
 - **`max_files_per_process`**: any user can open half a million files in one process, and each tracked open file costs the recorder some 200 bytes of memory. A process holding more than this many is not tracked at all: a `files_capped` guard event (`clifr events --type guard`) and a journal warning name it, `clifr lsof` shows none of its files, and its TCP connections and their owners are still recorded (they come from kernel events). Raise it for a database that really keeps more files open. In a test, 8 processes holding 500,000 files each took the recorder to 761 MiB without it, 170 MiB with it.
 - **`memory_guard`**: if the recorder's memory grows past this (a machine with far more processes, files or connections than usual), it stops tracking the open files of the processes holding the most and cuts command lines to 4 KB. It also checks during each open-file walk, so a single walk cannot overshoot, gives the freed memory back to the system at once, untracks only processes holding more than 1,000 files, and records at most 200,000 newly held files per walk (the rest on the next walks). As a last net clifrd sets the Go runtime's memory limit to 80% of the unit's `MemoryMax`, so uncollected garbage cannot reach it either. A `memory_shed` guard event and a journal warning say so. It is the step before the unit's hard limit, where the kernel would kill the recorder (it is restarted, losing up to 5 minutes).
+- **`event_budget`**: any user can start processes or open connections as fast as the machine allows. In a test an unprivileged loop started 11,600 processes and another opened 30,700 connections a second. Without a budget, the recorder kept a copy of every one until it could write it and was killed by its memory limit within 20 seconds, again at every restart. With the budget, events are counted in 10-second windows:
+  - **Recorded in full:** the first `processes` process events (forks and execs) a second, as long as their command lines add up to at most `cmdline_bytes` a second.
+  - **Recorded with less detail:** the next ones up to `processes_max`. These keep who, when, parent and exit status, and the command line's first 256 bytes, with no `/proc` reads (with the proc connector fallback: no command line).
+  - **Only counted:** the rest.
+  - **TCP:** the first `connections` new connections a second are recorded; the rest are only counted.
+
+  A process is kept or dropped whole, decided at its fork; a long-lived one is still seen by every sample. Each sample with events over the budget writes an `events_shed` guard event: how many were recorded fully, with less detail or only counted, and which users and commands (or processes and addresses) caused most of them. So the flood itself is on record, and `clifr events`, `life`, `ps` over a range and the `ss` range views print an `incomplete:` line for the time they cover. The defaults are 8 times the heaviest benchmark load for processes and twice it for connections. While the recorder's memory is above `memory_guard`, new processes and connections are only counted whatever the rate, so the budget cannot overrun the memory limit even when its rates are set high. Raise them on machines that really run more: a large parallel build with long compiler command lines reaches `cmdline_bytes` first, and a busy load balancer may open more than 5,000 connections a second (raise `max_size` with it). [README: Event budget](README.md#event-budget) has the measurements and the reasoning.
 
 ```yaml
 redact:
@@ -1355,6 +1381,7 @@ Options on the command line override the file. `CLIFR_DATA_DIR` in the environme
 | `--keyframe-interval DUR` | `intervals.keyframe` | `5m` | Full socket dumps. |
 | `--flush-interval DUR` | `intervals.flush` | `5m` | Write to disk. |
 | `--flush-rows N` | | `400000` | Also write when this many rows are waiting (limits memory under heavy load). |
+| `--flush-bytes SIZE` | | `16M` | Also write when the command lines and file names waiting add up to this. |
 | `--events MODE` | `collectors.process_events` | `auto` | `ebpf`, `proc_connector`, `none`. |
 | `--tcp MODE` | `collectors.tcp` | `auto` | `ebpf`, `sample`. |
 | `--fd-mode MODE` | `collectors.files` | `held` | `all`. |
@@ -1366,6 +1393,10 @@ Options on the command line override the file. `CLIFR_DATA_DIR` in the environme
 | `--memory-guard SIZE` | `memory_guard` | `384M` | Shed data above this heap size (`0` = off). |
 | `--max-cmdline SIZE` | `max_cmdline` | `64K` | Command-line length stored (`0` = all). |
 | `--max-files-per-process N` | `max_files_per_process` | `131072` | A process holding more open files is not tracked (`0` = no limit). |
+| `--event-budget-processes N` | `event_budget.processes` | `4000` | Process events (fork, exec) a second recorded in full. |
+| `--event-budget-processes-max N` | `event_budget.processes_max` | `10000` | Process events a second recorded at all; the rest only counted. |
+| `--event-budget-cmdline SIZE` | `event_budget.cmdline_bytes` | `1M` | Command-line bytes a second recorded in full. |
+| `--event-budget-connections N` | `event_budget.connections` | `5000` | New TCP connections a second recorded; the rest only counted. |
 | `--redact REGEX` | `redact` | none | Mask in command lines; repeatable. |
 | `--log-level LEVEL` | `log_level` | `info` | `error`, `warn`, `info`, `debug`. |
 | `--verify-every DUR` | | off | Also save the real tools' output this often, for `clifr verify` (testing accuracy; costs CPU). |

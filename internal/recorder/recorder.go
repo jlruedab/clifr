@@ -33,6 +33,9 @@ type Config struct {
 	// "proc_connector" or "none".
 	Events string
 	EBPF   bpfproc.Options
+	// Budget bounds the process and TCP events recorded in full during a
+	// flood (budget.go; zero values: no limit).
+	Budget EventBudget
 	// TCP: "auto" (eBPF events and keyframes, else v1 sampling), "ebpf" or
 	// "sample" (v1: a socket dump every interval).
 	// FDMode: "held" (v2: fds_held, fds held across two walks and deleted
@@ -126,6 +129,11 @@ type Recorder struct {
 	units                         *unitWatch
 	fsUsage                       fsUsage
 	lostReported                  int
+	procBudget, tcpBudget         *budget
+	overflowReported              int64           // process events refused by the full queue, reported
+	flooded                       map[string]bool // per kind: events above the budget in its last report
+	flooding                      atomic.Bool     // either kind in flooded (read by the store's maintenance)
+	tcpOverflowReported           int64
 	evProcs                       map[procKey]*evProc // known from events, not (yet) sampled
 	evByPID                       map[int]procKey
 	byPID                         map[int]*procEntry
@@ -207,6 +215,11 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Compaction waits while events are above the budget or memory is high
+	// (an hour of a flood, compacted at the end of a flood, took the
+	// recorder past its MemoryMax).
+	var rp *Recorder
+	cfg.Parquet.Busy = func() bool { return rp != nil && rp.storeBusy() }
 	db, err := openBackend(cfg, logger)
 	if err != nil {
 		return nil, err
@@ -215,6 +228,15 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		procs: map[procKey]*procEntry{}, ids: map[string]int64{},
 		socks: map[sockKey]*sockEntry{}, byInode: map[uint64]*sockEntry{}, owners: map[ownKey]*ownEntry{},
 		evProcs: map[procKey]*evProc{}, evByPID: map[int]procKey{}, byPID: map[int]*procEntry{}, cgroups: map[string]cgroupSeen{}}
+	rp = r
+	r.flooded = map[string]bool{}
+	r.procBudget = newBudget("process events (fork, exec)", cfg.Budget.Processes, cfg.Budget.ProcessesMax, cfg.Budget.CmdlineBytes)
+	r.tcpBudget = newBudget("new TCP connections", cfg.Budget.Connections, 0, 0)
+	r.tcpBudget.noLite = true
+	if cfg.MemoryGuard > 0 {
+		over := func() bool { return r.heapNow() > uint64(cfg.MemoryGuard) }
+		r.procBudget.pressure, r.tcpBudget.pressure = over, over
+	}
 	r.initSockets()
 	r.hostNetNS = r.readHostNetNS()
 	if r.cfg.FDFullEvery == 0 {
@@ -405,7 +427,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 			if d <= 0 {
 				break
 			}
-			if r.tcp != nil {
+			if r.tcp != nil || r.events != nil {
 				d = min(d, tcpDrainEvery)
 			}
 			if sysEvery > 0 {
@@ -418,6 +440,9 @@ func (r *Recorder) Run(ctx context.Context) error {
 			}
 			if r.tcp != nil && time.Until(next) > 0 {
 				r.drainTCP()
+			}
+			if time.Until(next) > 0 {
+				r.drainEvents()
 			}
 			// Not right before a sample, which reads them anyway.
 			if sysEvery > 0 && !time.Now().Before(nextSys) && time.Until(next) > sysEvery/2 {
@@ -540,6 +565,7 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	}
 	if r.events != nil {
 		b.Stats = append(b.Stats, r.events.stats(ts)...)
+		b.Stats = append(b.Stats, r.procBudget.statRows(ts, "process_events")...)
 	}
 	nproc := r.sampleProcs(ts, fdWalk, &b)
 	r.flushEventProcs(ts, &b)
@@ -577,7 +603,14 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		}
 		r.flushTCP(ts, &b)
 		b.Stats = append(b.Stats, r.tcp.stats(ts)...)
+		b.Stats = append(b.Stats, r.tcpBudget.statRows(ts, "tcp_conns")...)
 		b.Guard = append(b.Guard, r.tcp.missedGuard(ts)...)
+		r.afterFlood("tcp", r.tcpBudget.report(ts, "tcp"), &b)
+		if n := r.tcp.overflowed(); n > r.tcpOverflowReported {
+			b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "events_lost",
+				Detail: fmt.Sprintf("TCP event queue full (%d events): %d TCP events dropped", tcpQueueCap, n-r.tcpOverflowReported)})
+			r.tcpOverflowReported = n
+		}
 		durSock += time.Since(t1)
 	}
 	r.sweepOwners(ts, &b)

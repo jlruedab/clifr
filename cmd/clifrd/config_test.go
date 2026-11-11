@@ -59,3 +59,25 @@ func TestApplyConfig(t *testing.T) {
 		}
 	}
 }
+
+// TestEventBudgetConfig: the event_budget section sets the four flags.
+func TestEventBudgetConfig(t *testing.T) {
+	fs := testFlags()
+	for _, n := range []string{"event-budget-processes", "event-budget-processes-max", "event-budget-cmdline", "event-budget-connections"} {
+		fs.String(n, "default", "")
+	}
+	p := filepath.Join(t.TempDir(), "clifrd.yml")
+	os.WriteFile(p, []byte("event_budget:\n  processes: 8000\n  processes_max: 0\n  cmdline_bytes: 4M\n  connections: 20000\n"), 0o644)
+	if err := applyConfig(fs, p, true); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"event-budget-processes": "8000", "event-budget-processes-max": "0",
+		"event-budget-cmdline": "4M", "event-budget-connections": "20000"} {
+		if got := fs.Lookup(name).Value.String(); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if got := yamlName("event-budget-cmdline"); got != "event_budget.cmdline_bytes" {
+		t.Errorf("yamlName = %q", got)
+	}
+}

@@ -152,6 +152,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--keyframe-interval` | 5m | full socket dump: queues, UDP, check of the event stream |
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
+| `--flush-bytes` | 16M | also write once the command lines and file names buffered add up to this (rows count alike, but any user can give every process 64 KiB of arguments; a flush needs about three times its data in memory while it writes); `0` = not by size |
 | `--retention` / `--max-size` | 72h / 2G | delete old data; the oldest hours go first above the size cap (`0` = none) |
 | `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
@@ -163,6 +164,10 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--max-files-per-process` | 131072 | a process holding more open files is not tracked (any user can hold half a million; a `files_capped` guard event names it; its TCP connections still come from events); `0` = no limit |
 | `--max-cmdline` | 64K | bytes of each command line stored; longer ones are cut (any user can start processes with megabytes of arguments) and counted as `cmdline_cut` in `clifr info`; `0` = all |
 | `--memory-guard` | 384M | live Go heap above which the recorder sheds data rather than reach the unit's `MemoryMax`: command lines are cut to 4K and the open files of the processes holding the most are no longer tracked (half of all entries; again after `--budget-window` if still above); a `memory_shed` guard event says so, `memory_ok` when the heap is below 3/4 of it; `0` = off |
+| `--event-budget-processes` | 4000 | process events (fork, exec) a second recorded in full, counted over 10 s windows; above it, without `/proc` reads and with the command line cut to 256 bytes. See [Event budget](#event-budget); `0` = no limit |
+| `--event-budget-processes-max` | 10000 | process events a second recorded at all; above it only counted, by user and command, in an `events_shed` guard event; `0` = no limit |
+| `--event-budget-cmdline` | 1M | command-line bytes a second recorded in full; above it cut to 256 bytes; `0` = no limit |
+| `--event-budget-connections` | 5000 | new TCP connections a second recorded; above it only counted, by process and address, in an `events_shed` guard event; `0` = no limit |
 | `--redact` | none | regular expression masked (as `***`) in command lines before they are stored; repeatable; with capture groups only the groups are masked |
 | `--metrics` | off | serve Prometheus metrics at `ADDR/metrics` (e.g. `127.0.0.1:9100`; other addresses need TLS from `--metrics-tls-config`): Node Exporter's names for CPU, memory, load, disks, network interfaces, file systems and pressure, and `clifr_*` for the recorder itself; from the last sample (no file read per scrape). Under the systemd unit it also needs the drop-in `/usr/share/clifr/clifrd-metrics.conf`; if the port cannot be opened clifrd logs it and records without metrics |
 | `--metrics-tls-config` | none | TLS and basic authentication for `--metrics`, in Node Exporter's web configuration format (its `--web.config.file`: `tls_server_config`, `basic_auth_users`, `http_server_config.headers`); reloaded when the file or its certificates change |
@@ -178,7 +183,8 @@ Settings can also be given in the configuration file; `deploy/clifrd.yml`
 lists them with their defaults (`data_dir`, `retention`, `max_size`,
 `log_level`, `intervals: process, system, files, keyframe, flush`,
 `collectors: process_events, tcp, files, process_io`, `cpu_budget`,
-`gc_heap_target`, `max_cmdline`, `memory_guard`, `redact`: a list of patterns; the example masks password
+`gc_heap_target`, `max_cmdline`, `max_files_per_process`, `memory_guard`,
+`event_budget: processes, processes_max, cmdline_bytes, connections`, `redact`: a list of patterns; the example masks password
 and token options, URL credentials and `key=value` secrets). A flag on the
 command line overrides the file, and `CLIFR_DATA_DIR` its `data_dir`.
 Unknown settings are rejected. `memory_limit` of the product spec is not
@@ -198,8 +204,8 @@ What is recorded:
   executable; state, CPU time, RSS, VSZ, threads and I/O counters per
   sample, written only when they change. fork, exec and exit come from eBPF, so a process shorter
   than the interval is recorded with exact start and end, exit code and
-  signal. OOM kills are recorded with the victim's RSS.
-- **TCP connections**: every state change from eBPF, with the owning process
+  signal, up to the [event budget](#event-budget). OOM kills are recorded with the victim's RSS.
+- **TCP connections**: every state change from eBPF (up to the [event budget](#event-budget)), with the owning process
   and fd, the direction, the application's close, time-wait start and end,
   retransmits and resets. A full socket dump every 5 minutes (keyframe) adds
   queues and UDP sockets and checks the event stream against the kernel.
@@ -231,6 +237,145 @@ Guard rails: a sample that overruns the interval makes the next one skip
 (recorded); a process vanishing mid-read is handled; SIGINT/SIGTERM close
 every open row; after a crash, open rows end at the last sample before the
 last flush.
+
+### Event budget
+
+Any user can start processes and open TCP connections as fast as the machine
+allows. In a 4-CPU VM an unprivileged loop started 11,600 processes a second
+(fork and exec of `/bin/true` with a 4 KB argument) and a second one opened 30,700
+loopback connections a second. Without a limit, each of those events cost the recorder
+a `/proc` read and a copy of its command line, held until the next sample and
+then until the next flush: the recorder grew by 45 MiB a second, reached
+its unit's `MemoryMax` (768M) within 20 seconds and was OOM-killed, again at every
+restart, losing each time the minutes not yet written (2026-11-11). The
+event budget bounds what such a flood costs. Above it, the recorder records
+less detail about the flood and records the flood itself.
+
+Events are counted in 10-second windows, so a burst (a parallel build
+starting, a reconnect storm) is averaged rather than cut at its first
+second. Within a window:
+
+| | Recorded in full | Above it | Only counted |
+|---|---|---|---|
+| Process events (fork, exec) | the first 4,000 a second (`processes`), while their command lines add up to at most 1 MiB a second (`cmdline_bytes`) | up to 10,000 a second (`processes_max`): pid, parent, user, command name, times, exit status, the command line's first 256 bytes; no `/proc` reads (with the proc connector, which reports only pids: `stat` and `status` are read, and no command line) | above 10,000 a second |
+| New TCP connections | the first 5,000 a second (`connections`), with every state change | (no middle tier) | above 5,000 a second |
+
+- **What "only counted" keeps.** Each sample with events above a budget
+  writes one `events_shed` guard event. It holds the counts in each tier,
+  the budget, and the five users and commands (processes) or processes,
+  ports and peers (TCP) that caused most of them. It is in
+  `clifr events --type guard`, in `clifr info`'s guard events, and in
+  `recorder_stats` as `process_events_lite`, `process_events_shed`,
+  `process_events_dropped`, `tcp_conns_shed` and `tcp_conns_dropped`. The
+  lists that would otherwise claim to be complete say they are not: `clifr
+  events`, `life`, `ps` over a range, `ss --list` and the TCP range views
+  print an `incomplete:` line naming the time span.
+- **A process is kept or dropped whole.** The decision is made at its
+  fork. The exec and exit of a process born while events were only counted
+  are dropped too (for an hour), and the exec of a process recorded at
+  its fork is kept, at worst cut. A process the budget dropped is still
+  in every sample that sees it alive, so a long-lived one is not lost;
+  only its exact start and its exit code are. A TCP connection is the same:
+  its later events are dropped with it, and one still open at a keyframe
+  is adopted from that dump. Listening sockets are always recorded.
+- **Why these numbers.**
+  - *4,000 process events a second (2,000 commands, a fork and an exec
+    each):* eight times the heaviest benchmark profile ("extreme", 250
+    processes a second). A full rebuild of this repository on the 22-CPU
+    development machine (`go build -a`, empty cache, 11 s) peaked at 1,445
+    forks a second, about 2,900 fork and exec events, and averaged 450:
+    within the full budget even before the 10-second window averages it.
+  - *10,000 a second at most:* this sets most of the recorder's memory
+    during a flood. A process is three queued events of 264 bytes each,
+    plus its command line. The events are applied every 5 seconds, and
+    finished processes become rows that wait for the next write (at most
+    `--flush-bytes` of command lines). The limit keeps that within the
+    unit's memory with room for the rest (measured below); the memory rule
+    that follows is the hard bound.
+  - *1 MiB a second of command lines:* any user can pass 64 KiB of
+    arguments to every process. 1 MiB a second is about 30 MB per
+    sample interval. On the development desktop over 24 hours (45,658
+    processes) command lines had a median of 73 bytes and a mean of 310;
+    a tenth were over 1 KB (git, gcc's collect2 and ld, shell scripts).
+    So on a busy build machine this is the limit reached first, at about
+    1,000 such commands a second. Above it, those keep their first 256
+    bytes: the program and usually its first options.
+  - *5,000 new TCP connections a second:* twice the "extreme" profile.
+    A connection is a 128-byte row plus about five 40-byte transitions.
+    A busy load balancer or web server can legitimately exceed this; raise
+    it there, together with `--max-size`.
+- **Measured** (2026-11-11, VMs with 4 CPUs, the shipped unit; 3 minutes of
+  each flood as an unprivileged user; the process flood gives every
+  process a different 4 KB argument, so nothing compresses):
+
+  | | Process flood | Recorder | TCP flood | Recorder |
+  |---|---|---|---|---|
+  | Before the budget, Alma 9, eBPF | 11,600/s | OOM-killed after 20 s, again at every restart | 30,700/s | OOM-killed twice |
+  | Alma 9, eBPF | 8,700/s | 20% of one core, RSS at most 366 MiB | 30,000/s | 4–8%, RSS at most 548 MiB |
+  | Rocky 8 (4.18, cgroup v1), eBPF | 6,200/s | 22%, RSS at most 360 MiB | 31,200/s | 4–5%, RSS at most 497 MiB |
+  | Alma 9, proc connector | 8,200/s | 33%, RSS at most 652 MiB | 30,200/s | 6%, RSS at most 585 MiB |
+
+  No restarts and no skipped samples in any run with the budget; one
+  `events_shed` guard event per sample named user 1000's `flood` and
+  `true`, or the process and port, as the senders. After each flood the
+  recorder's CPU fell back to 0.1–0.3%. With the proc connector each event
+  costs `/proc` reads, so a process flood takes the heap to the Go memory
+  limit (614 MiB) and the memory guard takes over; the cgroup, counting
+  page cache, reached 763 of 768 MiB, which the kernel reclaimed. That is
+  the closest margin measured: prefer eBPF on machines where a user could
+  flood.
+
+  At the busy benchmark load nothing reaches the budget, and it costs
+  nothing measurable. A/B under the shipped unit on the development machine
+  (ab-budget-20261111-1312, 2 runs each, 600 s measured): before, 2.18 and
+  2.51% of one core, RSS at most 368 and 363 MiB; with the budget, 2.23 and
+  2.16%, 353 and 357 MiB. pgbench ran at 80,000 tps with p99 0.132 to 0.140 ms
+  in all four runs; there were no `events_shed` events and no skipped samples.
+- **Memory overrides the rates.** While the recorder's heap is above
+  `memory_guard` (384 MiB), new processes and connections are only counted,
+  whatever the rate (checked every 100 ms), and the `events_shed` event says
+  how many were for that reason. The rates are estimates of memory; this rule
+  is the bound. It held when the rates alone did not: with the rates only,
+  a flood of processes with unique 4 KB arguments still took the recorder to its
+  `MemoryMax`, where it stopped making progress without being killed.
+- **Between samples.** Queued process events are applied every 5 seconds,
+  as TCP events already were, and exited processes are handed to the store
+  then. Applying a sample interval of a flood at once made the heap jump by
+  hundreds of MB at every sample. At the first sample after a flood the
+  recorder returns the freed memory to the system (Go would keep it: one
+  test left the recorder at 536 MiB idle).
+- **Backstops.** The process event queue is kept in chunks of 4,096
+  events. A single slice of hundreds of thousands of events was copied into
+  one twice its size at every growth, and the heap reached 1.2 GB with 300
+  MB live. Both event queues are capped (500,000 events each); events a full
+  queue refuses are counted in an `events_lost` guard event. The store
+  writes early when the buffered command lines and file names reach
+  `--flush-bytes` (16M), as it does at `--flush-rows`. A flush of unique
+  command lines needs about three times their size while it encodes them.
+- **Writing large hours.** Every Parquet file is written in row groups of
+  at most about 32 MiB (estimated from the rows' strings). The Parquet
+  library keeps a whole row group in memory until it writes it. Compacting
+  a flood's hour as one row group (94 MB on disk of nearly random command
+  lines) took the recorder past its `MemoryMax` five minutes after every
+  start, when it tried again: an OOM loop. Now it compacts that
+  hour within 116 MiB. Compaction also waits while events are above the
+  budget or the heap is above half the memory guard, and tries again at
+  the next write. In one test, compacting a flood's hour right as the
+  flood ended was what crossed the limit. During a long flood, the hour's
+  small files stay until it ends.
+- **What the budget does not do.** It bounds memory and CPU, not disk. A
+  flood that stays just under the budget still writes rows for every event,
+  and `--max-size` (2G) then deletes the oldest hours to make room, so a
+  long flood shortens the history kept. On Rocky 8, three minutes of the
+  process flood wrote 41 MB of `processes` rows and three minutes of the
+  TCP flood 12 MB of connections and transitions: sustained, about 830 MB
+  and 230 MB an hour, so a process flood of two and a half hours would push
+  everything older out of the default 2G. Size `max_size` for the event
+  rates you expect, and alert on `events_shed` (it is a `clifr_guard_events`
+  metric with `--metrics`).
+- **Setting it.** Set it under `event_budget:` in `clifrd.yml` or with the
+  `--event-budget-*` flags. `0` turns a limit off; the memory backstops
+  stay.
 
 ### As a service
 

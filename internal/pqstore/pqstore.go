@@ -46,9 +46,18 @@ import (
 type Options struct {
 	FlushInterval time.Duration // default 5 minutes
 	FlushRows     int           // also flush once this many rows are buffered (0: only by time)
-	Retention     time.Duration // 0 = keep everything
-	MaxBytes      int64         // 0 = no size cap
-	Logf          func(format string, args ...any)
+	// FlushBytes: also flush once the command lines and paths of the rows
+	// buffered since the last flush add up to this many bytes (0: not by
+	// size). Rows count alike, but any user can give every process 64 KiB
+	// of arguments.
+	FlushBytes int64
+	// Busy, if set, is asked before each table-hour of compaction: while it
+	// says so, compaction stops and is tried again at the next flush (it
+	// needs memory, and an hour of a flood is the largest to compact).
+	Busy      func() bool
+	Retention time.Duration // 0 = keep everything
+	MaxBytes  int64         // 0 = no size cap
+	Logf      func(format string, args ...any)
 }
 
 // entity holds the open rows of one entity table and the closed rows not
@@ -232,7 +241,8 @@ type Store struct {
 
 	lastAny, lastFD int64 // last sample, last fd-walk sample (unix ms)
 	lastFlush       time.Time
-	unknown         int // updates/closes for ids this run does not hold
+	textBytes       int64 // command lines and paths written since the last flush (FlushBytes)
+	unknown         int   // updates/closes for ids this run does not hold
 
 	bytes atomic.Int64
 	busy  atomic.Bool // maintenance running
@@ -326,8 +336,10 @@ func (s *Store) Write(b *store.Batch) error {
 	}
 	for _, p := range b.ProcInserts {
 		s.procs.insert(p.ID, processOf(p), p.LastSeen != nil)
+		s.textBytes += int64(len(p.Cmdline) + len(p.Exe) + len(p.Cgroup) + len(p.Label))
 	}
 	for _, u := range b.ProcUpdates {
+		s.textBytes += int64(len(u.Cmdline) + len(u.Exe) + len(u.Cgroup) + len(u.Label))
 		if r := s.procs.get(u.ID); r != nil {
 			r.UID, r.PPID, r.Comm, r.Cmdline, r.Source, r.Exe = int32(u.UID), int32(u.PPID), u.Comm, u.Cmdline, u.Source, u.Exe
 			r.Argv0Len = int32(u.Argv0Len)
@@ -365,6 +377,7 @@ func (s *Store) Write(b *store.Batch) error {
 		}
 	}
 	for _, f := range b.HeldInserts {
+		s.textBytes += int64(len(f.Target) + len(f.Name))
 		s.held.open[f.ID] = &heldRec{HeldFD: f}
 	}
 	for _, c := range b.HeldCloses {
@@ -510,7 +523,8 @@ func (s *Store) Write(b *store.Batch) error {
 		s.verify = append(s.verify, verifyRow{ID: s.idBase() + s.verifyID, TS: v.TS, EndTS: v.EndTS, Cmd: v.Cmd,
 			SampleTS: v.SampleTS, IgnorePIDs: v.IgnorePIDs, Output: v.Output})
 	}
-	if b.Sample.TS != 0 && (time.Since(s.lastFlush) >= s.opt.FlushInterval || s.opt.FlushRows > 0 && s.buffered() >= s.opt.FlushRows) {
+	if b.Sample.TS != 0 && (time.Since(s.lastFlush) >= s.opt.FlushInterval || s.opt.FlushRows > 0 && s.buffered() >= s.opt.FlushRows ||
+		s.opt.FlushBytes > 0 && s.textBytes >= s.opt.FlushBytes) {
 		return s.Flush()
 	}
 	return nil
@@ -606,7 +620,7 @@ func (s *Store) Flush() error {
 	s.files.reset()
 	s.procSamples.reset()
 	s.sockSamples.reset()
-	s.lastFlush = time.Now()
+	s.lastFlush, s.textBytes = time.Now(), 0
 	s.bytes.Store(dirSize(s.dir))
 	if s.busy.CompareAndSwap(false, true) {
 		s.wg.Add(1)
@@ -692,9 +706,14 @@ var writerOptions = []parquet.WriterOption{
 // writeFile writes the rows, given as one or more slices, to a new file.
 func writeFile[T any](path string, rows ...[]T) error {
 	return writeRows(path, func(w *parquet.GenericWriter[T]) error {
+		g := &groupWriter[T]{w: w}
 		for _, r := range rows {
-			if _, err := w.Write(r); err != nil {
-				return err
+			for len(r) > 0 {
+				n := min(len(r), chunkRows)
+				if err := g.write(r[:n]); err != nil {
+					return err
+				}
+				r = r[n:]
 			}
 		}
 		return nil
@@ -705,6 +724,7 @@ func writeFile[T any](path string, rows ...[]T) error {
 // type a chunk at a time.
 func writeConv[S, T any](path string, conv func(*T, *S), rows ...[]S) error {
 	return writeRows(path, func(w *parquet.GenericWriter[T]) error {
+		g := &groupWriter[T]{w: w}
 		var buf []T
 		for _, r := range rows {
 			for len(r) > 0 {
@@ -716,7 +736,7 @@ func writeConv[S, T any](path string, conv func(*T, *S), rows ...[]S) error {
 				for i := range buf {
 					conv(&buf[i], &r[i])
 				}
-				if _, err := w.Write(buf); err != nil {
+				if err := g.write(buf); err != nil {
 					return err
 				}
 				r = r[n:]
@@ -899,7 +919,7 @@ func (s *Store) compact(current time.Time, done func()) error {
 		if len(g) == 1 && g[0].compacted {
 			continue
 		}
-		if s.ctx.Err() != nil {
+		if s.ctx.Err() != nil || s.opt.Busy != nil && s.opt.Busy() {
 			return nil
 		}
 		var paths []string
@@ -939,9 +959,10 @@ func merge[T any](parts []string, out string) error {
 		return err
 	}
 	w := parquet.NewGenericWriter[T](f, writerOptions...)
+	g := &groupWriter[T]{w: w}
 	buf := make([]T, 4096)
 	for _, p := range parts {
-		if err = copyRows(p, w, buf); err != nil {
+		if err = copyRows(p, g, buf); err != nil {
 			break
 		}
 	}
@@ -953,7 +974,7 @@ func merge[T any](parts []string, out string) error {
 	return os.Rename(tmp, out)
 }
 
-func copyRows[T any](path string, w *parquet.GenericWriter[T], buf []T) error {
+func copyRows[T any](path string, w *groupWriter[T], buf []T) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -964,7 +985,7 @@ func copyRows[T any](path string, w *parquet.GenericWriter[T], buf []T) error {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
+			if werr := w.write(buf[:n]); werr != nil {
 				return werr
 			}
 		}

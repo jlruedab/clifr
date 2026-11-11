@@ -25,6 +25,12 @@ gc_heap_target: 256M   # heap up to which garbage is collected at Go's default r
 max_cmdline: 64K       # bytes of each command line stored; longer ones are cut
 max_files_per_process: 131072 # a process holding more open files is not tracked
                        # (a guard event names it; its TCP connections still are)
+event_budget:          # per second, counted over 10 s windows (0 = no limit)
+  processes: 4000      # process events (fork, exec) recorded in full
+  processes_max: 10000 # above `processes`: no /proc reads, command lines cut to
+                       # 256 bytes; above this: only counted (events_shed guard event)
+  cmdline_bytes: 1M    # command-line bytes recorded in full
+  connections: 5000    # new TCP connections recorded; above it only counted
 memory_guard: 384M     # live heap above which data is shed (guard event) before
                        # the unit's MemoryMax (768M) is reached
 

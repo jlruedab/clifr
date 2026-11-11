@@ -50,6 +50,8 @@ type procEvent struct {
 	// Fork (eBPF): the command line is the parent's, set when the event is
 	// applied.
 	parentCmd bool
+	// lite: recorded above the full event budget (command line cut).
+	lite bool
 }
 
 // evProc is a process known only from events so far.
@@ -64,9 +66,16 @@ type evProc struct {
 // eventQueue is filled by the event reader goroutine and drained by each
 // sample. Counters are cumulative, per recorder_stats source.
 type eventQueue struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// The events in arrival order: full chunks of queueChunk, then list.
+	// Chunks, not one slice: appending to a slice of half a million events
+	// copies it into one twice the size (the first budgeted flood's heap
+	// reached 1.2 GB that way, with 300 MB live).
+	full     [][]procEvent
 	list     []procEvent
-	lost     int // proc connector receive-buffer overruns
+	n        int   // events queued
+	lost     int   // proc connector receive-buffer overruns
+	overflow int64 // events refused by a full queue (queueCap)
 	received map[string]int64
 	reported map[string][2]int64     // received and dropped at the last report
 	drops    func() map[string]int64 // eBPF: events the kernel side could not send
@@ -114,19 +123,46 @@ func newEventQueue() *eventQueue {
 	return &eventQueue{received: map[string]int64{}, reported: map[string][2]int64{}}
 }
 
+// queueCap bounds the events waiting for the next sample (the budget keeps a
+// flood well below it: this is the last resort); overflow counts the events
+// it refused.
+var queueCap = 500_000
+
+const queueChunk = 4096
+
 func (q *eventQueue) push(evs []procEvent, stat string, n int) {
 	q.mu.Lock()
-	q.list = append(q.list, evs...)
+	if room := queueCap - q.n; len(evs) > room {
+		q.overflow += int64(len(evs) - max(room, 0))
+		evs = evs[:max(room, 0)]
+	}
+	for _, ev := range evs {
+		if len(q.list) == cap(q.list) {
+			if len(q.list) > 0 {
+				q.full = append(q.full, q.list)
+			}
+			q.list = make([]procEvent, 0, queueChunk)
+		}
+		q.list = append(q.list, ev)
+	}
+	q.n += len(evs)
 	q.received[stat] += int64(n)
 	q.mu.Unlock()
 }
 
-func (q *eventQueue) take() ([]procEvent, int) {
+func (q *eventQueue) take() ([][]procEvent, int) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	l := q.list
-	q.list = nil
+	l := append(q.full, q.list)
+	q.full, q.list, q.n = nil, nil, 0
 	return l, q.lost
+}
+
+// overflowed returns the events a full queue refused (cumulative).
+func (q *eventQueue) overflowed() int64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.overflow
 }
 
 // stats returns per source the events received and dropped since the last call.
@@ -228,8 +264,11 @@ func (r *Recorder) runCNProc(ctx context.Context, l *cnproc.Listener) (stop func
 				return
 			}
 			enriched := make([]procEvent, 0, len(evs))
+			now := time.Now()
 			for _, e := range evs {
-				enriched = append(enriched, r.enrich(e))
+				if pe, ok := r.enrichBudget(e, now); ok {
+					enriched = append(enriched, pe)
+				}
 			}
 			r.events.push(enriched, srcCNProc, len(evs))
 			r.events.mu.Lock()
@@ -280,8 +319,9 @@ func (r *Recorder) runEBPF(ctx context.Context, src *bpfproc.Source) (stop func(
 				r.log.Errorf("eBPF event read: %v; continuing with sampling only", err)
 				return
 			}
+			now := time.Now()
 			for _, e := range batch {
-				if pe, ok := r.fromBPF(e); ok {
+				if pe, ok := r.fromBPF(e, now); ok {
 					r.events.push([]procEvent{pe}, ebpfStat(e.Kind), 1)
 				} else {
 					r.events.push(nil, ebpfStat(e.Kind), 1)
@@ -325,12 +365,33 @@ func wallMS(monoNS uint64) int64 { return newClockRef().at(monoNS) }
 // fromBPF turns an eBPF event into a procEvent. Exec, exit and (tp_btf)
 // fork events carry the process's start time, so the key is exact without
 // reading /proc; /proc is read only for what the event lacks.
-func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
+func (r *Recorder) fromBPF(e bpfproc.Event, now time.Time) (procEvent, bool) {
 	pe := procEvent{pid: e.PID, ts: wallMS(e.MonoNS)}
 	if e.StartNS != 0 {
 		pe.haveStat = true
 		pe.key = procKey{pid: e.PID, start: r.boot + int64(e.StartTicks())*1000/procfs.ClockTicks}
 		pe.attrs = store.ProcUpdate{PPID: e.PPID, UID: e.UID, Comm: e.Comm, Source: srcEBPF}
+	}
+	if (e.Kind == bpfproc.Exec || e.Kind == bpfproc.Exit) && pe.haveStat && r.procBudget.shedBorn(pe.key.start) {
+		// Born while process events were only counted: its fork was
+		// dropped, so the rest of it is too (a sample may still see it).
+		r.procBudget.dropped(1)
+		return pe, false
+	}
+	if e.Kind == bpfproc.Fork || e.Kind == bpfproc.Exec {
+		var bytes int64
+		if e.Kind == bpfproc.Exec {
+			bytes = int64(max(e.ArgsLen, len(e.Cmdline)))
+		}
+		// An exec of a process recorded at its fork keeps it whole.
+		t := r.procBudget.decide(now, bytes, e.Kind == bpfproc.Exec && pe.haveStat)
+		if t != tierFull {
+			r.procBudget.note(fmt.Sprintf("uid %d %s", e.UID, e.Comm))
+		}
+		if t == tierShed || t == tierLite && !pe.haveStat { // a classic fork needs /proc reads
+			return pe, false
+		}
+		pe.lite = t == tierLite
 	}
 	switch e.Kind {
 	case bpfproc.Fork:
@@ -347,11 +408,22 @@ func (r *Recorder) fromBPF(e bpfproc.Event) (procEvent, bool) {
 		// taken from the parent when the event is applied, not read from
 		// /proc here (the largest /proc read at the busy load).
 		pe.parentCmd = true
+		if pe.lite {
+			pe.tty, pe.sid, pe.pgrp = e.TTY, e.SID, e.PGRP // no /proc read above the budget
+			break
+		}
 		r.eventTTY(&pe, e)
 	case bpfproc.Exec:
 		pe.kind = evExec
 		pe.attrs.Cmdline, pe.attrs.Argv0Len = r.redact.Cmdline(e.Cmdline, e.Argv0Len)
 		pe.attrs.Exe, pe.attrs.ExecTS = e.Filename, pe.ts
+		if pe.lite {
+			pe.attrs.Cmdline, pe.attrs.Argv0Len = cutCmdline(pe.attrs.Cmdline, pe.attrs.Argv0Len)
+			if e.HaveTTY {
+				pe.tty, pe.sid, pe.pgrp = e.TTY, e.SID, e.PGRP
+			}
+			break
+		}
 		if e.ArgsTruncated {
 			if full, argv0, err := r.readCmdline(e.PID); err == nil && full != "" {
 				pe.attrs.Cmdline, pe.attrs.Argv0Len = full, argv0
@@ -420,6 +492,66 @@ func (r *Recorder) eventTTY(pe *procEvent, e bpfproc.Event) {
 	}
 }
 
+// enrichBudget applies the event budget to a proc connector event: above
+// the full budget only its stat is read (no command line); above the
+// maximum, nothing (fork, exec: dropped; exit: no /proc read, so an unknown
+// process's exit does not become a row).
+func (r *Recorder) enrichBudget(e cnproc.Event, now time.Time) (procEvent, bool) {
+	switch e.Kind {
+	case cnproc.Fork, cnproc.Exec:
+		t := r.procBudget.decide(now, 0)
+		if t == tierFull {
+			return r.enrich(e), true
+		}
+		r.procBudget.note("uid ? (proc connector)")
+		if t == tierShed {
+			return procEvent{}, false
+		}
+		pe := r.enrich(cnproc.Event{Kind: cnproc.Exit, PID: e.PID, TimestampNS: e.TimestampNS}) // stat only
+		pe.kind, pe.exitCode, pe.signal, pe.lite = evFork, nil, nil, true
+		if !pe.haveStat {
+			return pe, false
+		}
+		if r.procBudget.shedBorn(pe.key.start) {
+			r.procBudget.dropped(1)
+			return pe, false
+		}
+		if status, err := r.fs.ReadStatus(e.PID); err == nil {
+			pe.attrs.UID = status.UID // no command line above the budget, but the user
+		}
+		if e.Kind == cnproc.Exec {
+			pe.kind, pe.attrs.ExecTS = evExec, pe.ts
+		}
+		return pe, true
+	case cnproc.Exit:
+		r.procBudget.mu.Lock()
+		shedding := len(r.procBudget.ranges) > 0 && now.UnixMilli()-r.procBudget.ranges[len(r.procBudget.ranges)-1][1] < budgetWindow.Milliseconds()
+		r.procBudget.mu.Unlock()
+		if shedding {
+			code, sig := e.ExitStatus()
+			pe := procEvent{kind: evExit, pid: e.PID, ts: wallMS(e.TimestampNS)}
+			if sig != 0 {
+				pe.signal = &sig
+			} else {
+				pe.exitCode = &code
+			}
+			return pe, true
+		}
+		pe := r.enrich(e)
+		if pe.haveStat && r.procBudget.shedBorn(pe.key.start) {
+			r.procBudget.dropped(1)
+			return pe, false
+		}
+		return pe, true
+	}
+	pe := r.enrich(e)
+	if e.Kind == cnproc.Exec && pe.haveStat && r.procBudget.shedBorn(pe.key.start) {
+		r.procBudget.dropped(1)
+		return pe, false
+	}
+	return pe, true
+}
+
 // enrich turns a proc connector event into a procEvent, reading the
 // process's stat (and status/cmdline for fork and exec) right away.
 // Failures are fine: the process may already be gone.
@@ -462,19 +594,40 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 	}
 	r.events.sync()
 	evs, lost := r.events.take()
+	r.afterFlood("processes", r.procBudget.report(ts, "processes"), b)
+	if n := r.events.overflowed(); n > r.overflowReported {
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "events_lost",
+			Detail: fmt.Sprintf("event queue full (%d events waiting for a sample): %d process events dropped", queueCap, n-r.overflowReported)})
+		r.overflowReported = n
+	}
 	if lost > r.lostReported {
 		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "events_lost",
 			Detail: "proc connector receive buffer overflowed; some process events were dropped"})
 		r.lostReported = lost
 	}
-	for _, ev := range evs {
+	n := 0
+	for _, chunk := range evs {
+		n += len(chunk)
+		for _, ev := range chunk {
+			r.applyEvent(ev, b)
+		}
+	}
+	return n
+}
+
+// applyEvent folds one queued event into the trackers.
+func (r *Recorder) applyEvent(ev procEvent, b *store.Batch) {
+	{
 		switch ev.kind {
 		case evFork, evExec:
 			if !ev.haveStat {
-				continue // gone before we could read it: nothing reliable to store
+				return // gone before we could read it: nothing reliable to store
 			}
 			if ev.parentCmd {
 				ev.attrs.Cmdline, ev.attrs.Argv0Len = r.parentCmdline(ev.attrs.PPID)
+				if ev.lite {
+					ev.attrs.Cmdline, ev.attrs.Argv0Len = cutCmdline(ev.attrs.Cmdline, ev.attrs.Argv0Len)
+				}
 			}
 			if e := r.procs[ev.key]; e != nil {
 				if ev.kind == evExec { // a sampled process exec'd: new command line
@@ -492,7 +645,7 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 						b.ProcUpdates = append(b.ProcUpdates, u)
 					}
 				}
-				continue
+				return
 			}
 			ep := r.evProc(ev)
 			if ep.ev.kind == 0 || ev.kind == evExec || ep.ev.attrs.Cmdline == "" {
@@ -501,19 +654,23 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 		case evExit:
 			key, ok := r.keyOf(ev)
 			if !ok {
-				continue
+				return
 			}
 			if e := r.procs[key]; e != nil {
 				e.exit = ev.ts
 				if ev.exitCode != nil || ev.signal != nil {
 					b.ProcExits = append(b.ProcExits, store.ProcExit{ID: e.id, ExitTS: &ev.ts, ExitCode: ev.exitCode, Signal: ev.signal})
 				}
-				continue
+				return
 			}
 			ep := r.evProcs[key]
 			if ep == nil {
 				if !ev.haveStat {
-					continue
+					return
+				}
+				if r.procBudget.shedBorn(key.start) {
+					r.procBudget.dropped(1) // its fork was only counted (event budget)
+					return
 				}
 				ep = r.evProc(ev) // eBPF: seen only at its exit, which says who it was
 			}
@@ -522,7 +679,6 @@ func (r *Recorder) applyEvents(ts int64, b *store.Batch) int {
 			r.applyOOM(ev, b)
 		}
 	}
-	return len(evs)
 }
 
 // evProc returns (creating it if needed) the event-only process for ev.
@@ -588,9 +744,32 @@ func (r *Recorder) applyOOM(ev procEvent, b *store.Batch) {
 // A process with no exit event is kept for one more sample if its event is
 // recent, since it may have been forked after the walk listed /proc.
 func (r *Recorder) flushEventProcs(ts int64, b *store.Batch) {
+	r.flushEvProcs(ts, b, false)
+}
+
+// drainEvents folds the queued process events into the trackers between
+// samples (every tcpDrainEvery), and writes the processes that have exited
+// to the pending batch: a flood's events then wait seconds, not a whole
+// sample interval (applying 30 s of them at once made the heap jump by
+// hundreds of MB at every sample). Processes still running wait for the
+// sample, which may adopt them.
+func (r *Recorder) drainEvents() {
+	if r.events == nil {
+		return
+	}
+	evs, _ := r.events.take()
+	for _, chunk := range evs {
+		for _, ev := range chunk {
+			r.applyEvent(ev, &r.pending)
+		}
+	}
+	r.flushEvProcs(time.Now().UnixMilli(), &r.pending, true)
+}
+
+func (r *Recorder) flushEvProcs(ts int64, b *store.Batch, exitedOnly bool) {
 	for key, ep := range r.evProcs {
 		ev := ep.ev
-		if ep.exit == 0 && ev.ts > ts-1000 {
+		if ep.exit == 0 && (exitedOnly || ev.ts > ts-1000) {
 			continue
 		}
 		row := store.ProcRow{ID: r.nextID("processes"), PID: key.pid, StartTime: key.start,

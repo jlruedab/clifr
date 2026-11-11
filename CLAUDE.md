@@ -205,6 +205,35 @@ wait for the user's go-ahead.
   (1000) files, reports memory_ok only a budget window after the last shed, and at most
   `maxNewHeldPerWalk` (200,000) new held files are stored per walk (`fd_walk_held_deferred`).
   `cmd/clifrd/gc.go` `setSoftLimit`: Go's memory limit = 80% of the cgroup's memory.max.
+- Event budget (2026-11-11, `recorder/budget.go`, README "Event budget"): an unprivileged flood
+  (11,600 fork+exec/s, 30,700 connections/s in a 4-CPU VM) OOM-killed clifrd in 20 s (unbounded
+  queues, a /proc read and a command line per event). Per 10 s window: process events (fork, exec)
+  full up to `--event-budget-processes` (4000/s) and `--event-budget-cmdline` (1M/s of argument
+  bytes), "lite" up to `-max` (10000/s: no /proc reads, command line cut to `liteCmdline` 256, the
+  proc connector stat+status only), then only counted; decided in the readers (`fromBPF`,
+  `enrichBudget`); a process is kept or dropped whole (`budget.shedBorn`: its exec and exit are
+  dropped for `shedMemory` 1 h; an exec of a process recorded at its fork is at worst lite).
+  TCP (`tcpBudgetFilter`, reader goroutine): births (CLOSE->SYN_SENT, LISTEN->SYN_RECV) above
+  `--event-budget-connections` (5000/s) only counted, later events by sock pointer dropped until
+  its close; listeners always kept. One `events_shed` guard event per sample per kind (detail
+  "processes: ..." / "tcp: ...", counts, budget, top 5 keys), recorder_stats
+  `process_events_lite|_shed|_dropped`, `tcp_conns_shed|_dropped`; `query.BudgetNote` puts an
+  "incomplete:" header on events, life, ps range, ss --list, TCP range views. Backstops: queue
+  caps `queueCap`/`tcpQueueCap` 500,000 (`events_lost`), the process queue in `queueChunk` (4096)
+  chunks (a growing slice copied itself: 1.2 GB heap, 300 MB live), store `--flush-bytes` 16M
+  (cmdline, exe, cgroup, label, held fd names; a flush needs ~3x its data). The bound is memory, not
+  the rates: while `heapNow` > `--memory-guard`, new processes and connections are only counted
+  (`budget.pressure`, checked every `pressureEvery` 100 ms; rates alone let unique 4 KB arguments
+  reach MemoryMax, where clifrd livelocked in reclaim without an OOM kill). `cutCmdline` copies
+  (`strings.Clone`): a substring kept the 1 KiB original alive (214 MB). `drainEvents` applies
+  process events every `tcpDrainEvery` (5 s) between samples into `r.pending` and writes only
+  exited event-only processes then (`flushEvProcs` exitedOnly: a live one may be adopted by the
+  sample); `afterFlood` returns memory (`freeOSMemory`) at the first sample with neither kind
+  above its budget after a flood. Parquet row groups end at `rowGroupBytes` (32 MiB, estimated by
+  `rowBytes`: struct size + string lengths; `pqstore/rowgroup.go`) in flushes, compaction and the
+  open-file rewrite: parquet-go buffers a whole row group, and a flood hour compacted as one OOM-killed
+  clifrd at every start. `pqstore.Options.Busy` (`Recorder.storeBusy`: flooding, or heap > half the
+  memory guard) puts compaction off to the next flush.
 - Mounts: `mounts` table (present/mount/unmount/remount; the whole table as `present` rows at start and
   hourly, each snapshot replacing the table, so retention never removes a running run's base) from POLLPRI on mountinfo, opened
   with raw open(2): Go's own epoll would consume the kernel's change notification. Since

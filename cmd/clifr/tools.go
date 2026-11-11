@@ -230,6 +230,9 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 		groups, err = query.ConnsInRange(db, w.From, w.To, filter)
 		c.header("TCP connections by process, %s .. %s, from events (every connection, however short, in any state)",
 			query.FormatMS(w.From), query.FormatMS(w.To))
+		if n := query.BudgetNote(db, w.From, w.To, "tcp"); n != "" {
+			c.header("%s", n)
+		}
 	} else {
 		proto := "tcp"
 		if udp {
@@ -273,6 +276,9 @@ func connList(c *runCtx, name string, udp bool, filter query.SockFilter,
 	}
 	c.header("%s: %d TCP connections %s .. %s, from events (every connection, however short; State: the last in the range)",
 		name, len(conns), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+	if n := query.BudgetNote(c.db, c.w.From, c.w.To, "tcp"); n != "" {
+		c.header("%s", n)
+	}
 	return c.emit(conns, func(int) rowMeta { return rowMeta{From: c.w.From, To: c.w.To} },
 		func(w io.Writer) { print(w, conns) })
 }
@@ -346,6 +352,9 @@ func runLife(c *runCtx, re *regexp.Regexp) error {
 		return err
 	}
 	c.header("%d processes; END \">t\" means it exited after t and before the next sample", len(rows))
+	if n := query.BudgetNote(c.db, w.From, w.To, "processes"); n != "" {
+		c.header("%s", n)
+	}
 	return c.emit(rows, func(i int) rowMeta {
 		m := rowMeta{From: w.From, To: w.To}
 		if rows[i].EndKind != "exact" {

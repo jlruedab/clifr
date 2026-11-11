@@ -233,6 +233,7 @@ func filterRows[T any](start func(*T) int64) func(parts []string, out string, to
 			return 0, err
 		}
 		w := parquet.NewGenericWriter[T](f, writerOptions...)
+		g := &groupWriter[T]{w: w}
 		buf, keep := make([]T, 4096), make([]T, 0, 4096)
 		kept := 0
 		for _, p := range parts {
@@ -252,7 +253,7 @@ func filterRows[T any](start func(*T) int64) func(parts []string, out string, to
 					}
 				}
 				if len(keep) > 0 {
-					if _, err = w.Write(keep); err != nil {
+					if err = g.write(keep); err != nil {
 						break
 					}
 					kept += len(keep)

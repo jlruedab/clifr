@@ -3,6 +3,7 @@ package recorder
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"slices"
 	"sort"
@@ -77,6 +78,7 @@ type tcpTracker struct {
 	missedReported uint64              // recursion misses already reported as a guard event
 
 	mu       sync.Mutex
+	overflow int64 // events refused by a full queue (tcpQueueCap)
 	queue    []bpftcp.Event
 	spare    []bpftcp.Event // the array of the batch applied last
 	rows     store.Batch    // transitions and guard events of the events applied since the last sample
@@ -165,6 +167,7 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 	go func() {
 		defer wg.Done()
 		var batch []bpftcp.Event
+		shedSK := map[uint64]bool{} // connections only counted (event budget), by sock pointer
 		for {
 			select {
 			case <-done:
@@ -180,15 +183,84 @@ func (r *Recorder) startTCP(done <-chan struct{}) (stop func(), err error) {
 			if len(batch) == 0 {
 				continue
 			}
+			kept := r.tcpBudgetFilter(batch, shedSK)
 			t.mu.Lock()
-			t.queue = append(t.queue, batch...)
 			for i := range batch {
 				t.received[tcpStat[batch[i].Kind]]++
 			}
+			if room := tcpQueueCap - len(t.queue); len(kept) > room {
+				t.overflow += int64(len(kept) - max(room, 0))
+				kept = kept[:max(room, 0)]
+			}
+			t.queue = append(t.queue, kept...)
 			t.mu.Unlock()
 		}
 	}()
 	return func() { wg.Wait(); src.Close() }, nil
+}
+
+// tcpQueueCap bounds the TCP events waiting to be applied (every
+// tcpDrainEvery); the event budget keeps a flood well below it.
+var tcpQueueCap = 500_000
+
+// overflowed returns the TCP events a full queue refused (cumulative).
+func (t *tcpTracker) overflowed() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.overflow
+}
+
+// tcpBudgetFilter applies the event budget to a batch (in place): a new
+// connection (connect, or a listener's child) above the budget is only
+// counted, and every later event of it (by sock pointer, until its close)
+// is dropped. Listening sockets are always kept.
+func (r *Recorder) tcpBudgetFilter(batch []bpftcp.Event, shedSK map[uint64]bool) []bpftcp.Event {
+	kept := batch[:0]
+	now := time.Now()
+	var dropped int64
+	for _, e := range batch {
+		birth := e.Kind == bpftcp.State && (e.Old == bpftcp.Close && e.New == bpftcp.SynSent || e.Old == bpftcp.Listen && e.New == bpftcp.SynRecv)
+		switch {
+		case birth:
+			delete(shedSK, e.SK) // a reused pointer: a new connection
+			if r.tcpBudget.decide(now, 0) == tierShed {
+				r.tcpBudget.note(tcpFloodKey(e))
+				if len(shedSK) < 1<<20 { // a missed close leaves its pointer until reused
+					shedSK[e.SK] = true
+				}
+				continue
+			}
+		case e.Kind == bpftcp.State && e.Old == bpftcp.Close: // a new listener (or socket): never dropped
+			delete(shedSK, e.SK)
+		case shedSK[e.SK]:
+			if e.Kind == bpftcp.State && e.New == bpftcp.Close {
+				delete(shedSK, e.SK)
+			}
+			dropped++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if dropped > 0 {
+		r.tcpBudget.dropped(dropped)
+	}
+	return kept
+}
+
+// tcpFloodKey names who caused a connection above the budget: the process
+// connecting and where to, or the local port accepting and from where.
+func tcpFloodKey(e bpftcp.Event) string {
+	if e.New == bpftcp.SynSent {
+		return fmt.Sprintf("pid %d to %s", e.Owner.PID, netipPort(e.DAddr, e.DPort))
+	}
+	if !e.DAddr.IsValid() || e.DAddr.IsUnspecified() { // not known yet at LISTEN -> SYN_RECV
+		return fmt.Sprintf("port %d accepting", e.SPort)
+	}
+	return fmt.Sprintf("port %d from %s", e.SPort, e.DAddr)
+}
+
+func netipPort(a netip.Addr, port int) string {
+	return netip.AddrPortFrom(a, uint16(port)).String()
 }
 
 // markQueued notes the processes with connection activity in events not yet

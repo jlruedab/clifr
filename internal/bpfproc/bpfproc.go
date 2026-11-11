@@ -59,6 +59,7 @@ type Event struct {
 	Cmdline       string // arguments joined by spaces, like /proc/<pid>/cmdline
 	Argv0Len      int    // length of argv[0] in Cmdline
 	ArgsTruncated bool   // the command line was longer than ArgsMax
+	ArgsLen       int    // the whole argument area's length
 	// Exit only: the raw wait status (see ExitStatus).
 	Status int32
 	// OOM only: victim RSS from the tracepoint (0 on kernels that lack it).
@@ -382,7 +383,7 @@ func decode(raw []byte) (Event, error) {
 		n := min(int(r.ArgsLen), ArgsMax)
 		args := unsafe.Slice((*byte)(unsafe.Pointer(&r.Args[0])), n)
 		e.Cmdline, e.Argv0Len = procfs.ParseCmdline(args), procfs.Argv0Len(args)
-		e.ArgsTruncated = int(r.ArgsLen) > ArgsMax
+		e.ArgsTruncated, e.ArgsLen = int(r.ArgsLen) > ArgsMax, int(r.ArgsLen)
 	}
 	return e, nil
 }

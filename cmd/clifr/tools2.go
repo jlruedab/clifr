@@ -140,6 +140,9 @@ func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat, forest bool
 		}
 		c.header("processes between %s and %s, identical commands collapsed (SRC ev: only seen through exec/exit events)",
 			query.FormatMS(w.From), query.FormatMS(w.To))
+		if n := query.BudgetNote(db, w.From, w.To, "processes"); n != "" {
+			c.header("%s", n)
+		}
 		return c.emit(rows, func(int) rowMeta {
 			return rowMeta{From: w.From, To: w.To, Sampled: []string{"last_seen_ms", "peak_pcpu", "peak_rss_kb"}}
 		}, func(w io.Writer) { query.PrintPSRange(w, rows) })
@@ -477,6 +480,9 @@ func eventsTool() *tool {
 					return err
 				}
 				c.header("%d events %s .. %s", len(evs), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
+				if n := query.BudgetNote(c.db, c.w.From, c.w.To, "processes"); n != "" {
+					c.header("%s", n)
+				}
 				return c.emit(evs, func(i int) rowMeta {
 					if !evs[i].Exact {
 						return rowMeta{Sampled: []string{"ts_ms"}}

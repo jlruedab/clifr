@@ -179,7 +179,7 @@ func TestReadOlderSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := parquet.NewGenericWriter[keyframeRow](f, writerOptions...)
-	if err := copyRows(old, w, make([]keyframeRow, 16)); err != nil {
+	if err := copyRows(old, &groupWriter[keyframeRow]{w: w}, make([]keyframeRow, 16)); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Close(); err != nil {
@@ -339,5 +339,104 @@ func TestDirNames(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "samples"), 0o750)
 	if TableDir(dir, "samples") != filepath.Join(dir, "samples") || IsDataDir(dir) != nil {
 		t.Error("an older recording is not read")
+	}
+}
+
+// TestFlushBytes: rows whose command lines add up to FlushBytes are written
+// at once, not at the next flush interval (any user can give every process
+// 64 KiB of arguments; FlushRows counts rows alike).
+func TestFlushBytes(t *testing.T) {
+	s, err := Open(t.TempDir(), Options{FlushInterval: time.Hour, FlushBytes: 10_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ts := time.Now().UnixMilli()
+	write := func(id int64) {
+		last := ts
+		p := store.ProcRow{ID: id, PID: int(id), StartTime: ts, FirstSeen: ts, LastSeen: &last, Comm: "x", Cmdline: strings.Repeat("a", 4000)}
+		if err := s.Write(&store.Batch{Sample: store.Sample{TS: ts}, ProcInserts: []store.ProcRow{p}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(1)
+	write(2)
+	if s.textBytes != 8000 || s.procs.closed.len() != 2 {
+		t.Fatalf("after 8,000 bytes: %d buffered bytes, %d rows; want both kept", s.textBytes, s.procs.closed.len())
+	}
+	write(3) // 12,000 bytes: flushed
+	if s.textBytes != 0 || s.procs.closed.len() != 0 {
+		t.Errorf("after 12,000 bytes: %d buffered bytes, %d rows; want a flush", s.textBytes, s.procs.closed.len())
+	}
+}
+
+// TestMergeRowGroups: compaction ends a row group every rowGroupBytes, so
+// an hour of large rows is not held in memory whole.
+func TestMergeRowGroups(t *testing.T) {
+	dir := t.TempDir()
+	var parts []string
+	for i := range 3 {
+		var rows []processRow
+		for j := range 5000 {
+			rows = append(rows, processRow{ID: int64(i*5000 + j), Cmdline: fmt.Sprintf("%08d", j) + strings.Repeat("x", 4000)})
+		}
+		p := filepath.Join(dir, fmt.Sprintf("p%d.parquet", i))
+		if err := writeFile(p, rows); err != nil {
+			t.Fatal(err)
+		}
+		parts = append(parts, p)
+	}
+	out := filepath.Join(dir, "out.parquet")
+	if err := merge[processRow](parts, out); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fi, _ := f.Stat()
+	pf, err := parquet.OpenFile(f, fi.Size())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 15,000 rows of about 4.4 KB: 66 MB, so at least 2 row groups of 32 MiB.
+	if n := len(pf.RowGroups()); n < 2 || pf.NumRows() != 15000 {
+		t.Errorf("%d row groups, %d rows; want >= 2, 15000", n, pf.NumRows())
+	}
+	if b := rowBytes(&processRow{Cmdline: "abc", Comm: "x"}); b < 4 {
+		t.Errorf("rowBytes = %d", b)
+	}
+}
+
+// TestCompactBusy: while Busy says so, compaction leaves the hour's parts
+// for the next try.
+func TestCompactBusy(t *testing.T) {
+	dir := t.TempDir()
+	busy := true
+	s, err := Open(dir, Options{Busy: func() bool { return busy }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	day := filepath.Join(dir, Dir("guard_events"), "2026-10-09")
+	for _, name := range []string{"10-00", "10-05"} {
+		if err := writeFile(filepath.Join(day, name+".parquet"), guardRows(2, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Date(2026, 10, 9, 11, 0, 0, 0, time.UTC)
+	if err := s.compact(at, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(day, "10.parquet")); !os.IsNotExist(err) {
+		t.Fatalf("compacted while busy: %v", err)
+	}
+	busy = false
+	if err := s.compact(at, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	if n := rowsIn(t, filepath.Join(day, "10.parquet")); n != 4 {
+		t.Errorf("after busy: %d rows, want 4", n)
 	}
 }
