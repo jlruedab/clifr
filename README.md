@@ -945,10 +945,10 @@ before, which also took the recorder to 947 MiB).
 ### Cost at the busy load
 
 Three runs of 15 minutes each (2026-10-23, `report-20261023-2100`, commit
-`bcd589e`: after step 4 of phase 8, which added swap, modules, block
+`fe973c2`: after step 4 of phase 8, which added swap, modules, block
 devices, neighbours, locks, System V IPC, sysctl, slab caches, NUMA,
 conntrack and NFS counters). The 2026-10-22 batch (`report-20261022-1900`,
-commit `6712c7e`, after step 3: process fields) is in brackets; v1 was last
+commit `be07917`, after step 3: process fields) is in brackets; v1 was last
 measured in the 2026-10-19 batch (`report-20261019-1620`) and has since
 been removed.
 
