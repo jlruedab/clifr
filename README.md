@@ -58,8 +58,15 @@ not yet shown to be viable for production:
    were written only once, so after 72 hours retention deleted them and
    `ss`, `lsof`, `df`, `findmnt`, `lsblk`, `uname` and the idle processes of
    `ps`, `top`, `pidstat` and `systemd-cgls` were wrong or empty. Everything
-   else `clifr verify` checked matched to the end. A run longer than its
-   retention with the fixes is still to do.
+   else `clifr verify` checked matched to the end. Runs longer than their
+   retention in the Rocky 8, Alma 9 and Ubuntu 22.04 VMs (`--retention 2h`;
+   19 hours across a UTC day boundary, then two of about 4 hours,
+   2026-11-11/12) found two more gaps in the oldest hour kept: the hourly
+   copies were timed from the run's start, not by the UTC hours retention
+   deletes, and `df` lost most file systems' usage.
+   Both are fixed (8af89ee): with the fixes every view is complete from the
+   oldest hour's first minute, `clifr verify` passes, and the few minutes
+   left of a deleted hour are no longer counted as recorded.
 2. **Benchmarked on one machine** (Ubuntu 26.04, kernel 7.0, bare metal).
    The targets are tested in KVM virtual machines: Rocky Linux 8.10 (kernel
    4.18, cgroup v1), AlmaLinux 9.8 (5.14) and Ubuntu 22.04 (5.15) pass the
