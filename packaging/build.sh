@@ -13,7 +13,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=${VERSION:-0.1.0}
 DOCKER=${DOCKER:-docker}
-IMAGE=rockylinux:8
+# Pinned by digest (the multi-arch index of rockylinux:8 as of 2023-11-24, used
+# for every package so far): a moved tag cannot change a build. The compiler
+# and rpmbuild are still installed with dnf at build time (printed below).
+IMAGE=${IMAGE:-rockylinux:8@sha256:9794037624aaa6212aeada1d28861ef5e0a935adaf93e4ef79837119f2a2d04c}
 
 maintainer="Jorge L. Rueda B. <jlrueda@gmail.com>"
 rev=$(git rev-parse --short=12 HEAD)
@@ -44,6 +47,7 @@ $DOCKER run --rm -v "$dist/.cache/go:/usr/local/go:ro" -v "$(go env GOMODCACHE):
 	-w /src "$IMAGE" bash -euc "
 		dnf -q -y install gcc-toolset-13-gcc-c++ >/dev/null
 		source /opt/rh/gcc-toolset-13/enable
+		echo \"   \$(rpm -q gcc-toolset-13-gcc-c++), glibc \$(rpm -q --qf '%{VERSION}-%{RELEASE}' glibc)\"
 		CGO_ENABLED=1 /usr/local/go/bin/go build -buildvcs=false -trimpath -ldflags '-s -w -X main.releaseVersion=$full' -o dist/clifr ./cmd/clifr
 		chown -R $owner dist"
 glibc=$(objdump -T "$dist/clifr" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
