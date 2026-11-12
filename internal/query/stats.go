@@ -305,7 +305,7 @@ func PrintStats(w io.Writer, s *Stats) {
 	fmt.Fprintf(w, "Recorded by:      clifrd %s, schema %s\n", orDash(h.Recorder), h.Schema)
 	// The first second shown is one with a sample at or before it: a query
 	// at the time printed finds data.
-	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS((s.FromMS+999)/1000*1000), FormatMS(s.ToMS), span.Round(time.Second))
+	fmt.Fprintf(w, "Recording:        %s .. %s (%s)\n", FormatMS(UpToSecond(s.FromMS)), FormatMS(s.ToMS), span.Round(time.Second))
 	fmt.Fprintf(w, "Samples:          %d (%d with full fd walk), skipped: %d\n", s.Samples, s.FDWalks, s.Skipped)
 	fmt.Fprintf(w, "Seen per sample:  %.0f processes, %.0f sockets, %.0f fds per walk\n", s.AvgProcs, s.AvgSockets, s.AvgFDs)
 	perDay := "no finished hour yet to estimate the data kept per day"

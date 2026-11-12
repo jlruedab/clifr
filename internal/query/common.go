@@ -165,6 +165,10 @@ func CompleteFrom(db *store.DB) int64 {
 	return 0
 }
 
+// UpToSecond rounds a recording's start up to a whole second, as clifr info
+// prints it: a time given back to --at at second precision is then inside it.
+func UpToSecond(ms int64) int64 { return (ms + 999) / 1000 * 1000 }
+
 // Covered returns an error when the recording has nothing for the moment t:
 // t is after its last sample (the recorder stopped, or its latest rows are
 // not flushed to disk yet), in a gap between samples, or before
@@ -173,7 +177,7 @@ func Covered(db *store.DB, t int64) error {
 	if from := CompleteFrom(db); t < from {
 		return fmt.Errorf("%s is before the recording kept (it starts %s): retention deleted the older hours, "+
 			"and the few samples left before %s lack the hourly copies of the mounts, processes and cgroups",
-			FormatMS(t), FormatMS(from), FormatMS(from))
+			FormatMS(t), FormatMS(UpToSecond(from)), FormatMS(UpToSecond(from)))
 	}
 	iv := IntervalMS(db)
 	var prev, next sql.NullInt64

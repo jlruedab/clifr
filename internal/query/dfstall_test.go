@@ -114,7 +114,10 @@ func TestDFHourlySnapshot(t *testing.T) {
 // and df shows their usage rows written at the snapshot's time.
 func TestCompleteFrom(t *testing.T) {
 	hour := int64(3_600_000)
-	base := int64(1_790_000_000_000) / hour * hour
+	// the snapshot 12.4 s into the hour: the error gives the start as
+	// clifr info does, rounded up to a second (12.4 s printed as 12 s
+	// would be refused by --at)
+	base := int64(1_790_000_000_000)/hour*hour + 12_400
 	m := store.MountEvent{TS: base, Action: "present", MountID: 2, Point: "/", Source: "/dev/vda4", FSType: "xfs",
 		Options: "rw", SuperOptions: "rw", Dev: "252:4", Root: "/", Seq: 1}
 	db := testrec.Open(t, nil,
@@ -126,8 +129,12 @@ func TestCompleteFrom(t *testing.T) {
 	if got := CompleteFrom(db); got != base {
 		t.Fatalf("CompleteFrom = %d, want %d", got, base)
 	}
-	if err := Covered(db, base-30_000); err == nil || !strings.Contains(err.Error(), "before the recording kept") {
+	if err := Covered(db, base-30_000); err == nil || !strings.Contains(err.Error(), "before the recording kept") ||
+		!strings.Contains(err.Error(), "it starts "+FormatMS(base+600)+")") {
 		t.Errorf("Covered before the oldest snapshot: %v", err)
+	}
+	if err := Covered(db, base+600); err != nil {
+		t.Errorf("Covered at the start as printed: %v", err)
 	}
 	if err := Covered(db, base+30_000); err != nil {
 		t.Errorf("Covered after it: %v", err)
