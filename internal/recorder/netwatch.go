@@ -12,7 +12,7 @@ import (
 )
 
 // netWatch records the interface addresses, routes and policy routing rules:
-// a snapshot at the start, every store.NetSnapshotMS and after lost
+// a snapshot at the start, in every UTC hour (store.OtherHour) and after lost
 // notifications, and in between each change the kernel announces, at the
 // time it does. Routes and rules are also dumped again about a second after
 // changes (at most every routeRedumpMS), so the kernel's order of them (which
@@ -155,7 +155,7 @@ func (r *Recorder) startNet(done <-chan struct{}) (stop func()) {
 				return
 			default:
 			}
-			if time.Since(last) >= store.NetSnapshotMS*time.Millisecond {
+			if store.OtherHour(last.UnixMilli(), time.Now().UnixMilli()) {
 				snapshot(true, true)
 				last = time.Now()
 			}

@@ -109,18 +109,19 @@ func TestMountDiff(t *testing.T) {
 	}
 }
 
-// The whole table again as "present" rows once the last snapshot is old.
+// The whole table again as "present" rows in the next UTC hour.
 func TestMountRefresh(t *testing.T) {
-	w := &mountWatch{known: map[int]procfs.MountInfo{}, snapAt: time.Now().UnixMilli()}
+	hour := time.Hour.Milliseconds()
+	w := &mountWatch{known: map[int]procfs.MountInfo{}, snapAt: 1_790_000_000_000/hour*hour + 10_000}
 	root := procfs.MountInfo{ID: 1, Point: "/", Source: "/dev/sda", FSType: "ext4", Options: "rw"}
 	nfs := procfs.MountInfo{ID: 9, Point: "/srv", Source: "srv:/x", FSType: "nfs4", Options: "rw"}
 	w.diff([]procfs.MountInfo{root, nfs}, w.snapAt, "present")
 	w.take()
-	w.refresh(time.Hour.Milliseconds())
+	w.refresh(w.snapAt + hour - 20_000) // 59:50 into the same hour
 	if p := w.take(); len(p) != 0 {
 		t.Fatalf("snapshot within the hour: %+v", p)
 	}
-	w.refresh(0)
+	w.refresh(w.snapAt + hour - 5_000) // 0:05 into the next
 	var got []string
 	for _, e := range w.take() {
 		got = append(got, fmt.Sprintf("%s %s %d", e.Action, e.Point, e.Seq))

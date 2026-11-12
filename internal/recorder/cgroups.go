@@ -19,7 +19,7 @@ type cgroupSeen struct {
 
 // noteCgroup writes a cgroups row for the systemd cgroup of a process (from
 // /proc/<pid>/cgroup) and for each ancestor that this run has not written
-// in the last store.NetSnapshotMS or that was recreated since (a new id: a
+// in this UTC hour (store.OtherHour) or that was recreated since (a new id: a
 // unit restarted, a user logged in again). Ancestors of an unchanged cgroup
 // are unchanged too. Only on the real /proc: fixtures have no cgroup file
 // system.
@@ -42,7 +42,7 @@ func (r *Recorder) noteCgroup(cgroup string, ts int64, b *store.Batch) {
 			return // gone already
 		}
 		id := int64(st.Ino)
-		if last, seen := r.cgroups[p]; seen && last.id == id && ts-last.ts < store.NetSnapshotMS {
+		if last, seen := r.cgroups[p]; seen && last.id == id && !store.OtherHour(last.ts, ts) {
 			return
 		}
 		r.cgroups[p] = cgroupSeen{ts: ts, id: id}

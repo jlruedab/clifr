@@ -441,8 +441,18 @@ type NeighRow struct {
 }
 
 // NetSnapshotMS: how often the addresses (later routes and rules) are
-// written whole between their change notifications.
+// written whole between their change notifications, and everything else
+// that is written again hourly (OtherHour).
 const NetSnapshotMS = 60 * 60 * 1000
+
+// OtherHour reports whether Unix ms times a and b are in different UTC
+// hours. The hourly rewrites (the run's meta, the mount table, values of
+// idle processes and sockets, file-system usage, cgroups, units, addresses
+// and routes) happen at the first chance in each UTC hour, not an hour after
+// the previous one: retention deletes whole UTC hours, so each hour kept
+// begins with its own copy. A run-phased rewrite left the oldest hour kept
+// without one for up to an hour (2026-11-12, retention run in the VMs).
+func OtherHour(a, b int64) bool { return a/NetSnapshotMS != b/NetSnapshotMS }
 
 // NetCountersFullMS: how often every protocol counter is written, so a moment
 // needs only the rows of the 5 minutes before it.

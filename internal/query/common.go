@@ -149,11 +149,32 @@ func metaInt(db *store.DB, key string) int64 {
 	return n
 }
 
+// CompleteFrom is the oldest moment with the whole state recorded, the
+// oldest mount table snapshot, when samples come before it (else 0). Each
+// UTC hour begins with copies of what does not change (mounts, idle
+// processes' values, cgroups, units, addresses); retention deletes whole
+// hours, and a flush that straddles an hour is filed under the later one, so
+// the samples of the deleted hour's last minutes come before any copy.
+func CompleteFrom(db *store.DB) int64 {
+	var base, first sql.NullInt64
+	db.QueryRow(`SELECT MIN(ts) FROM mounts WHERE action = 'present'`).Scan(&base)
+	db.QueryRow(`SELECT MIN(ts) FROM samples`).Scan(&first)
+	if base.Valid && first.Valid && first.Int64 < base.Int64 {
+		return base.Int64
+	}
+	return 0
+}
+
 // Covered returns an error when the recording has nothing for the moment t:
 // t is after its last sample (the recorder stopped, or its latest rows are
-// not flushed to disk yet) or in a gap between samples. Before the first
-// sample SnapshotAt says so.
+// not flushed to disk yet), in a gap between samples, or before
+// CompleteFrom. Before the first sample SnapshotAt says so.
 func Covered(db *store.DB, t int64) error {
+	if from := CompleteFrom(db); t < from {
+		return fmt.Errorf("%s is before the recording kept (it starts %s): retention deleted the older hours, "+
+			"and the few samples left before %s lack the hourly copies of the mounts, processes and cgroups",
+			FormatMS(t), FormatMS(from), FormatMS(from))
+	}
 	iv := IntervalMS(db)
 	var prev, next sql.NullInt64
 	if err := db.QueryRow(`SELECT MAX(ts) FROM samples WHERE ts <= ?`, t).Scan(&prev); err != nil {

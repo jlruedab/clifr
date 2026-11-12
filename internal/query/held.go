@@ -285,17 +285,23 @@ func MountsAt(db *store.DB, t int64) ([]MountRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	cur := map[int]MountRow{}
+	cur, prev := map[int]MountRow{}, map[int]MountRow{}
 	var presentTS int64 = -1
 	ordered := false // recordings before schema 2 have no mountinfo order
 	for _, m := range all {
 		ordered = ordered || m.seq > 0
 		switch m.Action {
 		case "present":
-			if m.TS != presentTS { // a new run: its snapshot replaces the table
-				cur, presentTS = map[int]MountRow{}, m.TS
+			if m.TS != presentTS { // a snapshot (hourly or a new run's) replaces the table
+				prev, cur, presentTS = cur, map[int]MountRow{}, m.TS
 			}
+			// A mount the table already had stays mounted since then: df
+			// and lsblk take usage rows from that time on (an hourly usage
+			// row may come seconds before the hourly snapshot).
 			m.since = m.TS
+			if p, ok := prev[m.MountID]; ok && p.Point == m.Point && p.Source == m.Source && p.Dev == m.Dev {
+				m.since = p.since
+			}
 			cur[m.MountID] = m
 		case "mount":
 			m.since = m.TS

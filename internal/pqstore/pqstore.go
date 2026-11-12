@@ -307,12 +307,12 @@ func (s *Store) SetMeta(key, value string) error {
 	return nil
 }
 
-// refreshMeta copies the run's whole meta into the next flush once the last
-// copy is store.NetSnapshotMS old. Retention deletes hours, and meta is
+// refreshMeta copies the run's whole meta into the first flush of each UTC
+// hour (store.OtherHour). Retention deletes hours, and meta is
 // written at the start: without the copies a run that outlives the
 // retention loses its host, schema and distribution.
 func (s *Store) refreshMeta(now time.Time) {
-	if now.Sub(s.metaAt) < store.NetSnapshotMS*time.Millisecond {
+	if !store.OtherHour(s.metaAt.UnixMilli(), now.UnixMilli()) {
 		return
 	}
 	for _, k := range slices.Sorted(maps.Keys(s.metaAll)) {

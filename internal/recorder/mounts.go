@@ -29,14 +29,14 @@ type mountWatch struct {
 	snapAt  int64              // the last "present" snapshot (unix ms)
 }
 
-// refresh records the whole table again as "present" rows once the last
-// snapshot is every ms old: a run's first snapshot would otherwise expire
-// with the oldest hours while the run goes on, and the mounts with it.
-func (w *mountWatch) refresh(every int64) {
+// refresh records the whole table again as "present" rows at ts (Unix ms)
+// when the last snapshot was in an earlier UTC hour (store.OtherHour): a
+// run's first snapshot would otherwise expire with the oldest hours while the
+// run goes on, and the mounts with it.
+func (w *mountWatch) refresh(ts int64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	ts := time.Now().UnixMilli()
-	if ts-w.snapAt < every {
+	if !store.OtherHour(w.snapAt, ts) {
 		return
 	}
 	for i, m := range w.order {

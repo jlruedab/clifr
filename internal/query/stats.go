@@ -112,6 +112,7 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 	// Read before the samples query: the DB has one connection, and a query
 	// while rows are open would wait for it forever.
 	gapMS := IntervalMS(db) * 5 / 2 // longer without samples: stopped or suspended
+	complete := CompleteFrom(db)
 
 	rows, err := db.Query(`SELECT ts, fd_walk, skipped, COALESCE(dur_proc_us,0), COALESCE(dur_sock_us,0),
 		COALESCE(dur_fd_us,0), COALESCE(dur_db_us,0), COALESCE(nproc,0), COALESCE(nsock,0), COALESCE(nfd,0),
@@ -129,6 +130,9 @@ func ComputeStats(db *store.DB) (*Stats, error) {
 		var ts, fdw, skipped, dp, ds, df, dd, np, ns, nf, cpu, rss int64
 		if err := rows.Scan(&ts, &fdw, &skipped, &dp, &ds, &df, &dd, &np, &ns, &nf, &cpu, &rss); err != nil {
 			return nil, err
+		}
+		if ts < complete {
+			continue // before the recording kept (CompleteFrom)
 		}
 		sampleTS = append(sampleTS, ts)
 		if st.FromMS == 0 {

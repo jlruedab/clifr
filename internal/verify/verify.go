@@ -75,8 +75,9 @@ type snapshot struct {
 // Run compares every saved checkpoint.
 func Run(db *store.DB) (*Report, error) {
 	queryErr = nil
+	complete := query.CompleteFrom(db) // read before the rows: one connection
 	rows, err := db.Query(`SELECT ts, COALESCE(end_ts, ts), cmd, sample_ts, COALESCE(ignore_pids,''), output
-		FROM verify_snapshots ORDER BY sample_ts, id`)
+		FROM verify_snapshots WHERE sample_ts >= ? ORDER BY sample_ts, id`, complete)
 	if err != nil {
 		return nil, err
 	}

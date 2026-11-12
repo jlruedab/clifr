@@ -808,8 +808,10 @@ func TestIdleSamplesHourly(t *testing.T) {
 	fp := newFakeProc(t)
 	fp.set(10, "idle", 100, 5)
 	r, dataDir := newTestRecorder(t, fp.root)
-	t1 := time.UnixMilli(1790001000000)
-	for _, d := range []time.Duration{0, 30 * time.Second, 59 * time.Minute, 60 * time.Minute, 61 * time.Minute} {
+	t1 := time.UnixMilli(1790002800000 + 10*60_000) // 10 minutes into a UTC hour
+	// written when first seen and at the first sample of the next UTC hour
+	// (50 minutes later), not an hour after the last row
+	for _, d := range []time.Duration{0, 30 * time.Second, 49 * time.Minute, 50 * time.Minute, 51 * time.Minute} {
 		must(t, r.sample(t1.Add(d), d == 0))
 	}
 	must(t, r.shutdown())
@@ -826,8 +828,8 @@ func TestIdleSamplesHourly(t *testing.T) {
 		got = append(got, (ts-t1.UnixMilli())/60_000)
 	}
 	rows.Close()
-	if fmt.Sprint(got) != "[0 60]" { // minutes after t1
-		t.Errorf("proc_samples at minutes %v, want [0 60]", got)
+	if fmt.Sprint(got) != "[0 50]" { // minutes after t1
+		t.Errorf("proc_samples at minutes %v, want [0 50]", got)
 	}
 
 	u := &fsUsage{last: map[fsKey]store.FSSample{}}
@@ -837,7 +839,7 @@ func TestIdleSamplesHourly(t *testing.T) {
 		return u.keep(k, &s, ts) && s.TS == ts
 	}
 	if !write(0, 50) || write(60_000, 50) || !write(120_000, 49) || write(3_000_000, 49) || !write(3_720_000, 49) {
-		t.Error("fs usage: want rows when first seen, changed and an hour after the last row")
+		t.Error("fs usage: want rows when first seen, changed and in the next UTC hour")
 	}
 }
 
@@ -993,5 +995,50 @@ func TestHeldPerWalkLimit(t *testing.T) {
 	// First walk: seen once, nothing stored; then 3 a walk, 7 and 4 waiting.
 	if fmt.Sprint(got) != "[0 3 3]" || fmt.Sprint(deferred) != "[0 7 4]" {
 		t.Errorf("held inserts per walk %v (want [0 3 3]), deferred %v (want [0 7 4])", got, deferred)
+	}
+}
+
+// The hourly mount snapshot and the hourly usage rows carry the same time
+// (the sample's): df takes a mount's usage from the time the table shows it,
+// and in the oldest hour kept no earlier snapshot has the mount (2026-11-12
+// VM rerun: df listed 1-2 of 5-7 file systems for that hour).
+func TestHourlyMountsWithUsage(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "idle", 100, 5)
+	r, dataDir := newTestRecorder(t, fp.root)
+	old := statfs
+	statfs = func(string, *unix.Statfs_t) error { return nil }
+	defer func() { statfs = old }()
+	t1 := time.UnixMilli(1790002800000 + 50*60_000) // 50 minutes into a UTC hour
+	r.mounts = &mountWatch{known: map[int]procfs.MountInfo{}, snapAt: t1.UnixMilli()}
+	r.mounts.diff([]procfs.MountInfo{{ID: 1, Point: "/", Source: "/dev/vda1", FSType: "xfs", Dev: "252:1"}},
+		t1.UnixMilli(), "present")
+	wait := func() {
+		for i := 0; i < 2000; i++ {
+			r.fsUsage.mu.Lock()
+			busy := r.fsUsage.busy
+			r.fsUsage.mu.Unlock()
+			if !busy {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("statfs round did not end")
+	}
+	for _, d := range []time.Duration{0, 30 * time.Second, 10 * time.Minute, 10*time.Minute + 30*time.Second} {
+		must(t, r.sample(t1.Add(d), d == 0))
+		wait()
+	}
+	must(t, r.shutdown())
+	r.db.Close()
+	db, err := duck.Open(dataDir)
+	must(t, err)
+	defer db.Close()
+	hour := t1.Add(10 * time.Minute).UnixMilli()
+	var snap, usage int64
+	must(t, db.QueryRow(`SELECT MIN(ts) FROM mounts WHERE action = 'present' AND ts >= ?`, hour).Scan(&snap))
+	must(t, db.QueryRow(`SELECT MIN(ts) FROM fs_samples WHERE ts >= ?`, hour).Scan(&usage))
+	if snap != hour || usage != hour {
+		t.Errorf("next hour: snapshot at %d, usage at %d; want both at the sample, %d", snap, usage, hour)
 	}
 }

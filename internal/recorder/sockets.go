@@ -84,7 +84,7 @@ func (r *Recorder) sampleSockets(ts int64, b *store.Batch) int {
 		e.gen, e.last = r.gen, ts
 		smp := store.SockSample{SockID: e.id, TS: ts, State: s.State, RxQ: int64(s.RxQ), TxQ: int64(s.TxQ)}
 		if !e.hasSamp || smp.State != e.sample.State || smp.RxQ != e.sample.RxQ || smp.TxQ != e.sample.TxQ ||
-			ts-e.sample.TS >= store.NetSnapshotMS { // hourly: see the process samples
+			store.OtherHour(e.sample.TS, ts) { // hourly: see the process samples
 			b.SockSamples = append(b.SockSamples, smp)
 			e.sample, e.hasSamp = smp, true
 		}

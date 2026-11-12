@@ -207,13 +207,14 @@ func (u *fsUsage) current(mounts []procfs.MountInfo) []metrics.FSUsage {
 }
 
 // keep reports whether s (TS 0) is written at ts: when it changed or the
-// last row of that file system is an hour old. It sets s.TS then.
+// last row of that file system is from an earlier UTC hour (store.OtherHour).
+// It sets s.TS then.
 func (u *fsUsage) keep(k fsKey, s *store.FSSample, ts int64) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	prev, ok := u.last[k]
 	at := prev.TS
-	if prev.TS = 0; ok && prev == *s && ts-at < store.NetSnapshotMS {
+	if prev.TS = 0; ok && prev == *s && !store.OtherHour(at, ts) {
 		return false
 	}
 	s.TS = ts

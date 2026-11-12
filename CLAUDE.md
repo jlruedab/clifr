@@ -247,6 +247,16 @@ wait for the user's go-ahead.
   a newer row.
 - Per-sample values (`proc_samples`, `sock_samples`) are written when they change and hourly
   (`store.NetSnapshotMS`): retention would otherwise delete an idle process's only row.
+  Every hourly rewrite (meta, mounts `present`, idle processes and sockets, `fs_samples`, cgroups,
+  units, addresses and routes) comes at the first chance in each UTC hour (`store.OtherHour`), not
+  an hour after the previous one: retention deletes whole UTC hours, and with run-phased rewrites
+  the oldest hour kept had no mounts, idle values or meta for up to an hour (2026-11-12 VM run,
+  `--retention 2h`). `query.MountsAt`: a mount an hourly snapshot repeats keeps its `since`
+  (df/lsblk ignored a usage row written seconds before the snapshot); the hourly mount snapshot
+  carries the sample's time, as the hourly usage rows do (the oldest hour kept has no earlier
+  snapshot). `query.CompleteFrom`: the recording kept starts at the oldest mount snapshot when
+  samples come before it (the deleted hour's last minutes, filed in the next hour's flush);
+  `Covered`, `clifr info` and `clifr verify` leave those out.
 - System-wide counters: every `--sys-interval` (10 s default; also at every sample) writes one `sys_samples` row, one `cpu_samples` row per CPU
   (cpu -1 = total) and one `disk_samples` row per device that has done I/O (`part` = 1: a partition,
   from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:

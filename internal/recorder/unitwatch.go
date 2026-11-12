@@ -10,8 +10,8 @@ import (
 	"clifr/internal/store"
 )
 
-// unitWatch records systemd's units: a snapshot at the start and every
-// store.NetSnapshotMS, and after systemd signals a change (at most every
+// unitWatch records systemd's units: a snapshot at the start and in
+// every UTC hour (store.OtherHour), and after systemd signals a change (at most every
 // unitListMS, unitQuietMS after the signal) the units that changed.
 type unitWatch struct {
 	mu   sync.Mutex
@@ -154,7 +154,7 @@ func (r *Recorder) startUnits(done <-chan struct{}) (stop func()) {
 					}
 					connected = true
 					lastSnap, lastList = time.Now(), time.Now()
-				case time.Since(lastSnap) >= store.NetSnapshotMS*time.Millisecond:
+				case store.OtherHour(lastSnap.UnixMilli(), time.Now().UnixMilli()):
 					if err := w.record(c, true); err != nil {
 						r.log.Errorf("systemd units: %v", err)
 					}

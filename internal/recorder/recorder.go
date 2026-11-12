@@ -557,7 +557,9 @@ func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 		b.Units = append(b.Units, r.units.take()...)
 	}
 	if r.mounts != nil {
-		r.mounts.refresh(store.NetSnapshotMS)
+		// at ts, as the hourly usage rows: df takes a mount's usage only
+		// from the time the table shows it
+		r.mounts.refresh(ts)
 		b.Mounts = append(b.Mounts, r.mounts.take()...)
 		b.FSSamples = append(b.FSSamples, r.fsUsage.take()...)
 		b.Guard = append(b.Guard, r.fsUsage.takeGuard()...)
@@ -723,9 +725,9 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			PSFlags: int(st.Flags>>6) & 7, STimeTicks: int64(st.Stime), GuestTicks: int64(st.GuestTime),
 			BlkioTicks: int64(st.BlkioTicks), RSSStatKB: st.RSS * int64(pageKB)}
 		r.sampleRun(e, &s, fresh, status, haveStatus)
-		// Unchanged values are written again hourly: retention would
-		// otherwise delete an idle process's only row.
-		if !e.hasSamp || !sameProcSample(e.sample, s) || ts-e.sample.TS >= store.NetSnapshotMS {
+		// Unchanged values are written again in every UTC hour: retention
+		// would otherwise delete an idle process's only row.
+		if !e.hasSamp || !sameProcSample(e.sample, s) || store.OtherHour(e.sample.TS, ts) {
 			b.ProcSamples = append(b.ProcSamples, s)
 			e.sample, e.hasSamp = s, true
 		}
