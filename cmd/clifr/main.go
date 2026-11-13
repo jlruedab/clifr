@@ -372,7 +372,7 @@ func runToolAt(g *globals, words []string, diff []string) error {
 	c := &runCtx{g: g}
 	if diff != nil {
 		if !t.diff {
-			return usageError{fmt.Errorf("diff: %s has no rows to compare (it is for ps, ss, netstat, lsof, df, mount)", t.name)}
+			return usageError{fmt.Errorf("diff: %s has no rows to compare (it is for %s)", t.name, diffCommands)}
 		}
 		for _, a := range diff {
 			g.ats = atList{a}

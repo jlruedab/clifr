@@ -120,7 +120,49 @@ Examples:
   clifr info
 `
 
+// diffHelp is "clifr help diff". diffCommands is every tool with diff: true
+// (TestDiffHelp keeps them in step).
+const diffCommands = "ps, ss, netstat, lsof, df, mount, findmnt"
+
+const diffHelp = `diff: what changed between two moments
+
+Usage:
+  clifr diff --at A --at B [OPTIONS] "COMMAND [ARGS]"
+
+COMMAND is one of ` + diffCommands + `, with any of its options.
+clifr rebuilds its output at A and at B (B must be later) and prints three
+tables in the command's own format:
+  appeared   rows at B that were not there at A
+  gone       rows at A that are not there at B
+  changed    rows at both whose identity is the same but that changed (as at B)
+
+What a row is, and what counts as changed (values that move at every sample,
+such as CPU, memory or queue sizes, never do):
+  ps         a process (PID and start time: a reused PID is a new process);
+             changed: command line, user, parent or terminal
+  ss, netstat  a socket; changed: state or owning process
+  lsof       a process's fd; changed: it refers to another file
+  df         a mount; changed: device or Use%
+  mount      a mount; changed: type or options (e.g. remounted read-only)
+  findmnt    a mount; changed: source or options
+
+Both moments must be in the recording: the last few minutes are not on disk
+yet (flush interval). For every change between consecutive samples over a
+range, use --since A --until B "COMMAND" --changes. With --json each row has
+"change" ("+", "-" or "~"), ts_ms (B) and from_ms (A).
+
+Examples:
+  clifr diff --at "14:00" --at "14:20" "ss -ltnp"
+  clifr diff --at "1 hour ago" --at "10 minutes ago" "ps -u postgres -o pid,etime,args"
+  clifr diff --at yesterday --at today "df -h"
+  clifr diff --at "08:00" --at "12:00" "lsof -p 1234"
+`
+
 func helpTool(name string) error {
+	if name == "diff" {
+		fmt.Print(diffHelp)
+		return nil
+	}
 	t, ok := tools[name]
 	if !ok {
 		if why := later[name]; why != "" {

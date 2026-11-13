@@ -20,7 +20,7 @@ pre() {
 	echo ".SH DESCRIPTION"
 	"$clifr" --help | pre
 	echo ".SH COMMANDS"
-	for c in ps lsof ss netstat vmstat mpstat iostat free uptime df mount events life oom mounts; do
+	for c in ps lsof ss netstat vmstat mpstat iostat free uptime df mount events life oom mounts diff; do
 		echo ".SS $c"
 		"$clifr" help "$c" | pre
 	done

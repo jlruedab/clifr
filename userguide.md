@@ -203,7 +203,36 @@ LISTEN 0      4096       127.0.0.1:30001      0.0.0.0:*    users:(("load",pid=10
 …
 ```
 
-`diff` works with ps, ss, netstat, lsof, df and mount. Comparing a "good" and a "bad" moment is often the fastest way to see what is different.
+clifr rebuilds the command's output at both moments (the second must be later) and prints only the differences, in the command's own format:
+
+- **appeared:** rows at the second moment that were not there at the first;
+- **gone:** rows at the first moment that are no longer there at the second;
+- **changed:** rows at both moments that changed in a way that matters, printed as they are at the second.
+
+Values that move at every sample (CPU, memory, queue sizes) never count as a change, or every row would show. What a row is, and what counts as changed:
+
+| Command | A row is | Changed when |
+|---|---|---|
+| `ps` | a process: its PID and start time (a reused PID is a new process) | its command line, user, parent or terminal changed |
+| `ss`, `netstat` | a socket | its state or owning process changed |
+| `lsof` | a process's file descriptor | it refers to another file |
+| `df` | a mounted file system | its device or Use% changed |
+| `mount`, `findmnt` | a mount | its type, source or options changed (e.g. remounted read-only) |
+
+`diff` works with these 7 commands and any of their options; the others have no rows to compare (use `--since … --samples` for counters such as `vmstat` or `free`). Both moments must be in the recording: the last few minutes are not on disk yet. Filter noisy lists: on a desktop, a plain `ps -e` diff is mostly short-lived kernel workers, so compare `ps -u USER`, `-C NAME` or `-p PID` instead.
+
+```bash
+# Your own processes an hour ago against 10 minutes ago
+clifr diff --at "1 hour ago" --at "10 minutes ago" "ps -u $USER -o pid,rss,etime,comm"
+# Disks that filled up or were added since yesterday midnight
+clifr diff --at yesterday --at today "df -h"
+# Files a process opened or closed during the morning
+clifr diff --at "08:00" --at "12:00" "lsof -p 1234"
+# As JSON Lines: each row has "change" ("+", "-" or "~"), ts_ms (the second moment) and from_ms (the first)
+clifr diff --at "1 hour ago" --at "10 minutes ago" --json "ss -tnp" | jq -c '{change, local, lport, peer, rport}'
+```
+
+`--changes` is the same comparison between every pair of consecutive samples over a range, not just two moments. `clifr help diff` prints this summary. Comparing a "good" and a "bad" moment is often the fastest way to see what is different.
 
 ### Timeline and lifetimes: `events`, `life`
 
@@ -307,7 +336,7 @@ clifr --json --plain --tz UTC --since "2026-11-04 00:00" "events --type gap"
 | Who talked to whom over TCP? | `--since A --until B "ss -tanp"` (one row per process), `--list "ss -tnp"` (every connection) |
 | What was listening? | `--at T "ss -ltnp"` |
 | CPU, memory, disk and load over time | `--since A --until B "vmstat 60"`, `"mpstat -P ALL 60"`, `"iostat -x 60"`, `"pidstat -u 300"` |
-| What changed between a good and a bad moment? | `diff --at A --at B "ps aux"` (also ss, netstat, lsof, df, mount; `change` is `+`, `-` or `~`) |
+| What changed between a good and a bad moment? | `diff --at A --at B "ps aux"` (also ss, netstat, lsof, df, mount, findmnt; `change` is `+`, `-` or `~`) |
 | OOM kills, kernel messages | `--since A "oom"`, `--at T "dmesg"` |
 
 Without an interval, `vmstat`, `mpstat`, `iostat`, `pidstat` and `uptime` at `--at` print averages since boot (`"since_boot": true`), as the real tools do. For "what was the load like then", ask for a range.
@@ -1460,7 +1489,7 @@ ExecStart=/usr/sbin/clifrd --flush-rows 200000
 | `--style STYLE` | Print as `rhel-8`, `rhel-9`, `ubuntu-22.04` or `current` tools do (default: the recorded host's). |
 | `-v`, `--version`, `-h`, `--help` | |
 
-Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"`, `clifr verify` (compares real tool output saved with `--verify-every` with the reconstruction), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
+Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount, findmnt; `clifr help diff`), `clifr verify` (compares real tool output saved with `--verify-every` with the reconstruction), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
 
 Environment: `CLIFR_DATA_DIR`, `CLIFR_TZ`, `CLIFR_STYLE`, `CLIFR_SINCE`, `CLIFR_UNTIL` set the defaults of the matching options.
 
