@@ -3,14 +3,183 @@
 
 # clifr — a Linux flight recorder (working prototype)
 
-**Documentation:** [installation guide](install.md) (Debian/Ubuntu, RHEL/AlmaLinux/Rocky) ·
-[user guide](userguide.md) (usage, querying from an AI agent, 12 use cases, Prometheus, configuration, architecture).
-This README is the project's technical record: build, design, tests, benchmark results and limitations.
+## What is clifr?
 
-*clifr was called sosv until 2026-10-19 (`sosv-record` → `clifrd`,
-`sosv` → `clifr`, `/var/lib/sosv/data` → `/var/lib/clifr`). Recordings made
-under the old name read unchanged; benchmark result directories keep their
-old file names (`sosv-stats.json`, `sosv.db`).*
+clifr (**command line flight recorder**) is a "black box" for Linux servers: a flight recorder that keeps a continuous record of what happens on the system, so you can go back later and see what the machine looked like at any moment in the past.
+
+It comes in two parts:
+
+- **`clifrd`**, the recorder. It runs as a background service and records non-stop:
+  - which processes existed, with their CPU, memory and command line;
+  - every process that started or exited, even if it lived for a few milliseconds;
+  - every network connection: who opened it, to whom, and when;
+  - open files, disks, mounts, network routes, kernel messages and the system-wide counters.
+
+  It keeps the data in `/var/lib/clifr`, 72 hours by default. It uses the kernel's eBPF so short-lived events don't slip through, and it is light: about 2% of one CPU core on a busy server in our tests.
+- **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and about 40 in total) **as they would have looked at a past moment**:
+
+  ```sh
+  clifr --at "2026-11-12 02:45" "ps aux"
+  ```
+
+  Times can be a date (`"2026-11-12 02:45"`), a time today (`"02:45"`) or relative (`"2 hours ago"`, `yesterday`). clifr never runs the command: it rebuilds the output from the recording.
+
+**What it's for:** answering questions about something that already happened, when it is too late to look live. For example:
+
+- What was using the memory before the OOM killer killed a process?
+- Who connected to the database between 2 and 3 a.m.?
+- What changed between before and after an update? (`clifr diff`)
+- Did any traffic go through the VPN? (use case 13 of the [user guide](userguide.md#use-case-13-did-any-of-it-go-through-the-office-vpn))
+
+**What it isn't:**
+
+- a security audit system: it does not record file reads or writes, and it is not tamper-proof;
+- a monitoring system with alerts.
+
+It complements those tools: Prometheus tells you *when* something happened, clifr tells you *what* happened.
+
+**Status:** a working prototype, licensed AGPL-3.0, tested on Ubuntu 22.04 and 26.04, RHEL/Rocky 8 and Alma 9. A multi-day soak test with a mixed load is under way before it can be called production-ready ([Status](#status)).
+
+## What commands can I see with clifr?
+
+clifr can rebuild **40 commands**: 35 are the usual Linux tools and 5 are clifr's own. `clifr help COMMAND` shows the options each one supports.
+
+**Processes**
+
+| Command | What it shows |
+|---|---|
+| `ps` | processes with their CPU, memory, state and command line |
+| `top` | the system summary and the busiest processes |
+| `pstree` | the process tree |
+| `pidstat` | CPU, memory, disk and context switches per process |
+| `systemd-cgls` | processes grouped by service (cgroups) |
+| `systemctl list-units` | systemd's services and their state |
+
+**Network**
+
+| Command | What it shows |
+|---|---|
+| `ss`, `netstat` | TCP/UDP connections and which process had them open |
+| `ip` | interfaces (`link`), addresses (`address`), routes (`route`), rules (`rule`), ARP neighbours (`neigh`) and namespaces (`netns`) |
+| `nstat` | network protocol counters |
+| `conntrack -S`, `-C` | the firewall's connection-tracking statistics |
+
+**Files and disks**
+
+| Command | What it shows |
+|---|---|
+| `lsof` | files and sockets each process had open |
+| `df` | used and free space on each file system |
+| `mount`, `findmnt` | the mounted file systems |
+| `lsblk` | disks and partitions |
+| `lslocks` | file locks |
+| `swapon` | swap space |
+| `iostat` | disk activity |
+| `nfsstat`, `mountstats` | NFS statistics |
+
+**Memory and CPU**
+
+| Command | What it shows |
+|---|---|
+| `free` | used and free memory |
+| `vmstat` | memory, CPU and swapping |
+| `mpstat` | per-CPU usage |
+| `uptime` | time since boot and load average |
+| `slabtop` | the kernel's own memory |
+| `numastat` | memory per NUMA node |
+| `ipcs` | shared memory, semaphores and message queues |
+
+**System**
+
+| Command | What it shows |
+|---|---|
+| `date`, `hostname`, `uname` | date, host name and kernel version |
+| `last reboot` | the machine's boots |
+| `dmesg` | kernel messages |
+| `lsmod` | loaded kernel modules |
+| `sysctl` | kernel parameters |
+
+**clifr's own**
+
+| Command | What it shows |
+|---|---|
+| `events` | a timeline of process starts and exits, OOM kills and mounts |
+| `life` | when each process started and ended, even if it lived for milliseconds |
+| `oom` | the processes the OOM killer killed and what was using the memory |
+| `mounts` | the mount table and its changes |
+| `containers` | containers (Docker, Podman, Kubernetes) and their processes |
+
+**Commands for working with the recording**
+
+- `clifr info`: what the recording covers;
+- `clifr diff --at A --at B "COMMAND"`: what changed between two moments (`ps`, `ss`, `netstat`, `lsof`, `df`, `mount` and `findmnt`);
+- `clifr verify`: compares the reconstruction with real tool output saved during recording;
+- `clifr export TABLE`: the raw data as CSV;
+- `clifr help`: the general help, or one command's with `clifr help COMMAND`.
+
+Every command works at a moment or over a period:
+
+```sh
+clifr --at "2026-11-13 14:30" "ps aux"                              # at a moment
+clifr --since "13:00" --until "14:00" --samples "top -b -n 1"       # over a period
+```
+
+An option clifr doesn't support is **rejected with an error** rather than quietly giving you something wrong.
+
+## How expensive is clifr for the system?
+
+Only the recorder costs anything all the time. `clifrd` uses some CPU, memory and disk continuously; `clifr` only runs while you query and is gone when it finishes.
+
+Measured on the desktop where clifr is developed (Intel Core Ultra 7 155H, 22 logical CPUs, 61 GB of memory, Ubuntu 26.04, kernel 7.0, ordinary desktop use with about 510 processes), with the packaged service at its defaults (a sample every 30 s, 72 hours kept):
+
+| Resource | clifrd | Share of the machine |
+|---|---|---|
+| CPU | **0.35% of one core** on average | 0.016% of the 22 cores |
+| Memory (RSS) | **88 MiB on average**, 113 MiB at most | 0.14% of the memory |
+| Disk | **about 20 MiB a day**; 71 MiB with the 72 hours full | 0.01% of the free disk |
+| Disk writes | about 80 MB in 6 hours, 3.7 KB/s on average | |
+| Network | **none**: no open ports, no connections | |
+
+You can check every number on your own machine:
+
+```sh
+systemctl show clifrd -p ActiveEnterTimestamp -p CPUUsageNSec   # CPU time since the service started
+ps -o rss,etime,time,args -C clifrd                              # memory now
+sudo du -sh /var/lib/clifr                                       # disk
+clifr export samples                                             # clifrd's own figures at every sample (CSV)
+```
+
+Here that was 79.4 s of CPU in 6 h 11 min (0.36% of one core, matching clifrd's own 0.353%). systemd's `MemoryCurrent` shows more (153 MiB, peak 201 MiB) because it counts the page cache of the files clifrd writes, which the kernel hands back as soon as anything else needs it. Each sample took 40 ms at the median and 170 ms at most; between samples nothing is lost, as process starts and exits and TCP state changes arrive straight away through eBPF.
+
+**The ceiling.** The service ships with limits, so clifrd can't take resources away from what matters on the machine:
+
+| Limit | Value | What it means |
+|---|---|---|
+| `CPUWeight=10` | low priority | when the CPU is busy, everything else goes first (the default is 100) |
+| `CPUQuota=50%` | half a core | never more than half a core, even in bursts |
+| `MemoryMax=768M` | 768 MiB | the kernel won't let it go past that |
+| retention 72 h, 2 GB cap | | the recording never grows past 2 GB, however busy the machine |
+
+clifrd also keeps an eye on itself: above 2% of one core over 5 minutes it walks open files less often, and above its memory guard (`--memory-guard`) it stops tracking the open files of processes with thousands of them and stores shorter command lines. It records these as guard events, which `clifr info` shows. The 72-hour figures on the desktop are a bit higher than the ones above (0.41% of a core, 759 MiB at most) because of an attack test that opened 2.5 million files on purpose; the guards brought clifrd's memory in use down from 686 to 131 MiB within minutes.
+
+**On a busy server.** A desktop is a quiet machine. On the benchmark that imitates a busy server (80,000 PostgreSQL transactions a second, thousands of TCP connections, a constant stream of short-lived processes):
+
+| | Desktop | Busy server (benchmark) |
+|---|---|---|
+| CPU | 0.35% of one core | 1.9% of one core |
+| Memory | 88 MiB | about 290 MiB on average, 335 MiB at most |
+| Disk | 20 MiB a day | capped at 2 GB |
+| Effect on the application | | about 1 µs (1–2%) added PostgreSQL latency |
+
+The details are in [Results](#results).
+
+**In short:** on an ordinary desktop or server, clifr costs about a third of 1% of one core, about 100 MiB of memory and about 20 MiB of disk a day. Under heavy load it goes up to about 2% of a core and 300 MiB, and the service's limits stop it at half a core, 768 MiB and 2 GB.
+
+## About this project
+
+**Documentation:** [installation guide](install.md) (Debian/Ubuntu, RHEL/AlmaLinux/Rocky) ·
+[user guide](userguide.md) (usage, querying from an AI agent, 13 use cases, Prometheus, configuration, architecture).
+This README is the project's technical record: build, design, tests, benchmark results and limitations.
 
 `clifrd` continuously records which processes existed, which TCP
 connections and open files each one held, when short-lived processes started
@@ -32,12 +201,6 @@ began as a proof of concept to answer two questions with evidence:
 The ground-truth test and the benchmark are the main deliverables; see
 [Results](#results) and [Limitations](#limitations).
 
-Version 1 (tag `v1-snapshot`) sampled everything every 30 s into one SQLite
-file. Version 2, described here, takes process and TCP changes from eBPF
-events and samples only what has no event. v1 ran side by side in the
-benchmarks until 2026-10-21, when it and the SQLite backend were removed;
-its figures below come from the last batch that included it.
-
 ## Status
 
 A working prototype: both questions above have answers backed by evidence,
@@ -47,11 +210,10 @@ drop and missed-event counters, reconciliation with kernel dumps). It is
 not yet shown to be viable for production:
 
 1. **One 7-day run, on a desktop.** The soak test ran the installed
-   packages under the shipped unit for 7 days (2026-10-25 to 11-01; 152
-   hours awake, one 15.75-hour suspend) on this machine's ordinary desktop
+   packages under the shipped unit for 7 days in ordinary desktop
    use, about 510 processes, not a server load: no restarts, 0.36% of one
    core, program memory steady at about 50 MiB (RSS 97 MiB on average, 222
-   at most in a burst after the resume; the cgroup's peak 365 MiB with page
+   at most in a short burst; the cgroup's peak 365 MiB with page
    cache), 16 MiB of data kept per day, no drops (3 eBPF missed runs). It
    found two retention bugs, now fixed: the run's meta and mount table, and
    the values of idle processes and the usage of unchanging file systems,
@@ -74,7 +236,7 @@ not yet shown to be viable for production:
    modes (ring buffer and fentry/tp_btf; perf buffer and classic
    tracepoints; kprobes), the end-to-end test, the small ground truth, the
    sos plugin and the network features (`packaging/vm.sh`). Not measured
-   there: cost (the benchmarks ran only here). The proc
+   there: cost (the benchmarks ran on one machine only). The proc
    connector fallback (process events without eBPF) passes the e2e test and
    the small ground truth (43/43) here and in the three VMs; OOM kills then
    come from the recorded kernel log. Untested: arm64 (its objects have never run).
@@ -110,7 +272,7 @@ directory is readable or copied to.
 Packages (x86_64): `packaging/build.sh` (needs docker; `DOCKER="sudo docker"`
 if only root may use it) writes `clifr` and `clifrd` as .deb and .rpm into
 `dist/`. clifr is built in a Rocky Linux 8 container with gcc-toolset-13, so
-it needs only glibc 2.28 (built here it would need this machine's 2.43);
+it needs only glibc 2.28 (built on a current distribution it would need its newer glibc, 2.43 on Ubuntu 26.04);
 clifrd is static. The packages carry the man pages (generated from the
 help texts), bash completion, the unit, the sysusers file, `/etc/clifr/clifrd.yml`
 and the sos plugin. `packaging/test.sh [BUNDLE]` installs them with sos in
@@ -127,7 +289,7 @@ BSD-2-Clause` for its eBPF programs, whose sources it ships); each package has
 
 Tested kernels (packages in KVM guests, 2026-10-20, `packaging/vm.sh`):
 Rocky Linux 8.10 (4.18, SELinux enforcing), AlmaLinux 9.8 (5.14, enforcing),
-Ubuntu 22.04.5 (5.15), and this machine's 7.0: `--test-ebpf` 21/21 in all
+Ubuntu 22.04.5 (5.15), and the development machine's 7.0: `--test-ebpf` 21/21 in all
 three attach modes, e2e and the small ground truth pass (43/43), the service records
 with no SELinux denials (clifrd runs unconfined: no policy module is needed).
 
@@ -164,8 +326,8 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |
 | `--cpu-budget` | 2% | of one core over `--budget-window` (5m); above it the fd interval doubles (up to 1h) if the fd walks are at least a quarter of the recorder's CPU, and either way a guard event is recorded |
 | `--events` | auto | process events: eBPF, else the kernel proc connector (OOM kills then from the kernel log), else none |
-| `--tcp` | auto | TCP from eBPF events, else a socket dump every interval (v1) |
-| `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd (v1) |
+| `--tcp` | auto | TCP from eBPF events, else a socket dump every interval |
+| `--fd-mode` | held | open files held across two walks and deleted files; `all` = every fd |
 | `--verify-every` | off | also save the real tools' output at checkpoints, for `clifr verify` |
 | `--bpf-stats` | off | measure the eBPF programs' own run time (shown by `clifr info`) |
 | `--max-files-per-process` | 131072 | a process holding more open files is not tracked (any user can hold half a million; a `files_capped` guard event names it; its TCP connections still come from events); `0` = no limit |
@@ -955,18 +1117,16 @@ Three runs of 15 minutes each (2026-10-23, `report-20261023-2100`, commit
 `a1657bd`: after step 4 of phase 8, which added swap, modules, block
 devices, neighbours, locks, System V IPC, sysctl, slab caches, NUMA,
 conntrack and NFS counters). The 2026-10-22 batch (`report-20261022-1900`,
-commit `ff2f7ec`, after step 3: process fields) is in brackets; v1 was last
-measured in the 2026-10-19 batch (`report-20261019-1620`) and has since
-been removed.
+commit `ff2f7ec`, after step 3: process fields) is in brackets.
 
-| Metric | clifr, default (B) | v1 (batch 1620) | atop 30 s |
-|---|---:|---:|---:|
-| CPU, % of one core | 1.90 ± 0.05 (1.85) | 10.9 ± 0.41 | 0.51 ± 0.01 |
-| CPU, % of the machine | 0.09 (0.08) | 0.49 | 0.02 |
-| Memory (anonymous), average | 287 MiB (286) | 151 MiB | 27 MiB |
-| Memory (anonymous), max | 335 MiB (329) | 182 MiB | 32 MiB |
-| Data kept per day | 4.06 GiB (4.05) | 18.03 GiB | 0.32 GiB |
-| Written to disk per day | 11.5 GiB (11.5) | 301 GiB | 0.73 GiB |
+| Metric | clifr, default (B) | atop 30 s |
+|---|---:|---:|
+| CPU, % of one core | 1.90 ± 0.05 (1.85) | 0.51 ± 0.01 |
+| CPU, % of the machine | 0.09 (0.08) | 0.02 |
+| Memory (anonymous), average | 287 MiB (286) | 27 MiB |
+| Memory (anonymous), max | 335 MiB (329) | 32 MiB |
+| Data kept per day | 4.06 GiB (4.05) | 0.32 GiB |
+| Written to disk per day | 11.5 GiB (11.5) | 0.73 GiB |
 
 The aggressive configuration (10 s / 60 s) used 2.94% (2.87; one of its
 three runs is high in every batch), the conservative one (60 s / 300 s)
@@ -1052,7 +1212,7 @@ itself was not run: its column is an estimate.
 | Written to disk | about 538 MB/h | about 565 MB/h | none | about 5–10 MB/h |
 | Network | none | none | 274 KB per scrape (about 66 MB/h uncompressed) | receives the scrapes |
 
-Node Exporter's CPU comes mostly from slow collectors on this laptop-class
+Node Exporter's CPU comes mostly from slow collectors on the laptop-class benchmark
 machine (`systemd`, `hwmon`, `powersupplyclass`, `thermal_zone`: about
 200 ms per scrape); on a server it would likely be well under 1%. Its data
 is kept by a Prometheus server, usually on another machine: about 3,100
@@ -1112,7 +1272,7 @@ continuous eBPF tracer, not a metrics exporter.
   it. The guard rail lengthens the fd interval only when the fd walks are
   at least a quarter of the recorder's CPU (9–14% at the busy load), so it
   kept the interval at 2 minutes in every default run.
-- **Memory is about twice v1's**: 285 MiB on average (332 at most) at the
+- **Memory**: 285 MiB on average (332 at most) at the
   busy load and up to 377 MiB with 100,000 connections (2026-10-19), down
   from 429 / 488 and 561 MiB: rows held in memory are pointer-free
   (fixed-size addresses, enums and interned names instead of strings and
