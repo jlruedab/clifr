@@ -29,6 +29,7 @@ To install clifr, see the [installation guide](install.md).
    10. [The state of the system before a hard freeze or crash](#use-case-10-the-state-of-the-system-before-a-hard-freeze-or-crash)
    11. [The OOM killer killed nfsd: what was using the memory?](#use-case-11-the-oom-killer-killed-nfsd-what-was-using-the-memory)
    12. [High load average, but little CPU use and no disk wait](#use-case-12-high-load-average-but-little-cpu-use-and-no-disk-wait)
+   13. [Did any of it go through the office VPN?](#use-case-13-did-any-of-it-go-through-the-office-vpn)
 5. [Active monitoring with Prometheus](#5-active-monitoring-with-prometheus): [clifrd as a metrics source](#clifrd-as-a-metrics-source-metrics)
 6. [Configuration](#6-configuration): [clifrd's file](#clifrd-the-configuration-file), [clifrd's options](#clifrd-command-line-options), [the systemd unit](#the-systemd-unit), [clifr's options](#clifr-command-line-options)
 7. [Architecture](#7-architecture): [local](#local), [centralized analysis](#centralized-analysis), [data and security](#data-and-security)
@@ -1058,6 +1059,114 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    ```
 
 **What clifr cannot tell.** The kernel stack of a stuck task (only its wait channel): for that the kernel's hung-task messages in `dmesg` (`INFO: task X blocked for more than 120 seconds` with a stack trace) or, live, `cat /proc/PID/stack` and `echo w > /proc/sysrq-trigger`. Threads are not recorded individually, so a process with one stuck thread among many shows the process's main thread state.
+
+### Use case 13. Did any of it go through the office VPN?
+
+**Question.** The laptop was connected to the office VPN all day. In the afternoon someone opened a private browser window, visited a file-sharing website and started a BitTorrent client, which downloaded a film, and forgot about it for hours. Did any of that traffic reach the other side of the VPN?
+
+**Background.** A VPN does not have to carry all of a computer's traffic. The **routing table** decides, for each destination, whether traffic goes into the VPN (an interface such as `tun0`) or straight out of the normal connection (here the Wi-Fi, `wlp0s20f3`). It can be different for IPv4 and IPv6, the two kinds of Internet address. clifr records the routing table, every TCP connection with the local address it used, and the byte counters of every interface, so each part of the question can be checked.
+
+This example comes from a real afternoon on the same desktop (13 November 2026); the VPN's and the office's addresses are replaced by neutral ones.
+
+**Steps.**
+
+1. Make sure the recording covers the afternoon:
+
+   ```console
+   $ clifr info
+   Recording:        2026-11-10 16:27:59 .. 2026-11-13 17:12:19 (72h44m21s)
+   ```
+
+2. How the VPN was set up. This decides everything, so look at both kinds of address:
+
+   ```console
+   $ clifr --at "14:30" "ip route"
+   default via 192.168.1.1 dev wlp0s20f3 proto dhcp src 192.168.1.12 metric 600
+   10.20.30.0/24 via 100.64.0.1 dev tun0
+   10.20.31.0/24 via 100.64.0.1 dev tun0
+   …
+   $ clifr --at "14:30" "ip -6 route"
+   ::/1 via fd00:0:0:1::1 dev tun0 metric 1024 pref medium
+   8000::/1 via fd00:0:0:1::1 dev tun0 metric 1024 pref medium
+   …
+   ```
+
+   For IPv4 the VPN carried only the office's networks (`10.20.x`); everything else, the `default` route, went out over Wi-Fi. This is a **split tunnel**. For IPv6, `::/1` and `8000::/1` together cover every address, so **all IPv6 traffic was sent into the VPN**. Check that the tables did not change during the afternoon, for example every 30 minutes (identical output = no change):
+
+   ```sh
+   for t in 13:00 13:30 14:00 14:30 15:00 15:30 16:00; do echo "$t $(clifr --at $t 'ip route' 2>/dev/null | md5sum)"; done
+   ```
+
+3. When each thing happened. `life` lists processes with their start and end; the command line shows how each was started:
+
+   ```console
+   $ clifr --since "11:50" --until "17:00" life --name 'openvpn3-service-client|transmission'
+   START                   END                        DURATION     PID    PPID EXIT    SOURCE COMMAND
+   2026-11-13 11:52:19.723 2026-11-13 16:21:56.313    4h29m37s   13006       1 0       sample /usr/libexec/openvpn3-linux/openvpn3-service-client …
+   2026-11-13 13:48:15.833 2026-11-13 16:21:39.322    2h33m23s   84906    8189 0       sample /bin/transmission-gtk magnet:?xt=urn:btih:…
+   $ clifr --since "11:50" --until "17:00" life --name chrome | grep incognito
+   2026-11-13 13:47:10.803 2026-11-13 13:47:10.869        66ms   84296    8189 0       ebpf   /usr/bin/google-chrome-stable --incognito
+   ```
+
+   The VPN was up from 11:52 to 16:21. A private (incognito) window was opened at 13:47:10, and a minute later the browser handed a magnet link to the BitTorrent client (Transmission, pid 84906), which ran until 16:21. Memory is often wrong about times; the recording is not.
+
+4. Which way the BitTorrent client's connections went. Every TCP connection has a **local address**, and that address shows the way it went: `192.168.1.12` is the Wi-Fi, `100.64.0.2` and `fd00:0:0:1::2` belong to the VPN. `--list` gives every connection of a period; `--json` and `jq` count them:
+
+   ```console
+   $ clifr --since "13:45" --until "16:25" --list --json "ss -tanp" > conns.json
+   $ jq -r 'select(any(.owners[]?; .pid==84906)) | .local' conns.json | sort | uniq -c
+      3464 192.168.1.12
+       356 [fd00:0:0:1::2]
+   ```
+
+   Most went over Wi-Fi, but 356 went into the VPN: the IPv6 trackers and peers.
+
+5. Whether those 356 carried anything. A connection's state says how far it got: `SYN-SENT` is only the first step ("hello, can we talk?"), `ESTAB` (established) is where data flows:
+
+   ```console
+   $ jq -r 'select(.local|test("fd00:0:0:1:")) | select(any(.owners[]?; .pid==84906)) | .state' conns.json | sort | uniq -c
+       356 SYN-SENT
+   ```
+
+   None was ever answered; each was given up after about 40 ms. The client's Wi-Fi connections, by contrast, reached `ESTAB`. Doing the same over the whole day for every program shows that **no IPv6 connection through this VPN ever worked** (3,223 attempts): the VPN accepts IPv6 and refuses it, so programs fall back to IPv4, which went over Wi-Fi.
+
+   ```sh
+   clifr --since "11:52" --until "16:22" --list --json "ss -tanp" | jq -r 'select(.local|test("fd00:0:0:1:|100\\.64\\.0\\.2")) | "\(.local) \(.state)"' | sort | uniq -c
+   ```
+
+6. The decisive check: how much the VPN carried. clifr records each interface's byte counters, so compare the VPN (`tun0`) with the Wi-Fi, ten minutes at a time:
+
+   ```sh
+   clifr --at "14:00" "ip -s link show tun0"
+   clifr --at "14:10" "ip -s link show tun0"        # subtract the RX and TX bytes; the same for wlp0s20f3
+   ```
+
+   | 10 minutes to | VPN in | VPN out | Wi-Fi in |
+   |---|---|---|---|
+   | 13:40 (before) | 2.1 MB | 0.9 MB | 29 MB |
+   | 13:50 | 0.1 MB | 0.1 MB | 257 MB |
+   | 14:00 | 1.4 MB | 0.6 MB | 2,466 MB |
+   | 14:10 | 0.03 MB | 0.02 MB | 2,710 MB |
+   | 14:20 | 1.4 MB | 0.6 MB | 397 MB |
+
+   The film, about 5.8 GB, came in over the Wi-Fi between 13:50 and 14:20; in the busiest ten minutes the VPN carried 34 KB, less than during ordinary work before. (The Wi-Fi figures include the VPN's own encrypted traffic, which is tiny here.)
+
+7. The website. The same check for the browser's connections while the private window was open:
+
+   ```sh
+   jq -r 'select(.opened_ms >= 1794539820000 and .opened_ms < 1794540180000) | select(any(.owners[]?; .comm|test("chrome"))) | "\(.local) \(.state)"' conns.json | sort | uniq -c
+   ```
+
+   82 attempts went into the VPN (IPv6, all `SYN-SENT`, refused) and about 140 connections over Wi-Fi loaded the pages. (`opened_ms` is in Unix milliseconds: `date -d "2026-11-13 13:47" +%s000` gives it.)
+
+**The answer.** No film and no BitTorrent or website data went through the VPN: everything that carried data used the Wi-Fi. But the BitTorrent client's 356 IPv6 connection attempts (306 to trackers on port 443) and the browser's 82 were sent into the VPN and refused there, so the VPN's servers may have seen and logged *attempts* to reach those addresses: no content, but the addresses and ports.
+
+**What clifr cannot tell.**
+
+- Website names. clifr records addresses, not the names looked up (DNS), and many sites share the same content-delivery addresses, so it cannot say which of the refused attempts belonged to the file-sharing site. Whether name lookups went to the office's DNS servers is in the VPN client's log: here `journalctl` showed `Failed adding DNS server: No DNS resolver configured`, so the VPN never took over name lookups and they went out through the normal connection.
+- Individual UDP packets. The BitTorrent client also had an IPv6 UDP socket (`[::]:51413`, for peer discovery); clifr records the socket, not each packet. Some small discovery packets probably went into the VPN and were refused like the TCP attempts; step 6 bounds them to a few MB at most.
+- What the VPN's servers logged. Only the VPN's administrators can say.
+- Before sharing such an analysis, remove what identifies people and places: the VPN portal in the browser's command line, the VPN server's address, the magnet link (it identifies the exact film).
 
 ## 5. Active monitoring with Prometheus
 
