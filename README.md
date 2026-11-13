@@ -64,7 +64,7 @@ not yet shown to be viable for production:
    2026-11-11/12) found two more gaps in the oldest hour kept: the hourly
    copies were timed from the run's start, not by the UTC hours retention
    deletes, and `df` lost most file systems' usage.
-   Both are fixed (8af89ee): with the fixes every view is complete from the
+   Both are fixed (d09b609): with the fixes every view is complete from the
    oldest hour's first minute, `clifr verify` passes, and the few minutes
    left of a deleted hour are no longer counted as recorded.
 2. **Benchmarked on one machine** (Ubuntu 26.04, kernel 7.0, bare metal).
@@ -952,10 +952,10 @@ before, which also took the recorder to 947 MiB).
 ### Cost at the busy load
 
 Three runs of 15 minutes each (2026-10-23, `report-20261023-2100`, commit
-`fe973c2`: after step 4 of phase 8, which added swap, modules, block
+`a1657bd`: after step 4 of phase 8, which added swap, modules, block
 devices, neighbours, locks, System V IPC, sysctl, slab caches, NUMA,
 conntrack and NFS counters). The 2026-10-22 batch (`report-20261022-1900`,
-commit `be07917`, after step 3: process fields) is in brackets; v1 was last
+commit `ff2f7ec`, after step 3: process fields) is in brackets; v1 was last
 measured in the 2026-10-19 batch (`report-20261019-1620`) and has since
 been removed.
 
