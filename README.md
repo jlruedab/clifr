@@ -944,8 +944,13 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   the bundle and more data than the tar file itself holds (a sparse entry).
   `--salvage` reads a damaged or cut-short bundle without its bad files
   (named, with the times they cover); a recording directory is read without
-  a file that is not a whole Parquet file (`pqstore.CheckFile`), with a
-  warning, where one such file made every query of its table fail.
+  a file that is not a whole Parquet file (`pqstore.CheckFile`) or that
+  DuckDB fails to read, with a warning, where one such file made every query
+  of its table fail. DuckDB does not check Parquet's page CRCs: in a test of
+  40 single changed bytes in one file, 14 failed the whole query and 2 gave
+  wrong values silently. Every zstd page now carries its frame checksum, and
+  the same test gave 35 files skipped with a warning, 5 with no effect on the
+  query and no wrong values.
   A bundle from another machine needs no root to read: open it as an
   ordinary user, not with sudo (its Parquet files are parsed by DuckDB).
 - `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside

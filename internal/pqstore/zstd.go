@@ -12,6 +12,12 @@ import (
 // busy-load benchmark run. A 1 MiB window costs nothing in compression,
 // since a data page is at most 256 KiB (DefaultPageBufferSize) and each
 // is compressed on its own.
+//
+// Each frame carries its content checksum (4 bytes of XXH64): DuckDB does not
+// check Parquet's page CRCs, and of 40 single flipped bytes in a file without
+// it, 2 changed values silently (14 failed to decompress); zstd checks the
+// frame's on decompression, so damage inside a page is an error the reader
+// can skip the file on (internal/duck execSkipping).
 type zstdCodec struct {
 	encoders chan *zstd.Encoder
 }
@@ -28,7 +34,7 @@ func (c *zstdCodec) Encode(dst, src []byte) ([]byte, error) {
 	default:
 		var err error
 		e, err = zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1), zstd.WithEncoderLevel(zstd.SpeedDefault),
-			zstd.WithWindowSize(1<<20), zstd.WithZeroFrames(true), zstd.WithEncoderCRC(false))
+			zstd.WithWindowSize(1<<20), zstd.WithZeroFrames(true), zstd.WithEncoderCRC(true))
 		if err != nil {
 			return dst, err
 		}

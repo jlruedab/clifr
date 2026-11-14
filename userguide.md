@@ -440,7 +440,7 @@ clifr: --salvage: left out data/4bbd53df/2026-11-14/02-36.parquet, damaged or mi
 ...
 ```
 
-A recording directory with a damaged file (a disk error, a copy that stopped) is read without it, with a similar warning on standard error: `clifr: skipped damaged file ...`. Before, one such file made every query of its table fail.
+A recording directory with a damaged file (a disk error, a copy that stopped, a changed byte) is read without it, with a similar warning on standard error: `clifr: skipped damaged file ...`. Before, one such file made every query of its table fail. Each compressed page carries a checksum (files written since 2026-11-14), so a changed byte inside the data is found when the page is read rather than giving wrong values.
 
 ### Querying another host directly: `--host`
 

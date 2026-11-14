@@ -313,6 +313,58 @@ func (l *loader) load(table string) error {
 			where = fmt.Sprintf(` WHERE ts >= %d AND ts <= %d`, first, to)
 		}
 	}
+	t0 := time.Now()
+	err := l.execSkipping(table, files, func(files []string) string { return l.loadQuery(table, empty, files, where) })
+	l.debug(table, t0)
+	return err
+}
+
+// execSkipping runs the query built from files; when DuckDB fails on one of
+// them (damage inside a data page: a zstd frame whose checksum does not
+// match, a page that does not decompress), that file is left out with a
+// warning, as files that fail pqstore.CheckFile are, and the query runs
+// again. A failure that names no file is returned.
+func (l *loader) execSkipping(table string, files []string, build func([]string) string) error {
+	for {
+		_, err := l.db.Exec(build(files))
+		if err == nil {
+			return nil
+		}
+		bad := slices.IndexFunc(files, func(f string) bool { return strings.Contains(err.Error(), f) })
+		if bad < 0 {
+			bad = l.probe(files) // DuckDB did not say which file
+		}
+		if bad < 0 {
+			return err
+		}
+		l.damaged[files[bad]] = true
+		delete(l.checked, files[bad])
+		l.warn(l.damageNote(table, files[bad], firstLine(err)))
+		files = slices.Delete(slices.Clone(files), bad, bad+1)
+	}
+}
+
+// probe reads each file whole on its own and returns the index of the first
+// that fails, or -1 (only after a load failed: it reads every column).
+func (l *loader) probe(files []string) int {
+	for i, f := range files {
+		_, err := l.db.Exec(`CREATE TEMP TABLE clifr_probe AS SELECT * FROM ` + source([]string{f}))
+		l.db.Exec(`DROP TABLE IF EXISTS clifr_probe`)
+		if err != nil {
+			return i
+		}
+	}
+	return -1
+}
+
+// firstLine is an error's first line (DuckDB's run on with hints).
+func firstLine(err error) error {
+	m, _, _ := strings.Cut(err.Error(), "\n")
+	return errors.New(m)
+}
+
+// loadQuery is the CREATE TABLE of a table from files.
+func (l *loader) loadQuery(table, empty string, files []string, where string) string {
 	src := source(append([]string{empty}, files...))
 	var q string
 	switch {
@@ -334,10 +386,7 @@ func (l *loader) load(table string) error {
 	default:
 		q = `CREATE TABLE ` + table + ` AS SELECT * EXCLUDE (filename) FROM ` + src + where
 	}
-	t0 := time.Now()
-	_, err := l.db.Exec(q)
-	l.debug(table, t0)
-	return err
+	return q
 }
 
 // keyframeBefore is the time of the last keyframe at or before t.
