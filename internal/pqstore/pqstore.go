@@ -746,10 +746,11 @@ func writeConv[S, T any](path string, conv func(*T, *S), rows ...[]S) error {
 	})
 }
 
-// writeRows writes a new file atomically (temporary file, fsync, rename);
+// writeRows writes a new file atomically and durably (temporary file, fsync,
+// rename, directory fsync);
 // fill writes its rows.
 func writeRows[T any](path string, fill func(*parquet.GenericWriter[T]) error) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := mkdirDurable(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
@@ -763,7 +764,7 @@ func writeRows[T any](path string, fill func(*parquet.GenericWriter[T]) error) e
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	return RenameDurable(tmp, path)
 }
 
 // freePath is dir/name.parquet, or dir/name-2.parquet, ... if taken.
@@ -971,7 +972,7 @@ func merge[T any](parts []string, out string) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, out)
+	return RenameDurable(tmp, out) // durable before compact deletes the parts
 }
 
 func copyRows[T any](path string, w *groupWriter[T], buf []T) error {

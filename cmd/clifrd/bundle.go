@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"clifr/internal/bundle"
+	"clifr/internal/pqstore"
 	"clifr/internal/query"
 )
 
@@ -93,7 +94,7 @@ func bundleCmd(args []string) error {
 	if err := os.Chmod(tmp.Name(), 0o640); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp.Name(), *out); err != nil {
+	if err := pqstore.RenameDurable(tmp.Name(), *out); err != nil {
 		return err
 	}
 	var n int64

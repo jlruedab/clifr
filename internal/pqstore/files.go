@@ -148,6 +148,7 @@ func renameDirs(dataDir string, logf func(string, ...any)) error {
 		}
 		errs = append(errs, os.RemoveAll(old))
 	}
+	errs = append(errs, SyncDir(dataDir))
 	return errors.Join(errs...)
 }
 
