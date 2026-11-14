@@ -67,7 +67,8 @@ Interactive keys:
 
 Sources:
   -D, --data-dir DIR   local recording directory (default /var/lib/clifr), or a
-                       bundle (clifrd bundle -o FILE)
+                       bundle (clifrd bundle -o FILE); once per part of a
+                       split bundle (clifrd bundle --split)
       --salvage        read a damaged bundle (a transfer cut short, a changed
                        file): its files with good checksums, a warning for each
                        one left out; without it a damaged bundle is refused

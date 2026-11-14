@@ -16,8 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"clifr/internal/pqstore"
@@ -47,9 +47,14 @@ type Manifest struct {
 	Files         []File `json:"files"`
 	// What the files hold (summary.go; absent in bundles made before
 	// 2026-11-14).
-	Tables  map[string]TableSummary `json:"tables,omitempty"`
-	Samples *Samples                `json:"samples,omitempty"`
-	Events  []Event                 `json:"events,omitempty"`
+	// A part of a split bundle (split.go): the parts share BundleID, Part is
+	// 1..Parts; 0 for an unsplit bundle.
+	BundleID string                  `json:"bundle_id,omitempty"`
+	Part     int                     `json:"part,omitempty"`
+	Parts    int                     `json:"parts,omitempty"`
+	Tables   map[string]TableSummary `json:"tables,omitempty"`
+	Samples  *Samples                `json:"samples,omitempty"`
+	Events   []Event                 `json:"events,omitempty"`
 }
 
 // File is one file in the bundle.

@@ -1004,6 +1004,7 @@ func (s *Store) maintain() {
 // <HH>.parquet (including an earlier hour file, if any), calling done after
 // each table-hour.
 func (s *Store) compact(current time.Time, done func()) error {
+	var errs []error
 	groups := map[string][]hourFile{}
 	var keys []string
 	for _, h := range s.listHours() {
@@ -1023,7 +1024,7 @@ func (s *Store) compact(current time.Time, done func()) error {
 			continue
 		}
 		if s.ctx.Err() != nil || s.opt.Busy != nil && s.opt.Busy() {
-			return nil
+			return errors.Join(errs...)
 		}
 		var paths []string
 		for _, h := range g {
@@ -1031,7 +1032,10 @@ func (s *Store) compact(current time.Time, done func()) error {
 		}
 		out := filepath.Join(s.dir, Dir(g[0].table), g[0].day, g[0].hour+".parquet")
 		if err := compactors[g[0].table](paths, out); err != nil {
-			return fmt.Errorf("%s: %w", k, err)
+			// That hour keeps its parts (readers skip a damaged one); the
+			// other hours are still compacted.
+			errs = append(errs, fmt.Errorf("%s: %w", k, err))
+			continue
 		}
 		s.logFile(out)
 		if err := s.ilog.sync(); err != nil { // before the parts it replaces go
@@ -1044,7 +1048,7 @@ func (s *Store) compact(current time.Time, done func()) error {
 		}
 		done()
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 var compactors = map[string]func(parts []string, out string) error{
@@ -1082,13 +1086,23 @@ func merge[T any](parts []string, out string) error {
 }
 
 func copyRows[T any](path string, w *groupWriter[T], buf []T) error {
+	if err := CheckFile(path); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	r := parquet.NewGenericReader[T](f)
+	r, err := newReader[T](f)
+	if err != nil {
+		return err
+	}
 	defer r.Close()
+	return readSafely(path, func() error { return copyAll(r, w, buf) })
+}
+
+func copyAll[T any](r *parquet.GenericReader[T], w *groupWriter[T], buf []T) error {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {

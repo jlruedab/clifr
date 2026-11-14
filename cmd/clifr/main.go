@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // --tz works where the system has no zoneinfo
@@ -43,6 +44,7 @@ type globals struct {
 	salvage                   bool        // --salvage: read a damaged bundle without its bad files
 	integrity                 bool        // verify --integrity: check the data files, not the tools
 	bundle                    *bundleInfo // --data-dir named a bundle checked with --integrity
+	moreData                  []string    // --data-dir given again: the other parts of a split bundle
 }
 
 // bundleInfo is what verify --integrity reports of a bundle besides its
@@ -51,6 +53,8 @@ type bundleInfo struct {
 	path     string
 	manifest *bundle.Manifest // nil: none (cut short)
 	bad      []string         // files that failed their checksum or are missing
+	listed   int              // files listed in the bundle.json(s)
+	parts    []*bundle.Manifest
 }
 
 func newFlags(g *globals, out io.Writer) *flag.FlagSet {
@@ -88,7 +92,10 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	if dd == "" {
 		dd = defaultDataDir
 	}
-	str(&g.dataDir, "D", "data-dir", dd)
+	g.dataDir = dd
+	dirs := &dataDirs{first: &g.dataDir, more: &g.moreData}
+	fs.Var(dirs, "D", "")
+	fs.Var(dirs, "data-dir", "")
 	str(&g.style, "", "style", os.Getenv("CLIFR_STYLE"))
 	str(&g.host, "H", "host", os.Getenv("CLIFR_HOST"))
 	str(&g.token, "", "token", os.Getenv("CLIFR_TOKEN"))
@@ -203,44 +210,110 @@ func run(args []string) error {
 // openBundle lets --data-dir name a bundle (clifrd bundle): it is unpacked
 // into a temporary directory, removed when clifr ends.
 func openBundle(g *globals) (func(), error) {
+	paths := append([]string{g.dataDir}, g.moreData...)
 	st, err := os.Stat(g.dataDir)
 	if err != nil || !st.Mode().IsRegular() {
+		if len(g.moreData) > 0 {
+			return nil, usageError{errors.New("--data-dir more than once: the parts of a split bundle (clifrd bundle --split)")}
+		}
 		return func() {}, nil
 	}
-	f, err := os.Open(g.dataDir)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
 	tmp, err := os.MkdirTemp("", "clifr-bundle-")
 	if err != nil {
 		return nil, err
 	}
-	var dir string
-	if g.integrity { // report every problem instead of stopping at the first
-		var bad []string
-		var m *bundle.Manifest
-		dir, m, bad, err = bundle.Salvage(f, tmp, st.Size())
-		g.bundle = &bundleInfo{path: g.dataDir, manifest: m, bad: bad}
-	} else if g.salvage {
-		var bad []string
-		var m *bundle.Manifest
-		dir, m, bad, err = bundle.Salvage(f, tmp, st.Size())
-		if err == nil && m == nil {
-			fmt.Fprintln(os.Stderr, "clifr: --salvage: no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified")
-		}
-		for _, p := range bad {
-			fmt.Fprintln(os.Stderr, "clifr: --salvage: left out "+salvageNote(p))
-		}
-	} else {
-		dir, _, err = bundle.Extract(f, tmp, st.Size())
-	}
-	if err != nil {
+	fail := func(err error) (func(), error) {
 		os.RemoveAll(tmp)
-		return nil, fmt.Errorf("%s: %w", g.dataDir, err)
+		return nil, err
+	}
+	var dir string
+	var ms []*bundle.Manifest
+	for _, p := range paths {
+		var m *bundle.Manifest
+		if dir, m, err = extractOne(g, p, tmp); err != nil {
+			return fail(fmt.Errorf("%s: %w", p, err))
+		}
+		if m != nil {
+			ms = append(ms, m)
+		}
+	}
+	if note := partsNote(ms); note != "" {
+		fmt.Fprintln(os.Stderr, "clifr: "+note)
 	}
 	g.dataDir = dir
 	return func() { os.RemoveAll(tmp) }, nil
+}
+
+// extractOne unpacks one bundle (or part) into tmp: strictly, or with
+// --salvage or verify --integrity keeping what is whole.
+func extractOne(g *globals, path, tmp string) (string, *bundle.Manifest, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return "", nil, errors.New("not a bundle file")
+	}
+	if !g.integrity && !g.salvage {
+		return bundle.Extract(f, tmp, st.Size())
+	}
+	dir, m, bad, err := bundle.Salvage(f, tmp, st.Size())
+	if err != nil {
+		return "", nil, err
+	}
+	if g.integrity { // reported by verify --integrity
+		if g.bundle == nil {
+			g.bundle = &bundleInfo{path: path, manifest: m}
+		} else {
+			g.bundle.path += ", " + path
+			if m == nil {
+				g.bundle.manifest = nil
+			}
+		}
+		g.bundle.bad = append(g.bundle.bad, bad...)
+		if m != nil {
+			g.bundle.listed += len(m.Files)
+			g.bundle.parts = append(g.bundle.parts, m)
+		}
+		return dir, m, nil
+	}
+	if m == nil {
+		fmt.Fprintln(os.Stderr, "clifr: --salvage: "+path+": no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified")
+	}
+	for _, p := range bad {
+		fmt.Fprintln(os.Stderr, "clifr: --salvage: left out "+salvageNote(p))
+	}
+	return dir, m, nil
+}
+
+// partsNote says which parts of a split bundle are missing, or that parts
+// of different bundles were given ("" when all is well).
+func partsNote(ms []*bundle.Manifest) string {
+	if len(ms) == 0 || ms[0].Parts == 0 {
+		if len(ms) > 1 {
+			return "several bundles given that are not parts of one split bundle: they are read together"
+		}
+		return ""
+	}
+	have := map[int]bool{}
+	for _, m := range ms {
+		if m.BundleID != ms[0].BundleID || m.Parts != ms[0].Parts {
+			return "the parts given come from different bundles: they are read together"
+		}
+		have[m.Part] = true
+	}
+	var missing []string
+	for i := 1; i <= ms[0].Parts; i++ {
+		if !have[i] {
+			missing = append(missing, strconv.Itoa(i))
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("part %s of %d not given (clifr -D FILE.part1.tar -D FILE.part2.tar ...): results lack their files", strings.Join(missing, ", "), ms[0].Parts)
 }
 
 // salvageNote names a bundle file left out (data/DIR/DAY/NAME) and the
@@ -575,6 +648,30 @@ func runSub(g *globals, sub string, args []string) error {
 		}
 		return cmdExport(db, args[0])
 	}
+	return nil
+}
+
+// dataDirs is --data-dir: the first replaces the default, later ones are
+// the other parts of a split bundle.
+type dataDirs struct {
+	first *string
+	more  *[]string
+	set   bool
+}
+
+func (d *dataDirs) String() string {
+	if d.first == nil {
+		return ""
+	}
+	return *d.first
+}
+
+func (d *dataDirs) Set(v string) error {
+	if !d.set {
+		*d.first, d.set = v, true
+		return nil
+	}
+	*d.more = append(*d.more, v)
 	return nil
 }
 

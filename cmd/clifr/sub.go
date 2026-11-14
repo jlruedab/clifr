@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"clifr/internal/bundle"
@@ -141,6 +143,8 @@ func cmdIntegrity(g *globals) error {
 		done()
 	}
 	switch {
+	case g.bundle != nil && partsNote(g.bundle.parts) != "" && g.bundle.manifest != nil && g.bundle.manifest.Parts > 0:
+		return fmt.Errorf("%s", partsNote(g.bundle.parts))
 	case g.bundle != nil && g.bundle.manifest == nil:
 		return fmt.Errorf("the bundle was cut short (no bundle.json); %d damaged data files among those that arrived", len(r.Damaged))
 	case len(r.Damaged)+bad > 0:
@@ -177,7 +181,17 @@ func printBundle(out io.Writer, b *bundleInfo) {
 		for _, e := range m.Events {
 			fmt.Fprintf(out, "Event:        %s %s: %s\n", ms(e.TS), e.Kind, e.Detail)
 		}
-		fmt.Fprintf(out, "Files:        %d listed, %d match their SHA-256\n", len(m.Files), len(m.Files)-len(b.bad))
+		if m.Parts > 0 {
+			var got []string
+			for _, p := range b.parts {
+				got = append(got, strconv.Itoa(p.Part))
+			}
+			fmt.Fprintf(out, "Parts:        %s of %d (bundle %s)\n", strings.Join(got, ", "), m.Parts, m.BundleID)
+			if n := partsNote(b.parts); n != "" {
+				fmt.Fprintf(out, "              %s\n", n)
+			}
+		}
+		fmt.Fprintf(out, "Files:        %d listed, %d match their SHA-256\n", b.listed, b.listed-len(b.bad))
 	}
 	for _, p := range b.bad {
 		fmt.Fprintf(out, "  %s\n", salvageNote(p))

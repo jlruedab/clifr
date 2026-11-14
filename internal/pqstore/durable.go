@@ -2,10 +2,13 @@ package pqstore
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/parquet-go/parquet-go"
 )
 
 // A file written to a temporary name, fsynced and renamed has its data on
@@ -74,4 +77,27 @@ func mkdirDurable(dir string, perm fs.FileMode) error {
 		errs = append(errs, SyncDir(filepath.Dir(d)))
 	}
 	return errors.Join(errs...)
+}
+
+// newReader is parquet.NewGenericReader, which panics on a file that is not
+// Parquet (a damaged file): an error instead. Without it a damaged part
+// crashed clifrd in compaction, at every flush.
+func newReader[T any](f *os.File) (r *parquet.GenericReader[T], err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			r, err = nil, fmt.Errorf("%s: %v", f.Name(), p)
+		}
+	}()
+	return parquet.NewGenericReader[T](f), nil
+}
+
+// readSafely runs fn, turning a panic in parquet-go's reading of a damaged
+// file into an error.
+func readSafely(path string, fn func() error) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("%s: %v", path, p)
+		}
+	}()
+	return fn()
 }

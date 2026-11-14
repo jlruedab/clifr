@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"time"
-
-	"github.com/parquet-go/parquet-go"
 )
 
 // Meta keys of a clean stop: a run that writes MetaWritesStop at its start
@@ -91,15 +89,20 @@ func eachRow[T any](path string, buf []T, fn func(T)) {
 		return
 	}
 	defer f.Close()
-	r := parquet.NewGenericReader[T](f)
-	defer r.Close()
-	for {
-		n, err := r.Read(buf)
-		for _, row := range buf[:n] {
-			fn(row)
-		}
-		if errors.Is(err, io.EOF) || err != nil {
-			return
-		}
+	r, err := newReader[T](f)
+	if err != nil {
+		return
 	}
+	defer r.Close()
+	readSafely(path, func() error {
+		for {
+			n, err := r.Read(buf)
+			for _, row := range buf[:n] {
+				fn(row)
+			}
+			if errors.Is(err, io.EOF) || err != nil {
+				return nil
+			}
+		}
+	})
 }

@@ -187,32 +187,12 @@ func ReadMeta(dir string) (map[string]string, error) {
 	latest := map[string]kv{}
 	buf := make([]metaRow, 256)
 	for _, p := range append(dated, open...) {
-		f, err := os.Open(p)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue // compacted meanwhile
+		// A file compacted meanwhile, or damaged, is skipped.
+		eachRow(p, buf, func(m metaRow) {
+			if m.TS >= latest[m.Key].ts {
+				latest[m.Key] = kv{m.TS, m.Value}
 			}
-			return nil, err
-		}
-		r := parquet.NewGenericReader[metaRow](f)
-		for {
-			n, err := r.Read(buf)
-			for _, m := range buf[:n] {
-				if m.TS >= latest[m.Key].ts {
-					latest[m.Key] = kv{m.TS, m.Value}
-				}
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				r.Close()
-				f.Close()
-				return nil, err
-			}
-		}
-		r.Close()
-		f.Close()
+		})
 	}
 	out := make(map[string]string, len(latest))
 	for k, v := range latest {
@@ -242,7 +222,12 @@ var starters = map[string]func(parts []string, out string, to int64) (int, error
 }
 
 func filterRows[T any](start func(*T) int64) func(parts []string, out string, to int64) (int, error) {
-	return func(parts []string, out string, to int64) (int, error) {
+	return func(parts []string, out string, to int64) (n int, err error) {
+		defer func() { // parquet-go panics on some damaged files
+			if p := recover(); p != nil {
+				n, err = 0, fmt.Errorf("%s: %v", out, p)
+			}
+		}()
 		f, err := os.Create(out)
 		if err != nil {
 			return 0, err
@@ -258,7 +243,13 @@ func filterRows[T any](start func(*T) int64) func(parts []string, out string, to
 				f.Close()
 				return 0, err
 			}
-			r := parquet.NewGenericReader[T](in)
+			r, err := newReader[T](in)
+			if err != nil {
+				in.Close()
+				w.Close()
+				f.Close()
+				return 0, err
+			}
 			for {
 				n, rerr := r.Read(buf)
 				keep = keep[:0]

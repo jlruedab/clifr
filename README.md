@@ -947,6 +947,11 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   and gaps, and the unclean stops, kernel crash records and full disks of the
   window; `clifr -D FILE verify --integrity` prints that and checks every file
   and page, reporting every damaged or missing file instead of the first.
+  `clifrd bundle --split SIZE` cuts a bundle into parts (FILE.partN.tar,
+  each a bundle with its own bundle.json and .sha256, a shared id, meta in
+  part 1; a data file is never cut), which clifr reads together (`-D` once
+  per part; missing parts are named). Queries on the parts of a 30-minute
+  bundle cut into 8 MB parts gave the same `ps aux` as on the whole.
   `--salvage` reads a damaged or cut-short bundle without its bad files
   (named, with the times they cover); a recording directory is read without
   a file that is not a whole Parquet file (`pqstore.CheckFile`) or that

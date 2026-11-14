@@ -8,7 +8,7 @@ _clifrd() {
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --max-files-per-process --memory-guard --event-budget-processes --event-budget-processes-max --event-budget-cmdline --event-budget-connections
 		--max-size --metrics --metrics-tls-config --serve --serve-tls-config --serve-tokens --serve-tls-dir --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"
-	local bundle="--data-dir -D --last --since --until -o --output"
+	local bundle="--data-dir -D --last --since --until -o --output --split"
 	COMPREPLY=()
 	case $prev in
 	--config | -C | --data-dir | -D | -o | --output | --pprof-dir | --proc-root | --serve-tokens | --serve-tls-dir | --metrics-tls-config | --serve-tls-config | --file)

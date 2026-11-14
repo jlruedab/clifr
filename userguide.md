@@ -425,6 +425,13 @@ Data files:   511, 23.3 MB, checked in 221ms
 Damaged:      none
 ```
 
+Where a file may not be larger than some size (a support portal, an e-mail attachment), cut the bundle into parts. Each part is a bundle of its own with its `.sha256`; a part that fails in transfer is sent again alone. clifr reads the parts together, and says which are missing if some are not given:
+
+```sh
+sudo clifrd bundle --last 6h --split 250M -o /tmp/web01-clifr.tar      # web01-clifr.part1.tar, .part2.tar, ...
+clifr -D web01-clifr.part1.tar -D web01-clifr.part2.tar -D web01-clifr.part3.tar --at "13:20" "ps aux"
+```
+
 Copy it anywhere and read it with `--data-dir` (no root needed for a file you own). Use the recorded host's time zone with `--tz` when you compare with its logs:
 
 ```sh
