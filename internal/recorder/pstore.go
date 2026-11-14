@@ -8,12 +8,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"clifr/internal/query"
 	"clifr/internal/store"
 )
 
@@ -87,13 +87,6 @@ func readPstore(d pstoreDirs, since int64) []pstoreFile {
 	return out
 }
 
-// panicRe finds the line that says why the kernel died, most telling first.
-var panicRe = []*regexp.Regexp{
-	regexp.MustCompile(`Kernel panic - not syncing:.*`),
-	regexp.MustCompile(`(BUG: .*|Oops: .*|general protection fault.*|kernel BUG at .*|watchdog: .*lockup.*|Machine check.*|\[Hardware Error\].*|sysrq: Trigger a crash.*)`),
-	regexp.MustCompile(`RIP: .*`),
-}
-
 // pstoreRecords turns the records into kmsg rows (bootID: the crashed boot)
 // and one guard event at ts; ok = false when there are none.
 func pstoreRecords(files []pstoreFile, bootID string, ts int64) ([]store.KmsgRow, store.GuardEvent, bool) {
@@ -115,17 +108,11 @@ func pstoreRecords(files []pstoreFile, bootID string, ts int64) ([]store.KmsgRow
 			rows = append(rows, store.KmsgRow{TS: f.mtimeMS, BootID: bootID, Kind: "pstore", Seq: seq, Caller: f.name, Msg: line})
 		}
 	}
-	for _, re := range panicRe {
-		for _, r := range rows {
-			if m := re.FindString(r.Msg); m != "" {
-				reason = strings.TrimSpace(m)
-				break
-			}
-		}
-		if reason != "" {
-			break
-		}
+	msgs := make([]string, len(rows))
+	for i, r := range rows {
+		msgs[i] = r.Msg
 	}
+	reason = query.PanicReason(msgs)
 	d := fmt.Sprintf("kernel crash records of the previous boot (pstore, %d files: %s)", len(files), strings.Join(names, ", "))
 	if reason != "" {
 		d += ": " + reason
@@ -134,7 +121,7 @@ func pstoreRecords(files []pstoreFile, bootID string, ts int64) ([]store.KmsgRow
 		d += fmt.Sprintf("; not stored (binary, likely compressed): %s", strings.Join(binary, ", "))
 	}
 	if len(rows) > 0 {
-		d += fmt.Sprintf("; %d lines stored (clifr export kmsg, kind pstore)", len(rows))
+		d += fmt.Sprintf("; %d lines stored (clifr pstore)", len(rows))
 	}
 	return rows, store.GuardEvent{TS: ts, Kind: "pstore", Detail: d}, true
 }

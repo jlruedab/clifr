@@ -297,7 +297,9 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 func (r *Recorder) pstoreAtStart(db any, bootID string, d pstoreDirs) ([]store.KmsgRow, store.GuardEvent, bool) {
 	var prevBoot string
 	var prevRunMS int64
-	if s, ok := db.(interface{ PrevRun() (pqstore.PrevRun, bool) }); ok {
+	if s, ok := db.(interface {
+		PrevRun() (pqstore.PrevRun, bool)
+	}); ok {
 		if p, ok := s.PrevRun(); ok {
 			if p.BootID == bootID {
 				return nil, store.GuardEvent{}, false // not the first run of this boot
@@ -312,7 +314,9 @@ func (r *Recorder) pstoreAtStart(db any, bootID string, d pstoreDirs) ([]store.K
 // ended without a clean stop: the machine went down (a crash, a power loss,
 // a reset) when the boot changed, else clifrd itself was killed or crashed.
 func uncleanStop(db any, bootID string, flush time.Duration) (store.GuardEvent, bool) {
-	s, ok := db.(interface{ PrevRun() (pqstore.PrevRun, bool) })
+	s, ok := db.(interface {
+		PrevRun() (pqstore.PrevRun, bool)
+	})
 	if !ok {
 		return store.GuardEvent{}, false
 	}

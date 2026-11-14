@@ -6,7 +6,7 @@ _clifr() {
 		-e --every -n --number -j --json -I --interactive --plain -D --data-dir --style
 		-H --host --token --tls-ca --tls-fingerprint --salvage --integrity --verbose -v --version -h --help"
 	local cmds="ps top pstree lsof ss netstat vmstat mpstat iostat pidstat free uptime df mount findmnt date hostname uname dmesg systemctl systemd-cgls swapon lsmod lsblk lslocks ipcs sysctl slabtop numastat conntrack nfsstat mountstats containers last nstat ip
-		events life oom mounts help info verify export diff"
+		events life oom mounts pstore help info verify export diff"
 	COMPREPLY=()
 	case $prev in
 	-D | --data-dir | --tls-ca)

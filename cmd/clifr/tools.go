@@ -135,6 +135,19 @@ func init() {
 		},
 	})
 	addTool(&tool{
+		name: "pstore", synopsis: "",
+		about: "clifr only: the kernel's crash records (panic, oops) saved across the reboot",
+		notes: []string{
+			"Without --since: the whole recording; a range: the records saved in it.",
+			"The kernel saves its last messages in pstore (UEFI variables, or RAM reserved with ramoops) when it",
+			"panics; clifrd stores them at its first start of the next boot (a pstore guard event says so).",
+		},
+		examples: []string{`clifr pstore`, `clifr --since "2026-11-04" "pstore"`},
+		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			return func() error { return runPstore(c) }, nil
+		},
+	})
+	addTool(&tool{
 		name: "mounts", synopsis: "",
 		about: "clifr only: the mount table at T, or mounts and unmounts over a range",
 		notes: []string{"The recorder's mount namespace; exact (mountinfo change events)."},
@@ -378,6 +391,24 @@ func runOOM(c *runCtx, top int) error {
 	return c.emit(kills, func(int) rowMeta {
 		return rowMeta{From: w.From, To: w.To, Sampled: []string{"top_rss"}} // the others' RSS from their last sample
 	}, func(w io.Writer) { query.PrintOOM(w, kills) })
+}
+
+func runPstore(c *runCtx) error {
+	var from, to int64
+	if c.w.IsRange() && c.w.From > 0 { // without --since: the whole recording
+		from, to = c.w.From, c.w.To
+	}
+	recs, err := query.PstoreRecords(c.db, from, to)
+	if err != nil {
+		return err
+	}
+	if to == 0 {
+		c.header("kernel crash records (pstore) in the recording: %d", len(recs))
+	} else {
+		c.header("kernel crash records (pstore) saved %s .. %s: %d", query.FormatMS(from), query.FormatMS(to), len(recs))
+	}
+	return c.emit(recs, func(i int) rowMeta { return rowMeta{TS: recs[i].SavedMS} },
+		func(w io.Writer) { query.PrintPstore(w, recs) })
 }
 
 func runMounts(c *runCtx) error {

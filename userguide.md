@@ -150,7 +150,7 @@ clifr: ip: option -b is not supported for recorded data (see: clifr help ip)
 
 `clifr help` lists every supported command, and `clifr help COMMAND` its options, notes on how exact each part is, and examples. The man page `man clifr` has the same text.
 
-Supported commands: `ps`, `top`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`.
+Supported commands: `ps`, `top`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
 
 ### Counters at a moment
 
@@ -1013,9 +1013,13 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
 
    ```console
    $ clifr --since "2026-11-05 09:00" "events --type guard"
-   2026-11-05 09:22:48.130  guard          - pstore: kernel crash records of the previous boot (pstore, 1 files: dmesg-efi-173100000001001): Kernel panic - not syncing: ...; 412 lines stored (clifr export kmsg, kind pstore)
-   clifr export kmsg | grep ',pstore,'    # the whole record
+   2026-11-05 09:22:48.130  guard          - pstore: kernel crash records of the previous boot (pstore, 1 files: dmesg-efi-173100000001001): Kernel panic - not syncing: ...; 412 lines stored (clifr pstore)
+   $ clifr pstore
+   == dmesg-efi-173100000001001, boot 3f2a9c1e, saved 2026-11-04 20:31:02: Kernel panic - not syncing: ...
+   <6>[40102.311512] ...
    ```
+
+   `clifr pstore` prints every record in the recording (with `--since`/`--until`, the ones saved in that range), each with the boot it ended and the line that says why.
 
    Compressed records (`.enc.z`, when the kernel could not decompress them) are named but not stored; read them with `systemd-pstore` or from `/sys/fs/pstore` on the machine.
 

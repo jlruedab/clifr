@@ -44,7 +44,7 @@ It complements those tools: Prometheus tells you *when* something happened, clif
 
 ## What commands can I see with clifr?
 
-clifr can rebuild **40 commands**: 35 are the usual Linux tools and 5 are clifr's own. `clifr help COMMAND` shows the options each one supports.
+clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr's own. `clifr help COMMAND` shows the options each one supports.
 
 **Processes**
 
@@ -108,6 +108,7 @@ clifr can rebuild **40 commands**: 35 are the usual Linux tools and 5 are clifr'
 | `events` | a timeline of process starts and exits, OOM kills and mounts |
 | `life` | when each process started and ended, even if it lived for milliseconds |
 | `oom` | the processes the OOM killer killed and what was using the memory |
+| `pstore` | the kernel's own crash message (panic, oops) from a boot that crashed, when the machine saved it across the reboot (pstore) |
 | `mounts` | the mount table and its changes |
 | `containers` | containers (Docker, Podman, Kubernetes) and their processes |
 

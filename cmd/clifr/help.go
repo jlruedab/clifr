@@ -22,8 +22,9 @@ Supported commands:
   uptime, df, mount, findmnt, date, hostname, uname, last, nstat, ip, dmesg,
   systemctl, systemd-cgls, swapon, lsmod, lsblk, lslocks, ipcs, sysctl,
   slabtop, numastat, conntrack, nfsstat, mountstats
-  events, life, oom, mounts, containers (clifr only: timeline, process
-  lifetimes, OOM kills, mount table, containers by their cgroups)
+  events, life, oom, mounts, containers, pstore (clifr only: timeline,
+  process lifetimes, OOM kills, mount table, containers by their cgroups,
+  kernel crash records)
   Run "clifr help COMMAND" to see which options are supported for recorded
   data. Unsupported options are rejected with an error.
 

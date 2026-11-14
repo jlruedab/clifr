@@ -45,7 +45,7 @@ func TestPstore(t *testing.T) {
 		rows[1].Msg != "<0>[  101.000100] Kernel panic - not syncing: sysrq triggered crash" || rows[0].TS != crash.UnixMilli() {
 		t.Errorf("rows %+v", rows)
 	}
-	for _, want := range []string{"2 files", "Kernel panic - not syncing: sysrq triggered crash", "not stored (binary, likely compressed): dmesg-efi-173100000002001.enc.z", "4 lines stored"} {
+	for _, want := range []string{"2 files", "Kernel panic - not syncing: sysrq triggered crash", "not stored (binary, likely compressed): dmesg-efi-173100000002001.enc.z", "4 lines stored (clifr pstore)"} {
 		if !strings.Contains(g.Detail, want) {
 			t.Errorf("detail lacks %q: %s", want, g.Detail)
 		}

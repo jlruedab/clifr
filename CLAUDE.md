@@ -4,7 +4,7 @@
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
 `clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
-`uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`) for a
+`uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
 
@@ -288,7 +288,8 @@ wait for the user's go-ahead.
   realtime-boottime and boottime-monotonic in µs for dmesg -T) at start and at most every 10 s
   while records arrive; `pstore` rows (2026-11-14, `recorder/pstore.go`): the previous boot's crash
   records from /sys/fs/pstore and /var/lib/systemd/pstore, at the first run of a boot, newer than the
-  previous run's start, under that boot's id, with a `pstore` guard event (readers filter kind). Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`, and
+  previous run's start, under that boot's id, with a `pstore` guard event (readers filter kind); `clifr pstore` prints them
+  (`query.PstoreRecords`, `query.PanicReason`, shared with the guard event). Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`, and
   `DeviceAllow=/dev/kmsg r`: ProtectClock's device allow list excludes it otherwise).
 - `units` (schema 7): systemd's loaded units (`internal/sdunits`, godbus/dbus over
   /run/systemd/private, else the system bus; `recorder/unitwatch.go`): `present` snapshot at
