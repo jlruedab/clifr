@@ -942,6 +942,11 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   is identical to the same query on the recording.
 - clifr refuses bundles of a newer layout, damaged files, paths outside
   the bundle and more data than the tar file itself holds (a sparse entry).
+  `clifrd bundle -o FILE` also writes FILE.sha256 (`sha256sum -c`), and
+  bundle.json now holds rows per file and table, the samples' span, interval
+  and gaps, and the unclean stops, kernel crash records and full disks of the
+  window; `clifr -D FILE verify --integrity` prints that and checks every file
+  and page, reporting every damaged or missing file instead of the first.
   `--salvage` reads a damaged or cut-short bundle without its bad files
   (named, with the times they cover); a recording directory is read without
   a file that is not a whole Parquet file (`pqstore.CheckFile`) or that

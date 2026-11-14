@@ -97,7 +97,9 @@ Other commands:
   clifr verify --integrity
                        check every data file: against the SHA-256 clifrd
                        logged when it wrote it, else by reading every page
-                       (checksums, structure); lists damaged files, exit 1
+                       (checksums, structure); lists damaged files, exit 1.
+                       With -D FILE.tar: a bundle's summary (window, samples,
+                       gaps, crashes) and every file against bundle.json
   clifr export TABLE   one recorded table as CSV
 
 Environment variables:

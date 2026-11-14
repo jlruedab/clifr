@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/parquet-go/parquet-go"
+
+	"clifr/internal/store"
 )
 
 // FileSpan is the range of times the rows of a data file can have, in Unix
@@ -326,4 +328,36 @@ func CheckFile(path string) error {
 		return fmt.Errorf("footer length %d does not fit in %d bytes", n, st.Size())
 	}
 	return nil
+}
+
+// NumRows is a Parquet file's row count, from its footer.
+func NumRows(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	pf, err := parquet.OpenFile(f, st.Size(), parquet.SkipPageIndex(true), parquet.SkipBloomFilters(true))
+	if err != nil {
+		return 0, err
+	}
+	return pf.NumRows(), nil
+}
+
+// SampleTimes is the sample times of a samples file.
+func SampleTimes(path string) []int64 {
+	var out []int64
+	eachRow(path, make([]sampleRow, 256), func(r sampleRow) { out = append(out, r.TS) })
+	return out
+}
+
+// GuardEvents is the guard events of a guard_events file.
+func GuardEvents(path string) []store.GuardEvent {
+	var out []store.GuardEvent
+	eachRow(path, make([]guardRow, 256), func(r guardRow) { out = append(out, store.GuardEvent{TS: r.TS, Kind: r.Kind, Detail: r.Detail}) })
+	return out
 }

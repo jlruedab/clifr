@@ -410,6 +410,21 @@ sudo clifrd bundle --last 6h -o /tmp/web01-clifr.tar
 sudo clifrd bundle --since "2026-11-05 13:00" --until "2026-11-05 14:00" -o /tmp/web01-clifr.tar
 ```
 
+Next to it `clifrd bundle` writes `web01-clifr.tar.sha256`. Copy both; on the other side `sha256sum -c web01-clifr.tar.sha256` says whether the copy is whole, without clifr. `clifr --data-dir web01-clifr.tar verify --integrity` checks it in detail: what the bundle holds (host, window, samples and their gaps, events such as an unclean stop or a kernel crash record in the window), every file against its checksum, and every page:
+
+```console
+$ clifr --data-dir web01-clifr.tar verify --integrity
+Bundle:       web01-clifr.tar
+              written 2026-11-14 14:11:12 by clifrd 0.1.0 (bundle version 1)
+Host:         web01, machine-id 141c779d, time zone Australia/Adelaide
+Window:       2026-11-14 13:41:12 .. 2026-11-14 14:11:12
+Samples:      54, 2026-11-14 13:41:19 .. 2026-11-14 14:07:49, every 30s; gaps: 0
+Files:        511 listed, 511 match their SHA-256
+Data files:   511, 23.3 MB, checked in 221ms
+...
+Damaged:      none
+```
+
 Copy it anywhere and read it with `--data-dir` (no root needed for a file you own). Use the recorded host's time zone with `--tz` when you compare with its logs:
 
 ```sh

@@ -204,6 +204,11 @@ func TestSalvage(t *testing.T) {
 	if _, _, err := Extract(bytes.NewReader(cut), t.TempDir(), 0); err == nil || !strings.Contains(err.Error(), "--salvage") {
 		t.Errorf("Extract of a cut bundle: %v", err)
 	}
+	// With the tar's real size as the limit, as clifr passes it: the cut
+	// entry claims more than the tar holds.
+	if _, _, _, err := Salvage(bytes.NewReader(cut), t.TempDir(), int64(len(cut))); err != nil {
+		t.Errorf("Salvage with the size limit: %v", err)
+	}
 	data, m, bad, err := Salvage(bytes.NewReader(cut), t.TempDir(), 0)
 	if err != nil || m != nil {
 		t.Fatalf("Salvage of a cut bundle: %v, manifest %v", err, m)

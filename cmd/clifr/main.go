@@ -40,8 +40,17 @@ type globals struct {
 	host, token, tlsCA        string
 	tlsFP                     string // --tls-fingerprint: the expected certificate of --host on first use
 	version, help, verbose    bool
-	salvage                   bool // --salvage: read a damaged bundle without its bad files
-	integrity                 bool // verify --integrity: check the data files, not the tools
+	salvage                   bool        // --salvage: read a damaged bundle without its bad files
+	integrity                 bool        // verify --integrity: check the data files, not the tools
+	bundle                    *bundleInfo // --data-dir named a bundle checked with --integrity
+}
+
+// bundleInfo is what verify --integrity reports of a bundle besides its
+// data files.
+type bundleInfo struct {
+	path     string
+	manifest *bundle.Manifest // nil: none (cut short)
+	bad      []string         // files that failed their checksum or are missing
 }
 
 func newFlags(g *globals, out io.Writer) *flag.FlagSet {
@@ -208,7 +217,12 @@ func openBundle(g *globals) (func(), error) {
 		return nil, err
 	}
 	var dir string
-	if g.salvage {
+	if g.integrity { // report every problem instead of stopping at the first
+		var bad []string
+		var m *bundle.Manifest
+		dir, m, bad, err = bundle.Salvage(f, tmp, st.Size())
+		g.bundle = &bundleInfo{path: g.dataDir, manifest: m, bad: bad}
+	} else if g.salvage {
 		var bad []string
 		var m *bundle.Manifest
 		dir, m, bad, err = bundle.Salvage(f, tmp, st.Size())

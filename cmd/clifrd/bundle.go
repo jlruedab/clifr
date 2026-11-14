@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,7 +22,8 @@ func bundleCmd(args []string) error {
 	fs := flag.NewFlagSet("clifrd bundle", flag.ExitOnError)
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "clifrd bundle writes the recording, or the part a window needs, as one tar file.\n"+
-			"Whole data files are copied unchanged; clifr reads the file with --data-dir FILE.\n\n"+
+			"Whole data files are copied unchanged; clifr reads the file with --data-dir FILE.\n"+
+			"With -o FILE, FILE.sha256 is written too (sha256sum -c FILE.sha256 checks a copy).\n\n"+
 			"Usage:\n  clifrd bundle [OPTIONS] -o FILE   (FILE - for standard output)\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
@@ -84,7 +88,8 @@ func bundleCmd(args []string) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	m, err := bundle.Write(o, tmp)
+	h := sha256.New()
+	m, err := bundle.Write(o, io.MultiWriter(tmp, h))
 	if err == nil {
 		err = tmp.Sync()
 	}
@@ -97,10 +102,20 @@ func bundleCmd(args []string) error {
 	if err := pqstore.RenameDurable(tmp.Name(), *out); err != nil {
 		return err
 	}
+	// FILE.sha256 in sha256sum's format: a copy is checked anywhere
+	// (sha256sum -c), before clifr reads it.
+	sumFile := *out + ".sha256"
+	line := hex.EncodeToString(h.Sum(nil)) + "  " + filepath.Base(*out) + "\n"
+	if err := os.WriteFile(sumFile+".tmp", []byte(line), 0o640); err != nil {
+		return err
+	}
+	if err := pqstore.RenameDurable(sumFile+".tmp", sumFile); err != nil {
+		return err
+	}
 	var n int64
 	for _, f := range m.Files {
 		n += f.Bytes
 	}
-	fmt.Fprintf(os.Stderr, "clifrd bundle: %s: %d files, %.1f MB of data\n", *out, len(m.Files), float64(n)/1e6)
+	fmt.Fprintf(os.Stderr, "clifrd bundle: %s: %d files, %.1f MB of data (checksum in %s)\n", *out, len(m.Files), float64(n)/1e6, sumFile)
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"strconv"
 	"time"
 
@@ -44,6 +45,11 @@ type Manifest struct {
 	BootID        string `json:"boot_id"`
 	TimeZone      string `json:"timezone"`
 	Files         []File `json:"files"`
+	// What the files hold (summary.go; absent in bundles made before
+	// 2026-11-14).
+	Tables  map[string]TableSummary `json:"tables,omitempty"`
+	Samples *Samples                `json:"samples,omitempty"`
+	Events  []Event                 `json:"events,omitempty"`
 }
 
 // File is one file in the bundle.
@@ -51,6 +57,7 @@ type File struct {
 	Path   string `json:"path"` // under clifr-bundle/
 	Bytes  int64  `json:"bytes"`
 	SHA256 string `json:"sha256"`
+	Rows   int64  `json:"rows,omitempty"` // from its footer (0: unknown)
 }
 
 // Options says what to bundle.
@@ -159,6 +166,7 @@ func Write(o Options, w io.Writer) (*Manifest, error) {
 		SchemaVersion: meta["schema_version"], Recorder: meta["clifrd_version"], Hostname: meta["hostname"],
 		MachineID: meta["machine_id"], BootID: meta["boot_id"], TimeZone: meta["timezone"]}
 	tw := tar.NewWriter(w)
+	sum := &summary{from: o.From, to: o.To}
 	written := map[string]bool{}
 	var sel Selection
 	for attempt := 0; attempt < 2; attempt++ {
@@ -178,6 +186,7 @@ func Write(o Options, w io.Writer) (*Manifest, error) {
 			if err != nil {
 				return nil, err
 			}
+			sum.add(pqstore.TableOf(strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]), filepath.Join(o.DataDir, rel))
 			written[rel] = true
 			m.Files = append(m.Files, f)
 		}
@@ -188,6 +197,7 @@ func Write(o Options, w io.Writer) (*Manifest, error) {
 	if err := addAfter(tw, m, sel, o, meta); err != nil {
 		return nil, err
 	}
+	sum.fill(m, meta)
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, err
@@ -270,7 +280,8 @@ func addFile(tw *tar.Writer, dir, rel, name string) (File, error) {
 	if _, err := io.CopyN(io.MultiWriter(tw, h), f, st.Size()); err != nil {
 		return File{}, err
 	}
-	return File{Path: "data/" + filepath.ToSlash(name), Bytes: st.Size(), SHA256: hex.EncodeToString(h.Sum(nil))}, nil
+	rows, _ := pqstore.NumRows(filepath.Join(dir, rel))
+	return File{Path: "data/" + filepath.ToSlash(name), Bytes: st.Size(), SHA256: hex.EncodeToString(h.Sum(nil)), Rows: rows}, nil
 }
 
 // Extract unpacks a bundle into dir and returns its data directory and
@@ -332,7 +343,10 @@ func extract(r io.Reader, dir string, limit int64, salvage bool) (string, *Manif
 			continue
 		}
 		if written += h.Size; limit > 0 && written > limit {
-			return "", nil, nil, fmt.Errorf("bundle: %s: more data than the bundle's %d bytes hold", h.Name, limit)
+			if salvage { // a tar cut short inside this entry: what came before is kept
+				break
+			}
+			return "", nil, nil, fmt.Errorf("bundle: %s: more data than the bundle's %d bytes hold (cut short? clifr --salvage reads what arrived)", h.Name, limit)
 		}
 		dst := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
