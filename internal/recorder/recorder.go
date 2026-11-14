@@ -282,7 +282,30 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		logger.Warnf("unclean stop: %s", g.Detail)
 		r.pending.Guard = append(r.pending.Guard, g)
 	}
+	if cfg.ProcRoot == "/proc" || cfg.ProcRoot == "" { // not with fixtures
+		if rows, g, ok := r.pstoreAtStart(db, bootID, defaultPstore); ok {
+			logger.Warnf("%s", g.Detail)
+			r.pending.Kmsg = append(r.pending.Kmsg, rows...)
+			r.pending.Guard = append(r.pending.Guard, g)
+		}
+	}
 	return r, nil
+}
+
+// pstoreAtStart: the previous boot's crash records, at the first run of a
+// boot (pstore.go).
+func (r *Recorder) pstoreAtStart(db any, bootID string, d pstoreDirs) ([]store.KmsgRow, store.GuardEvent, bool) {
+	var prevBoot string
+	var prevRunMS int64
+	if s, ok := db.(interface{ PrevRun() (pqstore.PrevRun, bool) }); ok {
+		if p, ok := s.PrevRun(); ok {
+			if p.BootID == bootID {
+				return nil, store.GuardEvent{}, false // not the first run of this boot
+			}
+			prevBoot, prevRunMS = p.BootID, p.Run*1000
+		}
+	}
+	return pstoreAtStart(d, prevBoot, prevRunMS, r.boot, time.Now())
 }
 
 // uncleanStop is an unclean_stop guard event when the run before this one

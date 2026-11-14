@@ -15,7 +15,7 @@
 [Unit]
 Description=clifr flight recorder (processes, sockets, open files, system counters)
 Documentation=man:clifrd(8) man:clifr(1)
-After=local-fs.target
+After=local-fs.target systemd-pstore.service
 
 [Service]
 Type=simple

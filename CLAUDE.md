@@ -284,7 +284,9 @@ wait for the user's go-ahead.
   escapes it, redacted; `boot_id`) read as written (`recorder/kmsg.go`; at start the whole buffer
   again: readers keep one row per boot and seq), and `ring` rows (oldest seq in the buffer,
   realtime-boottime and boottime-monotonic in µs for dmesg -T) at start and at most every 10 s
-  while records arrive. Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`, and
+  while records arrive; `pstore` rows (2026-11-14, `recorder/pstore.go`): the previous boot's crash
+  records from /sys/fs/pstore and /var/lib/systemd/pstore, at the first run of a boot, newer than the
+  previous run's start, under that boot's id, with a `pstore` guard event (readers filter kind). Needs CAP_SYSLOG (in the unit; `ProtectKernelLogs=no`, and
   `DeviceAllow=/dev/kmsg r`: ProtectClock's device allow list excludes it otherwise).
 - `units` (schema 7): systemd's loaded units (`internal/sdunits`, godbus/dbus over
   /run/systemd/private, else the system bus; `recorder/unitwatch.go`): `present` snapshot at

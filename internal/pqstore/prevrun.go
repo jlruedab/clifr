@@ -24,6 +24,7 @@ const (
 type PrevRun struct {
 	Run          int64 // its start (Unix s)
 	BootID       string
+	BootMS       int64 // its boot time (meta boot_ms)
 	Known        bool  // it wrote MetaWritesStop: Clean is meaningful
 	Clean        bool  // it wrote MetaStopMS
 	StopMS       int64 // MetaStopMS
@@ -60,6 +61,7 @@ func readPrevRun(dir string, run int64) PrevRun {
 	}
 	m := byRun[p.Run]
 	p.BootID = m["boot_id"]
+	p.BootMS, _ = strconv.ParseInt(m["boot_ms"], 10, 64)
 	p.Known = m[MetaWritesStop] == "1"
 	p.StopMS, _ = strconv.ParseInt(m[MetaStopMS], 10, 64)
 	p.Clean = p.StopMS > 0

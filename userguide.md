@@ -975,6 +975,16 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    clifr --since "2026-11-04 19:30" --until "2026-11-04 20:30:30" "dmesg -T"
    ```
 
+   A kernel panic's own message is usually not there: it is written after clifrd's last write. When the machine has pstore (UEFI variables, or a RAM area reserved with `ramoops`), the kernel saves it across the reboot, and the first clifrd start of the next boot stores it (from `/sys/fs/pstore`, or `/var/lib/systemd/pstore` where `systemd-pstore.service` moves it) with a `pstore` guard event that quotes the panic line:
+
+   ```console
+   $ clifr --since "2026-11-05 09:00" "events --type guard"
+   2026-11-05 09:22:48.130  guard          - pstore: kernel crash records of the previous boot (pstore, 1 files: dmesg-efi-173100000001001): Kernel panic - not syncing: ...; 412 lines stored (clifr export kmsg, kind pstore)
+   clifr export kmsg | grep ',pstore,'    # the whole record
+   ```
+
+   Compressed records (`.enc.z`, when the kernel could not decompress them) are named but not stored; read them with `systemd-pstore` or from `/sys/fs/pstore` on the machine.
+
 4. What started or ended just before (a backup, an update, a game, a suspend attempt):
 
    ```sh
