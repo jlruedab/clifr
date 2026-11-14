@@ -278,7 +278,39 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 			return nil, err
 		}
 	}
+	if g, ok := uncleanStop(db, bootID, cfg.Parquet.FlushInterval); ok {
+		logger.Warnf("unclean stop: %s", g.Detail)
+		r.pending.Guard = append(r.pending.Guard, g)
+	}
 	return r, nil
+}
+
+// uncleanStop is an unclean_stop guard event when the run before this one
+// ended without a clean stop: the machine went down (a crash, a power loss,
+// a reset) when the boot changed, else clifrd itself was killed or crashed.
+func uncleanStop(db any, bootID string, flush time.Duration) (store.GuardEvent, bool) {
+	s, ok := db.(interface{ PrevRun() (pqstore.PrevRun, bool) })
+	if !ok {
+		return store.GuardEvent{}, false
+	}
+	p, ok := s.PrevRun()
+	if !ok || !p.Known || p.Clean {
+		return store.GuardEvent{}, false
+	}
+	why := "clifrd was killed or crashed while the system kept running"
+	if p.BootID != "" && bootID != "" && p.BootID != bootID {
+		why = "the system went down without a clean shutdown (a crash, a power loss or a reset)"
+	}
+	last := "no sample on disk"
+	if p.LastSampleMS > 0 {
+		last = "last sample on disk at " + time.UnixMilli(p.LastSampleMS).Format("2006-01-02 15:04:05 MST")
+	}
+	if flush <= 0 {
+		flush = 5 * time.Minute
+	}
+	return store.GuardEvent{TS: time.Now().UnixMilli(), Kind: "unclean_stop", Detail: fmt.Sprintf(
+		"the previous run (started %s) ended without a clean stop: %s; %s (what came after it, up to %s, was lost)",
+		time.Unix(p.Run, 0).Format("2006-01-02 15:04:05 MST"), why, last, flush)}, true
 }
 
 // startTCPMode starts eBPF TCP events unless sampling is configured or

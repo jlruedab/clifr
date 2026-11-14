@@ -9,8 +9,10 @@
 1000 | 22 | 4096 | 100 | 40 | 30 | 64 | 10
 == guard_events: ts, kind, detail
 1000 | skip | d
-== meta: key, value
+== meta: key, CASE WHEN key = 'stop_ms' THEN 'NOW' ELSE value END
 interval_s | 30
+stop_ms | NOW
+writes_stop | 1
 == mounts: ts, action, mount_id, mount_point, source, fstype, options, super_options, dev, root, seq, loop_file, user_options
 1000 | present | 22 | / | /dev/sda | ext4 | rw | rw,errors=remount-ro | 8:1 | / | 0 |  | 
 1700 | mount | 95 | /mnt | tmpfs | tmpfs | rw |  |  |  | 1 |  | 

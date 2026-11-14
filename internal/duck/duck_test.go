@@ -133,7 +133,7 @@ var compare = map[string]string{
 	"open_files":       "id, proc_id, fd, target, deleted, ftype, mode, name, node, first_seen, last_seen",
 	"guard_events":     "ts, kind, detail",
 	"verify_snapshots": "ts, end_ts, cmd, sample_ts, output",
-	"meta":             "key, value",
+	"meta":             "key, CASE WHEN key = 'stop_ms' THEN 'NOW' ELSE value END",
 	"sys_samples":      "ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory",
 	"cpu_samples":      "ts, cpu, user, nice, system, idle, guest_nice",
 	"disk_samples":     "ts, major, minor, name, part, rd_ios, time_in_queue, fl_ticks",

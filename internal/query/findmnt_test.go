@@ -177,3 +177,44 @@ func TestLastReboot(t *testing.T) {
 		t.Errorf("short: %q", sb.String())
 	}
 }
+
+// TestLastRebootCrash: a boot whose last clifrd run ended without a clean
+// stop ends in "crash", as last prints it when wtmp has no shutdown.
+func TestLastRebootCrash(t *testing.T) {
+	dir := t.TempDir()
+	boot1 := time.Date(2026, 10, 19, 9, 0, 0, 0, time.Local).UnixMilli()
+	boot2 := time.Date(2026, 10, 20, 10, 51, 30, 0, time.Local).UnixMilli()
+	run := func(id string, boot int64, clean bool, samples ...int64) {
+		s, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetMeta("boot_id", id)
+		s.SetMeta("boot_ms", strconv.FormatInt(boot, 10))
+		for _, ts := range samples {
+			s.Write(&store.Batch{Sample: store.Sample{TS: ts}})
+		}
+		if clean {
+			s.Close()
+		} else {
+			s.Flush() // the machine went down: no Close
+		}
+	}
+	run("aaa", boot1, false, boot1+20_000, boot1+3_600_000)
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second))) // runs are named by their start second
+	run("bbb", boot2, true, boot2+20_000)
+	db, err := duck.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	boots, err := Boots(db, time.Now().Add(time.Hour).UnixMilli())
+	if err != nil || len(boots) != 2 || !boots[0].Crashed || boots[1].Crashed {
+		t.Fatalf("boots %+v %v", boots, err)
+	}
+	var sb strings.Builder
+	PrintLastReboot(&sb, boots, boot1+20_000, false)
+	if want := "reboot   system boot  -                Mon Oct 19 09:00 - crash  (01:00)\n"; !strings.Contains(sb.String(), want) {
+		t.Errorf("got\n%s\nwant a line\n%s", sb.String(), want)
+	}
+}

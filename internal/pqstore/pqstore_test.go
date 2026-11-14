@@ -302,17 +302,18 @@ func TestMetaRefresh(t *testing.T) {
 		}
 		return n
 	}
-	if err := s.Flush(); err != nil || count() != 3 {
+	// 3 rows set here and writes_stop, set by Open.
+	if err := s.Flush(); err != nil || count() != 4 {
 		t.Fatalf("first flush: %d rows, %v", count(), err)
 	}
 	s.Flush()
-	if n := count(); n != 3 {
+	if n := count(); n != 4 {
 		t.Errorf("copied again within the hour: %d rows", n)
 	}
 	s.metaAt = time.Now().Add(-time.Hour)
 	s.Flush()
-	if n := count(); n != 5 { // the latest value of each key
-		t.Errorf("after an hour: %d rows, want 5", n)
+	if n := count(); n != 7 { // the latest value of each key
+		t.Errorf("after an hour: %d rows, want 7", n)
 	}
 	if m, _ := ReadMeta(dir); m["hostname"] != "web1" || m["os_id"] != "rhel" {
 		t.Errorf("meta %v", m)

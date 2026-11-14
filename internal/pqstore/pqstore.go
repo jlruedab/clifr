@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -249,6 +250,7 @@ type Store struct {
 	early           string                 // why the next sample flushes early ("": no reason)
 	requested       atomic.Pointer[string] // RequestFlush's reason, from any goroutine
 	openMonoUS      int64                  // CLOCK_MONOTONIC at Open: older kernel messages are a replay
+	prev            PrevRun                // the run before this one (PrevRun)
 	textBytes       int64                  // command lines and paths written since the last flush (FlushBytes)
 	unknown         int                    // updates/closes for ids this run does not hold
 
@@ -298,6 +300,8 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
+	s.prev = readPrevRun(dir, s.run)
+	s.SetMeta(MetaWritesStop, "1")
 	s.bytes.Store(dirSize(dir))
 	return s, nil
 }
@@ -702,6 +706,7 @@ func writeOpenConv[S, T any](s *Store, table string, open map[int64]*S, conv fun
 }
 
 func (s *Store) Close() error {
+	s.SetMeta(MetaStopMS, strconv.FormatInt(time.Now().UnixMilli(), 10)) // a clean stop (PrevRun)
 	err := s.Flush()
 	s.cancel()
 	s.wg.Wait()

@@ -154,12 +154,17 @@ type Boot struct {
 	Kernel   string `json:"kernel_release"` // "" before schema 3
 	LastMS   int64  `json:"last_sample_ms"` // the last sample recorded in it
 	FirstRun int64  `json:"first_run_ms"`   // when clifrd first recorded in it
+	// Crashed: clifrd's last run in it ended without a clean stop
+	// (pqstore.MetaWritesStop without MetaStopMS): the system went down
+	// without a shutdown, as last prints "crash" when wtmp has none.
+	Crashed bool `json:"crashed"`
 }
 
 // Boots lists the boots that started at or before t, oldest first.
 func Boots(db *store.DB, t int64) ([]Boot, error) {
 	rows, err := db.Query(`SELECT run, min(ts), max(value) FILTER (WHERE key = 'boot_id'),
-			max(value) FILTER (WHERE key = 'boot_ms'), max(value) FILTER (WHERE key = 'uname_release')
+			max(value) FILTER (WHERE key = 'boot_ms'), max(value) FILTER (WHERE key = 'uname_release'),
+			count(*) FILTER (WHERE key = '`+pqstore.MetaWritesStop+`') > 0, count(*) FILTER (WHERE key = '`+pqstore.MetaStopMS+`') > 0
 		FROM read_parquet(?, union_by_name = true) GROUP BY run ORDER BY run`, filepath.Join(pqstore.TableDir(db.DataDir, "meta"), "**", "*.parquet"))
 	if err != nil {
 		return nil, err
@@ -168,7 +173,8 @@ func Boots(db *store.DB, t int64) ([]Boot, error) {
 	for rows.Next() {
 		var run, first int64
 		var id, ms, kernel sql.NullString
-		if err := rows.Scan(&run, &first, &id, &ms, &kernel); err != nil {
+		var writesStop, stopped bool
+		if err := rows.Scan(&run, &first, &id, &ms, &kernel, &writesStop, &stopped); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -176,13 +182,15 @@ func Boots(db *store.DB, t int64) ([]Boot, error) {
 		if !id.Valid || bootMS == 0 || bootMS > t {
 			continue
 		}
+		crashed := writesStop && !stopped && run*1000 <= t // the boot's last run decides
 		if n := len(out); n > 0 && out[n-1].BootID == id.String {
 			if out[n-1].Kernel == "" {
 				out[n-1].Kernel = kernel.String
 			}
+			out[n-1].Crashed = crashed
 			continue
 		}
-		out = append(out, Boot{BootID: id.String, BootMS: bootMS, Kernel: kernel.String, FirstRun: first})
+		out = append(out, Boot{BootID: id.String, BootMS: bootMS, Kernel: kernel.String, FirstRun: first, Crashed: crashed})
 	}
 	rows.Close()
 	for i := range out {
@@ -230,7 +238,11 @@ func PrintLastReboot(w io.Writer, boots []Boot, begins int64, full bool) {
 			if days > 0 {
 				length = fmt.Sprintf("(%d+%02d:%02d)", days, hours, mins)
 			}
-			line += " - " + logout(b.LastMS) + " " + length
+			end := logout(b.LastMS)
+			if b.Crashed {
+				end = "crash"
+			}
+			line += " - " + end + " " + length
 		}
 		fmt.Fprintln(w, line)
 	}

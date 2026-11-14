@@ -948,7 +948,14 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    2026-11-04 20:30:30.386  gap            - no samples for 12h52m18s, until 2026-11-05 09:22:48
    ```
 
-   The previous boot's recording ends at 20:30:30.
+   The previous boot's recording ends at 20:30:30. When clifrd did not stop cleanly in that boot (the machine went down without a shutdown), `last` prints `- crash` instead of the end time, as the real `last` does when wtmp has no shutdown record, and the next start of clifrd recorded an `unclean_stop` guard event that says so and when the last sample on disk was:
+
+   ```console
+   $ clifr --since "2026-11-05 09:00" "events --type guard"
+   2026-11-05 09:22:48.120  guard          - unclean_stop: the previous run (started 2026-11-04 09:09:20 ACDT) ended without a clean stop: the system went down without a clean shutdown (a crash, a power loss or a reset); last sample on disk at 2026-11-04 20:30:30 ACDT (what came after it, up to 5m0s, was lost)
+   ```
+
+   If clifrd alone was killed (the system kept running), the event says that instead. Recordings made before clifrd wrote clean-stop markers have neither.
 
 2. The state in the last minutes before that:
 
