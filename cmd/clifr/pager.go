@@ -271,6 +271,11 @@ func runPager(pages []page, forced bool) error {
 	defer term.Restore(int(os.Stdin.Fd()), state)
 	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l") // alternate screen, no cursor
 	defer os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
+	setRestoreTerm(func() { // a signal's exit skips the deferred calls
+		os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
+		term.Restore(int(os.Stdin.Fd()), state)
+	})
+	defer setRestoreTerm(nil)
 	buf := make([]byte, 16)
 	for {
 		if w, h, err := term.GetSize(out); err == nil {

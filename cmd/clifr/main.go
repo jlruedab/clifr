@@ -92,7 +92,10 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 }
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	clean := setupTemp()
+	err := run(os.Args[1:])
+	clean() // os.Exit skips deferred calls
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "clifr:", err)
 		var u usageError
 		if errors.As(err, &u) {
