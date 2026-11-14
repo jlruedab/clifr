@@ -1582,6 +1582,29 @@ ExecStart=
 ExecStart=/usr/sbin/clifrd --flush-rows 200000
 ```
 
+### Memory: what to expect and how to use less
+
+How much memory clifrd uses depends on how much the machine does: every running process, open connection and long-held file is tracked in memory, and new rows wait there until the next write to disk.
+
+| Machine | Memory in use (measured) |
+|---|---|
+| A desktop | about 88 MiB |
+| The busy-server benchmark (80,000 PostgreSQL transactions a second, thousands of connections) | about 285 MiB on average, 335 MiB at most |
+| 100,000 open connections | up to about 500 MiB at the highest point measured |
+
+Whatever happens, the unit's `MemoryMax=768M` is a hard limit, and `memory_guard` (384M) makes clifrd shed data before it gets there.
+
+On a small VM where that is too much, these settings trade memory for something else:
+
+| Setting | Effect | Cost |
+|---|---|---|
+| `gc_heap_target` lower (default `256M`) | The garbage collector runs earlier. Measured: 384M → 256M used about 45 MiB less on average at the busy load. | A little more CPU. |
+| `intervals.flush` shorter (default `5m`) | Fewer rows wait in memory before being written. Also loses less in a crash. | More, smaller files until hourly compaction merges them. |
+| `--flush-rows` lower (default 400,000; a flag only, see the drop-in above) | Lowers the peak under load. | More, smaller files. |
+| `memory_guard` and `MemoryMax` lower, together | A tighter ceiling. Keep `memory_guard` about half of `MemoryMax`. | Above the guard, data is shed (a `memory_shed` guard event says so). |
+
+Only the `gc_heap_target` change above has been measured. Lower values than the defaults work, but how much they save and what they cost in CPU has not been benchmarked yet; check with `clifr info` (`Recorder RSS`) and `systemctl status clifrd` after a day.
+
 ### clifr: command-line options
 
 | Option | Meaning |

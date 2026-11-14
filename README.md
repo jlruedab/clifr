@@ -243,8 +243,11 @@ not yet shown to be viable for production:
 3. **Synthetic load only**: pgbench and a load generator over loopback; no
    real server with many peers and containers.
 4. **Known open issues**: see [Limitations](#limitations).
-5. **Memory** (about 285 MiB on average at the busy load) may be too much for a
-   fleet agent; that is a product decision.
+5. **Memory**: about 88 MiB on a desktop, about 285 MiB on average (335 at most)
+   at the busy load, capped by the unit at 768 MiB. Accepted for the first
+   release; on small machines it can be lowered by hand (see the user guide,
+   [Memory: what to expect and how to use less](userguide.md#memory-what-to-expect-and-how-to-use-less)),
+   and a measured low-memory profile is planned.
 6. **Packages, but no delivery yet.** The .deb and .rpm packages (x86_64),
    the bundle and the sos plugin exist and are tested in containers and VMs
    (see [Build](#build) and the [installation guide](install.md)), under
