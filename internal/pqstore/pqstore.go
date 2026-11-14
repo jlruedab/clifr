@@ -54,15 +54,15 @@ type Options struct {
 	// Busy, if set, is asked before each table-hour of compaction: while it
 	// says so, compaction stops and is tried again at the next flush (it
 	// needs memory, and an hour of a flood is the largest to compact).
-	Busy      func() bool
+	Busy func() bool
 	// EarlyFlush: after an OOM kill, a kernel message that may come before a
 	// crash (earlyKernel) or RequestFlush, flush at the next sample once the
 	// last flush is this old, instead of waiting for FlushInterval: what
 	// came just before a crash is what is wanted most. 0 = never early.
 	EarlyFlush time.Duration
 	Retention  time.Duration // 0 = keep everything
-	MaxBytes  int64         // 0 = no size cap
-	Logf      func(format string, args ...any)
+	MaxBytes   int64         // 0 = no size cap
+	Logf       func(format string, args ...any)
 }
 
 // entity holds the open rows of one entity table and the closed rows not
@@ -249,8 +249,8 @@ type Store struct {
 	early           string                 // why the next sample flushes early ("": no reason)
 	requested       atomic.Pointer[string] // RequestFlush's reason, from any goroutine
 	openMonoUS      int64                  // CLOCK_MONOTONIC at Open: older kernel messages are a replay
-	textBytes       int64 // command lines and paths written since the last flush (FlushBytes)
-	unknown         int   // updates/closes for ids this run does not hold
+	textBytes       int64                  // command lines and paths written since the last flush (FlushBytes)
+	unknown         int                    // updates/closes for ids this run does not hold
 
 	bytes atomic.Int64
 	busy  atomic.Bool // maintenance running

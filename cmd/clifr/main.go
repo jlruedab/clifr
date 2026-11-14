@@ -19,6 +19,7 @@ import (
 	_ "time/tzdata" // --tz works where the system has no zoneinfo
 
 	"clifr/internal/duck"
+	"clifr/internal/pqstore"
 	"clifr/internal/query"
 	"clifr/internal/store"
 )
@@ -39,6 +40,7 @@ type globals struct {
 	host, token, tlsCA        string
 	tlsFP                     string // --tls-fingerprint: the expected certificate of --host on first use
 	version, help, verbose    bool
+	salvage                   bool // --salvage: read a damaged bundle without its bad files
 }
 
 func newFlags(g *globals, out io.Writer) *flag.FlagSet {
@@ -85,6 +87,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	boolean(&g.version, "v", "version")
 	boolean(&g.help, "h", "help")
 	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
+	fs.BoolVar(&g.salvage, "salvage", false, "")
 	return fs
 }
 
@@ -199,13 +202,45 @@ func openBundle(g *globals) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	dir, _, err := bundle.Extract(f, tmp, st.Size())
+	var dir string
+	if g.salvage {
+		var bad []string
+		var m *bundle.Manifest
+		dir, m, bad, err = bundle.Salvage(f, tmp, st.Size())
+		if err == nil && m == nil {
+			fmt.Fprintln(os.Stderr, "clifr: --salvage: no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified")
+		}
+		for _, p := range bad {
+			fmt.Fprintln(os.Stderr, "clifr: --salvage: left out "+salvageNote(p))
+		}
+	} else {
+		dir, _, err = bundle.Extract(f, tmp, st.Size())
+	}
 	if err != nil {
 		os.RemoveAll(tmp)
 		return nil, fmt.Errorf("%s: %w", g.dataDir, err)
 	}
 	g.dataDir = dir
 	return func() { os.RemoveAll(tmp) }, nil
+}
+
+// salvageNote names a bundle file left out (data/DIR/DAY/NAME) and the
+// times that lack its rows (at the default flush interval).
+func salvageNote(p string) string {
+	parts := strings.Split(p, "/")
+	note := p + ", damaged or missing"
+	if len(parts) == 4 && parts[0] == "data" {
+		if t := pqstore.TableOf(parts[1]); t != "" {
+			note += " (table " + t + ")"
+		}
+		if lo, hi, ok := pqstore.FileSpan(p, 5*time.Minute); ok {
+			const f = "2006-01-02 15:04"
+			note += ": results lack its rows, from about " + time.UnixMilli(lo).Format(f) + " to " + time.UnixMilli(hi).Format(f)
+		} else if parts[2] == "open" {
+			note += ": results lack the rows still open in that run"
+		}
+	}
+	return note
 }
 
 // checkLater rejects options of features that are not in this release.

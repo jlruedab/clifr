@@ -3,6 +3,7 @@ package bundle
 import (
 	"archive/tar"
 	"bytes"
+	"clifr/internal/pqstore"
 	"os"
 	"path/filepath"
 	"slices"
@@ -129,5 +130,88 @@ func TestExtractLimit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "data", "samples", "x.parquet")); err == nil {
 		t.Error("the file was written")
+	}
+}
+
+// TestSalvage: a bundle with a changed file or cut short is refused by
+// Extract (naming --salvage); Salvage keeps the files whose checksums match
+// and names the others.
+func TestSalvage(t *testing.T) {
+	dir := t.TempDir()
+	touch(t, dir, "samples/2026-10-20/12.parquet", "tcp_conns/open/1.parquet")
+	var buf bytes.Buffer
+	if _, err := Write(Options{DataDir: dir, Writer: "test", Now: time.Unix(1792460000, 0)}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	full := buf.Bytes()
+	i := -1 // its content: at a 512-byte block boundary (the names are in headers)
+	for j := 0; j >= 0 && i < 0; {
+		k := bytes.Index(full[j:], []byte("tcp_conns/open/1.parquet"))
+		if k < 0 {
+			break
+		}
+		if (j+k)%512 == 0 {
+			i = j + k
+		}
+		j += k + 1
+	}
+	if i < 0 {
+		t.Fatal("content not found")
+	}
+	changed := bytes.Clone(full)
+	changed[i] = 'X'
+	for _, c := range []struct {
+		name string
+		b    []byte
+	}{{"changed", changed}} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, _, err := Extract(bytes.NewReader(c.b), t.TempDir(), 0); err == nil || !strings.Contains(err.Error(), "--salvage") {
+				t.Errorf("Extract: %v", err)
+			}
+			out := t.TempDir()
+			data, m, bad, err := Salvage(bytes.NewReader(c.b), out, 0)
+			if err != nil || m == nil {
+				t.Fatalf("Salvage: %v", err)
+			}
+			if !slices.Equal(bad, []string{"data/tcp_conns/open/1.parquet"}) {
+				t.Errorf("left out %v", bad)
+			}
+			if _, err := os.Stat(filepath.Join(data, "tcp_conns/open/1.parquet")); !os.IsNotExist(err) {
+				t.Errorf("damaged file kept: %v", err)
+			}
+			if b, err := os.ReadFile(filepath.Join(data, "samples/2026-10-20/12.parquet")); err != nil || string(b) != "samples/2026-10-20/12.parquet" {
+				t.Errorf("good file: %q %v", b, err)
+			}
+		})
+	}
+	// Cut short in a file: bundle.json (the last entry) is lost too. Extract
+	// refuses it; Salvage keeps the whole Parquet files, unverified.
+	parq := t.TempDir()
+	good := filepath.Join(parq, "samples/2026-10-20/12.parquet")
+	os.MkdirAll(filepath.Dir(good), 0o750)
+	if err := pqstore.WriteEmpty("samples", good); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(parq, "samples/2026-10-20"), 0o750)
+	pqstore.WriteEmpty("samples", filepath.Join(parq, "samples/2026-10-20/13.parquet"))
+	buf.Reset()
+	if _, err := Write(Options{DataDir: parq, Writer: "test", Now: time.Unix(1792460000, 0)}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	cut := buf.Bytes()
+	h13 := bytes.Index(cut, []byte("2026-10-20/13.parquet"))
+	cut = cut[:h13/512*512+512+100] // its header and 100 bytes of it
+	if _, _, err := Extract(bytes.NewReader(cut), t.TempDir(), 0); err == nil || !strings.Contains(err.Error(), "--salvage") {
+		t.Errorf("Extract of a cut bundle: %v", err)
+	}
+	data, m, bad, err := Salvage(bytes.NewReader(cut), t.TempDir(), 0)
+	if err != nil || m != nil {
+		t.Fatalf("Salvage of a cut bundle: %v, manifest %v", err, m)
+	}
+	if len(bad) != 1 || !strings.HasSuffix(bad[0], "2026-10-20/13.parquet") {
+		t.Errorf("left out %v", bad)
+	}
+	if err := pqstore.CheckFile(filepath.Join(data, strings.TrimPrefix(strings.Replace(bad[0], "13.parquet", "12.parquet", 1), "data/"))); err != nil {
+		t.Errorf("whole file: %v", err)
 	}
 }

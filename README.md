@@ -942,6 +942,10 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   is identical to the same query on the recording.
 - clifr refuses bundles of a newer layout, damaged files, paths outside
   the bundle and more data than the tar file itself holds (a sparse entry).
+  `--salvage` reads a damaged or cut-short bundle without its bad files
+  (named, with the times they cover); a recording directory is read without
+  a file that is not a whole Parquet file (`pqstore.CheckFile`), with a
+  warning, where one such file made every query of its table fail.
   A bundle from another machine needs no root to read: open it as an
   ordinary user, not with sudo (its Parquet files are parsed by DuckDB).
 - `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside

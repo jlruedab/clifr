@@ -425,6 +425,23 @@ clifr --data-dir sosreport-web01-2026-11-05/sos_commands/clifr/clifr-bundle.tar 
 
 A sosreport's own captures (`ps`, `ss`, `sos_commands/logs/journalctl_*`, `var/log/messages`, `var/log/secure`) show the moment the report was taken; the bundle lets you go back to the moment of the problem, with the same tools.
 
+The last minutes before `clifrd bundle` may still be in memory (they are written every 5 minutes). To include them, ask clifrd to write first and wait for its next sample (30 s):
+
+```sh
+sudo systemctl kill -s USR1 clifrd && sleep 35 && sudo clifrd bundle --last 6h -o /tmp/web01-clifr.tar
+```
+
+**Damaged recordings and bundles.** clifr refuses a bundle whose files do not match their checksums, or that was cut short in transfer, and says so. Copy it again if you can. If you cannot, `--salvage` reads what is usable: the files with good checksums (or, when the copy stopped before the manifest at the end of the tar, the files that arrived whole, unverified), with a warning for each file left out and the times that lack its rows:
+
+```console
+$ clifr --data-dir web01-clifr.tar --salvage --at "13:06" "ps -e"
+clifr: --salvage: no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified
+clifr: --salvage: left out data/4bbd53df/2026-11-14/02-36.parquet, damaged or missing (table kmsg): results lack its rows, from about 2026-11-14 13:00 to 2026-11-14 13:08
+...
+```
+
+A recording directory with a damaged file (a disk error, a copy that stopped) is read without it, with a similar warning on standard error: `clifr: skipped damaged file ...`. Before, one such file made every query of its table fail.
+
 ### Querying another host directly: `--host`
 
 Instead of copying bundles, clifr can query another host's recording over the network. The recorded host serves its files (`clifrd --serve`, off by default); clifr fetches only what the query needs, keeps it in a cache, and answers locally, exactly as with `--data-dir`.
@@ -1702,7 +1719,7 @@ In words:
 
 1. **On each host**, `clifrd bundle` writes a window of the recording (`--last 6h`, or `--since`/`--until` around an incident) as one tar file, with a manifest: host, machine id, time zone, versions, window, a SHA-256 checksum per file. Or `sos report` adds the same bundle to the sosreport. Bundling is safe while clifrd records.
 2. **Transfer** with whatever you already use for sosreports and logs. A bundle is about 175 MB per hour of a very busy server, and a few MB per hour of a quiet one (Parquet files hardly compress further).
-3. **On the analysis host** only the `clifr` package is needed. `clifr --data-dir FILE.tar` reads a bundle directly (no root needed, no unpacking by hand). It checks every file against the manifest's SHA-256 sums and refuses a damaged bundle. The sums catch damage in transfer; they are not a signature. Use `--tz` with the recorded host's zone (shown by `clifr --data-dir FILE.tar info`) to line clifr up with that host's logs.
+3. **On the analysis host** only the `clifr` package is needed. `clifr --data-dir FILE.tar` reads a bundle directly (no root needed, no unpacking by hand). It checks every file against the manifest's SHA-256 sums and refuses a damaged bundle (`--salvage` reads the rest, see [bundles](#another-machines-recording-bundles-and-sosreports)). The sums catch damage in transfer; they are not a signature. Use `--tz` with the recorded host's zone (shown by `clifr --data-dir FILE.tar info`) to line clifr up with that host's logs.
 
 ### Data and security
 

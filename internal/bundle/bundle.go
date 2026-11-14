@@ -279,6 +279,29 @@ func addFile(tw *tar.Writer, dir, rel, name string) (File, error) {
 // an uncompressed tar, so its own size is enough, but a tar entry can be
 // sparse, a large file of zeros in a few bytes.
 func Extract(r io.Reader, dir string, limit int64) (string, *Manifest, error) {
+	data, m, _, err := extract(r, dir, limit, false)
+	return data, m, err
+}
+
+// Salvage is Extract for a damaged bundle (a transfer cut short, a changed
+// file): it keeps the files whose checksums match and returns the paths of
+// the ones it left out (damaged, or missing from a tar cut short). Without
+// bundle.json (the last entry: lost when the tar was cut short) the Manifest
+// is nil and it keeps the files that are whole Parquet files
+// (pqstore.CheckFile), unverified.
+func Salvage(r io.Reader, dir string, limit int64) (string, *Manifest, []string, error) {
+	return extract(r, dir, limit, true)
+}
+
+// cutShort explains a tar that ends in the middle (a transfer that stopped).
+func cutShort(err error) error {
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Errorf("bundle cut short (%w); clifr --salvage reads what arrived", err)
+	}
+	return err
+}
+
+func extract(r io.Reader, dir string, limit int64, salvage bool) (string, *Manifest, []string, error) {
 	tr := tar.NewReader(r)
 	sums := map[string]string{}
 	var m *Manifest
@@ -289,51 +312,88 @@ func Extract(r io.Reader, dir string, limit int64) (string, *Manifest, error) {
 			break
 		}
 		if err != nil {
-			return "", nil, err
+			if salvage { // cut short: keep what came before
+				break
+			}
+			return "", nil, nil, cutShort(err)
 		}
 		if h.Typeflag != tar.TypeReg {
 			continue
 		}
 		rel, err := filepath.Rel(Root, filepath.FromSlash(h.Name))
 		if err != nil || rel == ".." || filepath.IsAbs(rel) || len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator) {
-			return "", nil, fmt.Errorf("bundle: unexpected path %q", h.Name)
+			return "", nil, nil, fmt.Errorf("bundle: unexpected path %q", h.Name)
 		}
 		if rel == "bundle.json" {
 			m = &Manifest{}
 			if err := json.NewDecoder(tr).Decode(m); err != nil {
-				return "", nil, fmt.Errorf("bundle.json: %w", err)
+				return "", nil, nil, fmt.Errorf("bundle.json: %w", err)
 			}
 			continue
 		}
 		if written += h.Size; limit > 0 && written > limit {
-			return "", nil, fmt.Errorf("bundle: %s: more data than the bundle's %d bytes hold", h.Name, limit)
+			return "", nil, nil, fmt.Errorf("bundle: %s: more data than the bundle's %d bytes hold", h.Name, limit)
 		}
 		dst := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o640)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		hs := sha256.New()
 		_, err = io.Copy(io.MultiWriter(f, hs), tr)
 		err = errors.Join(err, f.Close())
 		if err != nil {
-			return "", nil, err
+			if salvage { // the file was cut short: its checksum will not match
+				sums[filepath.ToSlash(rel)] = ""
+				break
+			}
+			return "", nil, nil, cutShort(err)
 		}
 		sums[filepath.ToSlash(rel)] = hex.EncodeToString(hs.Sum(nil))
 	}
+	if m == nil && salvage && len(sums) > 0 {
+		// bundle.json is the tar's last entry: a transfer cut short loses
+		// it. Without checksums, keep the files that are whole Parquet files.
+		var bad []string
+		for p := range sums {
+			if err := pqstore.CheckFile(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
+				bad = append(bad, p)
+				os.Remove(filepath.Join(dir, filepath.FromSlash(p)))
+			}
+		}
+		slices.Sort(bad)
+		return filepath.Join(dir, "data"), nil, bad, nil
+	}
 	if m == nil {
-		return "", nil, errors.New("not a clifr bundle (no bundle.json)")
+		return "", nil, nil, errors.New("not a clifr bundle (no bundle.json; if it was cut short, clifr --salvage reads what arrived)")
 	}
 	if m.BundleVersion > Version {
-		return "", nil, fmt.Errorf("bundle version %d is newer than this clifr reads (%d): update clifr", m.BundleVersion, Version)
+		return "", nil, nil, fmt.Errorf("bundle version %d is newer than this clifr reads (%d): update clifr", m.BundleVersion, Version)
 	}
+	listed := map[string]bool{}
+	var bad []string
 	for _, f := range m.Files {
-		if sums[f.Path] != f.SHA256 {
-			return "", nil, fmt.Errorf("bundle: %s is damaged or missing", f.Path)
+		listed[f.Path] = true
+		if sums[f.Path] == f.SHA256 {
+			continue
+		}
+		if !salvage {
+			return "", nil, nil, fmt.Errorf("bundle: %s is damaged or missing (clifr --salvage reads the rest)", f.Path)
+		}
+		bad = append(bad, f.Path)
+		os.Remove(filepath.Join(dir, filepath.FromSlash(f.Path)))
+	}
+	if salvage { // a file bundle.json does not list cannot be checked
+		for p := range sums {
+			if !listed[p] {
+				bad = append(bad, p)
+				os.Remove(filepath.Join(dir, filepath.FromSlash(p)))
+			}
 		}
 	}
-	return filepath.Join(dir, "data"), m, nil
+	slices.Sort(bad)
+	return filepath.Join(dir, "data"), m, bad, nil
 }

@@ -2,6 +2,7 @@ package pqstore
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -104,6 +105,17 @@ func TableDirs(dataDir, table string) []string {
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+// TableOf is the table a directory name holds (Dir's or the old plain
+// name), or "".
+func TableOf(dirName string) string {
+	for _, t := range Tables {
+		if dirName == Dir(t) || dirName == t {
+			return t
+		}
+	}
+	return ""
 }
 
 // IsDataDir reports whether dir holds a recording (its samples table).
@@ -277,4 +289,41 @@ func filterRows[T any](start func(*T) int64) func(parts []string, out string, to
 		}
 		return kept, errors.Join(w.Close(), f.Close())
 	}
+}
+
+// CheckFile is a cheap check that path is a whole Parquet file: the magic
+// bytes at both ends and a footer that fits. It catches files cut short or
+// zeroed (a damaged disk, a copy or transfer that stopped), not damage
+// inside the data pages.
+func CheckFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	const magic = "PAR1"
+	if st.Size() < 12 {
+		return fmt.Errorf("%d bytes, too short for a Parquet file", st.Size())
+	}
+	head, tail := make([]byte, 4), make([]byte, 8)
+	if _, err := f.ReadAt(head, 0); err != nil {
+		return err
+	}
+	if _, err := f.ReadAt(tail, st.Size()-8); err != nil {
+		return err
+	}
+	if string(head) != magic {
+		return errors.New("no Parquet header")
+	}
+	if string(tail[4:]) != magic {
+		return errors.New("no Parquet footer (cut short?)")
+	}
+	if n := int64(binary.LittleEndian.Uint32(tail[:4])); n == 0 || n > st.Size()-12 {
+		return fmt.Errorf("footer length %d does not fit in %d bytes", n, st.Size())
+	}
+	return nil
 }

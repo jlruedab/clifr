@@ -66,7 +66,11 @@ Interactive keys:
   (at g, HH:MM is on the day of the sample shown)
 
 Sources:
-  -D, --data-dir DIR   local recording directory (default /var/lib/clifr)
+  -D, --data-dir DIR   local recording directory (default /var/lib/clifr), or a
+                       bundle (clifrd bundle -o FILE)
+      --salvage        read a damaged bundle (a transfer cut short, a changed
+                       file): its files with good checksums, a warning for each
+                       one left out; without it a damaged bundle is refused
   -H, --host HOST      another host's recording, from its clifrd --serve
                        (HOST, HOST:PORT or https://HOST:PORT; port 8443): the
                        files the query needs are fetched (cached in

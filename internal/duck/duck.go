@@ -72,7 +72,8 @@ func OpenWindow(dataDir string, w Window) (*store.DB, error) {
 	if err := lockDown(db, dataDir, schemaDir); err != nil {
 		return fail(err)
 	}
-	l := &loader{db: db, dir: dataDir, schemaDir: schemaDir, w: w, loaded: map[string]bool{}}
+	l := &loader{db: db, dir: dataDir, schemaDir: schemaDir, w: w, loaded: map[string]bool{},
+		checked: map[string]bool{}, damaged: map[string]bool{}, warn: warn}
 	if err := checkSchema(db, l.files("meta")); err != nil {
 		return fail(err)
 	}
@@ -106,6 +107,9 @@ func lockDown(db *sql.DB, dirs ...string) error {
 	return nil
 }
 
+// warn prints a loader's warning (tests replace it).
+var warn = func(s string) { fmt.Fprintln(os.Stderr, "clifr: "+s) }
+
 // loader loads tables on demand.
 type loader struct {
 	db        *sql.DB
@@ -113,6 +117,9 @@ type loader struct {
 	schemaDir string // where load writes each table's empty schema file
 	w         Window
 	loaded    map[string]bool
+	checked   map[string]bool // files that passed pqstore.CheckFile
+	damaged   map[string]bool // files skipped (warned about once)
+	warn      func(string)
 }
 
 var tableRe = func() map[string]*regexp.Regexp {
@@ -150,13 +157,49 @@ func (l *loader) prepare(q string) (string, error) {
 	return q, nil
 }
 
+// files lists a table's files, leaving out damaged ones (pqstore.CheckFile):
+// DuckDB refuses a whole query over a list with one of them in it.
 func (l *loader) files(table string) []string {
 	var files []string
 	for _, d := range pqstore.TableDirs(l.dir, table) {
 		f, _ := filepath.Glob(filepath.Join(d, "*", "*.parquet"))
-		files = append(files, f...)
+		for _, p := range f {
+			if l.checked[p] {
+				files = append(files, p)
+				continue
+			}
+			if l.damaged[p] {
+				continue
+			}
+			if err := pqstore.CheckFile(p); err != nil {
+				l.damaged[p] = true
+				l.warn(l.damageNote(table, p, err))
+				continue
+			}
+			l.checked[p] = true
+			files = append(files, p)
+		}
 	}
 	return files
+}
+
+// damageNote says which file was skipped and which times lack its rows.
+func (l *loader) damageNote(table, path string, err error) string {
+	rel, _ := filepath.Rel(l.dir, path)
+	what := "its rows are missing"
+	flush := 5 * time.Minute // the default, when meta cannot say
+	if table != "meta" {
+		if ms := l.flushMS(); ms > 0 {
+			flush = time.Duration(ms) * time.Millisecond
+		}
+	}
+	if lo, hi, ok := pqstore.FileSpan(path, flush); ok {
+		const f = "2006-01-02 15:04"
+		what = "results lack its rows, from about " + time.UnixMilli(lo).Format(f) + " to " + time.UnixMilli(hi).Format(f)
+	} else if filepath.Base(filepath.Dir(path)) == "open" {
+		what = "results lack the rows still open in that run (processes, connections or files alive at its last write)"
+	}
+	return fmt.Sprintf("skipped damaged file %s (table %s: %v); %s", rel, table, err, what)
 }
 
 // filesIn keeps the files that can hold rows with times in [lo, hi]
