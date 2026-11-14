@@ -39,6 +39,7 @@ type fileConfig struct {
 		Files    scalar `yaml:"files"`
 		Keyframe scalar `yaml:"keyframe"`
 		Flush    scalar `yaml:"flush"`
+		Early    scalar `yaml:"early_flush"`
 	} `yaml:"intervals"`
 	Collectors struct {
 		ProcessEvents scalar `yaml:"process_events"`
@@ -106,7 +107,7 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 	}{
 		{"data-dir", c.DataDir}, {"retention", c.Retention}, {"max-size", c.MaxSize}, {"log-level", c.LogLevel},
 		{"interval", c.Intervals.Process}, {"sys-interval", c.Intervals.System}, {"fd-interval", c.Intervals.Files},
-		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush},
+		{"keyframe-interval", c.Intervals.Keyframe}, {"flush-interval", c.Intervals.Flush}, {"early-flush", c.Intervals.Early},
 		{"events", c.Collectors.ProcessEvents}, {"tcp", c.Collectors.TCP}, {"fd-mode", c.Collectors.Files}, {"proc-io", c.Collectors.ProcessIO},
 		{"cpu-budget", c.CPUBudget}, {"gc-heap-target", c.GCHeapTarget}, {"max-cmdline", c.MaxCmdline}, {"max-files-per-process", c.MaxFiles}, {"memory-guard", c.MemoryGuard},
 		{"event-budget-processes", c.EventBudget.Processes}, {"event-budget-processes-max", c.EventBudget.ProcessesMax},
@@ -135,7 +136,7 @@ var short = map[string]string{"data-dir": "D", "config": "C"}
 
 func yamlName(flagName string) string {
 	for y, f := range map[string]string{"intervals.process": "interval", "intervals.system": "sys-interval", "intervals.files": "fd-interval",
-		"intervals.keyframe": "keyframe-interval", "intervals.flush": "flush-interval",
+		"intervals.keyframe": "keyframe-interval", "intervals.flush": "flush-interval", "intervals.early_flush": "early-flush",
 		"collectors.process_events": "events", "collectors.tcp": "tcp", "collectors.files": "fd-mode",
 		"collectors.process_io": "proc-io", "event_budget.processes": "event-budget-processes",
 		"event_budget.processes_max": "event-budget-processes-max", "event_budget.cmdline_bytes": "event-budget-cmdline",

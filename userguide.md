@@ -917,7 +917,7 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
 
 **Question.** The laptop froze hard (or the server crashed or lost power) and had to be reset. What was happening just before?
 
-**Important.** clifrd writes to disk every 5 minutes. After a sudden reset the last minutes before the freeze are lost; with clean shutdowns nothing is lost. If you are chasing freezes on a machine, lower the flush interval first (`intervals: flush: 1m` in `/etc/clifr/clifrd.yml`, then `systemctl restart clifrd`) at the cost of more, smaller files until the hourly compaction.
+**Important.** clifrd writes to disk every 5 minutes. After a sudden reset the last minutes before the freeze are lost; with clean shutdowns nothing is lost. When the kernel warned first (an OOM kill, a hung task, an I/O or file-system error, a soft lockup), clifrd wrote early at the next sample (`early_flush`), so the minutes up to the warning are kept. If you are chasing freezes on a machine, lower the flush interval first (`intervals: flush: 1m` in `/etc/clifr/clifrd.yml`, then `systemctl restart clifrd`) at the cost of more, smaller files until the hourly compaction.
 
 **Steps.**
 
@@ -1437,6 +1437,9 @@ intervals:
   files: 120s          # open-file walks (long-held files only); at least process
   keyframe: 300s       # full socket dump: queues, UDP, check of the TCP events
   flush: 5m            # write buffered rows (a crash loses at most this much)
+  early_flush: 30s     # after an OOM kill or a kernel message that often comes
+                       # before a crash (or SIGUSR1): write at the next sample if
+                       # the last write is this old; 0 = never early
 ```
 
 - **`process`**: how often each process's CPU, memory, state and I/O are read. Shorter catches shorter spikes in `top` and `pidstat`, at more CPU and disk. Process starts and exits are events and do not depend on it.
@@ -1444,6 +1447,7 @@ intervals:
 - **`files`**: how often every process's open files are listed. A file is recorded when two walks in a row see it, so it must be held about twice this long. Shorter catches shorter-held files (devices, see [use case 9](#use-case-9-which-processes-used-the-microphone-or-camera)), and costs the most CPU of all settings on machines with many open files. The CPU guard rail (`cpu_budget`) lengthens it under load.
 - **`keyframe`**: a full dump of all sockets: socket queues, UDP sockets, and a check that no TCP event was missed (corrected if one was).
 - **`flush`**: how long data stays in memory before it is written. It is the most you lose in a crash, and how far behind real time clifr can query. `1m` for machines that freeze or crash ([use case 10](#use-case-10-the-state-of-the-system-before-a-hard-freeze-or-crash)), at the cost of more small files until the hourly compaction merges them.
+- **`early_flush`**: many crashes give a warning first. After an OOM kill, a kernel message at crit level or worse (soft lockup, panic, fatal machine check), or an error that often comes before a hang (a hung task, an I/O error, a file-system error), clifrd writes at the next sample (within a process interval, 30 s) instead of waiting for `flush`, if its last write is at least this old. `sudo systemctl kill -s USR1 clifrd` asks for the same by hand, for example just before `clifrd bundle`. The journal says `pqstore: early flush: REASON`. `0` turns it off.
 
 ```yaml
 collectors:
@@ -1518,6 +1522,7 @@ Options on the command line override the file. `CLIFR_DATA_DIR` in the environme
 | `--fd-interval DUR` | `intervals.files` | `2m` | Open-file walks. |
 | `--keyframe-interval DUR` | `intervals.keyframe` | `5m` | Full socket dumps. |
 | `--flush-interval DUR` | `intervals.flush` | `5m` | Write to disk. |
+| `--early-flush DUR` | `intervals.early_flush` | `30s` | Write at the next sample after an OOM kill, a serious kernel message or SIGUSR1, if the last write is this old (`0` = never). |
 | `--flush-rows N` | | `400000` | Also write when this many rows are waiting (limits memory under heavy load). |
 | `--flush-bytes SIZE` | | `16M` | Also write when the command lines and file names waiting add up to this. |
 | `--events MODE` | `collectors.process_events` | `auto` | `ebpf`, `proc_connector`, `none`. |

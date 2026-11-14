@@ -12,6 +12,9 @@ intervals:
   files: 120s          # open-file walks (long-held files only); at least process
   keyframe: 300s       # full socket dump: queues, UDP, check of the TCP events
   flush: 5m            # write buffered rows (a crash loses at most this much)
+  early_flush: 30s     # after an OOM kill or a kernel message that often comes
+                       # before a crash (or SIGUSR1): write at the next sample if
+                       # the last write is this old; 0 = never early
 
 collectors:
   process_events: auto # auto (eBPF, else the proc connector), ebpf, proc_connector, none

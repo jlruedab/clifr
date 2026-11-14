@@ -4,7 +4,7 @@ _clifrd() {
 	local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
 	local opts="--config -C --data-dir -D --log-level --version -v --interval
 		--sys-interval --fd-interval --redact --proc-io --duration --cpu-budget
-		--budget-window --verify-every --flush-interval --flush-rows --flush-bytes --retention
+		--budget-window --verify-every --flush-interval --early-flush --flush-rows --flush-bytes --retention
 		--events --fd-mode --fd-full-every --tcp --keyframe-interval --gc-heap-target --max-cmdline --max-files-per-process --memory-guard --event-budget-processes --event-budget-processes-max --event-budget-cmdline --event-budget-connections
 		--max-size --metrics --metrics-tls-config --serve --serve-tls-config --serve-tokens --serve-tls-dir --bpf-stats --pprof-dir --test-ebpf --ebpf-force-perf
 		--ebpf-classic-fork --ebpf-kprobes --proc-root"

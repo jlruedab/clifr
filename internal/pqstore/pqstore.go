@@ -55,7 +55,12 @@ type Options struct {
 	// says so, compaction stops and is tried again at the next flush (it
 	// needs memory, and an hour of a flood is the largest to compact).
 	Busy      func() bool
-	Retention time.Duration // 0 = keep everything
+	// EarlyFlush: after an OOM kill, a kernel message that may come before a
+	// crash (earlyKernel) or RequestFlush, flush at the next sample once the
+	// last flush is this old, instead of waiting for FlushInterval: what
+	// came just before a crash is what is wanted most. 0 = never early.
+	EarlyFlush time.Duration
+	Retention  time.Duration // 0 = keep everything
 	MaxBytes  int64         // 0 = no size cap
 	Logf      func(format string, args ...any)
 }
@@ -241,6 +246,9 @@ type Store struct {
 
 	lastAny, lastFD int64 // last sample, last fd-walk sample (unix ms)
 	lastFlush       time.Time
+	early           string                 // why the next sample flushes early ("": no reason)
+	requested       atomic.Pointer[string] // RequestFlush's reason, from any goroutine
+	openMonoUS      int64                  // CLOCK_MONOTONIC at Open: older kernel messages are a replay
 	textBytes       int64 // command lines and paths written since the last flush (FlushBytes)
 	unknown         int   // updates/closes for ids this run does not hold
 
@@ -280,6 +288,10 @@ func Open(dir string, opt Options) (*Store, error) {
 		procs: newEntity[processRow](), socks: newEntity[socketRow](),
 		owners: newEntity[ownerRow](), files: newEntity[fileRow](), held: newValBuf[heldRec](), conns: newValBuf[store.TCPConn]()}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+	var ts unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts) == nil {
+		s.openMonoUS = ts.Nano() / 1000
+	}
 	if err := renameDirs(dir, opt.Logf); err != nil {
 		return nil, fmt.Errorf("rename table directories: %w", err)
 	}
@@ -523,6 +535,16 @@ func (s *Store) Write(b *store.Batch) error {
 		s.verify = append(s.verify, verifyRow{ID: s.idBase() + s.verifyID, TS: v.TS, EndTS: v.EndTS, Cmd: v.Cmd,
 			SampleTS: v.SampleTS, IgnorePIDs: v.IgnorePIDs, Output: v.Output})
 	}
+	if s.early == "" {
+		s.early = s.earlyReason(b)
+	}
+	if r := s.requested.Swap(nil); r != nil && s.early == "" {
+		s.early = *r
+	}
+	if b.Sample.TS != 0 && s.early != "" && s.opt.EarlyFlush > 0 && time.Since(s.lastFlush) >= s.opt.EarlyFlush {
+		s.opt.Logf("pqstore: early flush: %s", s.early)
+		return s.Flush()
+	}
 	if b.Sample.TS != 0 && (time.Since(s.lastFlush) >= s.opt.FlushInterval || s.opt.FlushRows > 0 && s.buffered() >= s.opt.FlushRows ||
 		s.opt.FlushBytes > 0 && s.textBytes >= s.opt.FlushBytes) {
 		return s.Flush()
@@ -620,7 +642,7 @@ func (s *Store) Flush() error {
 	s.files.reset()
 	s.procSamples.reset()
 	s.sockSamples.reset()
-	s.lastFlush, s.textBytes = time.Now(), 0
+	s.lastFlush, s.textBytes, s.early = time.Now(), 0, ""
 	s.bytes.Store(dirSize(s.dir))
 	if s.busy.CompareAndSwap(false, true) {
 		s.wg.Add(1)

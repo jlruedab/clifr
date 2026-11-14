@@ -83,6 +83,7 @@ func run(args []string) error {
 	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
 	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof and uptime/vmstat/mpstat/iostat output this often")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
+	fs.DurationVar(&c.Parquet.EarlyFlush, "early-flush", 30*time.Second, "after an OOM kill or a kernel message that often comes before a crash (or SIGUSR1), write buffered rows at the next sample if the last write is at least this old (0 = never early)")
 	fs.IntVar(&c.Parquet.FlushRows, "flush-rows", 400_000, "also write them once this many rows are buffered: lowers the heap's peak under load, for more and smaller files (0 = only by time)")
 	flushBytes := fs.String("flush-bytes", "16M", "also write them once the command lines and paths buffered add up to this: a flush needs about three times its data in memory while it writes (0 = not by size)")
 	d := recorder.DefaultEventBudget
@@ -283,6 +284,14 @@ func run(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	usr1 := make(chan os.Signal, 1)
+	signal.Notify(usr1, syscall.SIGUSR1)
+	defer signal.Stop(usr1)
+	go func() {
+		for range usr1 {
+			r.RequestFlush("SIGUSR1")
+		}
+	}()
 	var to []string
 	if c.DataDir != "" {
 		to = append(to, c.DataDir+" (Parquet, flushed every "+c.Parquet.FlushInterval.String()+")")

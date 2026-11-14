@@ -326,6 +326,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `--keyframe-interval` | 5m | full socket dump: queues, UDP, check of the event stream |
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
 | `--flush-rows` | 400000 | also write once this many rows are buffered |
+| `--early-flush` | 30s | after an OOM kill, a kernel message that often comes before a crash (hung task, I/O or file-system error, crit level or worse) or SIGUSR1: write at the next sample if the last write is this old (0 = never early) |
 | `--flush-bytes` | 16M | also write once the command lines and file names buffered add up to this (rows count alike, but any user can give every process 64 KiB of arguments; a flush needs about three times its data in memory while it writes); `0` = not by size |
 | `--retention` / `--max-size` | 72h / 2G | delete old data; the oldest hours go first above the size cap (`0` = none) |
 | `--gc-heap-target` | 256M | heap size up to which garbage is collected at Go's default rate (GOGC 100); above it more often, down to GOGC 50; `0` = always 50; `GOGC` or `GOMEMLIMIT` in the environment turn the tuning off |

@@ -536,6 +536,14 @@ func (r *Recorder) shutdown() error {
 	return nil
 }
 
+// RequestFlush asks the store to write what it holds at the next sample
+// (clifrd on SIGUSR1). Safe from any goroutine.
+func (r *Recorder) RequestFlush(reason string) {
+	if f, ok := r.db.(interface{ RequestFlush(string) }); ok {
+		f.RequestFlush(reason)
+	}
+}
+
 // sample takes one snapshot and writes it.
 func (r *Recorder) sample(now time.Time, fdWalk bool) error {
 	ts := now.UnixMilli()
