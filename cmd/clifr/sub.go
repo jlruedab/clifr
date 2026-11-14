@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"regexp"
+	"time"
 
+	"clifr/internal/pqstore"
 	"clifr/internal/query"
 	"clifr/internal/store"
 	"clifr/internal/verify"
@@ -82,4 +85,43 @@ func cmdExport(db *store.DB, table string) error {
 		return err
 	}
 	return rows.Err()
+}
+
+// cmdIntegrity is clifr verify --integrity: every data file checked against
+// the integrity log clifrd keeps, or read whole (pqstore.CheckIntegrity).
+// No DuckDB: a damaged file cannot stop it.
+func cmdIntegrity(g *globals) error {
+	if err := pqstore.IsDataDir(g.dataDir); err != nil {
+		return fmt.Errorf("%s: not a clifr data directory (no samples table)", g.dataDir)
+	}
+	r := pqstore.CheckIntegrity(g.dataDir)
+	if g.json {
+		if err := writeLines(r, nil); err != nil {
+			return err
+		}
+	} else {
+		out, done := stdout()
+		fmt.Fprintf(out, "Data files:   %d, %s, checked in %s\n", r.Files, humanBytes(r.Bytes), r.Duration.Round(time.Millisecond))
+		fmt.Fprintf(out, "              %d against the SHA-256 logged when written, %d read whole (written before the\n"+
+			"              integrity log, or by an older clifrd)\n", r.Logged, r.Unlogged)
+		if len(r.Damaged) == 0 {
+			fmt.Fprintln(out, "Damaged:      none")
+		} else {
+			fmt.Fprintf(out, "Damaged:      %d (queries leave out a file they cannot read, with a warning; one that still\n"+
+				"              reads may give wrong values: move it out of the data directory)\n", len(r.Damaged))
+			for _, d := range r.Damaged {
+				span := ""
+				if lo, hi, ok := pqstore.FileSpan(d.Path, 5*time.Minute); ok {
+					const f = "2006-01-02 15:04"
+					span = ", rows from about " + time.UnixMilli(lo).Format(f) + " to " + time.UnixMilli(hi).Format(f)
+				}
+				fmt.Fprintf(out, "  %s (table %s%s): %s\n", d.Path, d.Table, span, d.Error)
+			}
+		}
+		done()
+	}
+	if len(r.Damaged) > 0 {
+		return fmt.Errorf("%d damaged data files", len(r.Damaged))
+	}
+	return nil
 }

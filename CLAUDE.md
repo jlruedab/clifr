@@ -87,7 +87,9 @@ wait for the user's go-ahead.
   recording loaded into DuckDB). `internal/testrec/` — small recordings for tests (Parquet,
   read back through DuckDB). `internal/duck/testdata/roundtrip.golden`: every table as
   written and read back (`go test ./internal/duck -run RoundTrip -update` rewrites it).
-- `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention.
+- `internal/pqstore/` — Parquet backend: flush windows, open-entity files, compaction, retention;
+  renames made durable (`durable.go`), early flush (`early.go`), the previous run's end (`prevrun.go`),
+  the integrity log of every file written (`integrity.go`, `integrity/DAY.log`; `clifr verify --integrity`).
 - `internal/duck/` — loads a Parquet data directory into in-memory DuckDB with the v1 table names.
 - `internal/recorder/` — sampling loop, interval trackers, self-metrics, guard rails.
 - `internal/query/` — reconstruction and formatting of ps/lsof/ss/life/stats.

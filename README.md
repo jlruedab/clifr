@@ -950,7 +950,10 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   40 single changed bytes in one file, 14 failed the whole query and 2 gave
   wrong values silently. Every zstd page now carries its frame checksum, and
   the same test gave 35 files skipped with a warning, 5 with no effect on the
-  query and no wrong values.
+  query and no wrong values. clifrd logs every data file's SHA-256 as it
+  writes it (`integrity/DAY.log`); `clifr verify --integrity` checks a
+  recording or bundle against it (files without a logged sum are read page by
+  page), without DuckDB: 1,842 files (61 MB) read whole in 1 s on the desktop.
   A bundle from another machine needs no root to read: open it as an
   ordinary user, not with sudo (its Parquet files are parsed by DuckDB).
 - `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside

@@ -41,6 +41,7 @@ type globals struct {
 	tlsFP                     string // --tls-fingerprint: the expected certificate of --host on first use
 	version, help, verbose    bool
 	salvage                   bool // --salvage: read a damaged bundle without its bad files
+	integrity                 bool // verify --integrity: check the data files, not the tools
 }
 
 func newFlags(g *globals, out io.Writer) *flag.FlagSet {
@@ -88,6 +89,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	boolean(&g.help, "h", "help")
 	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
 	fs.BoolVar(&g.salvage, "salvage", false, "")
+	fs.BoolVar(&g.integrity, "integrity", false, "")
 	return fs
 }
 
@@ -533,6 +535,15 @@ func runSub(g *globals, sub string, args []string) error {
 	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
+	}
+	if g.integrity {
+		if sub != "verify" {
+			return usageError{errors.New("--integrity is for clifr verify")}
+		}
+		if g.host != "" {
+			return usageError{errors.New("--integrity checks a local recording or bundle: run it on the host itself (clifr verify --integrity)")}
+		}
+		return cmdIntegrity(g)
 	}
 	db, err := openDB(g)
 	if err != nil {

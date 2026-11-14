@@ -251,6 +251,7 @@ type Store struct {
 	requested       atomic.Pointer[string] // RequestFlush's reason, from any goroutine
 	openMonoUS      int64                  // CLOCK_MONOTONIC at Open: older kernel messages are a replay
 	prev            PrevRun                // the run before this one (PrevRun)
+	ilog            *integrityLog          // checksums of the files written (integrity.go)
 	textBytes       int64                  // command lines and paths written since the last flush (FlushBytes)
 	unknown         int                    // updates/closes for ids this run does not hold
 
@@ -301,6 +302,7 @@ func Open(dir string, opt Options) (*Store, error) {
 		return nil, err
 	}
 	s.prev = readPrevRun(dir, s.run)
+	s.ilog = &integrityLog{dir: dir}
 	s.SetMeta(MetaWritesStop, "1")
 	s.bytes.Store(dirSize(dir))
 	return s, nil
@@ -579,6 +581,9 @@ func (s *Store) Flush() error {
 		if err == nil {
 			err = write(p)
 		}
+		if err == nil {
+			s.logFile(p)
+		}
 		errs = append(errs, err)
 	}
 	part("samples", len(s.samples), func(p string) error { return writeFile(p, s.samples) })
@@ -647,6 +652,9 @@ func (s *Store) Flush() error {
 	s.procSamples.reset()
 	s.sockSamples.reset()
 	s.lastFlush, s.textBytes, s.early = time.Now(), 0, ""
+	if err := s.ilog.sync(); err != nil {
+		s.opt.Logf("pqstore: integrity log: %v", err)
+	}
 	s.bytes.Store(dirSize(s.dir))
 	if s.busy.CompareAndSwap(false, true) {
 		s.wg.Add(1)
@@ -674,7 +682,18 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 	err := writeFile(p, rows)
 	clear(rows[:cap(rows)]) // keep the array, not the strings
 	e.scratch = rows
+	if err == nil {
+		s.logFile(p)
+	}
 	return err
+}
+
+// logFile records a file just written in the integrity log; a failure is
+// logged, not returned (the data is written).
+func (s *Store) logFile(p string) {
+	if err := s.ilog.record(p); err != nil {
+		s.opt.Logf("pqstore: integrity log: %v", err)
+	}
 }
 
 // writeOpenConv rewrites the run's open file of a valBuf table; conv
@@ -687,6 +706,11 @@ func writeOpenConv[S, T any](s *Store, table string, open map[int64]*S, conv fun
 		}
 		return nil
 	}
+	defer func() {
+		if _, err := os.Stat(p); err == nil {
+			s.logFile(p)
+		}
+	}()
 	return writeRows(p, func(w *parquet.GenericWriter[T]) error {
 		buf := make([]T, 0, min(len(open), chunkRows))
 		for _, p := range open {
@@ -710,6 +734,7 @@ func (s *Store) Close() error {
 	err := s.Flush()
 	s.cancel()
 	s.wg.Wait()
+	err = errors.Join(err, s.ilog.close())
 	if s.unknown > 0 {
 		s.opt.Logf("pqstore: %d updates or closes referred to rows this run does not hold", s.unknown)
 	}
@@ -958,6 +983,10 @@ func (s *Store) compact(current time.Time, done func()) error {
 		if err := compactors[g[0].table](paths, out); err != nil {
 			return fmt.Errorf("%s: %w", k, err)
 		}
+		s.logFile(out)
+		if err := s.ilog.sync(); err != nil { // before the parts it replaces go
+			s.opt.Logf("pqstore: integrity log: %v", err)
+		}
 		for _, h := range g {
 			if h.path != out {
 				os.Remove(h.path)
@@ -1035,6 +1064,15 @@ func (s *Store) expire(now time.Time) error {
 		for _, h := range s.listHours() {
 			if h.start().Add(time.Hour).Before(now.Add(-r)) {
 				errs = append(errs, os.Remove(h.path))
+			}
+		}
+		// Integrity logs: a day's log lists files of that day and, for open
+		// files, later ones; kept one day longer than the data.
+		logs, _ := filepath.Glob(filepath.Join(s.dir, IntegrityDir, "*.log"))
+		for _, l := range logs {
+			if d, err := time.Parse("2006-01-02", strings.TrimSuffix(filepath.Base(l), ".log")); err == nil &&
+				d.Add(48*time.Hour).Before(now.Add(-r)) {
+				errs = append(errs, os.Remove(l))
 			}
 		}
 		own := fmt.Sprintf("%d.parquet", s.run)

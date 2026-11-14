@@ -94,6 +94,10 @@ Other:
 Other commands:
   clifr verify         compare real tool output saved by clifrd --verify-every
                        with the reconstruction
+  clifr verify --integrity
+                       check every data file: against the SHA-256 clifrd
+                       logged when it wrote it, else by reading every page
+                       (checksums, structure); lists damaged files, exit 1
   clifr export TABLE   one recorded table as CSV
 
 Environment variables:

@@ -442,6 +442,18 @@ clifr: --salvage: left out data/4bbd53df/2026-11-14/02-36.parquet, damaged or mi
 
 A recording directory with a damaged file (a disk error, a copy that stopped, a changed byte) is read without it, with a similar warning on standard error: `clifr: skipped damaged file ...`. Before, one such file made every query of its table fail. Each compressed page carries a checksum (files written since 2026-11-14), so a changed byte inside the data is found when the page is read rather than giving wrong values.
 
+To check a whole recording (or a bundle) at any time:
+
+```console
+$ clifr verify --integrity
+Data files:   1842, 61.2 MB, checked in 1.02s
+              0 against the SHA-256 logged when written, 1842 read whole (written before the
+              integrity log, or by an older clifrd)
+Damaged:      none
+```
+
+clifrd logs the SHA-256 of every data file it writes (`/var/lib/clifr/integrity/DAY.log`, removed by retention with the data). `verify --integrity` compares each file with it, and reads files without a logged checksum (older ones, bundles) page by page instead. It names each damaged file, its table and the times it covers, and exits with status 1. A file that still reads but whose checksum changed may give wrong values: move it out of the data directory.
+
 ### Querying another host directly: `--host`
 
 Instead of copying bundles, clifr can query another host's recording over the network. The recorded host serves its files (`clifrd --serve`, off by default); clifr fetches only what the query needs, keeps it in a cache, and answers locally, exactly as with `--data-dir`.
