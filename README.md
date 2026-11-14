@@ -954,6 +954,15 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   writes it (`integrity/DAY.log`); `clifr verify --integrity` checks a
   recording or bundle against it (files without a logged sum are read page by
   page), without DuckDB: 1,842 files (61 MB) read whole in 1 s on the desktop.
+- A full disk once stopped clifrd (the flush error ended the recorder;
+  systemd restarted it into the same error, losing the buffered minutes each
+  time). A flush is now all or nothing (files staged, renamed into place
+  when all are written: a partial failure used to write the tables that had
+  succeeded twice on the retry), and on ENOSPC/EDQUOT clifrd deletes its
+  oldest hours (never the newest two) and retries, else keeps recording
+  into memory and retries every minute (guard events `disk_full`,
+  `disk_ok`). Checked on a 3 MB tmpfs: no gap and no duplicate sample
+  through a full disk.
   A bundle from another machine needs no root to read: open it as an
   ordinary user, not with sudo (its Parquet files are parsed by DuckDB).
 - `deploy/sos/clifr.py` is a plugin for `sos report` (install it beside

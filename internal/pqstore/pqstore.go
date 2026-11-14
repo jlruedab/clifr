@@ -251,6 +251,8 @@ type Store struct {
 	requested       atomic.Pointer[string] // RequestFlush's reason, from any goroutine
 	openMonoUS      int64                  // CLOCK_MONOTONIC at Open: older kernel messages are a replay
 	prev            PrevRun                // the run before this one (PrevRun)
+	noSpaceUntil    time.Time              // the disk was full: next flush try (diskfull.go)
+	diskFull        bool                   // the last flush failed for space
 	ilog            *integrityLog          // checksums of the files written (integrity.go)
 	textBytes       int64                  // command lines and paths written since the last flush (FlushBytes)
 	unknown         int                    // updates/closes for ids this run does not hold
@@ -298,11 +300,11 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err := renameDirs(dir, opt.Logf); err != nil {
 		return nil, fmt.Errorf("rename table directories: %w", err)
 	}
+	s.ilog = &integrityLog{dir: dir}
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
 	s.prev = readPrevRun(dir, s.run)
-	s.ilog = &integrityLog{dir: dir}
 	s.SetMeta(MetaWritesStop, "1")
 	s.bytes.Store(dirSize(dir))
 	return s, nil
@@ -547,6 +549,9 @@ func (s *Store) Write(b *store.Batch) error {
 	if r := s.requested.Swap(nil); r != nil && s.early == "" {
 		s.early = *r
 	}
+	if time.Now().Before(s.noSpaceUntil) {
+		return nil // the disk was full: no flush before the next try (Flush)
+	}
 	if b.Sample.TS != 0 && s.early != "" && s.opt.EarlyFlush > 0 && time.Since(s.lastFlush) >= s.opt.EarlyFlush {
 		s.opt.Logf("pqstore: early flush: %s", s.early)
 		return s.Flush()
@@ -565,24 +570,31 @@ func (s *Store) buffered() int {
 		s.held.closed.len() + s.socks.closed.len() + len(s.sockSamples.rows) + s.owners.closed.len() + s.files.closed.len()
 }
 
-// Flush writes everything buffered and rewrites the open files.
-func (s *Store) Flush() error {
+// stageSuffix marks a flush's file written but not yet in place: readers
+// glob *.parquet and do not see it. A flush renames all its files into place
+// only when every one was written (all or nothing); recover puts complete
+// ones left by a crash in between in place.
+const stageSuffix = ".stage"
+
+// flushOnce writes everything buffered and rewrites the open files.
+func (s *Store) flushOnce() error {
 	s.dirs.Lock()
 	defer s.dirs.Unlock()
 	now := time.Now().UTC()
 	s.refreshMeta(now)
 	day, name := now.Format("2006-01-02"), now.Format("15-04")
 	var errs []error
+	var staged [][2]string // stage path, final path
 	part := func(table string, n int, write func(path string) error) {
 		if n == 0 {
 			return
 		}
 		p, err := freePath(filepath.Join(s.dir, Dir(table), day), name)
 		if err == nil {
-			err = write(p)
+			err = write(p + stageSuffix)
 		}
 		if err == nil {
-			s.logFile(p)
+			staged = append(staged, [2]string{p + stageSuffix, p})
 		}
 		errs = append(errs, err)
 	}
@@ -623,7 +635,28 @@ func (s *Store) Flush() error {
 	part("neighs", len(s.neighs), func(p string) error { return writeFile(p, s.neighs) })
 	part("meta", len(s.meta), func(p string) error { return writeFile(p, s.meta) })
 	if err := errors.Join(errs...); err != nil {
-		return err // keep the buffers; the next flush retries
+		// Keep the buffers; the next flush writes them all again. Nothing of
+		// this one is in place, so nothing is written twice.
+		for _, f := range staged {
+			os.Remove(f[0])
+		}
+		return err
+	}
+	dirs := map[string]bool{}
+	for _, f := range staged {
+		if err := os.Rename(f[0], f[1]); err != nil {
+			s.opt.Logf("pqstore: %v (recover puts it in place at the next start)", err)
+			continue
+		}
+		dirs[filepath.Dir(f[1])] = true
+	}
+	for d := range dirs {
+		if err := SyncDir(d); err != nil {
+			s.opt.Logf("pqstore: %v", err)
+		}
+	}
+	for _, f := range staged {
+		s.logFile(f[1])
 	}
 	// Open rows, seen until the last sample (open files: the last fd walk).
 	errs = append(errs,
@@ -821,13 +854,15 @@ func writeRows[T any](path string, fill func(*parquet.GenericWriter[T]) error) e
 
 // freePath is dir/name.parquet, or dir/name-2.parquet, ... if taken.
 func freePath(dir, name string) (string, error) {
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := mkdirDurable(dir, 0o750); err != nil {
 		return "", err
 	}
 	p := filepath.Join(dir, name+".parquet")
 	for i := 2; ; i++ {
 		if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
 			return p, nil
+		} else if err != nil {
+			return "", err // not "taken": asking again would loop forever
 		}
 		p = filepath.Join(dir, fmt.Sprintf("%s-%d.parquet", name, i))
 	}
@@ -892,11 +927,26 @@ func (s *Store) listHours() []hourFile {
 }
 
 // recover removes temporary files and parts already merged into an hour
-// file (a crash between the rename and the deletes).
+// file (a crash between the rename and the deletes), and puts in place the
+// complete files of a flush that a crash stopped before its renames (its
+// buffers are gone with the crash: nothing is written twice).
 func (s *Store) recover() error {
 	filepath.WalkDir(s.dir, func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".tmp") {
+		switch {
+		case err != nil || d.IsDir():
+		case strings.HasSuffix(p, ".tmp"):
 			os.Remove(p)
+		case strings.HasSuffix(p, stageSuffix):
+			final := strings.TrimSuffix(p, stageSuffix)
+			if _, err := os.Stat(final); err == nil {
+				final, err = freePath(filepath.Dir(final), strings.TrimSuffix(filepath.Base(final), ".parquet"))
+				if err != nil {
+					return nil
+				}
+			}
+			if err := RenameDurable(p, final); err == nil {
+				s.logFile(final)
+			}
 		}
 		return nil
 	})

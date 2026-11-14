@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // A file written to a temporary name, fsynced and renamed has its data on
@@ -49,7 +50,10 @@ func RenameDurable(from, to string) error {
 func mkdirDurable(dir string, perm fs.FileMode) error {
 	var created []string
 	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
-		if _, err := os.Stat(d); err == nil {
+		if st, err := os.Stat(d); err == nil {
+			if !st.IsDir() {
+				return &fs.PathError{Op: "mkdir", Path: d, Err: syscall.ENOTDIR}
+			}
 			break
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return err
