@@ -62,7 +62,7 @@ Every reconstruction says on stderr where its data come from, for example `recon
 
 **How far back.** By default 72 hours, and never more than 2 GB of data (oldest hours deleted first). On a very busy server the 2 GB cap is reached in about 11 hours; check with `clifr info`. Both are configurable.
 
-**Gaps.** While the machine is off or suspended or the service is stopped nothing is recorded. A moment in a gap is refused (`nothing was recorded at ...: no samples from ... to ... (clifrd was not running)`), and `clifr events --type gap` lists the gaps.
+**Gaps.** While the machine is off or suspended or the service is stopped nothing is recorded. A moment in a gap is refused (`nothing was recorded at ...: no samples from ... to ... (clifrd was not running)`), and `clifr events --type gap` lists the gaps. Within a run, a moment between two samples is shown from the sample before it. But a moment after a run's last sample, before a reboot or restart, is refused even if the gap is short: `... is between two runs: clifrd's last sample was ..., the next ... (after a reboot)`.
 
 **Who can read it.** The recording contains every user's command lines, so only root and members of the `clifr` group can read it (see [the installation guide](install.md#let-administrators-use-clifr-without-sudo)). Secrets in command lines can be masked before they are stored (`redact` patterns, see [Configuration](#6-configuration)).
 

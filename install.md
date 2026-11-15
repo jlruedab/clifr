@@ -296,6 +296,7 @@ The `clifr` group is left in place (systemd-sysusers groups are not removed on u
 |---|---|
 | `... is after the end of the recording (last sample ...): clifrd writes to disk every 5m0s` | The moment asked for is newer than the last flush. Wait up to 5 minutes, or ask for an earlier moment. `clifr info` prints the recording's range. |
 | `nothing was recorded at ...: no samples from ... to ... (clifrd was not running)` | The moment falls in a gap: the machine was off or suspended, or the service was stopped. `clifr --since yesterday events` shows the gaps. |
+| `... is between two runs: clifrd's last sample was ..., the next ... (after a reboot)` | The moment is after clifrd's last sample before a reboot, a restart or a stop, and before it recorded again. Even a few seconds there are refused: the last sample does not stand for the minute after it when clifrd stopped. Ask for a moment before the last sample or after the next one. |
 | `/var/lib/clifr: permission denied (the recording is readable by root and the clifr group)` | Run with `sudo`, or add the user to the `clifr` group and log in again. |
 | `ps: option --foo is not supported for recorded data (see: clifr help ps)` | clifr rebuilds each tool's output from recorded data and accepts only the options it can honour. `clifr help COMMAND` lists them. |
 | `recorded by a newer clifrd (schema N) ...: update clifr` | The recording comes from a newer clifrd than this clifr. Install the matching clifr package. |

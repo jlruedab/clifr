@@ -184,11 +184,24 @@ func Covered(db *store.DB, t int64) error {
 	if err := db.QueryRow(`SELECT MAX(ts) FROM samples WHERE ts <= ?`, t).Scan(&prev); err != nil {
 		return err
 	}
-	if !prev.Valid || t-prev.Int64 <= iv*5/2 {
+	if !prev.Valid || t == prev.Int64 {
 		return nil
 	}
 	if err := db.QueryRow(`SELECT MIN(ts) FROM samples WHERE ts > ?`, t).Scan(&next); err != nil {
 		return err
+	}
+	// A sample stands for the moments after it only within its own run:
+	// after a run's last sample clifrd stopped (a shutdown, a restart), and
+	// a moment before the next run's first sample was not recorded at all,
+	// however short the gap.
+	if next.Valid {
+		if why := runBetween(db, prev.Int64, next.Int64); why != "" {
+			return fmt.Errorf("%s is between two runs: clifrd's last sample was %s, the next %s (%s)",
+				FormatMS(t), FormatMS(prev.Int64), FormatMS(next.Int64), why)
+		}
+	}
+	if t-prev.Int64 <= iv*5/2 {
+		return nil
 	}
 	if next.Valid {
 		return fmt.Errorf("nothing was recorded at %s: no samples from %s to %s (clifrd was not running)",
@@ -196,6 +209,24 @@ func Covered(db *store.DB, t int64) error {
 	}
 	return fmt.Errorf("%s is after the end of the recording (last sample %s): clifrd writes to disk %s, "+
 		"so the latest minutes may not be there yet, or it was not running", FormatMS(t), FormatMS(prev.Int64), flushEvery(db))
+}
+
+// runBetween says why the samples at prev and next belong to different
+// clifrd runs ("after a reboot", "clifrd restarted"), "" when they are of one
+// run. A run is named by its start in Unix seconds; a sample belongs to the
+// newest run started at or before its second, as MetaAt reads it.
+func runBetween(db *store.DB, prev, next int64) string {
+	var a, b sql.NullInt64
+	db.QueryRow(`SELECT MAX(run) FILTER (WHERE run <= ?2 // 1000), MAX(run) FILTER (WHERE run <= ?3 // 1000)
+		FROM read_parquet(?1, union_by_name = true)`,
+		filepath.Join(pqstore.TableDir(db.DataDir, "meta"), "**", "*.parquet"), prev, next).Scan(&a, &b)
+	if !a.Valid || !b.Valid || a.Int64 == b.Int64 {
+		return ""
+	}
+	if x, y := MetaAt(db, "boot_id", prev), MetaAt(db, "boot_id", next); x != "" && y != "" && x != y {
+		return "after a reboot"
+	}
+	return "clifrd restarted"
 }
 
 // flushEvery is how often clifrd writes to disk, as text ("every 5m0s").
