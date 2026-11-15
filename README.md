@@ -3,6 +3,8 @@
 
 # clifr — a Linux flight recorder (working prototype)
 
+<p align="center"><img src="clifr_demo.gif" alt="clifr demo"></p>
+
 ## What is clifr?
 
 clifr (**command line flight recorder**) is a "black box" for Linux servers: a flight recorder that keeps a continuous record of what happens on the system, so you can go back later and see what the machine looked like at any moment in the past.
