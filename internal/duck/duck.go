@@ -158,9 +158,25 @@ func (l *loader) prepare(q string) (string, error) {
 }
 
 // files lists a table's files, leaving out damaged ones (pqstore.CheckFile):
-// DuckDB refuses a whole query over a list with one of them in it.
+// DuckDB refuses a whole query over a list with one of them in it. A file
+// that is gone by the time it is checked was merged or deleted by clifrd
+// (compaction, retention) after the listing: the table is listed again, as
+// the hour file that replaced it may not have been there yet.
 func (l *loader) files(table string) []string {
-	var files []string
+	for try := 1; ; try++ {
+		files, vanished := l.listFiles(table)
+		if !vanished || try == listTries {
+			return files
+		}
+	}
+}
+
+// listTries bounds how often a table is listed (files) or loaded (load) again
+// because clifrd removed a file meanwhile: once an hour per table, at most a
+// few times a second while retention deletes many hours.
+const listTries = 5
+
+func (l *loader) listFiles(table string) (files []string, vanished bool) {
 	for _, d := range pqstore.TableDirs(l.dir, table) {
 		f, _ := filepath.Glob(filepath.Join(d, "*", "*.parquet"))
 		for _, p := range f {
@@ -172,6 +188,10 @@ func (l *loader) files(table string) []string {
 				continue
 			}
 			if err := pqstore.CheckFile(p); err != nil {
+				if gone(p) {
+					vanished = true
+					continue
+				}
 				l.damaged[p] = true
 				l.warn(l.damageNote(table, p, err))
 				continue
@@ -180,8 +200,22 @@ func (l *loader) files(table string) []string {
 			files = append(files, p)
 		}
 	}
-	return files
+	return files, vanished
 }
+
+// gone says the file no longer exists.
+func gone(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// beforeExec, when set (tests), runs between listing a table's files and
+// reading them: where clifrd's compaction can remove one.
+var beforeExec func(table string, files []string)
+
+// errVanished: a file a query was built from was removed by clifrd before
+// DuckDB read it.
+var errVanished = errors.New("a data file was removed while it was read (clifrd merged or deleted it)")
 
 // damageNote says which file was skipped and which times lack its rows.
 func (l *loader) damageNote(table, path string, err error) string {
@@ -226,11 +260,40 @@ func (l *loader) flushMS() int64 {
 	return int64(v.Float64 * 1000)
 }
 
+// load loads a table. clifrd merges an hour's flush files into one and
+// deletes them at the next hour (compaction), and retention deletes whole
+// hours: a file listed for the query can be gone when DuckDB reads it
+// ("Cannot open file"). The table is then listed and loaded again.
 func (l *loader) load(table string) error {
 	if l.loaded[table] {
 		return nil
 	}
 	l.loaded[table] = true
+	for try := 1; ; try++ {
+		before := l.allFiles()
+		err := l.loadOnce(table)
+		if err == nil || try == listTries || !errors.Is(err, errVanished) && !slices.ContainsFunc(before, gone) {
+			return err
+		}
+		if _, e := l.db.Exec(`DROP TABLE IF EXISTS ` + table); e != nil {
+			return err
+		}
+	}
+}
+
+// allFiles lists every table's files as they are now (no checks).
+func (l *loader) allFiles() []string {
+	var all []string
+	for _, t := range pqstore.Tables {
+		for _, d := range pqstore.TableDirs(l.dir, t) {
+			f, _ := filepath.Glob(filepath.Join(d, "*", "*.parquet"))
+			all = append(all, f...)
+		}
+	}
+	return all
+}
+
+func (l *loader) loadOnce(table string) error {
 	// Every table exists even without files: an empty file of its schema
 	// also gives older recordings the columns added since (NULL).
 	empty := filepath.Join(l.schemaDir, table+".parquet")
@@ -325,6 +388,9 @@ func (l *loader) load(table string) error {
 // warning, as files that fail pqstore.CheckFile are, and the query runs
 // again. A failure that names no file is returned.
 func (l *loader) execSkipping(table string, files []string, build func([]string) string) error {
+	if beforeExec != nil {
+		beforeExec(table, files)
+	}
 	for {
 		_, err := l.db.Exec(build(files))
 		if err == nil {
@@ -336,6 +402,9 @@ func (l *loader) execSkipping(table string, files []string, build func([]string)
 		}
 		if bad < 0 {
 			return err
+		}
+		if gone(files[bad]) {
+			return fmt.Errorf("%w: %v", errVanished, firstLine(err))
 		}
 		l.damaged[files[bad]] = true
 		delete(l.checked, files[bad])
