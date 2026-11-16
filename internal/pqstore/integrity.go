@@ -46,10 +46,11 @@ type integrityLog struct {
 	lostWarn  time.Time
 	anchorAt  time.Time // last seal anchor logged
 	infof     func(string, ...any)
+	now       func() time.Time // the clock (tests set it)
 }
 
 func newIntegrityLog(dir string, logf func(string, ...any)) *integrityLog {
-	return &integrityLog{dir: dir, logf: logf, infof: logf, sum: sha256.New()}
+	return &integrityLog{dir: dir, logf: logf, infof: logf, sum: sha256.New(), now: time.Now}
 }
 
 // record appends path's checksum (path: a file just written).
@@ -84,7 +85,7 @@ func (l *integrityLog) removed(path, reason string) error {
 // goes back (a clock stepped back): the lines stay in the order written.
 // Before a new day's log begins, the old day's lines are sealed into it.
 func (l *integrityLog) appendLocked(line string, hashed bool) error {
-	day := time.Now().UTC().Format("2006-01-02")
+	day := l.now().UTC().Format("2006-01-02")
 	if day < l.day {
 		day = l.day
 	}

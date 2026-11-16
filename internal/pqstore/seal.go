@@ -364,12 +364,12 @@ func (l *integrityLog) sealLocked(flag string) bool {
 	if !ok {
 		return false
 	}
-	r := sealRec{keyID: st.keyID, epoch: st.epoch, ms: time.Now().UnixMilli(), run: l.run, flag: flag, lines: l.lines, prev: st.prev}
+	r := sealRec{keyID: st.keyID, epoch: st.epoch, ms: l.now().UnixMilli(), run: l.run, flag: flag, lines: l.lines, prev: st.prev}
 	r.tag = r.mac(st.key, l.sum.Sum(nil))
 	if l.f == nil { // the seal goes into the log of its lines
 		day := l.day
 		if day == "" {
-			day = time.Now().UTC().Format("2006-01-02")
+			day = l.now().UTC().Format("2006-01-02")
 		}
 		if err := l.openLocked(day); err != nil {
 			l.logf("pqstore: seal: %v", err)

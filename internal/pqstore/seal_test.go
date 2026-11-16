@@ -399,3 +399,93 @@ func TestSealAnchor(t *testing.T) {
 		t.Errorf("anchor %s names no seal of the log", a)
 	}
 }
+
+// TestSealDayChange: the lines of a UTC day are sealed into its own log
+// before the next day's log begins, so a day's log verifies alone (as after
+// retention removed the days before); a clock stepped back keeps writing
+// to the newest log.
+func TestSealDayChange(t *testing.T) {
+	dir := t.TempDir()
+	vk, _, _ := SealSetup(dir, false)
+	k := mustKey(t, vk)
+	clock := time.Date(2026, 11, 16, 23, 58, 0, 0, time.UTC)
+	l := newIntegrityLog(dir, func(string, ...any) {})
+	l.now = func() time.Time { return clock }
+	l.sealOpen(1)
+	file := func(name string) {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte(name), 0o640)
+		if err := l.record(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file("a")
+	l.seal("-")
+	file("b") // sealed by the day change
+	clock = clock.Add(3 * time.Minute)
+	file("c")
+	clock = clock.Add(-10 * time.Minute) // stepped back into the 16th
+	file("d")
+	l.seal("-")
+	l.close()
+
+	logs := integrityLogFiles(dir)
+	if len(logs) != 2 || filepath.Base(logs[0]) != "2026-11-16.log" || filepath.Base(logs[1]) != "2026-11-17.log" {
+		t.Fatalf("logs %v", logs)
+	}
+	day1, _ := os.ReadFile(logs[0])
+	lines := strings.Split(strings.TrimSpace(string(day1)), "\n")
+	if last, _ := parseSeal(lines[len(lines)-1]); last.flag != "day" || last.lines != 1 {
+		t.Errorf("the 16th does not end with a day seal: %q", lines[len(lines)-1])
+	}
+	day2, _ := os.ReadFile(logs[1])
+	if !strings.Contains(string(day2), " d\n") {
+		t.Errorf("a line after the clock stepped back went elsewhere:\n%s", day2)
+	}
+	r := VerifySeals(dir, [][]byte{k})
+	if len(r.Bad) != 0 || r.Seals != 3 || r.After != 0 {
+		t.Fatalf("both days: %+v", r)
+	}
+	r = verifySealLogs(logs[1:], [][]byte{k})
+	if len(r.Bad) != 0 || r.Seals != 1 || r.StartEpoch[SealKeyID(k)] != 3 || r.Sealed["c"].What == "" || r.Sealed["d"].What == "" {
+		t.Fatalf("the 17th alone: %+v", r)
+	}
+}
+
+// TestSealRetention: retention removes the hours and the old day's log;
+// what is left verifies with nothing altered (the chain starts in the day
+// kept) and every removal is sealed and on time.
+func TestSealRetention(t *testing.T) {
+	dir := t.TempDir()
+	vk, _, _ := SealSetup(dir, false)
+	k := mustKey(t, vk)
+	s, err := Open(dir, Options{FlushInterval: time.Hour, Retention: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		sealWrite(t, s)
+	}
+	later := time.Now().Add(100 * time.Hour)
+	s.ilog.mu.Lock()
+	s.ilog.now = func() time.Time { return later }
+	s.ilog.mu.Unlock()
+	if err := s.expire(later.UTC()); err != nil {
+		t.Fatal(err)
+	}
+	sealWrite(t, s)
+	s.cancel() // no maintenance at the real time
+	s.wg.Wait()
+	s.Close()
+	logs := integrityLogFiles(dir)
+	if len(logs) != 1 || filepath.Base(logs[0]) != later.UTC().Format("2006-01-02")+".log" {
+		t.Fatalf("logs %v", logs)
+	}
+	c := checkSeals(dir, k)
+	if c.Bad() != 0 || c.Removed == 0 || c.After != 0 || len(c.NoLine) != 0 {
+		t.Fatalf("%+v", c)
+	}
+	if c.StartEpoch[SealKeyID(k)] <= 1 {
+		t.Errorf("the chain should start after the removed day: %+v", c.StartEpoch)
+	}
+}

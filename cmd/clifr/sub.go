@@ -172,7 +172,7 @@ func cmdIntegrity(g *globals) error {
 	case g.bundle != nil && g.bundle.manifest == nil:
 		return fmt.Errorf("the bundle was cut short (no bundle.json); %d damaged data files among those that arrived", len(r.Damaged))
 	case seals != nil && seals.Bad() > 0:
-		return fmt.Errorf("the recording was altered after it was sealed (%d findings)", seals.Bad())
+		return fmt.Errorf("the recording was altered after it was sealed (%d finding(s))", seals.Bad())
 	case len(r.Damaged)+bad > 0:
 		return fmt.Errorf("%d damaged or missing data files", len(r.Damaged)+bad)
 	}
