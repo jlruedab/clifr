@@ -83,17 +83,23 @@ var verifyCommands = [][]string{
 // captureVerify runs the real tools and queues their output for the next
 // transaction. The commands run inside the recorder's cgroup, so benchmark
 // runs that measure recorder cost must not use --verify-every.
+//
+// A tool that is missing, or that fails without output (RHEL's nfsstat exits
+// 2 where NFS is not in use: "No Client Stats"), is skipped: nothing is
+// compared for it. That is said once per run, not at every checkpoint.
 func (r *Recorder) captureVerify(sampleTS int64) {
 	for _, argv := range verifyCommands {
+		cmdline := strings.Join(argv, " ")
 		path, err := exec.LookPath(argv[0])
 		if err != nil {
-			r.log.Warnf("verify: %s not found, skipping", argv[0])
+			r.verifySkip(cmdline, "not found")
 			continue
 		}
 		cmd := exec.Command(path, argv[1:]...)
 		cmd.Env = []string{"LC_ALL=C", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
 		var out bytes.Buffer
-		cmd.Stdout = &out
+		var stderr limitedBuffer
+		cmd.Stdout, cmd.Stderr = &out, &stderr
 		start := time.Now()
 		if err := cmd.Start(); err != nil {
 			r.log.Errorf("verify: %s: %v", argv[0], err)
@@ -103,7 +109,11 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		err = cmd.Wait()
 		end := time.Now()
 		if err != nil && out.Len() == 0 { // lsof exits 1 on harmless warnings
-			r.log.Errorf("verify: %s: %v", argv[0], err)
+			why := err.Error()
+			if l := firstLine(stderr.String()); l != "" {
+				why += ": " + l
+			}
+			r.verifySkip(cmdline, why)
 			continue
 		}
 		output := r.redact.Text(out.String()) // the real tools show the command lines as they are
@@ -112,8 +122,35 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		}
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
 			TS: start.UnixMilli(), EndTS: end.UnixMilli(), SampleTS: sampleTS,
-			Cmd: strings.Join(argv, " "), IgnorePIDs: fmt.Sprintf("%d,%s", os.Getpid(), strconv.Itoa(pid)),
+			Cmd: cmdline, IgnorePIDs: fmt.Sprintf("%d,%s", os.Getpid(), strconv.Itoa(pid)),
 			Output: output,
 		})
 	}
+}
+
+// verifySkip logs a verify command skipped, once per run and command.
+func (r *Recorder) verifySkip(cmdline, why string) {
+	if r.verifySkipped == nil {
+		r.verifySkipped = map[string]bool{}
+	}
+	if r.verifySkipped[cmdline] {
+		return
+	}
+	r.verifySkipped[cmdline] = true
+	r.log.Warnf("verify: %s: %s; skipped (not compared), not reported again this run", cmdline, why)
+}
+
+// limitedBuffer keeps the first 4 KiB written to it (a tool's stderr).
+type limitedBuffer struct{ bytes.Buffer }
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := 4096 - b.Len(); room > 0 {
+		b.Buffer.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func firstLine(s string) string {
+	l, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(l)
 }

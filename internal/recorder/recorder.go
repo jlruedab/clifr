@@ -98,6 +98,8 @@ type Recorder struct {
 	gen   uint64
 	procs map[procKey]*procEntry
 	ids   map[string]int64 // next id per table
+
+	verifySkipped map[string]bool // verify commands already reported skipped (verifycap.go)
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
 	cgroups map[string]cgroupSeen
 	// ctrSeen: the containers seen in processes' cgroups; ctrNew: one was
