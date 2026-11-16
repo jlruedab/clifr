@@ -35,7 +35,7 @@ It comes in two parts:
 
 **What it isn't:**
 
-- a security audit system: it does not record file reads or writes, and it is not tamper-proof;
+- a security audit system: it does not record file reads or writes, and root can stop it (optional sealing, `clifrd seal-setup`, makes changes to what it already recorded detectable);
 - a monitoring system with alerts.
 
 It complements those tools: Prometheus tells you *when* something happened, clifr tells you *what* happened.
@@ -965,6 +965,18 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   writes it (`integrity/DAY.log`); `clifr verify --integrity` checks a
   recording or bundle against it (files without a logged sum are read page by
   page), without DuckDB: 1,842 files (61 MB) read whole in 1 s on the desktop.
+- Sealing (`clifrd seal-setup`, off by default; design in
+  [docs/sealing.md](docs/sealing.md)): after every flush clifrd seals the
+  integrity log with an HMAC-SHA256 key that it then replaces by a one-way
+  successor, so root gained later cannot alter, remove or reorder what was
+  sealed before without `clifr verify --integrity --seal-key KEY` reporting
+  it. The verification key is printed once and never stored on the host.
+  Every file the store removes is logged and sealed too (compaction,
+  retention with its period, size cap), a crash's unsealed lines are sealed
+  "late" at the next start, a lost key file is noted and warned about, and
+  bundles carry the logs so they verify anywhere. An hourly `seal anchor`
+  journal line, where the journal is forwarded, shows a recording whose
+  newest seals were cut off (`--seal-anchor`). Standard library only.
 - A full disk once stopped clifrd (the flush error ended the recorder;
   systemd restarted it into the same error, losing the buffered minutes each
   time). A flush is now all or nothing (files staged, renamed into place

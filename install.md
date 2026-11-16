@@ -259,6 +259,20 @@ Inside the report the bundle is `sos_commands/clifr/clifr-bundle.tar`, beside `c
 
 The plugin is installed as `/usr/share/clifr/sos/clifr.py` and linked into sos's plugin directory while sos is installed: clifrd and sos can be installed in either order, and removing sos removes the link (and nothing of sos's directory is left behind). Without sos, nothing is installed into sos's directory. The plugin belongs to sos's `system` profile, so a full `sos report` runs it. Unlike the rest of clifr it is licensed GPL-2.0-only, as sos is (see `LICENSING.md`).
 
+### Seal the recording (optional)
+
+Sealing lets you show later that the recording was not changed after it was written, even by someone who became root on the host afterwards (user guide: [Sealing](userguide.md#sealing-showing-that-a-recording-was-not-altered)). It is off until you set it up, once per host; clifrd does not need a restart:
+
+```sh
+sudo clifrd seal-setup > web01.key       # the key on standard output, explanations on the terminal
+```
+
+Then move `web01.key` **off the host** (a password manager, or the machine where you analyse recordings) and delete it here. The key is shown only once and clifrd does not store it: that is what makes sealing work. Anyone who has it can also create seals, so keep it like a password. Check later with `clifr verify --integrity --seal-key @web01.key`, on the host or on a bundle.
+
+- Leave `/var/lib/clifr/integrity/seal.state` out of backups and VM snapshots: a copy holds the key of its moment, and restoring it brings that key back.
+- If the journal is forwarded to a log server, clifrd's hourly `seal anchor` lines there let you detect a recording whose newest part was deleted.
+- `clifr info` shows `Sealing: on`, or `LOST` if `seal.state` was deleted or damaged: then run `sudo clifrd seal-setup --new` and keep the new key with the old one.
+
 ### Configuration
 
 Settings are in `/etc/clifr/clifrd.yml`. Every line of the shipped file shows the default, so the recorder behaves the same with an empty file. The most common changes are the retention and size cap, and the patterns that mask secrets in command lines. They are explained in the user guide's [Configuration](userguide.md#6-configuration) section. After editing:

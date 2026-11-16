@@ -1,7 +1,9 @@
 # Forward-secure sealing of the integrity log (proposal)
 
 Status: approved 2026-11-16 (decisions D1-D7 below, all as recommended;
-sealing ships in v0.1.0). Implementation in progress on the `integrity` branch.
+sealing ships in v0.1.0) and implemented (`internal/pqstore/seal.go`,
+`sealcheck.go`, `cmd/clifrd/seal.go`). Users' documentation: the user guide's
+"Sealing" section and install.md "Seal the recording".
 
 ## The problem
 

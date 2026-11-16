@@ -15,7 +15,7 @@ To install clifr, see the [installation guide](install.md).
 
 1. [Concepts](#1-concepts)
 2. [Basic usage](#2-basic-usage)
-3. [Advanced usage](#3-advanced-usage): [using clifr from an AI agent](#using-clifr-from-an-ai-agent)
+3. [Advanced usage](#3-advanced-usage): [using clifr from an AI agent](#using-clifr-from-an-ai-agent), [sealing](#sealing-showing-that-a-recording-was-not-altered)
 4. [Use cases](#4-use-cases)
    1. [Review a performance issue from yesterday](#use-case-1-review-a-performance-issue-from-yesterday)
    2. [Cybersecurity: check for suspicious activity an hour ago](#use-case-2-cybersecurity-check-for-suspicious-activity-an-hour-ago)
@@ -476,6 +476,72 @@ Damaged:      none
 
 clifrd logs the SHA-256 of every data file it writes (`/var/lib/clifr/integrity/DAY.log`, removed by retention with the data). `verify --integrity` compares each file with it, and reads files without a logged checksum (older ones, bundles) page by page instead. It names each damaged file, its table and the times it covers, and exits with status 1. A file that still reads but whose checksum changed may give wrong values: move it out of the data directory.
 
+### Sealing: showing that a recording was not altered
+
+The checksums above catch damage, not tampering: anyone with root can change a data file and its logged checksum. *Sealing* (off until you set it up) closes that gap for everything written before an intruder got in. After every flush (5 minutes) clifrd seals the integrity log with a key that it then replaces by the next one and overwrites; nobody can work back from a later key to an earlier one. Someone who becomes root at 14:00 can therefore change, delete or reorder nothing written before about 13:55 without `clifr verify --integrity --seal-key KEY` saying so. They can still stop clifrd, change what it records from then on, or delete the whole recording: sealing proves the recording was not changed after it was written, not that the host was clean when it was written.
+
+**Set it up** once per host (installation guide: [Seal the recording](install.md#seal-the-recording-optional)):
+
+```console
+$ sudo clifrd seal-setup
+clifrd: sealing set up for /var/lib/clifr
+  host web01, machine-id 141c779dd5da4d67905e82b6f0ae5d02, 2026-11-16 14:06:49 ACDT
+  key id 98d169b8; sealing starts at clifrd's next flush
+
+The verification key follows. It is shown only now and is not stored here: copy it to
+somewhere off this host, then clear this terminal's scrollback.
+
+cs1-6f0c…(64 hex digits)
+```
+
+The printed line is the **verification key**. It is not kept on the host (that is the point): store it where the host's root cannot reach it, such as a password manager or the machine where you analyse recordings. Whoever holds it can also create seals, so treat it like a password. If it is lost, `sudo clifrd seal-setup --new` starts a new chain with a new key; the old part of the recording stays verifiable with the old key.
+
+**Check a recording** (on the host, or a bundle anywhere):
+
+```console
+$ clifr verify --integrity --seal-key @web01.key
+Data files:   69, 565 KB, checked in 2ms
+              69 against the SHA-256 logged when written, 0 read whole (written before the
+              integrity log, or by an older clifrd)
+Damaged:      none
+Seals:        5 verified, 2026-11-16 14:07:09 .. 2026-11-16 14:08:03, chain 98d169b8
+              1 run starts, 1 clean stops
+Sealed files: 69 match their sealed SHA-256, 2 removed by clifrd as sealed
+Altered:      nothing found
+```
+
+`--seal-key` takes the key or `@FILE`; give it once per key if the recording has several chains. When something was changed after it was sealed the report says `ALTERED`, names each file or seal, and clifr exits with status 1:
+
+```console
+ALTERED:      1 finding(s): changed, removed or reordered after they were sealed
+  7d1c6de1/2026-11-16/03-38.parquet: SHA-256 236ba85d095d..., sealed 9079a0c32dcb... (2026-11-16 03:38 UTC)
+```
+
+What the report tells apart:
+
+- **Seals:** the chain checked with the key, its runs (a start and a clean stop each) and crashes. After a crash, the lines the crashed run wrote last were sealed when clifrd started again; anyone with root between the crash and the restart could have changed those.
+- **Sealed files:** every data file against the checksum sealed for it, and every file clifrd removed (compaction, retention, the size cap) against its sealed removal. A file removed by "retention" before it was old enough, or missing with no removal at all, is a finding.
+- **Not protected:** what was written after the last seal (the last minutes, sealed at the next flush), files without a log line (written before the integrity log existed, or not by clifrd), and any stretch where sealing stopped because its key file was lost. These are not proof of tampering, but they are not covered either.
+- **Bundles:** `clifrd bundle` includes the integrity logs, so `clifr -D web01-clifr.tar verify --integrity --seal-key @web01.key` checks a bundle the same way, wherever it was copied. Files outside the bundle's window are counted as "not in the bundle".
+
+**Anchors: the newest data.** A seal shows that what came before it is intact, but not that the seals after it still exist. An intruder could delete the last hour completely, data and seals, and what is left would still verify. Against that, clifrd writes one line per hour to the journal:
+
+```text
+clifrd: 2026/11/16 14:07:09 seal anchor 98d169b8/1:90084841602a78d3 (...)
+```
+
+On hosts whose journal or syslog is forwarded to another machine, that copy is out of the intruder's reach. Give the latest anchor from it to verify:
+
+```sh
+clifr verify --integrity --seal-key @web01.key --seal-anchor 98d169b8/1234:9f2c1a7e5b3d0c11
+```
+
+`reached` means the recording still contains that seal. Otherwise clifr says the seals after a point were removed, or that the chain was rewritten or restored from an older copy. Without a forwarded journal the anchor lines add nothing, since root can edit the local journal too.
+
+**Reboots, backups and snapshots.** A reboot needs nothing: clifrd keeps sealing with the key in `/var/lib/clifr/integrity/seal.state`. A backup or VM snapshot, however, contains the key of its moment: whoever has it can forge seals from that moment on, and restoring it brings the old key back. Leave `integrity/seal.state` out of backups and snapshots, or accept that their age limits what sealing proves.
+
+`clifr info` shows whether a recording is sealed (`Sealing: on, chain 98d169b8, last seal …`), and `LOST` when clifrd's key file disappeared or was damaged; then nothing new is sealed until `sudo clifrd seal-setup --new`. The design is in [docs/sealing.md](docs/sealing.md).
+
 ### Querying another host directly: `--host`
 
 Instead of copying bundles, clifr can query another host's recording over the network. The recorded host serves its files (`clifrd --serve`, off by default); clifr fetches only what the query needs, keeps it in a cache, and answers locally, exactly as with `--data-dir`.
@@ -665,7 +731,7 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
 
 **What to look for.** Shells or interpreters whose parent is a network service; processes running from `/tmp`, `/dev/shm` or a deleted executable; connections to unknown addresses on unusual ports, especially long-lived ones (command and control) or from processes that normally never connect out; a new listener; a new kernel module; a service unit you do not know.
 
-**What clifr cannot tell.** Who logged in and how (see [use case 7](#use-case-7-track-down-a-past-ssh-session)), which files were read or written (only files *held open* across two 2-minute walks are recorded), UDP traffic between the 5-minute socket dumps (DNS tunnelling, for example), and the content of any traffic. clifr's recording is not tamper-proof: an attacker with root can stop clifrd or delete its data. A gap in `events --type gap` that nobody explains is itself a finding. For forensics-grade evidence use auditd (see [use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)) and send logs off the host.
+**What clifr cannot tell.** Who logged in and how (see [use case 7](#use-case-7-track-down-a-past-ssh-session)), which files were read or written (only files *held open* across two 2-minute walks are recorded), UDP traffic between the 5-minute socket dumps (DNS tunnelling, for example), and the content of any traffic. An attacker with root can stop clifrd or delete its data; with [sealing](#sealing-showing-that-a-recording-was-not-altered) set up they cannot change what was recorded before they got in without `clifr verify --integrity --seal-key` showing it. A gap in `events --type gap` that nobody explains is itself a finding. For forensics-grade evidence use auditd (see [use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)) and send logs off the host.
 
 ### Use case 3. A process crashed two days ago. Why?
 
@@ -919,7 +985,7 @@ They answer different questions, and on a server that matters they complement ea
 | File access (opened, read, written, deleted) | Only files held open for minutes, and deleted files still open | Yes, per file or directory watched (`-w /etc/shadow -p wa`) |
 | Who: login user across `sudo` and `su` | uid only | Yes: `auid` (the login user) follows the session through `sudo` |
 | System counters (CPU, memory, disk, network) | Yes, every 10 s | No |
-| Tamper protection | None: root can stop or delete it | Immutable rules (`-e 2`), remote logging (audisp-remote) |
+| Tamper protection | Optional [sealing](#sealing-showing-that-a-recording-was-not-altered): what was recorded before a compromise cannot be changed unnoticed; root can still stop clifrd or delete it | Immutable rules (`-e 2`), remote logging (audisp-remote) |
 | Compliance (PCI-DSS, STIG, ISO 27001 evidence) | Not designed for it | The standard tool |
 | Cost | About 0.4% of one core on a desktop, 2% on a busy server; about 20 MB to 2 GB of disk | Low with few rules; an `execve` rule on a busy server costs more and fills logs quickly |
 | Query | The tools you know: `ps`, `ss`, `lsof`, `top`… at any moment | `ausearch`, `aureport` over event records |
@@ -1628,6 +1694,7 @@ Subcommands:
 | `clifrd doctor` | Checks what the system supports (kernel, BTF, privileges, eBPF, data directory, configuration file) and prints the recording level. Records nothing. |
 | `clifrd --test-ebpf` | Loads the eBPF programs, triggers every event type, and reports which were seen (root; for testing a new kernel). |
 | `clifrd bundle [--last DUR \| --since T [--until T]] -o FILE` | Writes the recording, or a window of it, as one tar file for another machine (`-o -` for standard output). Safe while clifrd is recording. |
+| `clifrd seal-setup [--new]` | Starts [sealing](#sealing-showing-that-a-recording-was-not-altered) the recording: prints the verification key once (keep it off the host). `--new` starts a new chain when the key or its state file was lost. No restart needed. |
 
 ### The systemd unit
 
@@ -1698,7 +1765,7 @@ Only the `gc_heap_target` change above has been measured. Lower values than the 
 | `--style STYLE` | Print as `rhel-8`, `rhel-9`, `ubuntu-22.04` or `current` tools do (default: the recorded host's). |
 | `-v`, `--version`, `-h`, `--help` | |
 
-Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount, findmnt; `clifr help diff`), `clifr verify` (compares real tool output saved with `--verify-every` with the reconstruction), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
+Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount, findmnt; `clifr help diff`), `clifr verify` (compares real tool output saved with `--verify-every` with the reconstruction), `clifr verify --integrity [--seal-key KEY|@FILE] [--seal-anchor ANCHOR]` (checks every data file, and with a key the [seals](#sealing-showing-that-a-recording-was-not-altered)), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
 
 Environment: `CLIFR_DATA_DIR`, `CLIFR_TZ`, `CLIFR_STYLE`, `CLIFR_SINCE`, `CLIFR_UNTIL` set the defaults of the matching options.
 
@@ -1781,4 +1848,4 @@ In words:
 - The recording contains every user's command lines and the host's connections. Files are 0640, directories 0750, owned by root and the `clifr` group. Treat bundles and sosreports that contain them the same way.
 - Secrets passed on command lines are masked before storage if a `redact` pattern matches them.
 - clifrd never reads processes' environment variables (`/proc/PID/environ`), never sends data anywhere, and does not encrypt the recording (protect it with the file permissions, disk encryption, and how you transfer bundles).
-- The recording is not tamper-proof: root on the host can stop clifrd or change its files. For evidence that must survive a compromised root, use auditd with remote logging ([use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)).
+- Root on the host can stop clifrd or change its files. With [sealing](#sealing-showing-that-a-recording-was-not-altered) (`clifrd seal-setup`) a change to what was recorded before the compromise is detected, given the verification key kept off the host; what is recorded after it is not protected. For evidence that must survive a compromised root, use auditd with remote logging ([use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)).
