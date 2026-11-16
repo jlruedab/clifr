@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,6 +24,10 @@ func cmdInfo(g *globals, db *store.DB) error {
 	s, err := query.ComputeStats(db)
 	if err != nil {
 		return err
+	}
+	if g.host == "" {
+		st := pqstore.ReadSealStatus(g.dataDir)
+		s.Sealing = &st
 	}
 	if g.json {
 		return writeLines(s, nil)
@@ -98,7 +103,17 @@ func cmdIntegrity(g *globals) error {
 	if err := pqstore.IsDataDir(g.dataDir); err != nil {
 		return fmt.Errorf("%s: not a clifr data directory (no samples table)", g.dataDir)
 	}
+	keys, err := sealKeys(g.sealKeys)
+	if err != nil {
+		return usageError{err}
+	}
 	r := pqstore.CheckIntegrity(g.dataDir)
+	var seals *pqstore.SealCheck
+	status := pqstore.ReadSealStatus(g.dataDir)
+	if len(keys) > 0 {
+		c := pqstore.CheckSeals(g.dataDir, keys, g.sealAnchors, r, g.bundle != nil)
+		seals = &c
+	}
 	bad := 0
 	if g.bundle != nil {
 		bad = len(g.bundle.bad)
@@ -113,7 +128,15 @@ func cmdIntegrity(g *globals) error {
 				Bundle    *bundle.Manifest        `json:"bundle"`
 				Bad       []string                `json:"bundle_files_bad"`
 				Integrity pqstore.IntegrityReport `json:"integrity"`
-			}{g.bundle.manifest, g.bundle.bad, r}
+				Sealing   pqstore.SealStatus      `json:"sealing"`
+				Seals     *pqstore.SealCheck      `json:"seals,omitempty"`
+			}{g.bundle.manifest, g.bundle.bad, r, status, seals}
+		} else if status.State != "off" || seals != nil {
+			v = struct {
+				pqstore.IntegrityReport
+				Sealing pqstore.SealStatus `json:"sealing"`
+				Seals   *pqstore.SealCheck `json:"seals,omitempty"`
+			}{r, status, seals}
 		}
 		if err := writeLines(v, nil); err != nil {
 			return err
@@ -140,6 +163,7 @@ func cmdIntegrity(g *globals) error {
 				fmt.Fprintf(out, "  %s (table %s%s): %s\n", d.Path, d.Table, span, d.Error)
 			}
 		}
+		printSeals(out, status, seals)
 		done()
 	}
 	switch {
@@ -147,10 +171,102 @@ func cmdIntegrity(g *globals) error {
 		return fmt.Errorf("%s", partsNote(g.bundle.parts))
 	case g.bundle != nil && g.bundle.manifest == nil:
 		return fmt.Errorf("the bundle was cut short (no bundle.json); %d damaged data files among those that arrived", len(r.Damaged))
+	case seals != nil && seals.Bad() > 0:
+		return fmt.Errorf("the recording was altered after it was sealed (%d findings)", seals.Bad())
 	case len(r.Damaged)+bad > 0:
 		return fmt.Errorf("%d damaged or missing data files", len(r.Damaged)+bad)
 	}
 	return nil
+}
+
+// sealKeys reads --seal-key values: a key, or @FILE holding one.
+func sealKeys(vals []string) ([][]byte, error) {
+	var keys [][]byte
+	for _, v := range vals {
+		if f, ok := strings.CutPrefix(v, "@"); ok {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				return nil, fmt.Errorf("--seal-key: %w", err)
+			}
+			v = string(b)
+		}
+		k, err := pqstore.ParseVerifyKey(v)
+		if err != nil {
+			return nil, fmt.Errorf("--seal-key: %w", err)
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+// printSeals prints the sealing part of verify --integrity.
+func printSeals(out io.Writer, st pqstore.SealStatus, c *pqstore.SealCheck) {
+	const f = "2006-01-02 15:04:05"
+	ms := func(v int64) string { return time.UnixMilli(v).Format(f) }
+	if c == nil {
+		switch st.State {
+		case "off":
+			fmt.Fprintln(out, "Sealing:      off (clifrd seal-setup starts it)")
+		case "set up":
+			fmt.Fprintln(out, "Sealing:      set up, no seal yet (clifrd seals at its next flush)")
+		case "unsealed":
+			fmt.Fprintf(out, "Sealing:      LOST (%s): nothing written since is sealed; clifrd seal-setup --new\n", st.Why)
+		default:
+			fmt.Fprintf(out, "Sealing:      on, chain %s, last seal %s (%d); not verified: give --seal-key\n", st.KeyID, ms(st.LastMS), st.Epoch)
+		}
+		return
+	}
+	if c.Seals == 0 {
+		fmt.Fprintln(out, "Seals:        none verified")
+	} else {
+		fmt.Fprintf(out, "Seals:        %d verified, %s .. %s, chain %s\n", c.Seals, ms(c.First), ms(c.Last), strings.Join(c.Chains, ", "))
+		for _, id := range c.Chains {
+			if e := c.StartEpoch[id]; e > 1 {
+				fmt.Fprintf(out, "              chain %s starts at seal %d: the older logs were removed (retention)\n", id, e)
+			}
+		}
+		fmt.Fprintf(out, "              %d run starts, %d clean stops", len(c.Starts), len(c.Ends))
+		if len(c.Late) > 0 {
+			fmt.Fprintf(out, "; %d after a crash (what the crashed run logged last was sealed at the next start, at %s", len(c.Late), ms(c.Late[0]))
+			for _, l := range c.Late[1:] {
+				fmt.Fprintf(out, ", %s", ms(l))
+			}
+			fmt.Fprint(out, ")")
+		}
+		fmt.Fprintln(out)
+	}
+	fmt.Fprintf(out, "Sealed files: %d match their sealed SHA-256, %d removed by clifrd as sealed", c.Verified, c.Removed)
+	if c.NotInBundle > 0 {
+		fmt.Fprintf(out, ", %d not in the bundle", c.NotInBundle)
+	}
+	fmt.Fprintln(out)
+	if c.After > 0 || c.AfterLastSeal > 0 || len(c.NoLine) > 0 || len(c.Unsealed) > 0 {
+		fmt.Fprintln(out, "Not protected:")
+		if c.After > 0 || c.AfterLastSeal > 0 {
+			fmt.Fprintf(out, "  %d log lines (%d files) after the last seal: written since %s, sealed at the next flush\n", c.After, c.AfterLastSeal, ms(c.Last))
+		}
+		if n := len(c.NoLine); n > 0 {
+			fmt.Fprintf(out, "  %d files without a log line (written before the integrity log, or not by clifrd), e.g. %s\n", n, c.NoLine[0])
+		}
+		for _, u := range c.Unsealed {
+			fmt.Fprintf(out, "  sealing stopped: %s\n", u)
+		}
+	}
+	findings := append(append(append(append([]string{}, c.SealReport.Bad...), c.Modified...), c.Deleted...), c.Premature...)
+	if len(findings) == 0 {
+		fmt.Fprintln(out, "Altered:      nothing found")
+	} else {
+		fmt.Fprintf(out, "ALTERED:      %d finding(s): changed, removed or reordered after they were sealed\n", len(findings))
+		for _, x := range findings {
+			fmt.Fprintf(out, "  %s\n", x)
+		}
+	}
+	if len(c.Anchors) > 0 {
+		fmt.Fprintln(out, "Anchors:")
+		for _, a := range c.Anchors {
+			fmt.Fprintf(out, "  %s\n", a)
+		}
+	}
 }
 
 // printBundle prints a bundle's manifest summary and the files that failed

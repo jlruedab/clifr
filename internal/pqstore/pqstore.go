@@ -729,6 +729,10 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 	return err
 }
 
+// retentionReason is the "del" reason of a file retention removes:
+// "retention:SECONDS", so a verifier can tell a premature removal.
+func retentionReason(r time.Duration) string { return fmt.Sprintf("retention:%d", int64(r.Seconds())) }
+
 // removeData removes a data file (or a day's integrity log) the store wrote
 // and records the removal in the integrity log ("del REASON PATH").
 func (s *Store) removeData(p, reason string) error {
@@ -1148,7 +1152,7 @@ func (s *Store) expire(now time.Time) error {
 	if r := s.opt.Retention; r > 0 {
 		for _, h := range s.listHours() {
 			if h.start().Add(time.Hour).Before(now.Add(-r)) {
-				errs = append(errs, s.removeData(h.path, "retention"))
+				errs = append(errs, s.removeData(h.path, retentionReason(r)))
 			}
 		}
 		// Integrity logs: a day's log lists files of that day and, for open
@@ -1157,7 +1161,7 @@ func (s *Store) expire(now time.Time) error {
 		for _, l := range logs {
 			if d, err := time.Parse("2006-01-02", strings.TrimSuffix(filepath.Base(l), ".log")); err == nil &&
 				d.Add(48*time.Hour).Before(now.Add(-r)) {
-				errs = append(errs, s.removeData(l, "retention"))
+				errs = append(errs, s.removeData(l, retentionReason(r)))
 			}
 		}
 		own := fmt.Sprintf("%d.parquet", s.run)
@@ -1166,7 +1170,7 @@ func (s *Store) expire(now time.Time) error {
 			files, _ := os.ReadDir(open)
 			for _, f := range files {
 				if fi, err := f.Info(); err == nil && f.Name() != own && fi.ModTime().Before(now.Add(-r)) {
-					errs = append(errs, s.removeData(filepath.Join(open, f.Name()), "retention"))
+					errs = append(errs, s.removeData(filepath.Join(open, f.Name()), retentionReason(r)))
 				}
 			}
 		}

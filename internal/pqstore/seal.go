@@ -433,8 +433,17 @@ type SealReport struct {
 	// StartEpoch per chain: the first epoch the logs hold (1 = the chain's start).
 	StartEpoch map[string]uint64
 	// Sealed: per data file (path relative to the data directory), its last
-	// sealed line ("SHA SIZE" or "del REASON"), for the file checks.
-	Sealed map[string]string
+	// sealed line ("SHA SIZE" or "del REASON") and that seal's time, for the
+	// file checks (CheckSeals). Pending: the file lines after the last seal.
+	Sealed  map[string]SealedFile        `json:"-"`
+	Pending map[string]string            `json:"-"`
+	tags    map[string]map[uint64]string // verified seals' tags per chain and epoch
+}
+
+// SealedFile is a data file's last sealed log line.
+type SealedFile struct {
+	What string // "SHA SIZE" or "del REASON"
+	MS   int64  // time of the seal that covers it
 }
 
 // VerifySeals walks the seal chain of dir's integrity logs with the given
@@ -444,7 +453,8 @@ func VerifySeals(dir string, keys [][]byte) SealReport {
 }
 
 func verifySealLogs(logs []string, keys [][]byte) SealReport {
-	r := SealReport{StartEpoch: map[string]uint64{}, Sealed: map[string]string{}}
+	r := SealReport{StartEpoch: map[string]uint64{}, Sealed: map[string]SealedFile{}, Pending: map[string]string{},
+		tags: map[string]map[uint64]string{}}
 	k0 := map[string][]byte{}
 	for _, k := range keys {
 		k0[SealKeyID(k)] = k
@@ -514,8 +524,12 @@ func verifySealLogs(logs []string, keys [][]byte) SealReport {
 					}
 					r.Last = s.ms
 					for k, v := range pending {
-						r.Sealed[k] = v
+						r.Sealed[k] = SealedFile{v, s.ms}
 					}
+					if r.tags[s.keyID] == nil {
+						r.tags[s.keyID] = map[uint64]string{}
+					}
+					r.tags[s.keyID][s.epoch] = s.tag
 					switch s.flag {
 					case "start":
 						r.Starts = append(r.Starts, s.ms)
@@ -533,6 +547,7 @@ func verifySealLogs(logs []string, keys [][]byte) SealReport {
 		}
 		f.Close()
 	}
+	r.Pending = pending
 	if seen {
 		r.After = lines
 	} else {

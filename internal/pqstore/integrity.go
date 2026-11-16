@@ -216,6 +216,10 @@ type IntegrityReport struct {
 	Damaged    []IntegrityFile // checksum mismatch, or not readable
 	Duration   time.Duration
 	LogEntries int
+	// Sums: SHA-256 of each present data file compared with the log; Present:
+	// every data file checked (CheckSeals uses both).
+	Sums    map[string]string `json:"-"`
+	Present []string          `json:"-"`
 }
 
 // CheckIntegrity checks every data file of dir: against its last line in
@@ -224,7 +228,7 @@ type IntegrityReport struct {
 // while it runs (an open file at a flush) is compared with the log again.
 func CheckIntegrity(dir string) IntegrityReport {
 	t0 := time.Now()
-	var r IntegrityReport
+	r := IntegrityReport{Sums: map[string]string{}}
 	logs := readIntegrityLogs(dir)
 	r.LogEntries = len(logs)
 	for _, t := range Tables {
@@ -238,16 +242,19 @@ func CheckIntegrity(dir string) IntegrityReport {
 			}
 			r.Files++
 			r.Bytes += st.Size()
+			r.Present = append(r.Present, rel)
 			if e, ok := logs[rel]; ok {
 				r.Logged++
 				sum, _, err := hashFile(p)
 				if err != nil {
 					continue // gone meanwhile
 				}
+				r.Sums[rel] = sum
 				if sum != e.sum {
 					// Rewritten after the log was read? Read it again.
 					if e2, ok := readIntegrityLogs(dir)[rel]; ok && e2.sum != e.sum {
 						if sum2, _, err := hashFile(p); err == nil && sum2 == e2.sum {
+							r.Sums[rel] = sum2
 							continue
 						}
 					}

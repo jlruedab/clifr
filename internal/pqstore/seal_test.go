@@ -118,7 +118,7 @@ func TestSealChain(t *testing.T) {
 	}
 	var dels int
 	for p, w := range r.Sealed {
-		if w == "del compacted" {
+		if w.What == "del compacted" {
 			dels++
 			if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
 				t.Errorf("%s: sealed as compacted, still there", p)

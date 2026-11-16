@@ -65,8 +65,8 @@ a key must also tell a file deleted by clifrd from one deleted by an attacker.
 So each removal the store makes gets a line too:
 
     del compacted PATH    # flush parts merged into the hour file
-    del retention PATH    # older than --retention (also another run's old
-                          # open file, and a day's integrity log)
+    del retention:SECONDS PATH  # older than --retention (in seconds; also
+                          # another run's old open file, and a day's log)
     del size-cap PATH     # the --max-size cap
     del disk-full PATH    # the oldest hour, removed when the disk is full
     del closed PATH       # the run's open file, when nothing is open any more
@@ -171,9 +171,9 @@ The key can be given as a string or `@FILE`. The command then:
    - A sealed file with no `del` line that is missing means it was deleted.
    - A file with no sealed line at all is unsealed: written before setup,
      after the last seal, or not by clifrd.
-3. **Judges the removals.** An `expired retention` removal of a file younger
-   than the retention is reported, and so is `compacted` into an hour file
-   that does not exist.
+3. **Judges the removals.** A `retention:SECONDS` removal of a file that was
+   not yet that old when its removal was sealed is reported, and so is
+   `compacted` into an hour file that does not exist.
 4. **Reports the edges.** It gives the time of the first and last seal, the
    restarts, late seals, the lines after the last seal, and the unsealed
    stretches.

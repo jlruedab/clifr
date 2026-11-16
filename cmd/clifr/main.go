@@ -43,6 +43,7 @@ type globals struct {
 	version, help, verbose    bool
 	salvage                   bool        // --salvage: read a damaged bundle without its bad files
 	integrity                 bool        // verify --integrity: check the data files, not the tools
+	sealKeys, sealAnchors     atList      // verify --integrity --seal-key / --seal-anchor (repeatable)
 	bundle                    *bundleInfo // --data-dir named a bundle checked with --integrity
 	moreData                  []string    // --data-dir given again: the other parts of a split bundle
 }
@@ -106,6 +107,8 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
 	fs.BoolVar(&g.salvage, "salvage", false, "")
 	fs.BoolVar(&g.integrity, "integrity", false, "")
+	fs.Var(&g.sealKeys, "seal-key", "")
+	fs.Var(&g.sealAnchors, "seal-anchor", "")
 	return fs
 }
 
@@ -622,6 +625,12 @@ func runSub(g *globals, sub string, args []string) error {
 	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
+	}
+	if (len(g.sealKeys) > 0 || len(g.sealAnchors) > 0) && (!g.integrity || sub != "verify") {
+		return usageError{errors.New("--seal-key and --seal-anchor are for clifr verify --integrity")}
+	}
+	if len(g.sealAnchors) > 0 && len(g.sealKeys) == 0 {
+		return usageError{errors.New("--seal-anchor needs --seal-key (the anchor names a verified seal)")}
 	}
 	if g.integrity {
 		if sub != "verify" {

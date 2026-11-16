@@ -102,6 +102,13 @@ Other commands:
                        (checksums, structure); lists damaged files, exit 1.
                        With -D FILE.tar: a bundle's summary (window, samples,
                        gaps, crashes) and every file against bundle.json
+  clifr verify --integrity --seal-key KEY [--seal-anchor ANCHOR]
+                       also check the seals (clifrd seal-setup): every seal
+                       with the verification key (KEY or @FILE; repeat for
+                       older chains), every data file against its sealed line,
+                       every removal; an ANCHOR (KEYID/EPOCH:TAG, clifrd's
+                       hourly "seal anchor" log line kept elsewhere) must still
+                       be reached. Exit 1 when anything was altered
   clifr export TABLE   one recorded table as CSV
 
 Environment variables:

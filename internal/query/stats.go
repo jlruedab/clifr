@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"clifr/internal/pqstore"
 	"clifr/internal/store"
 )
 
@@ -46,6 +47,9 @@ type Stats struct {
 	// The eBPF programs' own run time (recorded with --bpf-stats).
 	BPF           map[string]BPFProgStat `json:"bpf_programs,omitempty"`
 	BPFPctOneCore float64                `json:"bpf_cpu_pct_one_core"`
+	// Sealing of the integrity log (clifrd seal-setup); nil: not known
+	// (a remote recording).
+	Sealing *pqstore.SealStatus `json:"sealing,omitempty"`
 }
 
 // HostInfo identifies the recorded host (from the latest run's meta).
@@ -313,6 +317,18 @@ func PrintStats(w io.Writer, s *Stats) {
 		perDay = "about " + humanBytes(s.DiskPerDayBytes) + " kept per day recorded"
 	}
 	fmt.Fprintf(w, "DB size:          %s on disk (%s)\n", humanBytes(s.DBBytes), perDay)
+	if st := s.Sealing; st != nil {
+		switch st.State {
+		case "off":
+			fmt.Fprintln(w, "Sealing:          off (clifrd seal-setup)")
+		case "set up":
+			fmt.Fprintln(w, "Sealing:          set up, no seal yet (clifrd seals at its next flush)")
+		case "unsealed":
+			fmt.Fprintf(w, "Sealing:          LOST (%s) since the last seal %s: clifrd seal-setup --new\n", st.Why, FormatMS(st.LastMS))
+		default:
+			fmt.Fprintf(w, "Sealing:          on, chain %s, last seal %s (clifr verify --integrity --seal-key KEY)\n", st.KeyID, FormatMS(st.LastMS))
+		}
+	}
 	fmt.Fprintf(w, "Recorder CPU:     %.3f%% of one core (average)\n", s.CPUPctOneCore)
 	fmt.Fprintf(w, "Recorder RSS:     avg %s, max %s\n", humanBytes(s.RSSAvgKB*1024), humanBytes(s.RSSMaxKB*1024))
 	fmt.Fprintf(w, "Process events:   %s\n", orDash(s.EventMode))
