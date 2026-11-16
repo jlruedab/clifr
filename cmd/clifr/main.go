@@ -45,6 +45,7 @@ type globals struct {
 	integrity                 bool        // verify --integrity: check the data files, not the tools
 	sealKeys, sealAnchors     atList      // verify --integrity --seal-key / --seal-anchor (repeatable)
 	bundle                    *bundleInfo // --data-dir named a bundle checked with --integrity
+	fromBundle                bool        // --data-dir named a bundle (unpacked)
 	moreData                  []string    // --data-dir given again: the other parts of a split bundle
 }
 
@@ -243,7 +244,7 @@ func openBundle(g *globals) (func(), error) {
 	if note := partsNote(ms); note != "" {
 		fmt.Fprintln(os.Stderr, "clifr: "+note)
 	}
-	g.dataDir = dir
+	g.dataDir, g.fromBundle = dir, true
 	return func() { os.RemoveAll(tmp) }, nil
 }
 

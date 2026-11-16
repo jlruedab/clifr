@@ -26,7 +26,7 @@ func cmdInfo(g *globals, db *store.DB) error {
 		return err
 	}
 	if g.host == "" {
-		st := pqstore.ReadSealStatus(g.dataDir)
+		st := pqstore.ReadSealStatus(g.dataDir, g.fromBundle)
 		s.Sealing = &st
 	}
 	if g.json {
@@ -109,7 +109,7 @@ func cmdIntegrity(g *globals) error {
 	}
 	r := pqstore.CheckIntegrity(g.dataDir)
 	var seals *pqstore.SealCheck
-	status := pqstore.ReadSealStatus(g.dataDir)
+	status := pqstore.ReadSealStatus(g.dataDir, g.fromBundle)
 	if len(keys) > 0 {
 		c := pqstore.CheckSeals(g.dataDir, keys, g.sealAnchors, r, g.bundle != nil)
 		seals = &c

@@ -130,9 +130,11 @@ func Split(src string, maxBytes int64, open func(part int) (io.WriteCloser, erro
 }
 
 // isMeta: a file of the meta table (data/DIR/...).
+// isMeta: meta files and the integrity logs, which go into part 1 (the
+// logs are small; with them part 1 alone verifies its files' seals).
 func isMeta(path string) bool {
 	parts := strings.SplitN(path, "/", 3)
-	return len(parts) == 3 && pqstore.TableOf(parts[1]) == "meta"
+	return len(parts) == 3 && (pqstore.TableOf(parts[1]) == "meta" || parts[1] == pqstore.IntegrityDir)
 }
 
 // readManifest reads bundle.json of a bundle file.

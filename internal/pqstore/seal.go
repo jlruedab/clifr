@@ -412,6 +412,9 @@ const anchorEvery = time.Hour
 // of its tag.
 func (r sealRec) anchor() string { return fmt.Sprintf("%s/%d:%s", r.keyID, r.epoch, r.tag[:16]) }
 
+// IntegrityLogs lists the day logs of the integrity log, oldest first.
+func IntegrityLogs(dir string) []string { return integrityLogFiles(dir) }
+
 // integrityLogFiles lists the day logs, oldest first.
 func integrityLogFiles(dir string) []string {
 	logs, _ := filepath.Glob(filepath.Join(dir, IntegrityDir, "*.log"))
@@ -438,6 +441,7 @@ type SealReport struct {
 	Sealed  map[string]SealedFile        `json:"-"`
 	Pending map[string]string            `json:"-"`
 	tags    map[string]map[uint64]string // verified seals' tags per chain and epoch
+	history map[string]map[string]bool   // every sealed SHA-256 per data file (bundles)
 }
 
 // SealedFile is a data file's last sealed log line.
@@ -454,7 +458,7 @@ func VerifySeals(dir string, keys [][]byte) SealReport {
 
 func verifySealLogs(logs []string, keys [][]byte) SealReport {
 	r := SealReport{StartEpoch: map[string]uint64{}, Sealed: map[string]SealedFile{}, Pending: map[string]string{},
-		tags: map[string]map[uint64]string{}}
+		tags: map[string]map[uint64]string{}, history: map[string]map[string]bool{}}
 	k0 := map[string][]byte{}
 	for _, k := range keys {
 		k0[SealKeyID(k)] = k
@@ -525,6 +529,12 @@ func verifySealLogs(logs []string, keys [][]byte) SealReport {
 					r.Last = s.ms
 					for k, v := range pending {
 						r.Sealed[k] = SealedFile{v, s.ms}
+						if !strings.HasPrefix(v, "del ") {
+							if r.history[k] == nil {
+								r.history[k] = map[string]bool{}
+							}
+							r.history[k][strings.Fields(v)[0]] = true
+						}
 					}
 					if r.tags[s.keyID] == nil {
 						r.tags[s.keyID] = map[uint64]string{}

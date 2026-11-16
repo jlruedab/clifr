@@ -45,7 +45,7 @@ func TestCheckSealsClean(t *testing.T) {
 		len(c.Anchors) != 1 || !strings.HasSuffix(c.Anchors[0], "reached") {
 		t.Fatalf("%+v", c)
 	}
-	if st := ReadSealStatus(dir); st.State != "on" || st.KeyID != SealKeyID(k) || st.LastMS == 0 {
+	if st := ReadSealStatus(dir, false); st.State != "on" || st.KeyID != SealKeyID(k) || st.LastMS == 0 {
 		t.Errorf("status %+v", st)
 	}
 }
@@ -103,24 +103,46 @@ func TestCheckSealsAltered(t *testing.T) {
 
 func TestSealStatus(t *testing.T) {
 	dir := t.TempDir()
-	if st := ReadSealStatus(dir); st.State != "off" {
+	if st := ReadSealStatus(dir, false); st.State != "off" {
 		t.Errorf("empty: %+v", st)
 	}
 	SealSetup(dir, false)
-	if st := ReadSealStatus(dir); st.State != "set up" {
+	if st := ReadSealStatus(dir, false); st.State != "set up" {
 		t.Errorf("after setup: %+v", st)
 	}
 	s, _ := sealStore(t, dir)
 	sealWrite(t, s)
 	s.Close()
 	os.Remove(sealStatePath(dir))
-	if st := ReadSealStatus(dir); st.State != "unsealed" || st.Why != "state-missing" {
+	if st := ReadSealStatus(dir, false); st.State != "unsealed" || st.Why != "state-missing" {
 		t.Errorf("state removed: %+v", st)
+	}
+	if st := ReadSealStatus(dir, true); st.State != "on" {
+		t.Errorf("a bundle (no seal.state): %+v", st)
 	}
 	s, _ = sealStore(t, dir)
 	sealWrite(t, s)
 	s.Close()
-	if st := ReadSealStatus(dir); st.State != "unsealed" || st.Why != "state-missing" {
-		t.Errorf("after a run without state: %+v", st)
+	if st := ReadSealStatus(dir, true); st.State != "unsealed" || st.Why != "state-missing" {
+		t.Errorf("after a run without state (the log says so, bundle or not): %+v", st)
+	}
+}
+
+// TestCheckSealsBundleCopy: a bundle's copy of an open file made before
+// clifrd rewrote it matches an earlier sealed version: verified in a
+// bundle, a rollback in the data directory itself.
+func TestCheckSealsBundleCopy(t *testing.T) {
+	dir, k, s, _ := sealedDir(t)
+	opens, _ := filepath.Glob(filepath.Join(dir, Dir("processes"), "open", "*.parquet"))
+	old, _ := os.ReadFile(opens[0])
+	sealWrite(t, s)
+	s.Close()
+	os.WriteFile(opens[0], old, 0o640)
+	ir := CheckIntegrity(dir)
+	if c := CheckSeals(dir, [][]byte{k}, nil, ir, true); c.Bad() != 0 {
+		t.Errorf("bundle: %+v", c.Modified)
+	}
+	if c := CheckSeals(dir, [][]byte{k}, nil, ir, false); len(c.Modified) != 1 {
+		t.Errorf("data directory: %+v", c.Modified)
 	}
 }

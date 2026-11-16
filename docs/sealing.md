@@ -186,13 +186,17 @@ the epoch and the key id.
 
 ## Bundles (D5)
 
-`clifrd bundle` also packs the integrity logs: the days of the window plus the
-next day, since an hour's file is compacted, and logged, after it ends.
+`clifrd bundle` also packs the integrity logs, all of them (a few MB a day,
+kept by retention one day longer than the data), after the data files so
+they cover every file copied. A split bundle puts them in part 1, with meta.
+`clifrd --serve` does not serve them (Parquet files only).
 `clifr --data-dir FILE.tar verify --integrity --seal-key KEY` then checks the
 bundle's files the same way.
 
 - Sealed files left out of the window are reported as **not in the bundle**,
-  not as deleted.
+  not as deleted. A copy made before clifrd rewrote an open file, or
+  compacted parts, matches an earlier sealed version and is verified.
+  `after-window.parquet`, which the bundle derives, is not sealed itself.
 - A chain segment can be verified from any seal on: each tag covers the tag
   before it, and k(EPOCH) comes from k0.
 - sos reports carry the bundle, so sos-vault can verify a host's recording

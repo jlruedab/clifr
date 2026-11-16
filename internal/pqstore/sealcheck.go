@@ -28,8 +28,11 @@ type SealCheck struct {
 	NoLine        []string
 	Anchors       []string // one result per --seal-anchor
 	AnchorsBad    int
-	// NotInBundle: sealed files a bundle left out (its window).
+	// NotInBundle: sealed files a bundle left out (its window); Derived:
+	// files a bundle made (after-window.parquet: rows of later files), not
+	// sealed themselves.
 	NotInBundle int
+	Derived     int
 }
 
 // Bad is the number of findings that mean the recording was altered.
@@ -52,6 +55,13 @@ func CheckSeals(dir string, keys [][]byte, anchors []string, ir IntegrityReport,
 	}
 	for p, sf := range c.Sealed {
 		at := time.UnixMilli(sf.MS).UTC().Format("2006-01-02 15:04 UTC")
+		// A bundle copies files while clifrd runs: an open file rewritten,
+		// or parts compacted, after the copy and before the logs were
+		// copied. Its copy matches an earlier sealed version.
+		if bundle && present[p] && c.history[p][ir.Sums[p]] {
+			c.Verified++
+			continue
+		}
 		if reason, ok := strings.CutPrefix(sf.What, "del "); ok {
 			if present[p] {
 				if w, ok := c.Pending[p]; ok && !strings.HasPrefix(w, "del ") && ir.Sums[p] == strings.Fields(w)[0] {
@@ -89,6 +99,8 @@ func CheckSeals(dir string, keys [][]byte, anchors []string, ir IntegrityReport,
 		}
 		if w, ok := c.Pending[p]; ok && !strings.HasPrefix(w, "del ") && ir.Sums[p] == strings.Fields(w)[0] {
 			c.AfterLastSeal++
+		} else if bundle && path.Base(p) == "after-window.parquet" {
+			c.Derived++
 		} else {
 			c.NoLine = append(c.NoLine, p)
 		}
@@ -196,8 +208,9 @@ type SealStatus struct {
 }
 
 // ReadSealStatus reads the last seal of the logs and seal.state (no key
-// needed, nothing verified).
-func ReadSealStatus(dir string) SealStatus {
+// needed, nothing verified). A bundle carries no seal.state: there only
+// the logs count.
+func ReadSealStatus(dir string, bundle bool) SealStatus {
 	var st SealStatus
 	var last *sealRec
 	unsealed := ""
@@ -218,7 +231,7 @@ func ReadSealStatus(dir string) SealStatus {
 	switch {
 	case unsealed != "":
 		st.State, st.Why = "unsealed", unsealed
-	case last != nil && err != nil:
+	case last != nil && err != nil && !bundle:
 		st.State, st.Why = "unsealed", "state-missing"
 		if _, serr := os.Stat(filepath.Join(dir, IntegrityDir, SealStateFile)); serr == nil {
 			st.Why = "state-damaged"

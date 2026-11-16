@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"clifr/internal/bundle"
 	"clifr/internal/pqstore"
 	"clifr/internal/store"
 )
@@ -71,5 +72,51 @@ func TestVerifySeals(t *testing.T) {
 		if err := run(c.args); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: %v, want %q", c.args, err, c.want)
 		}
+	}
+}
+
+// TestVerifySealsBundle: a bundle carries the integrity logs; verified with
+// the key it shows nothing altered, and a file changed before the bundle
+// was made (its bundle.json checksum then matches) is found by the seals.
+func TestVerifySealsBundle(t *testing.T) {
+	dir := t.TempDir()
+	key, _, _ := pqstore.SealSetup(dir, false)
+	s, err := pqstore.Open(dir, pqstore.Options{FlushInterval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetMeta("hostname", "h")
+	for i := range 3 {
+		ts := time.Now().UnixMilli() + int64(i)
+		s.Write(&store.Batch{Sample: store.Sample{TS: ts},
+			ProcInserts: []store.ProcRow{{ID: int64(i + 1), PID: i + 1, StartTime: 1, Comm: "x", FirstSeen: ts}}})
+		s.Flush()
+	}
+	s.Close()
+	mk := func() string {
+		p := filepath.Join(t.TempDir(), "b.tar")
+		f, _ := os.Create(p)
+		if _, err := bundle.Write(bundle.Options{DataDir: dir, Writer: "test", Now: time.Now()}, f); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+		return p
+	}
+	b0 := mk()
+	out, err := capture(t, "verify", "--integrity", "-D", b0, "--seal-key", key)
+	if err != nil || !strings.Contains(out, "Altered:      nothing found") || strings.Contains(out, "Not protected") {
+		t.Errorf("bundle: %v\n%s", err, out)
+	}
+	out, err = capture(t, "verify", "--integrity", "-D", b0)
+	if err != nil || !strings.Contains(out, "Sealing:      on, chain") {
+		t.Errorf("bundle without a key: %v\n%s", err, out)
+	}
+	parts, _ := filepath.Glob(filepath.Join(dir, pqstore.Dir("samples"), "*", "*.parquet"))
+	b, _ := os.ReadFile(parts[0])
+	b[len(b)/2] ^= 1
+	os.WriteFile(parts[0], b, 0o640)
+	out, err = capture(t, "verify", "--integrity", "-D", mk(), "--seal-key", key)
+	if err == nil || !strings.Contains(out, "ALTERED:") {
+		t.Errorf("changed before bundling: %v\n%s", err, out)
 	}
 }

@@ -202,6 +202,24 @@ func Write(o Options, w io.Writer) (*Manifest, error) {
 	if err := addAfter(tw, m, sel, o, meta); err != nil {
 		return nil, err
 	}
+	// The integrity logs, last: copied after the data files, they cover
+	// every file of the bundle, and with the seals in them a bundle is
+	// verified with clifr verify --integrity --seal-key (a few MB a day).
+	// Not in Select: clifrd --serve serves Parquet files only.
+	for _, l := range pqstore.IntegrityLogs(o.DataDir) {
+		rel, err := filepath.Rel(o.DataDir, l)
+		if err != nil {
+			return nil, err
+		}
+		f, err := addFile(tw, o.DataDir, rel, rel)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // removed by retention meanwhile
+		}
+		if err != nil {
+			return nil, err
+		}
+		m.Files = append(m.Files, f)
+	}
 	sum.fill(m, meta)
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -378,6 +396,9 @@ func extract(r io.Reader, dir string, limit int64, salvage bool) (string, *Manif
 		// it. Without checksums, keep the files that are whole Parquet files.
 		var bad []string
 		for p := range sums {
+			if strings.HasPrefix(p, "data/"+pqstore.IntegrityDir+"/") {
+				continue // an integrity log: not Parquet; its seals are checked with the key
+			}
 			if err := pqstore.CheckFile(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
 				bad = append(bad, p)
 				os.Remove(filepath.Join(dir, filepath.FromSlash(p)))
