@@ -300,7 +300,9 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err := renameDirs(dir, opt.Logf); err != nil {
 		return nil, fmt.Errorf("rename table directories: %w", err)
 	}
-	s.ilog = &integrityLog{dir: dir}
+	s.ilog = newIntegrityLog(dir, opt.Logf)
+	s.ilog.sealOpen(s.run)
+	s.ilog.sealLate() // before recover: what it logs is this run's
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
@@ -688,6 +690,7 @@ func (s *Store) flushOnce() error {
 	if err := s.ilog.sync(); err != nil {
 		s.opt.Logf("pqstore: integrity log: %v", err)
 	}
+	s.ilog.seal("-")
 	s.bytes.Store(dirSize(s.dir))
 	if s.busy.CompareAndSwap(false, true) {
 		s.wg.Add(1)
@@ -701,7 +704,7 @@ func (s *Store) flushOnce() error {
 func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first func(*T) int64, setLast func(*T, int64)) error {
 	p := filepath.Join(s.dir, Dir(table), "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(e.open) == 0 {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := s.removeData(p, "closed"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
@@ -721,6 +724,18 @@ func writeOpen[T any](s *Store, table string, e *entity[T], last int64, first fu
 	return err
 }
 
+// removeData removes a data file (or a day's integrity log) the store wrote
+// and records the removal in the integrity log ("del REASON PATH").
+func (s *Store) removeData(p, reason string) error {
+	err := os.Remove(p)
+	if err == nil {
+		if lerr := s.ilog.removed(p, reason); lerr != nil {
+			s.opt.Logf("pqstore: integrity log: %v", lerr)
+		}
+	}
+	return err
+}
+
 // logFile records a file just written in the integrity log; a failure is
 // logged, not returned (the data is written).
 func (s *Store) logFile(p string) {
@@ -734,7 +749,7 @@ func (s *Store) logFile(p string) {
 func writeOpenConv[S, T any](s *Store, table string, open map[int64]*S, conv func(*T, *S)) error {
 	p := filepath.Join(s.dir, Dir(table), "open", fmt.Sprintf("%d.parquet", s.run))
 	if len(open) == 0 {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := s.removeData(p, "closed"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
@@ -767,6 +782,7 @@ func (s *Store) Close() error {
 	err := s.Flush()
 	s.cancel()
 	s.wg.Wait()
+	s.ilog.seal("end")
 	err = errors.Join(err, s.ilog.close())
 	if s.unknown > 0 {
 		s.opt.Logf("pqstore: %d updates or closes referred to rows this run does not hold", s.unknown)
@@ -959,7 +975,7 @@ func (s *Store) recover() error {
 	}
 	for _, h := range files {
 		if !h.compacted && done[h.table+"/"+h.day+"/"+h.hour] {
-			if err := os.Remove(h.path); err != nil {
+			if err := s.removeData(h.path, "compacted"); err != nil {
 				return err
 			}
 		}
@@ -1043,7 +1059,7 @@ func (s *Store) compact(current time.Time, done func()) error {
 		}
 		for _, h := range g {
 			if h.path != out {
-				os.Remove(h.path)
+				s.removeData(h.path, "compacted")
 			}
 		}
 		done()
@@ -1127,7 +1143,7 @@ func (s *Store) expire(now time.Time) error {
 	if r := s.opt.Retention; r > 0 {
 		for _, h := range s.listHours() {
 			if h.start().Add(time.Hour).Before(now.Add(-r)) {
-				errs = append(errs, os.Remove(h.path))
+				errs = append(errs, s.removeData(h.path, "retention"))
 			}
 		}
 		// Integrity logs: a day's log lists files of that day and, for open
@@ -1136,7 +1152,7 @@ func (s *Store) expire(now time.Time) error {
 		for _, l := range logs {
 			if d, err := time.Parse("2006-01-02", strings.TrimSuffix(filepath.Base(l), ".log")); err == nil &&
 				d.Add(48*time.Hour).Before(now.Add(-r)) {
-				errs = append(errs, os.Remove(l))
+				errs = append(errs, s.removeData(l, "retention"))
 			}
 		}
 		own := fmt.Sprintf("%d.parquet", s.run)
@@ -1145,7 +1161,7 @@ func (s *Store) expire(now time.Time) error {
 			files, _ := os.ReadDir(open)
 			for _, f := range files {
 				if fi, err := f.Info(); err == nil && f.Name() != own && fi.ModTime().Before(now.Add(-r)) {
-					errs = append(errs, os.Remove(filepath.Join(open, f.Name())))
+					errs = append(errs, s.removeData(filepath.Join(open, f.Name()), "retention"))
 				}
 			}
 		}
@@ -1165,7 +1181,7 @@ func (s *Store) expire(now time.Time) error {
 				if fi, err := os.Stat(hours[i].path); err == nil {
 					size -= fi.Size()
 				}
-				errs = append(errs, os.Remove(hours[i].path))
+				errs = append(errs, s.removeData(hours[i].path, "size-cap"))
 			}
 		}
 	}

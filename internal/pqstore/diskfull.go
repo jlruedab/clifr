@@ -112,7 +112,7 @@ func (s *Store) freeOldestHour(now time.Time) (string, int64) {
 		if st, err := os.Stat(h.path); err == nil {
 			n += st.Size()
 		}
-		os.Remove(h.path)
+		s.removeData(h.path, "disk-full")
 	}
 	return oldest.Format("2006-01-02 15:00"), n
 }

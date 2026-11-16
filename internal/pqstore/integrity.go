@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,8 +22,10 @@ import (
 // The integrity log: every data file the store writes (flush parts, open
 // files, compacted hour files) gets a line "SHA256 SIZE PATH" (PATH relative
 // to the data directory) in IntegrityDir/DAY.log, DAY the UTC day of the
-// write. Later lines win (open files are rewritten every flush). Removed by
-// retention like the data. CheckIntegrity compares the files with it.
+// write; every file it removes "del REASON PATH". Later lines win (open files
+// are rewritten every flush). Removed by retention like the data, a day
+// later. CheckIntegrity compares the files with it. Once set up, the store
+// also seals the log (seal.go).
 const IntegrityDir = "integrity"
 
 type integrityLog struct {
@@ -31,6 +34,20 @@ type integrityLog struct {
 	f     *os.File
 	day   string
 	dirty bool
+	logf  func(string, ...any)
+
+	// Sealing (seal.go).
+	run       int64
+	sum       hash.Hash // SHA-256 of the lines since the last seal
+	lines     int       // their number
+	chained   bool      // the logs hold a seal
+	runSealed bool      // this run has sealed
+	lost      string    // why sealing stopped ("": it did not)
+	lostWarn  time.Time
+}
+
+func newIntegrityLog(dir string, logf func(string, ...any)) *integrityLog {
+	return &integrityLog{dir: dir, logf: logf, sum: sha256.New()}
 }
 
 // record appends path's checksum (path: a file just written).
@@ -45,24 +62,68 @@ func (l *integrityLog) record(path string) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	day := time.Now().UTC().Format("2006-01-02")
-	if l.f == nil || l.day != day {
-		if l.f != nil {
-			l.f.Sync()
-			l.f.Close()
-			l.f = nil
-		}
-		if err := mkdirDurable(filepath.Join(l.dir, IntegrityDir), 0o750); err != nil {
-			return err
-		}
-		f, err := os.OpenFile(filepath.Join(l.dir, IntegrityDir, day+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
-		if err != nil {
-			return err
-		}
-		l.f, l.day = f, day
+	return l.appendLocked(fmt.Sprintf("%s %d %s", sum, size, filepath.ToSlash(rel)), true)
+}
+
+// removed appends "del REASON PATH": the store removed a data file it had
+// written (compacted, expired), so a verifier tells it from a deletion by
+// someone else.
+func (l *integrityLog) removed(path, reason string) error {
+	rel, err := filepath.Rel(l.dir, path)
+	if err != nil {
+		return err
 	}
-	_, err = fmt.Fprintf(l.f, "%s %d %s\n", sum, size, filepath.ToSlash(rel))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.appendLocked("del "+reason+" "+filepath.ToSlash(rel), true)
+}
+
+// appendLocked appends a line to the current UTC day's log. The day never
+// goes back (a clock stepped back): the lines stay in the order written.
+// Before a new day's log begins, the old day's lines are sealed into it.
+func (l *integrityLog) appendLocked(line string, hashed bool) error {
+	day := time.Now().UTC().Format("2006-01-02")
+	if day < l.day {
+		day = l.day
+	}
+	if l.day != "" && day != l.day && l.lines > 0 {
+		l.sealLocked("day") // into the old day's log
+	}
+	if l.f != nil && day != l.day {
+		l.f.Sync()
+		l.f.Close()
+		l.f = nil
+	}
+	if l.f == nil {
+		if err := l.openLocked(day); err != nil {
+			return err
+		}
+	}
+	return l.writeLocked(line, hashed)
+}
+
+func (l *integrityLog) openLocked(day string) error {
+	if err := mkdirDurable(filepath.Join(l.dir, IntegrityDir), 0o750); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(l.dir, IntegrityDir, day+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	if err != nil {
+		return err
+	}
+	l.f, l.day = f, day
+	return nil
+}
+
+// writeLocked writes a line to the open log; hashed lines count for the
+// next seal (all but seal lines).
+func (l *integrityLog) writeLocked(line string, hashed bool) error {
+	b := []byte(line + "\n")
+	_, err := l.f.Write(b)
 	l.dirty = true
+	if err == nil && hashed {
+		l.sum.Write(b)
+		l.lines++
+	}
 	return err
 }
 
@@ -120,15 +181,17 @@ func readIntegrityLogs(dir string) map[string]logEntry {
 		}
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
-			fs := strings.SplitN(sc.Text(), " ", 3)
-			if len(fs) != 3 || len(fs[0]) != 64 {
+			path, what, ok := fileLine(sc.Text())
+			if !ok {
+				continue // seal lines, a torn line
+			}
+			if strings.HasPrefix(what, "del ") {
+				delete(out, path)
 				continue
 			}
-			size, err := strconv.ParseInt(fs[1], 10, 64)
-			if err != nil {
-				continue
-			}
-			out[fs[2]] = logEntry{fs[0], size}
+			sum, sz, _ := strings.Cut(what, " ")
+			size, _ := strconv.ParseInt(sz, 10, 64)
+			out[path] = logEntry{sum, size}
 		}
 		f.Close()
 	}

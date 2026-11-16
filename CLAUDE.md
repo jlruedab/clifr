@@ -65,6 +65,12 @@ wait for the user's go-ahead.
   SHA-256("clifr/" + table)), the same on every host; never change it (bundles move between
   hosts). Column names inside the Parquet files stay readable. Readers take the old plain names
   too (`pqstore.TableDir`); clifrd renames them when it opens the store.
+- Forward-secure sealing of the integrity log (the user, 2026-11-16, `docs/sealing.md`): an
+  HMAC-SHA256 chain with a one-way evolving key (standard library only), authentication, not
+  encryption. Opt-in: sealing starts only after `clifrd seal-setup`, which prints the
+  verification key once; that key (k0) is never stored on the host, and clifrd never starts a
+  new chain by itself (a lost `seal.state` = "unsealed" + a warning until `seal-setup --new`).
+  The previous epoch's key is overwritten in place, not left in a renamed-away file.
 
 ## Layout
 - `cmd/clifrd/` — the recorder binary (static, no cgo).
