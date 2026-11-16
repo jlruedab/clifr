@@ -64,6 +64,8 @@ type Options struct {
 	Retention  time.Duration // 0 = keep everything
 	MaxBytes   int64         // 0 = no size cap
 	Logf       func(format string, args ...any)
+	// Infof logs at info level: the hourly seal anchor (seal.go). Nil: Logf.
+	Infof func(format string, args ...any)
 }
 
 // entity holds the open rows of one entity table and the closed rows not
@@ -301,6 +303,9 @@ func Open(dir string, opt Options) (*Store, error) {
 		return nil, fmt.Errorf("rename table directories: %w", err)
 	}
 	s.ilog = newIntegrityLog(dir, opt.Logf)
+	if opt.Infof != nil {
+		s.ilog.infof = opt.Infof
+	}
 	s.ilog.sealOpen(s.run)
 	s.ilog.sealLate() // before recover: what it logs is this run's
 	if err := s.recover(); err != nil {

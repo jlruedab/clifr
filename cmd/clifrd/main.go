@@ -51,6 +51,9 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "token" {
 		return tokenCmd(args[1:])
 	}
+	if len(args) > 0 && args[0] == "seal-setup" {
+		return sealSetupCmd(args[1:])
+	}
 	doDoctor := len(args) > 0 && args[0] == "doctor"
 	if doDoctor {
 		args = args[1:]
@@ -61,7 +64,9 @@ func run(args []string) error {
 			"Usage:\n  clifrd [OPTIONS]          record (normally run by systemd)\n"+
 			"  clifrd doctor [OPTIONS]   check what this system supports and show the recording level\n"+
 			"  clifrd bundle [OPTIONS]   write the recording, or a window of it, as one file (clifrd bundle --help)\n"+
-			"  clifrd token new|list|revoke   access tokens for --serve (clifrd token --help)\n\nOptions:\n")
+			"  clifrd token new|list|revoke   access tokens for --serve (clifrd token --help)\n"+
+			"  clifrd seal-setup [--new]   seal the integrity log; prints the verification key once\n"+
+			"                            (clifrd seal-setup --help)\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 	c := recorder.Config{Version: version()}

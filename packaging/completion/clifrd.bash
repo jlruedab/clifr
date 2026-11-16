@@ -44,10 +44,12 @@ _clifrd() {
 		COMPREPLY=($(compgen -W "$bundle" -- "$cur"))
 	elif [[ " ${COMP_WORDS[*]:1:COMP_CWORD-1} " == *" token "* ]]; then
 		COMPREPLY=($(compgen -W "--file --comment" -- "$cur"))
+	elif [[ " ${COMP_WORDS[*]:1:COMP_CWORD-1} " == *" seal-setup "* ]]; then
+		COMPREPLY=($(compgen -W "--new --data-dir -D" -- "$cur"))
 	elif [[ $cur == -* ]]; then
 		COMPREPLY=($(compgen -W "$opts" -- "$cur"))
 	elif ((COMP_CWORD == 1)); then
-		COMPREPLY=($(compgen -W "doctor bundle token" -- "$cur"))
+		COMPREPLY=($(compgen -W "doctor bundle token seal-setup" -- "$cur"))
 	fi
 }
 complete -F _clifrd clifrd

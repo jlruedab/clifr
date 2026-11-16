@@ -44,10 +44,12 @@ type integrityLog struct {
 	runSealed bool      // this run has sealed
 	lost      string    // why sealing stopped ("": it did not)
 	lostWarn  time.Time
+	anchorAt  time.Time // last seal anchor logged
+	infof     func(string, ...any)
 }
 
 func newIntegrityLog(dir string, logf func(string, ...any)) *integrityLog {
-	return &integrityLog{dir: dir, logf: logf, sum: sha256.New()}
+	return &integrityLog{dir: dir, logf: logf, infof: logf, sum: sha256.New()}
 }
 
 // record appends path's checksum (path: a file just written).

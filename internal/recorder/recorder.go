@@ -401,6 +401,9 @@ func openBackend(cfg Config, logger *Logger) (store.Backend, error) {
 	if opt.Logf == nil {
 		opt.Logf = logger.Warnf
 	}
+	if opt.Infof == nil {
+		opt.Infof = logger.Printf
+	}
 	return pqstore.Open(cfg.DataDir, opt)
 }
 

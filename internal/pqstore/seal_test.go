@@ -373,3 +373,29 @@ func sha256Lines(lines []string) []byte {
 	}
 	return h.Sum(nil)
 }
+
+// TestSealAnchor: the first seal of a run is logged as an anchor at info
+// level, then at most hourly; the anchor names a seal of the log.
+func TestSealAnchor(t *testing.T) {
+	dir := t.TempDir()
+	SealSetup(dir, false)
+	info := &logBuf{}
+	s, err := Open(dir, Options{FlushInterval: time.Hour, Infof: info.logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		sealWrite(t, s)
+	}
+	s.Close()
+	got := info.String()
+	if strings.Count(got, "seal anchor ") != 1 {
+		t.Fatalf("anchors: %q", got)
+	}
+	a := strings.Fields(strings.SplitN(got, "seal anchor ", 2)[1])[0]
+	id, rest, _ := strings.Cut(a, "/")
+	epoch, tag, _ := strings.Cut(rest, ":")
+	if !strings.Contains(logText(t, dir), "seal "+id+" "+epoch+" ") || !strings.Contains(logText(t, dir), " "+tag) || epoch != "1" {
+		t.Errorf("anchor %s names no seal of the log", a)
+	}
+}

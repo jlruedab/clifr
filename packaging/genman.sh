@@ -40,6 +40,8 @@ pre() {
 	"$clifrd" --help 2>&1 | pre
 	echo ".SH BUNDLE"
 	"$clifrd" bundle --help 2>&1 | pre
+	echo ".SH SEALING"
+	"$clifrd" seal-setup --help 2>&1 | pre
 	echo ".SH FILES"
 	echo ".TP"
 	echo ".I /etc/clifr/clifrd.yml"

@@ -102,6 +102,14 @@ On flash storage and copy-on-write file systems (btrfs, ZFS), and with
 journaling of data, an overwritten block may survive somewhere on the device.
 Erasure is best effort, as it is for journald. The docs must say so.
 
+**Backups and snapshots.** A copy of `seal.state` taken at time T holds that
+moment's key: whoever has the backup or VM snapshot can forge seals from T on,
+and restoring it brings the old key back (the chain then repeats epochs; an
+anchor kept elsewhere shows it). Exclude `integrity/seal.state` from backups
+and snapshots, or accept that their age bounds the protection. A reboot needs
+nothing: clifrd keeps sealing with the key on disk; a clean stop ends with an
+`end` seal, the next start begins with `start`, a crash with a `late` seal.
+
 ## Setup and the verification key (D1)
 
 Sealing begins only when an admin runs:
@@ -198,14 +206,17 @@ item.
 A seal cannot show that later seals are missing. clifrd can write the newest
 epoch and the first 16 hex digits of its tag to the journal:
 
-    clifrd: seal epoch 1234 tag 9f2c...
+    clifrd: seal anchor 4ccb1d4b/1234:9f2c1a7e5b3d0c11 (where the journal is copied ...)
+
+(key id / epoch : the first 16 hex digits of the tag; the first seal of each
+run, then at most hourly.)
 
 **Proposal:** do this once an hour, at info level. Where the journal or syslog
 is forwarded to another machine (common on managed servers), that copy is an
 anchor the host's root cannot reach. clifr opens no connection, so the
 network rule holds.
 
-`clifr verify --seal-anchor EPOCH:TAG` then checks that the recording still
+`clifr verify --seal-anchor KEYID/EPOCH:TAG` then checks that the recording still
 reaches that seal.
 
 ## Cost

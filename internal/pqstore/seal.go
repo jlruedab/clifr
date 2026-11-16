@@ -352,7 +352,7 @@ func (l *integrityLog) checkLostLocked() (sealState, int, bool) {
 	}
 	if time.Since(l.lostWarn) >= time.Hour {
 		l.lostWarn = time.Now()
-		l.logf("pqstore: warning: the integrity log is no longer sealed (%s: %v); `clifrd seal-setup --new` starts a new chain", why, err)
+		l.logf("pqstore: the integrity log is no longer sealed (%s: %v); `clifrd seal-setup --new` starts a new chain", why, err)
 	}
 	return st, cur, false
 }
@@ -397,8 +397,20 @@ func (l *integrityLog) sealLocked(flag string) bool {
 	if err := writeSealState(l.dir, st, cur); err != nil {
 		l.logf("pqstore: seal: %v", err)
 	}
+	if time.Since(l.anchorAt) >= anchorEvery {
+		l.anchorAt = time.Now()
+		l.infof("seal anchor %s (where the journal is copied to another machine, clifr verify --seal-anchor checks that the recording still reaches it)", r.anchor())
+	}
 	return true
 }
+
+// anchorEvery: how often a seal is logged as an anchor (D4): a copy of the
+// journal kept elsewhere then shows when the newest seals were cut off.
+const anchorEvery = time.Hour
+
+// anchor names a seal for --seal-anchor: KEYID/EPOCH:the first 16 hex digits
+// of its tag.
+func (r sealRec) anchor() string { return fmt.Sprintf("%s/%d:%s", r.keyID, r.epoch, r.tag[:16]) }
 
 // integrityLogFiles lists the day logs, oldest first.
 func integrityLogFiles(dir string) []string {
