@@ -1085,7 +1085,14 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    <6>[40102.311512] ...
    ```
 
-   `clifr pstore` prints every record in the recording (with `--since`/`--until`, the ones saved in that range), each with the boot it ended and the line that says why.
+   `clifr pstore` prints every record in the recording (with `--since`/`--until`, the ones saved in that range), each with the boot it ended and the line that says why. The kernel splits a long crash log into several records; they are listed in the order of the log, so the panic and its call trace come near the end.
+
+   Whether a machine saves anything depends on its kernel and firmware. `cat /sys/module/pstore/parameters/backend` names the backend (`efi_pstore` or `efi` for UEFI variables, `ramoops`, `erst`); `(null)` means none. Tested with UEFI variables (2026-11-17, a forced panic in UEFI VMs):
+
+   - **Ubuntu 22.04 and 26.04:** on by default.
+   - **RHEL 8 and 9 (Rocky, Alma):** the kernel has it but leaves it off. Add the boot option `efi_pstore.pstore_disable=0` (`sudo grubby --update-kernel=ALL --args=efi_pstore.pstore_disable=0`, then reboot).
+   - **With kdump running** (the RHEL default): kdump takes the panic before pstore runs, and nothing is saved. The boot option `crash_kexec_post_notifiers` lets the kernel save the pstore records first and then start kdump, so you get both.
+   - **Machines that boot with legacy BIOS** have no UEFI variables; on servers the firmware's ACPI error store (`erst`) may serve instead.
 
    Compressed records (`.enc.z`, when the kernel could not decompress them) are named but not stored; read them with `systemd-pstore` or from `/sys/fs/pstore` on the machine.
 
