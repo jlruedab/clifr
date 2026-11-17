@@ -8,6 +8,7 @@ Version:        %{ver}
 Release:        %{rel}%{?dist}
 Summary:        Shows what ps, ss, lsof, vmstat and others printed at a past moment
 License:        AGPL-3.0-only
+URL:            %{homepage}
 Packager:       Jorge L. Rueda B. <jlrueda@gmail.com>
 ExclusiveArch:  x86_64
 

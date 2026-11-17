@@ -5,12 +5,22 @@
 #   packaging/build.sh                         (needs docker)
 #   DOCKER="sudo docker" packaging/build.sh    (if only root may use it)
 #
+# At a release tag (HEAD tagged vX.Y.Z, clean tree) the packages are version
+# X.Y.Z; otherwise a snapshot of the next release, X.Y.Z~git..., which sorts
+# before it.
+#
 # clifrd is static (CGO_ENABLED=0) and runs anywhere. clifr links DuckDB
 # (cgo): it is built in a Rocky Linux 8 container with gcc-toolset-13, so it
 # needs only glibc 2.28 (RHEL 8+, Ubuntu 20.04+). The .rpm is made in the same
 # image with rpmbuild; the .deb with dpkg-deb on this machine.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+tag=$(git describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
+if [ -n "$tag" ] && [ -n "${VERSION:-}" ] && [ "$VERSION" != "${tag#v}" ]; then
+	echo "build.sh: VERSION=$VERSION but HEAD is tagged $tag" >&2
+	exit 1
+fi
+VERSION=${VERSION:-${tag#v}}
 VERSION=${VERSION:-0.1.0}
 DOCKER=${DOCKER:-docker}
 # Pinned by digest (the multi-arch index of rockylinux:8 as of 2023-11-24, used
@@ -19,6 +29,7 @@ DOCKER=${DOCKER:-docker}
 IMAGE=${IMAGE:-rockylinux:8@sha256:9794037624aaa6212aeada1d28861ef5e0a935adaf93e4ef79837119f2a2d04c}
 
 maintainer="Jorge L. Rueda B. <jlrueda@gmail.com>"
+homepage=https://github.com/jlruedab/clifr
 rev=$(git rev-parse --short=12 HEAD)
 git diff --quiet HEAD -- . ':!sessions.txt' ':!docs/clifr command line flight.txt' || rev=$rev.dirty
 # Snapshots sort by the commit's time (UTC, to the second), then its hash:
@@ -28,6 +39,9 @@ snap=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y%m%d.%H%M%S HEAD).$
 full=$VERSION-$snap              # what --version prints
 debver=$VERSION~git$snap         # sorts before the release $VERSION
 rpmrel=0.git$snap
+if [ -n "$tag" ] && [ "${rev%.dirty}" = "$rev" ]; then # the release itself
+	full=$VERSION debver=$VERSION rpmrel=1
+fi
 
 dist=$PWD/dist
 stage=$dist/stage
@@ -93,7 +107,7 @@ echo "== rpm (in $IMAGE)"
 mkdir -p "$stage/rpm" && cp -a "$c" "$stage/rpm/clifr" && cp -a "$d" "$stage/rpm/clifrd"
 $DOCKER run --rm -v "$PWD:/src" -w /src "$IMAGE" bash -euc "
 	dnf -q -y install rpm-build systemd >/dev/null
-	rpmbuild -bb --quiet --define '_topdir /tmp/rpm' --define 'ver $VERSION' --define 'rel $rpmrel' \
+	rpmbuild -bb --quiet --define '_topdir /tmp/rpm' --define 'ver $VERSION' --define 'rel $rpmrel' --define 'homepage $homepage' \
 		--define 'stage /src/dist/stage/rpm' --define 'dist %{nil}' packaging/rpm/clifr.spec
 	cp /tmp/rpm/RPMS/x86_64/*.rpm dist/
 	chown $owner dist/*.rpm"
@@ -168,6 +182,7 @@ for p in clifr clifrd; do
 		echo "Version: $debver"
 		echo "Architecture: amd64"
 		echo "Maintainer: $maintainer"
+		echo "Homepage: $homepage"
 		echo "Installed-Size: $size"
 		echo "Section: admin"
 		echo "Priority: optional"
