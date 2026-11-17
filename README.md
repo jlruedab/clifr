@@ -40,7 +40,7 @@ It comes in two parts:
 
 It complements those tools: Prometheus tells you *when* something happened, clifr tells you *what* happened.
 
-**Status:** a working prototype, licensed AGPL-3.0, tested on Ubuntu 22.04 and 26.04, RHEL/Rocky 8 and Alma 9. A multi-day soak test with a mixed load is under way before it can be called production-ready ([Status](#status)).
+**Status:** a working prototype, licensed AGPL-3.0, tested on Ubuntu 22.04 and 26.04, RHEL/Rocky 8 and Alma 9, including a 4-day soak test with a mixed server load; not yet run on a production server ([Status](#status)). Packages: the [0.1.0 pre-release](https://github.com/jlruedab/clifr/releases) ([release notes](RELEASE-NOTES.md)).
 
 ## What commands can I see with clifr?
 
@@ -264,11 +264,12 @@ not yet shown to be viable for production:
    release; on small machines it can be lowered by hand (see the user guide,
    [Memory: what to expect and how to use less](userguide.md#memory-what-to-expect-and-how-to-use-less)),
    and a measured low-memory profile is planned.
-6. **Packages, but no delivery yet.** The .deb and .rpm packages (x86_64),
-   the bundle and the sos plugin exist and are tested in containers and VMs
-   (see [Build](#build) and the [installation guide](install.md)), under
-   the AGPL-3.0 ([License](#license));
-   there is no package repository, signing or published checksums yet.
+6. **Packages, but no repository.** The .deb and .rpm packages (x86_64),
+   the bundle and the sos plugin are tested in containers and VMs (see
+   [Build](#build) and the [installation guide](install.md)), under the
+   AGPL-3.0 ([License](#license)). They are published as GitHub releases
+   with signed checksums ([release notes](RELEASE-NOTES.md)); there is no
+   apt or dnf repository yet, so updates are installed by hand.
 
 To call it viable: a soak test longer than the retention with a realistic
 mixed load (done, item 1), and a recording on a real server checked with
@@ -1403,9 +1404,14 @@ continuous eBPF tracer, not a metrics exporter.
 - **Benchmark scope**: one machine, a synthetic load, a read-only workload
   with the database in memory. The impact on a disk-bound workload is not
   measured. PCP is not compared.
-- **No network, encryption or access control**: the data directory holds
-  command lines and connection endpoints in plain Parquet files; the shipped
-  unit creates it readable by root only (0700).
+- **No encryption or access control beyond file permissions**: the data
+  directory holds command lines and connection endpoints in plain Parquet
+  files, readable by root and the `clifr` group (`/var/lib/clifr` is
+  root:clifr 0750). Add only trusted administrators to the group, and use
+  `--redact` for secrets in command lines. The network features are off
+  by default: `--serve` needs a token for every request, `--metrics`
+  listens only on loopback unless given TLS (basic auth optional), and
+  both use TLS off loopback.
 
 ## License
 
