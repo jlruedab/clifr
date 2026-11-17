@@ -212,7 +212,7 @@ CPU guard rail, retention and size caps, hourly compaction, crash recovery,
 drop and missed-event counters, reconciliation with kernel dumps). It is
 not yet shown to be viable for production:
 
-1. **One 7-day run, on a desktop.** The soak test ran the installed
+1. **Two soak tests, no production server yet.** The first soak test ran the installed
    packages under the shipped unit for 7 days in ordinary desktop
    use, about 510 processes, not a server load: no restarts, 0.36% of one
    core, program memory steady at about 50 MiB (RSS 97 MiB on average, 222
@@ -232,6 +232,19 @@ not yet shown to be viable for production:
    Both are fixed (d09b609): with the fixes every view is complete from the
    oldest hour's first minute, `clifr verify` passes, and the few minutes
    left of a deleted hour are no longer counted as recorded.
+   The second soak test (2026-11-13 to 11-17, about 96 hours) ran the packages
+   with the default 72-hour retention in the three VMs under a mixed server load
+   (`bench/mixedload.sh`: PostgreSQL and nginx with persistent and short-lived
+   connections, bursts of short processes, log rotation, held files, tmpfs
+   mounts, an hourly 400 MiB process), about 5.6 million processes and 7.2
+   million TCP connections in the 72 hours kept per VM. The host interrupted
+   it once: a hypervisor started on the host stopped all three VMs for about 6
+   hours, and their reset was an unclean stop that clifrd recovered from by
+   itself. Otherwise: no restarts, no skipped samples, no dropped events,
+   0.53–0.64% of one core, RSS 79–117 MiB on average (137 at most), 101–106
+   MiB kept per day; retention deleted the oldest hours on time and every view
+   was complete from the oldest hour's first minute; `clifr verify` passed
+   all 68 checkpoints on each VM.
 2. **Benchmarked on one machine** (Ubuntu 26.04, kernel 7.0, bare metal).
    The targets are tested in KVM virtual machines: Rocky Linux 8.10 (kernel
    4.18, cgroup v1), AlmaLinux 9.8 (5.14) and Ubuntu 22.04 (5.15) pass the
@@ -257,10 +270,9 @@ not yet shown to be viable for production:
    the AGPL-3.0 ([License](#license));
    there is no package repository, signing or published checksums yet.
 
-To call it viable: a soak test longer than the retention (3–7 days) with a
-realistic mixed load (memory, disk and data checked daily), and a short
-recording on a real server checked with `clifr verify`. About a week, mostly
-unattended.
+To call it viable: a soak test longer than the retention with a realistic
+mixed load (done, item 1), and a recording on a real server checked with
+`clifr verify`.
 
 ## Build
 
