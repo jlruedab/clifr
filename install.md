@@ -49,15 +49,29 @@ If `/sys/kernel/btf/vmlinux` is missing, clifrd still runs but without eBPF: it 
 
 ## 2. Getting the packages
 
-There is no public package repository yet. Packages are built from the source tree with `packaging/build.sh`, which needs Docker (the CLI is built in a Rocky Linux 8 container so it runs on glibc 2.28):
+### From a release
+
+Download the packages for your distribution, `SHA256SUMS` and `SHA256SUMS.asc` from the [releases page](https://github.com/jlruedab/clifr/releases), and the release key, the file [`KEYS`](KEYS) of this repository. Then check them:
 
 ```sh
-git clone <clifr repository> clifr && cd clifr
+gpg --import KEYS                        # once
+gpg --verify SHA256SUMS.asc SHA256SUMS   # must say "Good signature"
+sha256sum -c --ignore-missing SHA256SUMS # each downloaded package: OK
+```
+
+`gpg --verify` must report the key `2AD06804EA2D2396197179AC6336C307D7212C5F`; compare it with the fingerprint in `KEYS` and in the release notes. A warning that the key "is not certified with a trusted signature" only means you have not signed it yourself; "BAD signature", or a `sha256sum` line that does not say `OK`, means the files were changed: do not install them. There is no apt or dnf repository yet: upgrades are downloaded and installed the same way.
+
+### From the source
+
+Packages are built from the source tree with `packaging/build.sh`, which needs Docker (the CLI is built in a Rocky Linux 8 container so it runs on glibc 2.28):
+
+```sh
+git clone https://github.com/jlruedab/clifr && cd clifr
 packaging/build.sh                         # or: DOCKER="sudo docker" packaging/build.sh
 ls dist/
 ```
 
-`dist/` then holds four files. The version is taken from the last git commit: its time in UTC (date and time to the second), then its hash, so a package built from a later commit always installs as an upgrade:
+`dist/` then holds four files. Built at a release tag (`git checkout v0.1.0`), they carry that version (`clifrd_0.1.0_amd64.deb`, `clifrd-0.1.0-1.x86_64.rpm`). Otherwise the version is a snapshot of the next release, taken from the last git commit: its time in UTC (date and time to the second), then its hash, so a package built from a later commit always installs as an upgrade, and the release itself as an upgrade of its snapshots:
 
 ```
 clifr_0.1.0~git20261105.142233.6f30dcebea9e_amd64.deb
