@@ -42,6 +42,9 @@ func sealSetupCmd(args []string) error {
 	if st, err := os.Stat(dataDir); err != nil || !st.IsDir() {
 		return fmt.Errorf("seal-setup: no data directory %s", dataDir)
 	}
+	if err := checkDataDir(dataDir); err != nil {
+		return fmt.Errorf("seal-setup: %w", err)
+	}
 	key, id, err := pqstore.SealSetup(dataDir, *newChain)
 	if err != nil {
 		return fmt.Errorf("seal-setup: %w", err)

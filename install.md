@@ -175,11 +175,14 @@ A `clifr` binary built this way needs the glibc of the machine it was built on (
 To try the recorder for a few minutes without installing anything:
 
 ```sh
-sudo ./clifrd --data-dir /tmp/clifr-test --interval 5s --flush-interval 1m --duration 10m
-# in another terminal, after the first flush (1 minute here):
-sudo ./clifr --data-dir /tmp/clifr-test info
-sudo ./clifr --data-dir /tmp/clifr-test --at "-90s" "ps aux"
+D=$(sudo mktemp -d)   # a directory only root can write
+sudo ./clifrd --data-dir "$D" --interval 5s --flush-interval 1m --duration 10m
+# in another terminal (D=... the same directory), after the first flush (1 minute here):
+sudo ./clifr --data-dir "$D" info
+sudo ./clifr --data-dir "$D" --at "-90s" "ps aux"
 ```
+
+Running as root, clifrd refuses a data directory that belongs to another user or that others can write (a fixed name in `/tmp` someone else created first, say): that user could redirect what it writes and deletes there.
 
 ## 6. After installing
 

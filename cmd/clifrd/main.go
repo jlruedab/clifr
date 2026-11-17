@@ -148,6 +148,11 @@ func run(args []string) error {
 	if *testMode {
 		return testEBPF(c.EBPF, c.TCPBPF)
 	}
+	if c.DataDir != "" {
+		if err := checkDataDir(c.DataDir); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Sscanf(strings.TrimSuffix(*budget, "%"), "%g", &c.CPUBudget); err != nil {
 		return fmt.Errorf("bad --cpu-budget %q", *budget)
 	}
