@@ -3,7 +3,8 @@
 # virtual machines (libvirt, cloud images; run as a user who may sudo).
 #
 #   packaging/vm.sh up NAME IMAGE OSINFO   boot NAME from a cloud image in
-#                                          /var/lib/libvirt/images (copy on write)
+#                                          /var/lib/libvirt/images (copy on write);
+#                                          VM_BOOT=uefi: UEFI firmware (efi_pstore)
 #   packaging/vm.sh test NAME [WHAT]       install dist/'s packages and test;
 #                                          WHAT: service ebpf e2e truth tls sos (default all);
 #                                          CLIFR_TEST_RECORDER_ARGS: extra recorder
@@ -69,7 +70,7 @@ UD
 	sudo cloud-localds "$seed" "$cache/user-data" "$cache/meta-data"
 	sudo virt-install -q --name "clifr-$n" --memory 8192 --vcpus 4 --osinfo "$osinfo" \
 		--disk "path=$disk,format=qcow2" --disk "path=$seed,device=cdrom" --import \
-		--network network=default --graphics none --noautoconsole
+		--network network=default --graphics none --noautoconsole ${VM_BOOT:+--boot $VM_BOOT}
 	a=$(ip "$n")
 	for _ in $(seq 1 60); do on "$n" true 2>/dev/null && break; sleep 3; done
 	on "$n" 'cloud-init status --wait >/dev/null 2>&1; uname -r; cat /etc/os-release | grep PRETTY'
@@ -94,7 +95,7 @@ test)
 down)
 	n=$2
 	sudo virsh destroy "clifr-$n" >/dev/null 2>&1 || true
-	sudo virsh undefine "clifr-$n" --remove-all-storage >/dev/null 2>&1 || true
+	sudo virsh undefine "clifr-$n" --remove-all-storage --nvram >/dev/null 2>&1 || true # --nvram: UEFI VMs
 	sudo rm -f "$images/clifr-$n.qcow2" "$images/clifr-$n-seed.iso"
 	;;
 *)
