@@ -3,6 +3,8 @@ package recorder
 import (
 	"bytes"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,5 +40,21 @@ func TestVerifySkipOnce(t *testing.T) {
 	}
 	if len(r.pending.Verify) != 2 || r.pending.Verify[0].Cmd != "echo hello" || r.pending.Verify[0].Output != "hello\n" {
 		t.Errorf("captured %+v, want echo hello twice", r.pending.Verify)
+	}
+}
+
+// TestLookSystem: the real tools come from the system directories only, not
+// from the PATH clifrd was started with.
+func TestLookSystem(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "uptime")
+	os.WriteFile(fake, []byte("#!/bin/sh\necho planted\n"), 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	p, err := lookSystem("uptime")
+	if err != nil || p == fake || !strings.HasPrefix(p, "/") {
+		t.Errorf("uptime: %q %v (planted %s)", p, err, fake)
+	}
+	if _, err := lookSystem("clifr-no-such-tool"); err == nil {
+		t.Error("a missing tool was found")
 	}
 }

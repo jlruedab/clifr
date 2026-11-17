@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -80,6 +81,22 @@ var verifyCommands = [][]string{
 	{"lsof", "-n", "-P", "-K", "i"},
 }
 
+// verifyPath is where the real tools are looked for and what they get as
+// PATH: root's system directories only, whatever PATH clifrd was started with
+// (a user's directory early in it would have root run that user's "ps").
+const verifyPath = "/usr/sbin:/usr/bin:/sbin:/bin"
+
+// lookSystem finds name in verifyPath.
+func lookSystem(name string) (string, error) {
+	for _, d := range filepath.SplitList(verifyPath) {
+		p := filepath.Join(d, name)
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0 {
+			return p, nil
+		}
+	}
+	return "", exec.ErrNotFound
+}
+
 // captureVerify runs the real tools and queues their output for the next
 // transaction. The commands run inside the recorder's cgroup, so benchmark
 // runs that measure recorder cost must not use --verify-every.
@@ -90,13 +107,13 @@ var verifyCommands = [][]string{
 func (r *Recorder) captureVerify(sampleTS int64) {
 	for _, argv := range verifyCommands {
 		cmdline := strings.Join(argv, " ")
-		path, err := exec.LookPath(argv[0])
+		path, err := lookSystem(argv[0])
 		if err != nil {
 			r.verifySkip(cmdline, "not found")
 			continue
 		}
 		cmd := exec.Command(path, argv[1:]...)
-		cmd.Env = []string{"LC_ALL=C", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
+		cmd.Env = []string{"LC_ALL=C", "PATH=" + verifyPath}
 		var out bytes.Buffer
 		var stderr limitedBuffer
 		cmd.Stdout, cmd.Stderr = &out, &stderr
