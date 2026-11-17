@@ -55,3 +55,23 @@ func TestPstoreRecords(t *testing.T) {
 		t.Errorf("printed:\n%s", sb.String())
 	}
 }
+
+// TestEFIPartsInOrder: the kernel numbers an EFI dump's parts from the end of
+// the log, so part 1 (…01001) is listed last, also when the dump's time ticked
+// between parts; other records keep their place.
+func TestEFIPartsInOrder(t *testing.T) {
+	var parts []PstoreRecord
+	// One dump whose time ticked after part 2 (two directories), listed by name.
+	for _, n := range []string{"1794899691/001/dmesg-efi_pstore-179489969101001", "1794899691/001/dmesg-efi_pstore-179489969102001",
+		"1794899692/001/dmesg-efi_pstore-179489969204001", "1794899692/001/dmesg-efi_pstore-179489969203001", "1794899691/001/dmesg.txt"} {
+		parts = append(parts, PstoreRecord{BootID: "c", File: n})
+	}
+	efiPartsInOrder(parts)
+	var got []string
+	for _, r := range parts {
+		got = append(got, r.File[len(r.File)-5:])
+	}
+	if strings.Join(got, " ") != "04001 03001 02001 01001 g.txt" {
+		t.Errorf("EFI parts in order %v", got)
+	}
+}
