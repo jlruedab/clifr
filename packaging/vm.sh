@@ -14,7 +14,7 @@
 # Build first: packaging/build.sh, then packaging/vm.sh bins (test binaries;
 # DOCKER="sudo docker" as for build.sh).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." >/dev/null # quiet when CDPATH is set
 images=/var/lib/libvirt/images
 cache=$PWD/dist/.cache/vm
 key=$cache/id_ed25519
