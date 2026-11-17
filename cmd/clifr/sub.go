@@ -70,7 +70,7 @@ func cmdExport(db *store.DB, table string) error {
 	if err != nil {
 		return err
 	}
-	out, done := stdout()
+	out, done := dataOut()
 	defer done()
 	w := csv.NewWriter(out)
 	w.Write(cols)

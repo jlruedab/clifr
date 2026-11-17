@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/term"
+
+	"clifr/internal/query"
 )
 
 // termUnsafe reports whether a character would make a terminal do more than
@@ -88,13 +90,42 @@ func (t *termWriter) Flush() error {
 	return err
 }
 
-// stdout is where output goes: os.Stdout, through a termWriter when it is a
-// terminal (a pipe or a file gets the output as the real tools print it).
-// Call done before returning.
+// stdout is where the text views go: os.Stdout through a termWriter, also
+// into a pipe or a file (procps and lsof escape these characters always, and
+// "clifr ... | grep x" hands its output to the terminal). Call done before
+// returning.
 func stdout() (w io.Writer, done func()) {
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return os.Stdout, func() {}
-	}
 	t := &termWriter{w: os.Stdout}
 	return t, func() { t.Flush() }
 }
+
+// dataOut is where data for programs goes (--json, export's CSV): filtered on
+// a terminal, as it is into a pipe or file (JSON escapes control characters
+// itself; a CSV export keeps the recorded bytes).
+func dataOut() (w io.Writer, done func()) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return os.Stdout, func() {}
+	}
+	return stdout()
+}
+
+// lineSafe writes each message through termSafe: for stderr, whose headers,
+// notes and errors quote recorded values (a host name, a file name). A nil w
+// is os.Stderr as it is at the time of the write.
+type lineSafe struct{ w io.Writer }
+
+func (l lineSafe) Write(b []byte) (int, error) {
+	w := l.w
+	if w == nil {
+		w = os.Stderr
+	}
+	if _, err := io.WriteString(w, termSafe(string(b))); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+// stderr is os.Stderr through termSafe.
+var stderr io.Writer = lineSafe{}
+
+func init() { query.HeaderOut = stderr }

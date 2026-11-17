@@ -29,6 +29,9 @@ func (c *runCtx) show(pages []page) error {
 		return runPager(pages, c.g.interactive)
 	}
 	out, done := stdout()
+	if c.g.json {
+		out, done = dataOut()
+	}
 	defer done()
 	for i, p := range pages {
 		if i > 0 {

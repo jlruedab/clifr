@@ -118,7 +118,7 @@ func main() {
 	err := run(os.Args[1:])
 	clean() // os.Exit skips deferred calls
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clifr:", err)
+		fmt.Fprintln(stderr, "clifr:", err)
 		var u usageError
 		if errors.As(err, &u) {
 			os.Exit(2)
@@ -179,7 +179,7 @@ func run(args []string) error {
 	case g.help && words != nil:
 		return helpTool(words[0])
 	case sub == "" && words == nil:
-		fmt.Fprint(os.Stderr, mainHelp)
+		fmt.Fprint(stderr, mainHelp)
 		return usageError{errors.New("no command given")}
 	}
 	if err := checkLater(&g); err != nil {
@@ -242,7 +242,7 @@ func openBundle(g *globals) (func(), error) {
 		}
 	}
 	if note := partsNote(ms); note != "" {
-		fmt.Fprintln(os.Stderr, "clifr: "+note)
+		fmt.Fprintln(stderr, "clifr: "+note)
 	}
 	g.dataDir, g.fromBundle = dir, true
 	return func() { os.RemoveAll(tmp) }, nil
@@ -284,10 +284,10 @@ func extractOne(g *globals, path, tmp string) (string, *bundle.Manifest, error) 
 		return dir, m, nil
 	}
 	if m == nil {
-		fmt.Fprintln(os.Stderr, "clifr: --salvage: "+path+": no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified")
+		fmt.Fprintln(stderr, "clifr: --salvage: "+path+": no bundle.json (the bundle was cut short): the files that arrived whole are read, unverified")
 	}
 	for _, p := range bad {
-		fmt.Fprintln(os.Stderr, "clifr: --salvage: left out "+salvageNote(p))
+		fmt.Fprintln(stderr, "clifr: --salvage: left out "+salvageNote(p))
 	}
 	return dir, m, nil
 }

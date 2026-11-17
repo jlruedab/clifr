@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"clifr/internal/query"
 )
@@ -174,7 +173,7 @@ func runChanges[R any](c *runCtx, v view[R], times []int64) error {
 	case c.g.json:
 		return nil
 	case len(pages) == 0:
-		fmt.Fprintln(os.Stderr, "# no changes")
+		fmt.Fprintln(stderr, "# no changes")
 		return nil
 	}
 	return c.show(pages)
@@ -195,7 +194,7 @@ func diffView[R any](c *runCtx, v view[R], a, b int64) error {
 	case c.g.json:
 		return writeChanges(a, b, ch, meta)
 	case len(ch) == 0:
-		fmt.Fprintf(os.Stderr, "# %s: no differences between %s and %s\n", v.name, query.FormatMS(a), query.FormatMS(b))
+		fmt.Fprintf(stderr, "# %s: no differences between %s and %s\n", v.name, query.FormatMS(a), query.FormatMS(b))
 		return nil
 	}
 	return c.show([]page{changesPage(v, a, b, ch)})

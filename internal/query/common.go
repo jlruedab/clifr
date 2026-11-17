@@ -69,8 +69,16 @@ func SnapshotAt(db *store.DB, t int64, fdWalk bool) (int64, error) {
 
 // Header prints an informational line to stderr.
 func Header(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "# "+format+"\n", args...)
+	var w io.Writer = os.Stderr
+	if HeaderOut != nil {
+		w = HeaderOut
+	}
+	fmt.Fprintf(w, "# "+format+"\n", args...)
 }
+
+// HeaderOut is where Header writes; nil: os.Stderr. clifr filters it
+// (headers quote recorded values such as the host name).
+var HeaderOut io.Writer
 
 func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)

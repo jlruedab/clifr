@@ -39,7 +39,7 @@ func (c *runCtx) emit(rows any, meta func(i int) rowMeta, text func(io.Writer)) 
 }
 
 func writeLines(rows any, meta func(i int) rowMeta) error {
-	out, done := stdout()
+	out, done := dataOut()
 	defer done()
 	w := bufio.NewWriter(out)
 	v := reflect.ValueOf(rows)

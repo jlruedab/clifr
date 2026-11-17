@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -30,5 +33,31 @@ func TestTermSafe(t *testing.T) {
 		if b.String() != termSafe(in) {
 			t.Errorf("cut %d: %q", cut, b.String())
 		}
+	}
+}
+
+// TestOutputFilteredInPipes: the text views and stderr are filtered also when
+// they go to a pipe or file ("clifr ... | grep" reaches the terminal); data
+// for programs (--json, export) keeps the recorded bytes there.
+func TestOutputFilteredInPipes(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = f
+	defer func() { os.Stdout = saved }()
+	evil := "c\x1b[2Jm\n"
+	w, done := stdout()
+	io.WriteString(w, evil)
+	done()
+	w, done = dataOut()
+	io.WriteString(w, evil)
+	done()
+	var e strings.Builder
+	fmt.Fprint(lineSafe{&e}, "# host: x\x1b]0;t\a\n")
+	b, _ := os.ReadFile(f.Name())
+	if string(b) != "c?[2Jm\n"+evil || e.String() != "# host: x?]0;t?\n" {
+		t.Errorf("stdout+data %q, stderr %q", b, e.String())
 	}
 }

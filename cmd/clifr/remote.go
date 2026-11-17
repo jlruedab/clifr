@@ -227,7 +227,7 @@ func trustHost(g *globals, hostport string) (string, error) {
 			return "", fmt.Errorf("the certificate of %s is %s, not --tls-fingerprint %s: not connecting", hostport, fp, g.tlsFP)
 		}
 	case term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd())):
-		fmt.Fprintf(os.Stderr, "The certificate of %s is not known yet.\nIts fingerprint is %s.\n"+
+		fmt.Fprintf(stderr, "The certificate of %s is not known yet.\nIts fingerprint is %s.\n"+
 			"On the server, clifrd logs its own at start (journalctl -u clifrd | grep certificate).\n"+
 			"Trust it and remember it in %s? (yes/no) ", hostport, fp, path)
 		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
