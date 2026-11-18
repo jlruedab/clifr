@@ -1,0 +1,1405 @@
+#!/bin/sh
+''''command -v python3 >/dev/null 2>&1 && exec python3 "$0" "$@"; exec /usr/libexec/platform-python "$0" "$@" # '''
+# SPDX-License-Identifier: AGPL-3.0-only
+USAGE = """clifr-trial: evidence for a production trial of clifr (weeks, one server).
+
+clifrd keeps 72 hours, so a check at the end cannot see the first weeks: this
+script samples every hour (a systemd timer) and writes the report at the end.
+It only reads; the one exception is the drill, which the admin starts by hand.
+
+  clifr-trial start           install the hourly timer, record the baseline
+  clifr-trial status          what was collected so far, problems so far
+  clifr-trial drill [--no-mount]
+                              planned events (a job, a TCP connection, a held
+                              file, a tmpfs mount) checked against the
+                              recording a day later; nothing risky
+  clifr-trial report [--out DIR]
+                              SUMMARY.txt and the evidence as one .tar.gz
+                              (anonymized, see below)
+  clifr-trial stop            remove the timer (the collected data stay)
+
+Hourly (the timer): clifrd's CPU, memory, restarts and the recording's size;
+the host's CPU, load and memory; the boot, kernel and clifrd version (to see a
+reboot, an OS update and an upgrade); clifrd's journal. Every 6 hours an
+accuracy spot check: the real ps, ss and mount output, compared 10 minutes or
+more later with clifr's reconstruction of the same moment. Daily: clifr info,
+clifr verify --integrity and the guard events.
+
+The report holds numbers and verdicts only: no host name, IP or MAC address,
+machine or boot id, user name, command line, path or port. Every file in it
+passes through a sanitizer, and a last scan refuses to write the archive if
+anything identifying is still found (the details stay in /var/lib/clifr-trial
+for the admin to look at). Times are in UTC.
+
+Data: /var/lib/clifr-trial (root only). Needs root, systemd, the clifr and
+clifrd packages; Python 3.6 or newer (RHEL 8's platform-python will do).
+"""
+
+import ctypes
+import io
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tarfile
+import time
+
+VERSION = "1"
+STATE = "/var/lib/clifr-trial"
+INSTALLED = "/usr/local/sbin/clifr-trial"
+UNIT = "clifr-trial"
+DATA_DIR = "/var/lib/clifr"
+CONFIG = "/etc/clifr/clifrd.yml"
+ACCURACY_EVERY = 6 * 3600
+ACCURACY_DELAY = 600  # clifrd flushes every 5 minutes
+DAILY_EVERY = 24 * 3600 - 600
+DRILL_CHECK_AFTER = 24 * 3600
+DRILL_HOLD = 600  # two fd walks (120 s) and room for a stretched interval
+# Tests only: shorter waits.
+ACCURACY_DELAY = int(os.environ.get("CLIFR_TRIAL_ACCURACY_DELAY", ACCURACY_DELAY))
+DRILL_HOLD = int(os.environ.get("CLIFR_TRIAL_DRILL_HOLD", DRILL_HOLD))
+
+HOURLY_COLS = ["ts", "boot", "kernel", "clifrd_version", "state", "n_restarts", "pid", "pid_start",
+               "cpu_ticks", "clk_tck", "rss_kb", "hwm_kb", "cg_mem", "cg_mem_peak", "data_bytes",
+               "data_files", "fs_free_bytes", "host_cpus", "host_jiffies", "host_idle_jiffies",
+               "load1", "load5", "load15", "mem_total_kb", "mem_avail_kb", "psi_cpu", "psi_mem", "psi_io"]
+ACC_COLS = ["ts", "checked_ts", "ps_real", "ps_missing", "ps_extra", "listen_real", "listen_missing",
+            "listen_extra", "estab_real", "estab_clifr", "estab_common", "mounts_real",
+            "mounts_missing", "mounts_extra", "error"]
+
+AGENTS = ["auditd", "falcon-sensor", "falcond", "wdavdaemon", "mdatp", "ds_agent", "cbagentd", "cbdaemon",
+          "sentinelagent", "s1-agent", "osqueryd", "qualys-cloud-ag", "splunkd", "filebeat", "auditbeat",
+          "metricbeat", "packetbeat", "elastic-agent", "elastic-endpoi", "node_exporter", "process-exporte",
+          "zabbix_agentd", "zabbix_agent2", "telegraf", "newrelic-infra", "datadog-agent", "agent",
+          "sysdig", "falco", "tetragon", "pmcd", "pmlogger", "sadc", "wazuh-agentd", "ossec-agentd",
+          "nessusd", "nessus-agent", "ir_agent", "TaniumClient", "taniumclient", "dynatrace", "oneagentos",
+          "ama", "omsagent", "mdsd", "nxlog", "rsyslogd", "fluent-bit", "td-agent-bit", "vector",
+          "promtail", "otelcol", "bpftrace", "pixie", "parca-agent", "pyroscope", "cilium-agent",
+          "kubelet", "containerd", "dockerd", "crio", "podman", "conmon", "scx_", "tuned", "kdump"]
+
+
+# ---------------------------------------------------------------- helpers
+
+def die(msg):
+    sys.stderr.write("clifr-trial: %s\n" % msg)
+    sys.exit(1)
+
+
+def run(args, timeout=1800, env=None):
+    """Runs a command; (exit code, stdout, stderr). Never raises."""
+    try:
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        out, err = p.communicate(timeout=timeout)
+        return p.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        return -1, "", "timeout after %ds" % timeout
+    except OSError as e:
+        return -1, "", str(e)
+
+
+def read(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return default
+
+
+def spath(name):
+    return os.path.join(STATE, name)
+
+
+def load_state():
+    try:
+        with open(spath("state.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(st):
+    tmp = spath("state.json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(st, f, indent=1, sort_keys=True)
+    os.rename(tmp, spath("state.json"))
+
+
+def append_csv(name, cols, row):
+    path = spath(name)
+    new = not os.path.exists(path)
+    with open(path, "a") as f:
+        if new:
+            f.write(",".join(cols) + "\n")
+        f.write(",".join(str(row.get(c, "")).replace(",", ";").replace("\n", " ") for c in cols) + "\n")
+
+
+def read_csv(name):
+    rows = []
+    try:
+        with open(spath(name)) as f:
+            cols = f.readline().strip().split(",")
+            for line in f:
+                vals = line.rstrip("\n").split(",")
+                rows.append(dict(zip(cols, vals)))
+    except OSError:
+        pass
+    return rows
+
+
+def append_jsonl(name, obj):
+    with open(spath(name), "a") as f:
+        f.write(json.dumps(obj, sort_keys=True) + "\n")
+
+
+def read_jsonl(name):
+    out = []
+    for line in read(spath(name)).splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            pass
+    return out
+
+
+def num(v, default=None):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def utc(ts):
+    """A Unix time as clifr's TIME, given with --tz UTC."""
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts))
+
+
+def local(ts):
+    """Times in what leaves the host: UTC (the time zone tells where it is)."""
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts))
+
+
+def day_of(ts):
+    return time.strftime("%Y-%m-%d", time.gmtime(ts))
+
+
+def clifr(args, timeout=900):
+    """Runs clifr on the local recording with times in UTC."""
+    return run(["clifr", "--data-dir", DATA_DIR, "--tz", "UTC", "--plain"] + args, timeout=timeout)
+
+
+def clifr_lines(out):
+    return [l for l in out.splitlines() if l and not l.startswith("#")]
+
+
+def unit_props(*names):
+    rc, out, _ = run(["systemctl", "show", "clifrd", "-p", ",".join(names)], timeout=30)
+    props = {}
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        props[k] = v
+    return props
+
+
+def config_value(key, default):
+    m = re.search(r"(?m)^\s*%s:\s*([^\s#]+)" % re.escape(key), read(CONFIG))
+    return m.group(1) if m else default
+
+
+def duration_s(text, default):
+    m = re.match(r"^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$", text or "")
+    if not m:
+        return default
+    mult = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, None: 1}[m.group(2)]
+    return float(m.group(1)) * mult
+
+
+def size_bytes(text, default):
+    m = re.match(r"^(\d+(?:\.\d+)?)([KMGT]i?B?)?$", text or "", re.I)
+    if not m:
+        return default
+    unit = (m.group(2) or "").upper()[:1]
+    return float(m.group(1)) * {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}[unit]
+
+
+def versions():
+    v = {}
+    for name in ("clifr", "clifrd"):
+        rc, out, _ = run(["rpm", "-q", name], timeout=30)
+        if rc != 0:
+            rc, out, _ = run(["dpkg-query", "-W", "-f", "${Version}", name], timeout=30)
+        v[name + "_package"] = out.strip() if rc == 0 else "not installed"
+    v["clifrd"] = run(["clifrd", "--version"], timeout=30)[1].strip()
+    v["clifr"] = run(["clifr", "--version"], timeout=30)[1].strip()
+    return v
+
+
+def need_root():
+    if os.geteuid() != 0:
+        die("run as root (sudo)")
+
+
+# ---------------------------------------------------------------- start / stop
+
+def cmd_start(args):
+    need_root()
+    if shutil.which("clifr") is None:
+        die("clifr is not installed (the clifr package: the queries need it)")
+    if not os.path.isdir(DATA_DIR):
+        die("%s does not exist: is clifrd installed and started?" % DATA_DIR)
+    os.makedirs(STATE, mode=0o700, exist_ok=True)
+    os.makedirs(spath("captures"), mode=0o700, exist_ok=True)
+    st = load_state()
+    me = os.path.realpath(sys.argv[0])
+    if me != INSTALLED:
+        shutil.copyfile(me, INSTALLED)
+        os.chmod(INSTALLED, 0o755)
+        run(["restorecon", INSTALLED], timeout=30)
+    with open("/etc/systemd/system/%s.service" % UNIT, "w") as f:
+        f.write("""[Unit]
+Description=clifr production trial: hourly sample (clifr-trial)
+
+[Service]
+Type=oneshot
+ExecStart=%s sample
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=10
+MemoryMax=2G
+TimeoutStartSec=45min
+""" % INSTALLED)
+    with open("/etc/systemd/system/%s.timer" % UNIT, "w") as f:
+        f.write("""[Unit]
+Description=clifr production trial: hourly sample (clifr-trial)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""")
+    run(["systemctl", "daemon-reload"], timeout=60)
+    rc, _, err = run(["systemctl", "enable", "--now", UNIT + ".timer"], timeout=60)
+    if rc != 0:
+        die("could not start the timer: " + err.strip())
+    if "started" not in st:
+        st["started"] = int(time.time())
+        st["script_version"] = VERSION
+        save_state(st)
+        baseline()
+        q = spath("QUESTIONS.txt")
+        if not os.path.exists(q):
+            with open(q, "w") as f:
+                f.write(QUESTIONS)
+    print("clifr-trial: the hourly timer is on; data in %s" % STATE)
+    print("taking the first sample now (a minute or two)...")
+    cmd_sample(args)
+    print("done. Next steps:")
+    print("  - answer %s during the trial (it goes into the report)" % spath("QUESTIONS.txt"))
+    print("  - once, on a normal day: sudo clifr-trial drill   (checked automatically a day later)")
+    print("  - now and then: sudo clifr-trial status")
+    print("  - after 2-4 weeks: sudo clifr-trial report, and send the .tar.gz")
+
+
+def cmd_stop(args):
+    need_root()
+    run(["systemctl", "disable", "--now", UNIT + ".timer"], timeout=60)
+    for ext in ("timer", "service"):
+        try:
+            os.remove("/etc/systemd/system/%s.%s" % (UNIT, ext))
+        except OSError:
+            pass
+    run(["systemctl", "daemon-reload"], timeout=60)
+    print("timer removed; the collected data stay in %s (rm -r it when done)" % STATE)
+
+
+QUESTIONS = """# clifr trial: questions for the admin (edit this file; it goes into the report)
+#
+# Before clifrd was installed, how busy was the server? (CPU, memory, load;
+# the existing monitoring's numbers or graphs for the week before the install,
+# if any. Attach them separately if they are images.)
+pre_install_baseline:
+
+# What runs on this server (kind of workload, not names): e.g. database,
+# web/app server, batch jobs, containers/Kubernetes node, file server.
+workload:
+
+# Did anyone notice any effect on the server or its applications? When?
+noticed_impact:
+
+# Did you use clifr to look at something real (an incident, a question about
+# the past)? What, and did it answer the question?
+real_use:
+
+# Was the install (install.md) clear? Anything you had to work out yourself?
+install_experience:
+
+# Anything that was confusing, wrong or missing in clifr's output?
+problems:
+
+# Would you keep it running on this server? On others? Why or why not?
+keep_it:
+"""
+
+
+def baseline():
+    """What the server is and what else runs on it, at start."""
+    b = {"ts": int(time.time()), "note": "taken after clifrd was installed: no pre-install baseline"}
+    osr = dict(re.findall(r'(?m)^([A-Z_]+)="?([^"\n]*)"?$', read("/etc/os-release")))
+    b["os"] = "%s %s" % (osr.get("ID", "?"), osr.get("VERSION_ID", "?"))
+    b["kernel"] = os.uname().release
+    b["arch"] = os.uname().machine
+    b["cpus"] = os.cpu_count()
+    m = re.search(r"MemTotal:\s+(\d+)", read("/proc/meminfo"))
+    b["mem_total_gib"] = round(int(m.group(1)) / 1048576.0, 1) if m else None
+    b["cgroup"] = "v2" if os.path.exists("/sys/fs/cgroup/cgroup.controllers") else "v1"
+    b["selinux"] = run(["getenforce"], timeout=10)[1].strip() or "n/a"
+    b["btf"] = os.path.exists("/sys/kernel/btf/vmlinux")
+    b["psi"] = os.path.exists("/proc/pressure/cpu")
+    b.update(versions())
+    p = unit_props("DropInPaths", "MemoryMax", "CPUQuotaPerSecUSec", "ActiveEnterTimestamp")
+    b["unit_dropins"] = len([x for x in p.get("DropInPaths", "").split() if x])
+    b["unit_memory_max"] = p.get("MemoryMax", "")
+    b["unit_cpu_quota"] = p.get("CPUQuotaPerSecUSec", "")
+    rc, out, _ = run(["rpm", "-V", "clifrd"], timeout=60)
+    b["config_changed"] = CONFIG in out
+    cfg = {}
+    for key in ("retention", "max_size", "process", "system", "files", "flush", "process_events", "tcp",
+                "cpu_budget", "memory_guard", "metrics", "serve"):
+        cfg[key] = config_value(key, "")
+    for key in ("metrics", "serve"):  # addresses: only whether it is on
+        cfg[key] = "on" if cfg[key] not in ("", '""', "''", "false", "off") else "off"
+    b["config"] = cfg
+    comms = set()
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            comms.add(read("/proc/%s/comm" % pid).strip())
+    b["agents"] = sorted(c for c in comms if any(c == a or (a.endswith("_") and c.startswith(a)) for a in AGENTS))
+    b["processes"] = len([p for p in os.listdir("/proc") if p.isdigit()])
+    rc, out, _ = run(["bpftool", "prog", "show", "--json"], timeout=60)
+    if rc == 0:
+        try:
+            progs = json.loads(out)
+            b["bpf_programs"] = len(progs)
+            b["bpf_programs_by_type"] = {}
+            for pr in progs:
+                t = pr.get("type", "?")
+                b["bpf_programs_by_type"][t] = b["bpf_programs_by_type"].get(t, 0) + 1
+        except ValueError:
+            b["bpf_programs"] = "unknown"
+    else:
+        b["bpf_programs"] = "unknown (no bpftool)"
+    rc, out, err = run(["clifrd", "doctor"], timeout=300)
+    with open(spath("doctor.txt"), "w") as f:
+        f.write(out + err)
+    with open(spath("baseline.json"), "w") as f:
+        json.dump(b, f, indent=1, sort_keys=True)
+
+
+# ---------------------------------------------------------------- hourly sample
+
+def pid_stats(pid):
+    s = read("/proc/%s/stat" % pid)
+    if not s:
+        return {}
+    fields = s[s.rfind(")") + 2:].split()
+    status = read("/proc/%s/status" % pid)
+    rss = re.search(r"VmRSS:\s+(\d+)", status)
+    hwm = re.search(r"VmHWM:\s+(\d+)", status)
+    return {"cpu_ticks": int(fields[11]) + int(fields[12]), "pid_start": fields[19],
+            "rss_kb": rss.group(1) if rss else "", "hwm_kb": hwm.group(1) if hwm else ""}
+
+
+def dir_size(path):
+    total, files = 0, 0
+    for root, dirs, names in os.walk(path):
+        for n in names:
+            try:
+                total += os.lstat(os.path.join(root, n)).st_blocks * 512
+                files += 1
+            except OSError:
+                pass
+    return total, files
+
+
+def psi(kind):
+    m = re.search(r"some avg10=\S+ avg60=\S+ avg300=(\S+)", read("/proc/pressure/" + kind))
+    return m.group(1) if m else ""
+
+
+def hourly_row():
+    now = int(time.time())
+    p = unit_props("ActiveState", "NRestarts", "MainPID", "MemoryCurrent", "MemoryPeak")
+    row = {"ts": now, "boot": read("/proc/sys/kernel/random/boot_id").strip(), "kernel": os.uname().release,
+           "clifrd_version": run(["clifrd", "--version"], timeout=30)[1].strip().replace("clifrd ", ""),
+           "state": p.get("ActiveState", ""), "n_restarts": p.get("NRestarts", ""), "pid": p.get("MainPID", ""),
+           "clk_tck": os.sysconf("SC_CLK_TCK")}
+    for k in ("MemoryCurrent", "MemoryPeak"):
+        v = p.get(k, "")
+        row["cg_mem" if k == "MemoryCurrent" else "cg_mem_peak"] = v if v.isdigit() and int(v) < 2 ** 62 else ""
+    if row["pid"] not in ("", "0"):
+        row.update(pid_stats(row["pid"]))
+    row["data_bytes"], row["data_files"] = dir_size(os.path.realpath(DATA_DIR))
+    try:
+        sv = os.statvfs(DATA_DIR)
+        row["fs_free_bytes"] = sv.f_bavail * sv.f_frsize
+    except OSError:
+        pass
+    cpu = read("/proc/stat").splitlines()[0].split()[1:]
+    vals = [int(x) for x in cpu[:8]]
+    row["host_jiffies"] = sum(vals)
+    row["host_idle_jiffies"] = vals[3] + vals[4]
+    row["host_cpus"] = os.cpu_count()
+    row["load1"], row["load5"], row["load15"] = read("/proc/loadavg").split()[:3]
+    mi = read("/proc/meminfo")
+    for key, col in (("MemTotal", "mem_total_kb"), ("MemAvailable", "mem_avail_kb")):
+        m = re.search(key + r":\s+(\d+)", mi)
+        row[col] = m.group(1) if m else ""
+    row["psi_cpu"], row["psi_mem"], row["psi_io"] = psi("cpu"), psi("memory"), psi("io")
+    return row
+
+
+def journal_since(since_ts):
+    """clifrd's journal (its own lines and systemd's about it) since a Unix time."""
+    since = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(since_ts))
+    rc, out, err = run(["journalctl", "-u", "clifrd", "--since", since, "-o", "json", "--no-pager"], timeout=600)
+    lines = []
+    for raw in out.splitlines():
+        try:
+            e = json.loads(raw)
+        except ValueError:
+            continue
+        msg = e.get("MESSAGE", "")
+        if isinstance(msg, list):
+            msg = bytes(msg).decode("utf-8", "replace")
+        ts = int(e.get("__REALTIME_TIMESTAMP", "0")) // 1000000
+        lines.append({"ts": ts, "comm": e.get("_COMM", ""), "msg": msg})
+    return lines
+
+
+UNPLANNED = re.compile(r"Failed with result|code=killed|code=dumped|status=\d+/\w+|Scheduled restart job|oom-kill|"
+                       r"Main process exited, code=exited, status=[1-9]|panic:|fatal error:")
+
+
+def template(msg, hostname=None):
+    """A free-text line (journal, error) reduced to clifr's own words: the
+    host's names, addresses, paths, quoted text, numbers and every word that
+    is not in clifrd's or clifr's binaries (process, user, mount names) are
+    replaced."""
+    msg = re.sub(r"^clifrd: \d+/\d+/\d+ \d+:\d+:\d+(\.\d+)? ", "", msg)
+    msg = sanitizer().text(msg)
+    msg = re.sub(r"\"[^\"]*\"|'[^']*'", "Q", msg)
+    msg = re.sub(r"(/[^\s,:;()\"']+)+", "PATH", msg)
+    msg = re.sub(r"(?i)\b[0-9a-f]{8,}\b", "HEX", msg)
+    msg = re.sub(r"=\S+", "=V", msg)
+    msg = re.sub(r"\d+(\.\d+)?", "N", msg)
+    vocab = vocabulary()
+    msg = re.sub(r"[A-Za-z][A-Za-z_-]*", lambda m: m.group(0) if m.group(0).isupper() or m.group(0).lower() in vocab else "X", msg)
+    return msg[:200]
+
+
+_vocab = None
+
+
+def vocabulary():
+    """Lower-case words in clifrd's and clifr's binaries: clifr's own messages."""
+    global _vocab
+    if _vocab is None:
+        _vocab = set()
+        for b in ("/usr/sbin/clifrd", "/usr/bin/clifr"):
+            try:
+                with open(b, "rb") as f:
+                    data = f.read()
+            except OSError:
+                continue
+            for w in re.findall(rb"[A-Za-z][a-z]{1,30}", data):
+                _vocab.add(w.decode().lower())
+        for u in sanitizer().users:
+            _vocab.discard(u.lower())
+    return _vocab
+
+
+SYSTEM_USERS = {"root", "bin", "daemon", "adm", "lp", "sync", "shutdown", "halt", "mail", "operator", "games",
+                "ftp", "nobody", "news", "uucp", "man", "proxy", "backup", "list", "irc", "gnats", "sys",
+                "www-data", "messagebus", "systemd-network", "systemd-resolve", "systemd-timesync",
+                "systemd-coredump", "systemd-oom", "polkitd", "dbus", "sshd", "chrony", "tss", "clifr"}
+
+
+class Sanitizer(object):
+    """What identifies this host or its people, and how to take it out of text."""
+
+    def __init__(self):
+        lit = set()
+        for h in (socket.gethostname(), socket.getfqdn(), read("/etc/hostname").strip(),
+                  read("/proc/sys/kernel/hostname").strip(), read("/proc/sys/kernel/domainname").strip()):
+            if h and h not in ("localhost", "localhost.localdomain", "(none)"):
+                lit.add(h)
+                if len(h.split(".")[0]) >= 3:
+                    lit.add(h.split(".")[0])
+        self.hosts = lit
+        self.ids = set()
+        for x in (read("/etc/machine-id").strip(), read("/proc/sys/kernel/random/boot_id").strip()):
+            if x:
+                self.ids.add(x)
+        for r in read_csv("hourly.csv"):
+            if r.get("boot"):
+                self.ids.add(r["boot"])
+        self.ids |= {i.replace("-", "") for i in self.ids}
+        self.ips = set()
+        rc, out, _ = run(["ip", "-o", "addr"], timeout=30)
+        for m in re.finditer(r"\sinet6? ([0-9a-fA-F.:]+)", out):
+            if m.group(1) not in ("127.0.0.1", "::1"):
+                self.ips.add(m.group(1))
+        self.macs = set()
+        try:
+            for n in os.listdir("/sys/class/net"):
+                a = read("/sys/class/net/%s/address" % n).strip()
+                if a and a != "00:00:00:00:00:00":
+                    self.macs.add(a)
+        except OSError:
+            pass
+        self.users = set()
+        for line in read("/etc/passwd").splitlines():
+            f = line.split(":")
+            if len(f) > 2 and len(f[0]) >= 3 and f[0] not in SYSTEM_USERS:
+                self.users.add(f[0])
+
+    def text(self, s):
+        for h in sorted(self.hosts, key=len, reverse=True):
+            s = re.sub(re.escape(h), "HOST", s, flags=re.I)
+        for i in self.ids:
+            s = re.sub(re.escape(i), "ID", s, flags=re.I)
+        for m in self.macs:
+            s = re.sub(re.escape(m), "MAC", s, flags=re.I)
+        s = re.sub(r"(?i)\b([0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b", "MAC", s)
+        s = re.sub(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "UUID", s)
+        s = re.sub(r"[\w.+-]+@[\w-]+(\.[\w-]+)+", "EMAIL", s)
+        for ip in sorted(self.ips, key=len, reverse=True):
+            s = s.replace(ip, "IP")
+        s = re.sub(r"(?<![\w.])(?!127\.0\.0\.1\b|0\.0\.0\.0\b)\d{1,3}(\.\d{1,3}){3}(?![\w.])", "IP", s)
+        s = re.sub(r"(?i)(?<![\w:])(?=[0-9a-f:]*[a-f][0-9a-f:]*|[0-9a-f:]*::)(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\w:])",
+                   lambda m: m.group(0) if m.group(0) in ("::", "::1") else "IP6", s)
+        s = re.sub(r"(?i)\b(password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key)\b(\s*[=:]\s*)\S+", r"\1\2X", s)
+        s = re.sub(r"(?i)(--?(?:password|passwd|secret|token|api[-_]?key)\s+)\S+", r"\1X", s)
+        s = re.sub(r"://[^/\s:@]+:[^@\s]+@", "://X:X@", s)
+        for u in self.users:
+            s = re.sub(r"(?<![\w-])%s(?![\w-])" % re.escape(u), "USER", s)
+        return s
+
+    def leaks(self, s):
+        """The kinds of identifying text still in s (never the text itself)."""
+        found = set()
+        low = s.lower()
+        if any(h.lower() in low for h in self.hosts):
+            found.add("host name")
+        if any(i.lower() in low for i in self.ids):
+            found.add("machine or boot id")
+        if any(m.lower() in low for m in self.macs):
+            found.add("MAC address")
+        if any(re.search(r"(?<![\w.:])%s(?![\w.:])" % re.escape(ip), s) for ip in self.ips):
+            found.add("IP address of this host")
+        if re.search(r"(?<![\w.])(?!127\.0\.0\.1\b|0\.0\.0\.0\b)\d{1,3}(\.\d{1,3}){3}(?![\w.])", s):
+            found.add("IPv4 address")
+        if re.search(r"[\w.+-]+@[\w-]+(\.[\w-]+)+", s):
+            found.add("email address")
+        if any(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(u), s) for u in self.users):
+            found.add("user name")
+        return found
+
+
+_san = None
+
+
+def sanitizer():
+    global _san
+    if _san is None:
+        _san = Sanitizer()
+    return _san
+
+
+def cmd_sample(args):
+    need_root()
+    st = load_state()
+    if "started" not in st:
+        die("not started: run clifr-trial start first")
+    now = int(time.time())
+    row = hourly_row()
+    append_csv("hourly.csv", HOURLY_COLS, row)
+    # The journal since the previous sample: whole lines kept locally, the
+    # unplanned stops counted.
+    since = st.get("journal_ts", st["started"] - 60 * 86400)  # the first time: since the install
+    lines = journal_since(since + 1)
+    if lines:
+        with open(spath("journal.jsonl"), "a") as f:
+            for l in lines:
+                if l["ts"] > since:
+                    f.write(json.dumps(l, sort_keys=True) + "\n")
+        st["journal_ts"] = max(l["ts"] for l in lines)
+    save_state(st)
+    if now - st.get("accuracy_ts", 0) >= ACCURACY_EVERY - 600:
+        accuracy_compare(st)
+        accuracy_capture(st)
+        st["accuracy_ts"] = now
+        save_state(st)
+    if now - st.get("daily_ts", 0) >= DAILY_EVERY:
+        daily(st)
+        st["daily_ts"] = now
+        save_state(st)
+    check_drills(st, force=False)
+
+
+# ---------------------------------------------------------------- accuracy
+
+def parse_ps(out):
+    procs = {}
+    for l in clifr_lines(out):
+        f = l.split(None, 2)
+        if len(f) >= 2 and f[0].isdigit():
+            procs[int(f[0])] = (int(f[1]) if f[1].isdigit() else 0, f[2] if len(f) > 2 else "")
+    return procs
+
+
+def parse_ss(out):
+    """LISTEN local addresses and ESTAB (local, peer) pairs of ss -tan."""
+    listen, estab = set(), set()
+    for l in clifr_lines(out):
+        f = l.split()
+        if len(f) < 5 or f[0] == "State":
+            continue
+        if f[0] == "LISTEN":
+            listen.add(f[3])
+        elif f[0] == "ESTAB":
+            estab.add((f[3], f[4]))
+    return listen, estab
+
+
+MOUNT_RE = re.compile(r"^\S+ on (.*) type (\S+) \(")
+
+
+def parse_mount(out):
+    s = set()
+    for l in clifr_lines(out):
+        m = MOUNT_RE.match(l)
+        if m:
+            s.add("%s %s" % (m.group(1), m.group(2)))
+    return s
+
+
+def accuracy_capture(st):
+    """The real tools' output now, compared later with clifr's reconstruction."""
+    ts = time.time()
+    _, ps, _ = run(["ps", "-e", "-o", "pid=,etimes=,comm="], timeout=120)
+    _, ss, _ = run(["ss", "-tan"], timeout=120)
+    _, mnt, _ = run(["mount"], timeout=120)
+    cap = {"ts": round(ts, 3), "ps": ps, "ss": ss, "mount": mnt}
+    with open(spath("captures/%d.json" % int(ts)), "w") as f:
+        json.dump(cap, f)
+
+
+def accuracy_compare(st):
+    now = time.time()
+    capdir = spath("captures")
+    for name in sorted(os.listdir(capdir)):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(capdir, name)
+        try:
+            with open(path) as f:
+                cap = json.load(f)
+        except (OSError, ValueError):
+            os.remove(path)
+            continue
+        if now - cap["ts"] < ACCURACY_DELAY:
+            continue
+        res = compare_capture(cap)
+        append_csv("accuracy.csv", ACC_COLS, res)
+        details = res.pop("_details", None)
+        if details:
+            append_jsonl("accuracy-details.jsonl", details)
+        os.remove(path)
+
+
+def compare_capture(cap):
+    t = utc(cap["ts"])
+    res = {"ts": int(cap["ts"]), "checked_ts": int(time.time()), "error": ""}
+    errors = []
+    real = {}
+    for l in cap["ps"].splitlines():
+        f = l.split(None, 2)
+        if len(f) >= 2 and f[0].isdigit():
+            real[int(f[0])] = (int(f[1]) if f[1].isdigit() else 0, f[2] if len(f) > 2 else "")
+    rc, out, err = clifr(["--at", t, "ps -e -o pid=,etimes=,comm="])
+    rec = parse_ps(out) if rc == 0 else {}
+    if rc != 0:
+        errors.append("ps: " + err.strip()[-200:])
+    # Processes older than two process intervals at T must be in both.
+    old = 2 * duration_s(config_value("process", "30s"), 30) + 5
+    real_old = {p for p, (age, _) in real.items() if age >= old}
+    rec_old = {p for p, (age, _) in rec.items() if age >= old}
+    missing = real_old - set(rec)
+    extra = rec_old - set(real)
+    res.update(ps_real=len(real_old), ps_missing=len(missing), ps_extra=len(extra))
+    rl, re_ = parse_ss(cap["ss"])
+    rc, out, err = clifr(["--at", t, "ss -tan"])
+    cl, ce = parse_ss(out) if rc == 0 else (set(), set())
+    if rc != 0:
+        errors.append("ss: " + err.strip()[-200:])
+    res.update(listen_real=len(rl), listen_missing=len(rl - cl), listen_extra=len(cl - rl),
+               estab_real=len(re_), estab_clifr=len(ce), estab_common=len(re_ & ce))
+    rm = parse_mount(cap["mount"])
+    rc, out, err = clifr(["--at", t, "mount"])
+    cm = parse_mount(out) if rc == 0 else set()
+    if rc != 0:
+        errors.append("mount: " + err.strip()[-200:])
+    res.update(mounts_real=len(rm), mounts_missing=len(rm - cm), mounts_extra=len(cm - rm))
+    res["error"] = " | ".join(errors)
+    if missing or extra or (rl ^ cl) or (rm ^ cm) or len(re_ ^ ce) > 0:
+        res["_details"] = {
+            "ts": res["ts"],
+            "ps_missing": sorted("%d %s age %ds" % (p, real[p][1], real[p][0]) for p in missing)[:50],
+            "ps_extra": sorted("%d %s age %ds" % (p, rec[p][1], rec[p][0]) for p in extra)[:50],
+            "listen_missing": sorted(rl - cl)[:50], "listen_extra": sorted(cl - rl)[:50],
+            "estab_missing": sorted(" ".join(x) for x in re_ - ce)[:50],
+            "estab_extra": sorted(" ".join(x) for x in ce - re_)[:50],
+            "mounts_missing": sorted(rm - cm)[:50], "mounts_extra": sorted(cm - rm)[:50]}
+    return res
+
+
+# ---------------------------------------------------------------- daily
+
+INFO_KEYS = ["from_ms", "to_ms", "samples", "fd_walk_samples", "skipped_samples", "db_bytes",
+             "recorder_cpu_pct_one_core", "recorder_rss_avg_kb", "recorder_rss_max_kb", "sample_phase_ms",
+             "guard_events", "guard_adjustments", "est_disk_per_day_bytes", "avg_processes", "avg_sockets",
+             "avg_fds_per_walk", "event_mode", "tcp_mode", "reconcile", "events_by_source", "table_rows"]
+
+
+def daily(st):
+    now = int(time.time())
+    d = {"ts": now}
+    rc, out, err = clifr(["info", "--json"], timeout=1800)
+    if rc == 0:
+        try:
+            info = json.loads(out)
+            d["info"] = {k: info.get(k) for k in INFO_KEYS}
+            d["schema"] = (info.get("host") or {}).get("schema_version")
+            d["sealing"] = (info.get("sealing") or {}).get("state")
+        except ValueError:
+            d["info_error"] = "bad JSON"
+    else:
+        d["info_error"] = err.strip()[-300:]
+    rc, out, err = run(["clifr", "--data-dir", DATA_DIR, "verify", "--integrity", "--json"], timeout=3600)
+    try:
+        ir = json.loads(clifr_lines(out)[0]) if out.strip() else {}
+        d["integrity"] = {"files": ir.get("Files"), "logged": ir.get("Logged"), "unlogged": ir.get("Unlogged"),
+                          "damaged": len(ir.get("Damaged") or []), "exit": rc}
+        if ir.get("Damaged"):
+            d["integrity_damaged_files"] = [str(x)[:300] for x in ir["Damaged"][:20]]
+    except (ValueError, IndexError):
+        d["integrity"] = {"exit": rc, "error": (err or out).strip()[-300:]}
+    # Guard events, gaps and skipped samples since the previous daily check.
+    since = max(st.get("daily_ts", st["started"]), now - 70 * 3600)
+    rc, out, err = clifr(["--since", utc(since), "--until", utc(now), "--json", "events --type guard,gap,skipped"])
+    kinds = {}
+    examples = []
+    for l in clifr_lines(out):
+        try:
+            e = json.loads(l)
+        except ValueError:
+            continue
+        k = e.get("kind", "?")
+        if k == "guard":
+            k = "guard:" + (e.get("detail", "").split(":")[0].split()[0] if e.get("detail") else "?")
+        kinds[k] = kinds.get(k, 0) + 1
+        if len(examples) < 40:
+            examples.append({"ts": e.get("ts_ms", 0) // 1000, "kind": e.get("kind"), "detail": e.get("detail", "")[:300]})
+    d["events_window"] = [since, now]
+    d["events"] = kinds
+    d["events_examples"] = examples
+    if rc != 0:
+        d["events_error"] = err.strip()[-300:]
+    append_jsonl("daily.jsonl", d)
+
+
+# ---------------------------------------------------------------- drill
+
+def cmd_drill(args):
+    need_root()
+    st = load_state()
+    if "started" not in st:
+        die("not started: run clifr-trial start first")
+    token = "d%s" % time.strftime("%Y%m%d%H%M%S")
+    mount = "--no-mount" not in args
+    if shutil.which("systemd-run") is None:
+        die("systemd-run not found")
+    rc, out, err = run(["systemd-run", "--unit", "clifr-trial-drill-" + token, "--description",
+                        "clifr production trial: drill", INSTALLED, "drill-run", token,
+                        "mount" if mount else "nomount", str(DRILL_HOLD)], timeout=60)
+    if rc != 0:
+        die("could not start the drill: " + err.strip())
+    print("drill %s started (about %d minutes, in the background: unit clifr-trial-drill-%s)." % (token, DRILL_HOLD // 60 + 1, token))
+    print("It runs a short job (exit code 3), opens a TCP connection to itself on 127.0.0.1, holds a file")
+    if mount:
+        print("and mounts a 1 MiB tmpfs at /run/clifr-trial-drill (removed at the end).")
+    print("The hourly sample checks the recording of it after %d hours (or: clifr-trial status)." % (DRILL_CHECK_AFTER // 3600))
+
+
+def drill_run(args):
+    token, mount = args[0], len(args) > 1 and args[1] == "mount"
+    hold = int(args[2]) if len(args) > 2 else DRILL_HOLD
+    rec = {"id": token, "t_start": time.time(), "pid": os.getpid(), "mount": mount}
+    try:
+        ctypes.CDLL(None).prctl(15, b"clifr-drill", 0, 0, 0)  # PR_SET_NAME: the comm
+    except (OSError, AttributeError):
+        pass
+    mdir = "/run/clifr-trial-drill"
+    held = None
+    socks = []
+    try:
+        if mount:
+            os.makedirs(mdir, mode=0o700, exist_ok=True)
+            rc, _, err = run(["mount", "-t", "tmpfs", "-o", "size=1m,mode=0700", "clifr-trial-drill", mdir], timeout=60)
+            rec["mount_rc"] = rc
+            if rc != 0:
+                rec["mount_error"] = err.strip()
+        fdir = mdir if mount and rec.get("mount_rc") == 0 else STATE
+        rec["file"] = os.path.join(fdir, "drill-%s.txt" % token)
+        held = open(rec["file"], "w")
+        held.write("clifr trial drill %s\n" % token)
+        held.flush()
+        ls = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ls.bind(("127.0.0.1", 0))
+        ls.listen(1)
+        rec["port"] = ls.getsockname()[1]
+        cs = socket.create_connection(("127.0.0.1", rec["port"]))
+        ac, _ = ls.accept()
+        cs.sendall(b"drill")
+        ac.recv(16)
+        socks = [ls, cs, ac]
+        rec["client_port"] = cs.getsockname()[1]
+        rec["t_job"] = time.time()
+        p = subprocess.Popen(["/bin/sh", "-c", "sleep 2; exit 3", "clifr-trial-drill-" + token])
+        rec["job_pid"] = p.pid
+        rec["job_rc"] = p.wait()
+        time.sleep(max(0, hold - (time.time() - rec["t_start"]) - 30))
+        rec["t_mid"] = time.time()
+        time.sleep(30)
+    except Exception as e:  # recorded: the check then says why
+        rec["error"] = repr(e)
+    finally:
+        for s in socks:
+            s.close()
+        if held:
+            held.close()
+            try:
+                os.remove(rec["file"])
+            except OSError:
+                pass
+        if mount and rec.get("mount_rc") == 0:
+            run(["umount", mdir], timeout=60)
+        if mount:
+            try:
+                os.rmdir(mdir)
+            except OSError:
+                pass
+        rec["t_end"] = time.time()
+        append_jsonl("drills.jsonl", rec)
+
+
+def check_drill(d):
+    """Is the drill in the recording? One verdict per item."""
+    out_items = {}
+    if d.get("error") or "t_mid" not in d:
+        return {"error": d.get("error", "drill did not finish")}
+    lo, hi = utc(d["t_start"] - 60), utc(d["t_end"] + 120)
+    rc, out, err = clifr(["--since", lo, "--until", hi, "--json", "events --type start,exit --name clifr-trial-drill-" + d["id"]])
+    ev = [json.loads(l) for l in clifr_lines(out) if l.startswith("{")]
+    starts = [e for e in ev if e.get("kind") == "start" and e.get("pid") == d["job_pid"]]
+    exits = [e for e in ev if e.get("kind") == "exit" and e.get("pid") == d["job_pid"]]
+    out_items["short_job"] = bool(starts) and any(e.get("detail", "").startswith("3 ") for e in exits)
+    rc, out, err = clifr(["--since", lo, "--until", hi, "--json", "events --type start,exit --name drill-run." + d["id"]])
+    ev = [json.loads(l) for l in clifr_lines(out) if l.startswith("{")]
+    out_items["drill_process"] = any(e.get("kind") == "start" and e.get("pid") == d["pid"] for e in ev) and \
+        any(e.get("kind") == "exit" and e.get("pid") == d["pid"] for e in ev)
+    rc, out, err = clifr(["--at", utc(d["t_mid"]), "ss -tanp"])
+    mine = [l for l in clifr_lines(out) if "pid=%d," % d["pid"] in l]
+    port = ":%d" % d["port"]
+    out_items["tcp_listen"] = any(l.startswith("LISTEN") and port in l.split()[3] for l in mine)
+    out_items["tcp_connection"] = sum(1 for l in mine if l.startswith("ESTAB")) >= 2
+    rc, out, err = clifr(["--at", utc(d["t_mid"]), "lsof -p %d" % d["pid"]])
+    out_items["held_file"] = any(d["file"] in l for l in clifr_lines(out))
+    if d.get("mount") and d.get("mount_rc") == 0:
+        rc, out, err = clifr(["--since", lo, "--until", hi, "--json", "events --type mount,unmount"])
+        ev = [json.loads(l) for l in clifr_lines(out) if l.startswith("{")]
+        hit = [e.get("kind") for e in ev if e.get("detail", "").startswith("/run/clifr-trial-drill ")]
+        out_items["mount"] = "mount" in hit
+        out_items["unmount"] = "unmount" in hit
+    return out_items
+
+
+def check_drills(st, force):
+    done = {r["id"] for r in read_jsonl("drill-checks.jsonl")}
+    now = time.time()
+    for d in read_jsonl("drills.jsonl"):
+        if d["id"] in done:
+            continue
+        age = now - d.get("t_end", now)
+        if age < DRILL_CHECK_AFTER and not force:
+            continue
+        if age > 66 * 3600:
+            res = {"error": "not checked within the recording's 72 hours"}
+        elif age < ACCURACY_DELAY:
+            continue
+        else:
+            res = check_drill(d)
+        append_jsonl("drill-checks.jsonl", {"id": d["id"], "checked_ts": int(now), "age_h": round(age / 3600, 1),
+                                            "items": res})
+
+
+# ---------------------------------------------------------------- analysis
+
+def analyze(st):
+    """Every number the report needs, and the verdicts."""
+    a = {"verdicts": []}
+    rows = read_csv("hourly.csv")
+    started = st.get("started", 0)
+    now = int(time.time())
+    a["days"] = round((now - started) / 86400.0, 1)
+    a["samples"] = len({int(num(r.get("ts"), 0)) // 3600 for r in rows})  # hours with a sample
+    a["expected_samples"] = int((now - started) / 3600) + 1
+    # Boots, kernels, versions: what the trial went through.
+    boots, kernels, vers = [], [], []
+    for r in rows:
+        for lst, k in ((boots, "boot"), (kernels, "kernel"), (vers, "clifrd_version")):
+            if r.get(k) and (not lst or lst[-1] != r[k]):
+                lst.append(r[k])
+    a["reboots"] = max(0, len(boots) - 1)
+    a["kernels"] = kernels
+    a["clifrd_versions"] = vers
+    a["not_active_samples"] = sum(1 for r in rows if r.get("state") != "active")
+    # clifrd's CPU: positive deltas of the same process; per day.
+    per_day = {}
+    peak_hour = 0.0
+    prev = None
+    for r in rows:
+        ts = num(r.get("ts"))
+        if prev and r.get("pid") == prev.get("pid") and r.get("pid_start") == prev.get("pid_start") and \
+                num(r.get("cpu_ticks")) is not None and num(prev.get("cpu_ticks")) is not None:
+            dt = ts - num(prev["ts"])
+            dc = (num(r["cpu_ticks"]) - num(prev["cpu_ticks"])) / num(r.get("clk_tck"), 100)
+            hj = num(r.get("host_jiffies"), 0) - num(prev.get("host_jiffies"), 0)
+            hi = num(r.get("host_idle_jiffies"), 0) - num(prev.get("host_idle_jiffies"), 0)
+            if dt > 0 and dc >= 0:
+                day = day_of(ts)
+                p = per_day.setdefault(day, {"cpu_s": 0.0, "secs": 0.0, "host_busy": 0.0, "host_all": 0.0,
+                                            "rss_max": 0, "hwm_max": 0, "load_max": 0.0, "samples": 0})
+                p["cpu_s"] += dc
+                p["secs"] += dt
+                if hj > 0:
+                    p["host_busy"] += hj - hi
+                    p["host_all"] += hj
+                if dt >= 1800:
+                    peak_hour = max(peak_hour, dc / dt * 100)
+        if r.get("ts"):
+            day = day_of(num(r["ts"]))
+            p = per_day.setdefault(day, {"cpu_s": 0.0, "secs": 0.0, "host_busy": 0.0, "host_all": 0.0,
+                                        "rss_max": 0, "hwm_max": 0, "load_max": 0.0, "samples": 0})
+            p["samples"] += 1
+            p["rss_max"] = max(p["rss_max"], int(num(r.get("rss_kb"), 0)))
+            p["hwm_max"] = max(p["hwm_max"], int(num(r.get("hwm_kb"), 0)))
+            p["cg_max"] = max(p.get("cg_max", 0), int(num(r.get("cg_mem_peak"), 0) or num(r.get("cg_mem"), 0)))
+            p["load_max"] = max(p["load_max"], num(r.get("load5"), 0))
+            p["data_bytes"] = int(num(r.get("data_bytes"), 0))
+            p["free_bytes"] = int(num(r.get("fs_free_bytes"), 0))
+            p["cpus"] = r.get("host_cpus")
+        prev = r
+    a["per_day"] = per_day
+    tot_cpu = sum(p["cpu_s"] for p in per_day.values())
+    tot_secs = sum(p["secs"] for p in per_day.values())
+    a["cpu_pct_one_core"] = tot_cpu / tot_secs * 100 if tot_secs else None
+    a["cpu_pct_peak_hour"] = peak_hour
+    days_cpu = {d: p["cpu_s"] / p["secs"] * 100 for d, p in per_day.items() if p["secs"] >= 6 * 3600}
+    a["cpu_days_over_budget"] = sorted(d for d, v in days_cpu.items() if v > 2.0)
+    a["mem_peak_kb"] = max([p["hwm_max"] for p in per_day.values()] + [0])
+    a["cg_peak_bytes"] = max([p.get("cg_max", 0) for p in per_day.values()] + [0])
+    a["data_max_bytes"] = max([int(num(r.get("data_bytes"), 0)) for r in rows] + [0])
+    # Journal: unplanned stops, warnings, message templates.
+    jl = read_jsonl("journal.jsonl")
+    a["journal_lines"] = len([l for l in jl if l["ts"] >= started])
+    trial = [l for l in jl if l["ts"] >= started]
+    a["unplanned"] = [l for l in trial if l["comm"] != "clifrd" and UNPLANNED.search(l["msg"])]
+    a["unplanned_before"] = [l for l in jl if l["ts"] < started and l["comm"] != "clifrd" and UNPLANNED.search(l["msg"])]
+    a["starts"] = sum(1 for l in trial if l["comm"] != "clifrd" and l["msg"].startswith("Started "))
+    tmpl = {}
+    for l in trial:
+        t = ("clifrd: " if l["comm"] == "clifrd" else "systemd: ") + template(l["msg"])
+        tmpl[t] = tmpl.get(t, 0) + 1
+    a["journal_templates"] = sorted(tmpl.items(), key=lambda x: -x[1])
+    # Daily: integrity, guard events, drops, info.
+    daily = read_jsonl("daily.jsonl")
+    a["daily_checks"] = len(daily)
+    a["integrity_damaged"] = sum(d.get("integrity", {}).get("damaged", 0) or 0 for d in daily)
+    a["integrity_errors"] = sum(1 for d in daily if "error" in d.get("integrity", {}))
+    ev = {}
+    for d in daily:
+        for k, v in d.get("events", {}).items():
+            ev[k] = ev.get(k, 0) + v
+    a["events"] = ev
+    drops = {}
+    span_h = []
+    for d in daily:
+        info = d.get("info") or {}
+        for src, s in (info.get("events_by_source") or {}).items():
+            if s.get("dropped"):
+                drops[src] = max(drops.get(src, 0), s["dropped"])
+        if info.get("from_ms") and info.get("to_ms"):
+            span_h.append((info["to_ms"] - info["from_ms"]) / 3600000.0)
+    a["drops_max_per_window"] = drops
+    a["retention_span_h_max"] = max(span_h) if span_h else None
+    last = next((d.get("info") for d in reversed(daily) if d.get("info")), None) or {}
+    a["last_info"] = last
+    # Accuracy.
+    acc = read_csv("accuracy.csv")
+    a["accuracy_checks"] = len(acc)
+    def ssum(k):
+        return sum(int(num(r.get(k), 0)) for r in acc)
+    a["acc"] = {k: ssum(k) for k in ACC_COLS[2:-1]}
+    a["acc_errors"] = [r["error"] for r in acc if r.get("error")]
+    # Drills.
+    a["drills"] = read_jsonl("drills.jsonl")
+    a["drill_checks"] = read_jsonl("drill-checks.jsonl")
+    return a
+
+
+def verdicts(a, st):
+    v = []
+
+    def add(name, status, why):
+        v.append((name, status, why))
+
+    days = a["days"]
+    add("duration", "PASS" if days >= 14 else "NOT MET", "%.1f days (want 14 or more)" % days)
+    cov = min(1.0, a["samples"] / float(max(1, a["expected_samples"])))
+    add("evidence coverage", "PASS" if cov >= 0.9 else "NOT MET",
+        "%d of %d hourly samples (%.0f%%)" % (a["samples"], a["expected_samples"], cov * 100))
+    # Stability.
+    n = len(a["unplanned"])
+    add("no unplanned clifrd stop", "PASS" if n == 0 else "FAIL",
+        ("none in the journal" if n == 0 else "%d journal lines: %s" % (n, "; ".join(
+            "%s %s" % (local(l["ts"]), template(l["msg"])) for l in a["unplanned"][:5]))) +
+        ("; before the trial: %d" % len(a["unplanned_before"]) if a["unplanned_before"] else ""))
+    na = a["not_active_samples"]
+    add("clifrd running at every sample", "PASS" if na == 0 else "FAIL", "%d samples found it not active" % na)
+    add("went through a reboot", "PASS" if a["reboots"] >= 1 else "NOT MET", "%d reboots" % a["reboots"])
+    add("went through a kernel/OS update", "PASS" if len(a["kernels"]) >= 2 else "NOT MET",
+        " -> ".join(a["kernels"]) or "?")
+    add("went through a clifrd upgrade", "PASS" if len(a["clifrd_versions"]) >= 2 else "NOT MET",
+        " -> ".join(a["clifrd_versions"]) or "?")
+    # Cost.
+    c = a["cpu_pct_one_core"]
+    if c is None:
+        add("CPU within 2% of one core", "NO DATA", "")
+    else:
+        bad = a["cpu_days_over_budget"]
+        add("CPU within 2% of one core", "PASS" if c <= 2.0 and not bad else "FAIL",
+            "%.2f%% average, busiest hour %.2f%%; days over 2%%: %s" % (c, a["cpu_pct_peak_hour"], ", ".join(bad) or "none"))
+    mm = size_bytes(st.get("memory_max", ""), 768 * 1048576)
+    peak = max(a["mem_peak_kb"] * 1024, a["cg_peak_bytes"])
+    add("memory below the unit's limit", "PASS" if peak and peak < 0.9 * mm else ("NO DATA" if not peak else "FAIL"),
+        "peak %.0f MiB (process %.0f MiB, cgroup %.0f MiB) of %.0f MiB" % (
+            peak / 1048576.0, a["mem_peak_kb"] / 1024.0, a["cg_peak_bytes"] / 1048576.0, mm / 1048576.0))
+    ms = size_bytes(config_value("max_size", "2G"), 2 * 1024 ** 3)
+    add("disk within max_size", "PASS" if a["data_max_bytes"] <= ms * 1.05 else "FAIL",
+        "at most %.2f GiB of %.2f GiB" % (a["data_max_bytes"] / 1024.0 ** 3, ms / 1024.0 ** 3))
+    ret_h = duration_s(config_value("retention", "72h"), 72 * 3600) / 3600
+    span = a["retention_span_h_max"]
+    add("retention keeps what it should, no more", "NO DATA" if span is None else
+        ("PASS" if ret_h - 2 <= span <= ret_h + 2 or (span < ret_h - 2 and a["data_max_bytes"] >= ms * 0.9) else "FAIL"),
+        "" if span is None else "longest recording span %.1f h (retention %.0f h)" % (span, ret_h))
+    # Completeness.
+    lost = {k: x for k, x in a["drops_max_per_window"].items() if k != "ebpf_missed_runs"}
+    lost_ev = a["events"].get("guard:events_lost", 0)
+    add("no lost events", "PASS" if not lost and not lost_ev else "FAIL",
+        "drops by source: %s; events_lost guard events: %d" % (json.dumps(lost, sort_keys=True) if lost else "none", lost_ev))
+    gaps = a["events"].get("gap", 0)
+    add("gaps only at reboots and upgrades", "PASS" if gaps <= a["reboots"] + len(a["clifrd_versions"]) + a["starts"] else "CHECK",
+        "%d gaps, %d reboots, %d clifrd starts" % (gaps, a["reboots"], a["starts"]))
+    # Accuracy.
+    if not a["daily_checks"]:
+        add("integrity of the data files", "NO DATA", "")
+    else:
+        dmg = a["integrity_damaged"]
+        add("integrity of the data files", "PASS" if dmg == 0 and not a["integrity_errors"] else "FAIL",
+            "%d daily checks, %d damaged files, %d checks failed to run" % (a["daily_checks"], dmg, a["integrity_errors"]))
+    x = a["acc"]
+    if not a["accuracy_checks"]:
+        add("accuracy spot checks", "NO DATA", "")
+    else:
+        ps_ok = x["ps_real"] and (x["ps_missing"] + x["ps_extra"]) <= 0.005 * x["ps_real"]
+        ls_ok = (x["listen_missing"] + x["listen_extra"]) <= max(1, 0.01 * x["listen_real"])
+        es = x["estab_common"] / float(max(1, x["estab_real"] + x["estab_clifr"] - x["estab_common"]))
+        es_ok = es >= 0.95 or x["estab_real"] == 0
+        mt_ok = (x["mounts_missing"] + x["mounts_extra"]) <= max(1, 0.005 * x["mounts_real"])
+        ok = ps_ok and ls_ok and es_ok and mt_ok and not a["acc_errors"]
+        add("accuracy spot checks", "PASS" if ok else "FAIL",
+            "%d checks; processes %d, %d missing, %d extra; listeners %d, %d missing, %d extra; established "
+            "connections %.1f%% the same (%d real, %d clifr); mounts %d, %d missing, %d extra; %d errors" % (
+                a["accuracy_checks"], x["ps_real"], x["ps_missing"], x["ps_extra"], x["listen_real"],
+                x["listen_missing"], x["listen_extra"], es * 100, x["estab_real"], x["estab_clifr"],
+                x["mounts_real"], x["mounts_missing"], x["mounts_extra"], len(a["acc_errors"])))
+    if not a["drill_checks"]:
+        add("drill reconstructed a day later", "NOT MET",
+            "%d drills run, none checked yet" % len(a["drills"]))
+    else:
+        items = {}
+        for c in a["drill_checks"]:
+            for k, val in c["items"].items():
+                items.setdefault(k, []).append(val)
+        failed = sorted(k for k, vals in items.items() if k == "error" or not all(vals))
+        add("drill reconstructed a day later", "PASS" if not failed else "FAIL",
+            "%d checks; items %s; failed: %s" % (len(a["drill_checks"]), ", ".join(sorted(items)), ", ".join(failed) or "none"))
+    return v
+
+
+# ---------------------------------------------------------------- status / report
+
+def cmd_status(args):
+    need_root()
+    st = load_state()
+    if "started" not in st:
+        die("not started")
+    check_drills(st, force="--check-drills" in args)
+    a = analyze(st)
+    st.setdefault("memory_max", read_memory_max())
+    t = read("/etc/systemd/system/%s.timer" % UNIT)
+    print("clifr-trial since %s (%.1f days); timer %s" % (local(st["started"]), a["days"], "on" if t else "OFF"))
+    for name, status, why in verdicts(a, st):
+        print("  %-8s %-40s %s" % (status, name, why))
+
+
+def read_memory_max():
+    v = unit_props("MemoryMax").get("MemoryMax", "")
+    return v if v.isdigit() else ""
+
+
+def fmt_table(rows, cols):
+    widths = [max(len(str(c)), max([len(str(r[i])) for r in rows] + [0])) for i, c in enumerate(cols)]
+    out = ["  ".join(str(c).rjust(w) for c, w in zip(cols, widths))]
+    for r in rows:
+        out.append("  ".join(str(x).rjust(w) for x, w in zip(r, widths)))
+    return "\n".join(out)
+
+
+def summary_text(a, st):
+    b = {}
+    try:
+        with open(spath("baseline.json")) as f:
+            b = json.load(f)
+    except (OSError, ValueError):
+        pass
+    vs = verdicts(a, st)
+    fails = [x for x in vs if x[1] == "FAIL"]
+    notmet = [x for x in vs if x[1] in ("NOT MET", "NO DATA", "CHECK")]
+    overall = "FAILED" if fails else ("INCOMPLETE" if notmet else "PASSED")
+    L = []
+    L.append("clifr production trial: %s" % overall)
+    L.append("=" * 40)
+    L.append("report written %s by clifr-trial %s; trial started %s (%.1f days)" % (
+        local(time.time()), VERSION, local(st["started"]), a["days"]))
+    L.append("anonymized: numbers, verdicts and clifr's own words only; times in UTC")
+    L.append("")
+    L.append("Server")
+    L.append("  %s, kernel %s, %s, %s CPUs, %s GiB RAM, cgroup %s, SELinux %s, BTF %s" % (
+        b.get("os"), b.get("kernel"), b.get("arch"), b.get("cpus"), b.get("mem_total_gib"), b.get("cgroup"),
+        b.get("selinux"), "yes" if b.get("btf") else "no"))
+    L.append("  packages: clifrd %s, clifr %s; unit drop-ins %s; config changed from the package's: %s" % (
+        b.get("clifrd_package"), b.get("clifr_package"), b.get("unit_dropins"), b.get("config_changed")))
+    L.append("  recording: %s; %s" % (a["last_info"].get("event_mode", "?"), a["last_info"].get("tcp_mode", "?")))
+    L.append("  other agents running: %s; eBPF programs loaded at start: %s" % (
+        ", ".join(b.get("agents", [])) or "none of the known ones", b.get("bpf_programs")))
+    L.append("  baseline: %s" % b.get("note", "?"))
+    L.append("")
+    L.append("Verdicts (PASS / FAIL; NOT MET = the trial did not cover it; NO DATA)")
+    for name, status, why in vs:
+        L.append("  %-8s %-40s %s" % (status, name, why))
+    L.append("")
+    L.append("Per day (clifrd's CPU as %% of one core; memory = process peak RSS; host = whole machine)")
+    rows = []
+    for d in sorted(a["per_day"]):
+        p = a["per_day"][d]
+        rows.append([d, p["samples"], "%.2f" % (p["cpu_s"] / p["secs"] * 100) if p["secs"] else "-",
+                     "%.0f" % (p["hwm_max"] / 1024.0), "%.0f" % (p.get("cg_max", 0) / 1048576.0),
+                     "%.1f" % (p["host_busy"] / p["host_all"] * 100) if p["host_all"] else "-",
+                     "%.1f" % p["load_max"], "%.2f" % (p.get("data_bytes", 0) / 1024.0 ** 3)])
+    L.append(fmt_table(rows, ["day", "samples", "cpu%", "peakMiB", "cgMiB", "host%", "load5max", "dataGiB"]))
+    L.append("")
+    li = a["last_info"]
+    if li:
+        L.append("Latest clifr info (the last %s hours)" % (
+            "%.0f" % ((li.get("to_ms", 0) - li.get("from_ms", 0)) / 3600000.0)))
+        L.append("  samples %s, skipped %s, fd walks %s; avg processes %.0f, sockets %.0f, fds per walk %.0f" % (
+            li.get("samples"), li.get("skipped_samples"), li.get("fd_walk_samples"), li.get("avg_processes") or 0,
+            li.get("avg_sockets") or 0, li.get("avg_fds_per_walk") or 0))
+        L.append("  recorder CPU %.2f%% of one core, RSS avg %.0f / max %.0f MiB, est. disk per day %.0f MiB" % (
+            li.get("recorder_cpu_pct_one_core") or 0, (li.get("recorder_rss_avg_kb") or 0) / 1024.0,
+            (li.get("recorder_rss_max_kb") or 0) / 1024.0, (li.get("est_disk_per_day_bytes") or 0) / 1048576.0))
+        tot = (li.get("sample_phase_ms") or {}).get("total") or {}
+        L.append("  sample time ms: p50 %s p95 %s p99 %s max %s" % (tot.get("p50"), tot.get("p95"), tot.get("p99"), tot.get("max")))
+        rc = li.get("reconcile") or {}
+        L.append("  TCP keyframes %s: %s missing from events, %s extra in events" % (
+            rc.get("keyframes"), rc.get("missing_from_events"), rc.get("extra_in_events")))
+        L.append("")
+    L.append("Guard events, gaps, skipped samples over the trial (daily windows)")
+    for k, n in sorted(a["events"].items()):
+        L.append("  %-40s %d" % (k, n))
+    if not a["events"]:
+        L.append("  none")
+    L.append("eBPF/source drops (the most in one 72-hour window): %s" % (
+        json.dumps(a["drops_max_per_window"], sort_keys=True) if a["drops_max_per_window"] else "none"))
+    L.append("")
+    L.append("clifrd's journal: %d lines; by message (numbers, paths, addresses replaced)" % a["journal_lines"])
+    for t, n in a["journal_templates"][:40]:
+        L.append("  %6d  %s" % (n, t))
+    L.append("")
+    L.append("Drills")
+    for d in a["drills"]:
+        chk = next((c for c in a["drill_checks"] if c["id"] == d["id"]), None)
+        L.append("  %s at %s: %s" % (d["id"], local(d["t_start"]),
+                                     "not checked yet" if not chk else "checked %.1f h later: %s" % (
+                                         chk["age_h"], json.dumps(chk["items"], sort_keys=True))))
+    if not a["drills"]:
+        L.append("  none run")
+    L.append("")
+    L.append("Admin's answers: QUESTIONS.txt in this archive.")
+    return "\n".join(L) + "\n"
+
+
+def cmd_report(args):
+    need_root()
+    st = load_state()
+    if "started" not in st:
+        die("not started")
+    outdir = os.getcwd()
+    if "--out" in args:
+        outdir = args[args.index("--out") + 1]
+    print("running the checks once more (a few minutes)...")
+    cmd_sample([])
+    check_drills(st, force=True)
+    st = load_state()
+    st["memory_max"] = read_memory_max()
+    a = analyze(st)
+    files = report_files(a, st)
+    # Every file through the sanitizer, then a scan for anything left.
+    san = sanitizer()
+    problems = []
+    for n in sorted(files):
+        files[n] = san.text(files[n])
+        found = san.leaks(files[n])
+        if found:
+            problems.append("%s: %s" % (n, ", ".join(sorted(found))))
+    if problems:
+        die("report NOT written: identifying text left after sanitizing (%s); please tell the clifr "
+            "developers which kinds, without the text" % "; ".join(problems))
+    name = "clifr-trial-%s" % time.strftime("%Y%m%d-%H%M", time.gmtime())
+    target = os.path.join(outdir, name + ".tar.gz")
+    with tarfile.open(target, "w:gz") as tf:
+        for n in sorted(files):
+            data = files[n].encode("utf-8")
+            ti = tarfile.TarInfo("%s/%s" % (name, n))
+            ti.size, ti.mtime, ti.mode = len(data), int(time.time()), 0o644
+            ti.uname = ti.gname = ""
+            tf.addfile(ti, io.BytesIO(data))
+    os.chmod(target, 0o600)
+    print(files["SUMMARY.txt"].split("\n\nPer day")[0])
+    print("\nreport: %s" % target)
+    print("It holds numbers and verdicts only (sanitized and scanned). QUESTIONS.txt is the admin's own")
+    print("text: read it once more before sending. Look inside: tar -xzf %s" % os.path.basename(target))
+
+
+def report_files(a, st):
+    """The report's files as text, before the sanitizer: only numbers, verdicts
+    and clifr's own words."""
+    files = {"SUMMARY.txt": summary_text(a, st)}
+    boots = {}
+    lines = [",".join(HOURLY_COLS)]
+    for r in read_csv("hourly.csv"):
+        r["boot"] = "boot%d" % boots.setdefault(r.get("boot"), len(boots) + 1)
+        lines.append(",".join(str(r.get(c, "")) for c in HOURLY_COLS))
+    files["hourly.csv"] = "\n".join(lines) + "\n"
+    lines = [",".join(ACC_COLS)]
+    for r in read_csv("accuracy.csv"):
+        r["error"] = template(r.get("error", "")) if r.get("error") else ""
+        lines.append(",".join(str(r.get(c, "")).replace(",", ";") for c in ACC_COLS))
+    files["accuracy.csv"] = "\n".join(lines) + "\n"
+    out = []
+    for d in read_jsonl("daily.jsonl"):
+        d.pop("events_examples", None)
+        d.pop("integrity_damaged_files", None)
+        if d.get("info"):
+            d["info"].pop("guard_adjustments", None)
+        for k in ("info_error", "events_error"):
+            if k in d:
+                d[k] = template(d[k])
+        if "error" in d.get("integrity", {}):
+            d["integrity"]["error"] = template(d["integrity"]["error"])
+        out.append(json.dumps(d, sort_keys=True))
+    files["daily.jsonl"] = "\n".join(out) + "\n"
+    checks = {c["id"]: c for c in a["drill_checks"]}
+    out = []
+    for d in a["drills"]:
+        d = {k: d.get(k) for k in ("id", "t_start", "t_mid", "t_end", "mount", "mount_rc", "job_rc", "error")}
+        if d["error"]:
+            d["error"] = template(d["error"])
+        c = checks.get(d["id"])
+        if c and "error" in c["items"]:
+            c["items"]["error"] = template(c["items"]["error"])
+        d["check"] = c
+        out.append(json.dumps(d, sort_keys=True))
+    files["drills.jsonl"] = "\n".join(out) + "\n"
+    try:
+        with open(spath("baseline.json")) as f:
+            b = json.load(f)
+    except (OSError, ValueError):
+        b = {}
+    files["baseline.json"] = json.dumps(b, indent=1, sort_keys=True) + "\n"
+    files["journal-summary.txt"] = "".join("%6d  %s\n" % (n, t) for t, n in a["journal_templates"])
+    files["doctor.txt"] = "".join(template_doctor(l) + "\n" for l in read(spath("doctor.txt")).splitlines())
+    if os.path.exists(spath("QUESTIONS.txt")):
+        files["QUESTIONS.txt"] = read(spath("QUESTIONS.txt"))
+    return files
+
+
+def template_doctor(line):
+    """clifrd doctor's lines keep their words; numbers of sockets, free space
+    and the owner stay (not identifying)."""
+    return re.sub(r"(?<=owner )\d+:\d+", "UID:GID", line)
+
+
+# ---------------------------------------------------------------- main
+
+def main():
+    os.umask(0o077)
+    args = sys.argv[1:]
+    cmds = {"start": cmd_start, "stop": cmd_stop, "sample": cmd_sample, "status": cmd_status,
+            "drill": cmd_drill, "report": cmd_report}
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(USAGE)
+        return
+    if args[0] == "drill-run":
+        drill_run(args[1:])
+        return
+    if args[0] == "--version":
+        print("clifr-trial", VERSION)
+        return
+    if args[0] not in cmds:
+        die("unknown command %r (see clifr-trial --help)" % args[0])
+    cmds[args[0]](args[1:])
+
+
+if __name__ == "__main__":
+    main()
