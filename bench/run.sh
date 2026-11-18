@@ -210,7 +210,7 @@ stop_all() {
 run_one() {
     local order=$1 profile=$2 config=$3 rep=$4
     mkdir -p "$RUN"
-    chmod 777 "$RUN"
+    chmod 755 "$RUN" # clifrd refuses a data directory under a group- or world-writable one
     local start warm meas mend end status=ok cmd
     # Not local: the EXIT trap runs after the function has returned.
     samp_pid='' wd_pid='' load_pid='' rec_pid='' scrape_pid=''
