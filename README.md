@@ -1316,6 +1316,21 @@ continuous eBPF tracer, not a metrics exporter.
   and writes them every `--flush-interval` (5 minutes), so a moment after
   the last flush is refused ("after the end of the recording ... clifrd
   writes to disk every 5m0s"), like a moment in a gap of the recording.
+  A shorter interval (`intervals.flush: 1m` in clifrd.yml) narrows that
+  window and what a crash can lose, at a small cost. Measured on 2026-11-18
+  (two 15-minute runs of each setting, `bench/run.sh` config B):
+  - **Busy load:** no difference. `--flush-rows` already writes every 1–2
+    minutes there.
+  - **Light load:**
+    - CPU: 1.05% against 0.98% of one core; p95 over 5 s 2.5% against 2.0%.
+    - Disk writes: 1.25 GiB a day against 0.89 (+40%).
+    - Data files in the current hour: 2.6 times as many (27% more bytes),
+      until the hourly compaction merges them.
+    - Memory peak: about 15 MiB lower.
+    - pgbench latency: unchanged.
+
+  The compaction of those extra files was not measured (the runs were
+  shorter than an hour).
 - **OOM victim's RSS on RHEL 8 and 9** comes from the SIGKILL the OOM
   killer sends just before (their `oom:mark_victim` tracepoint has no RSS
   fields): within 0.5% of the kernel's "Killed process" line in the VM
