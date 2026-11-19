@@ -195,6 +195,55 @@ func TestBudgetTCP(t *testing.T) {
 	}
 }
 
+// TestBudgetTCPBatches: within the budget a batch comes back as it is (the
+// fast path); a connection counted only in one batch has its later events
+// dropped in the next; decideN decides as many single decisions would.
+func TestBudgetTCPBatches(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.tcpBudget = newBudget("new TCP connections", 1, 0, 0) // 10 a window
+	r.tcpBudget.noLite = true
+	st := func(sk uint64, old, new int) bpftcp.Event {
+		return bpftcp.Event{Kind: bpftcp.State, SK: sk, Old: old, New: new, Owner: bpftcp.Owner{PID: 77}}
+	}
+	shed := map[uint64]bool{}
+	var b1 []bpftcp.Event
+	for sk := uint64(1); sk <= 9; sk++ {
+		b1 = append(b1, st(sk, bpftcp.Close, bpftcp.SynSent), st(sk, bpftcp.SynSent, bpftcp.Established))
+	}
+	kept := r.tcpBudgetFilter(b1, shed)
+	if len(kept) != len(b1) || &kept[0] != &b1[0] {
+		t.Fatalf("within the budget: kept %d of %d, same array %v", len(kept), len(b1), &kept[0] == &b1[0])
+	}
+	// The 10th connection fits, the 11th and 12th are only counted.
+	b2 := []bpftcp.Event{st(10, bpftcp.Close, bpftcp.SynSent), st(11, bpftcp.Close, bpftcp.SynSent),
+		st(12, bpftcp.Close, bpftcp.SynSent)}
+	if kept = r.tcpBudgetFilter(b2, shed); len(kept) != 1 || kept[0].SK != 10 || !shed[11] || !shed[12] {
+		t.Fatalf("second batch: kept %+v, shed %v", kept, shed)
+	}
+	b3 := []bpftcp.Event{st(11, bpftcp.SynSent, bpftcp.Established), st(10, bpftcp.SynSent, bpftcp.Established),
+		st(11, bpftcp.Established, bpftcp.Close)}
+	if kept = r.tcpBudgetFilter(b3, shed); len(kept) != 1 || kept[0].SK != 10 || shed[11] || !shed[12] {
+		t.Fatalf("third batch: kept %+v, shed %v", kept, shed)
+	}
+	if r.tcpBudget.totShed != 2 || r.tcpBudget.drop != 2 {
+		t.Errorf("counted %d, dropped %d; want 2, 2", r.tcpBudget.totShed, r.tcpBudget.drop)
+	}
+
+	one, many := newBudget("x", 1, 2, 0), newBudget("x", 1, 2, 0) // full 10, then lite to 20, then shed
+	now := time.Now()
+	want := 0
+	for range 25 {
+		if one.decide(now, 0) != tierShed {
+			want++
+		}
+	}
+	if got := many.decideN(now, 25); got != want || many.nFull != one.nFull || many.nLite != one.nLite || many.nShed != one.nShed {
+		t.Errorf("decideN kept %d (full %d lite %d shed %d), decide %d (%d %d %d)", got,
+			many.nFull, many.nLite, many.nShed, want, one.nFull, one.nLite, one.nShed)
+	}
+}
+
 // TestCutCmdlineCopies: a cut command line does not keep the original's
 // memory (a substring would).
 func TestCutCmdlineCopies(t *testing.T) {

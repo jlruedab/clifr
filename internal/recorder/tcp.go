@@ -214,22 +214,40 @@ func (t *tcpTracker) overflowed() int64 {
 // connection (connect, or a listener's child) above the budget is only
 // counted, and every later event of it (by sock pointer, until its close)
 // is dropped. Listening sockets are always kept.
+//
+// The births of a batch are decided together (one lock, 2026-11-19: a
+// decision per connection was most of this function's 1.7% of clifrd's CPU
+// at the busy load); within the budget and with nothing being shed, the batch
+// is returned as it is.
 func (r *Recorder) tcpBudgetFilter(batch []bpftcp.Event, shedSK map[uint64]bool) []bpftcp.Event {
+	births := 0
+	for i := range batch {
+		if tcpBirth(&batch[i]) {
+			births++
+		}
+	}
+	admit := births
+	if births > 0 {
+		admit = r.tcpBudget.decideN(time.Now(), births)
+	}
+	if admit == births && len(shedSK) == 0 {
+		return batch
+	}
 	kept := batch[:0]
-	now := time.Now()
 	var dropped int64
-	for _, e := range batch {
-		birth := e.Kind == bpftcp.State && (e.Old == bpftcp.Close && e.New == bpftcp.SynSent || e.Old == bpftcp.Listen && e.New == bpftcp.SynRecv)
+	for i := range batch {
+		e := &batch[i]
 		switch {
-		case birth:
+		case tcpBirth(e):
 			delete(shedSK, e.SK) // a reused pointer: a new connection
-			if r.tcpBudget.decide(now, 0) == tierShed {
-				r.tcpBudget.note(tcpFloodKey(e))
+			if admit == 0 {
+				r.tcpBudget.note(tcpFloodKey(*e))
 				if len(shedSK) < 1<<20 { // a missed close leaves its pointer until reused
 					shedSK[e.SK] = true
 				}
 				continue
 			}
+			admit--
 		case e.Kind == bpftcp.State && e.Old == bpftcp.Close: // a new listener (or socket): never dropped
 			delete(shedSK, e.SK)
 		case shedSK[e.SK]:
@@ -239,12 +257,17 @@ func (r *Recorder) tcpBudgetFilter(batch []bpftcp.Event, shedSK map[uint64]bool)
 			dropped++
 			continue
 		}
-		kept = append(kept, e)
+		kept = append(kept, *e)
 	}
 	if dropped > 0 {
 		r.tcpBudget.dropped(dropped)
 	}
 	return kept
+}
+
+// tcpBirth: a new connection, connecting or a listener's child.
+func tcpBirth(e *bpftcp.Event) bool {
+	return e.Kind == bpftcp.State && (e.Old == bpftcp.Close && e.New == bpftcp.SynSent || e.Old == bpftcp.Listen && e.New == bpftcp.SynRecv)
 }
 
 // tcpFloodKey names who caused a connection above the budget: the process

@@ -419,7 +419,9 @@ wait for the user's go-ahead.
   8 vCPU VM (kernel 6.8, failing disk), the busy 20261008-0721 batch on a
   4 vCPU Ubuntu 26.04 VM. Calibrated pgbench rate here: `--rate 80000 --cpus 0-11`.
   Bench scripts abort below 1.5 GB free and validate every run
-  (`bench/report -validate`).
+  (`bench/report -validate`). Close the browsers before a benchmark (`bench/run.sh` warns):
+  clifrd records the whole desktop, and open browsers added 0.3-0.4 point of one core at the
+  busy load (2026-11-19, `bench/results/cpu-ab-20261119`).
 - The committed eBPF objects are in sync with the `.bpf.c` sources and load on
   any supported kernel unchanged (CO-RE): no regeneration per machine or kernel,
   only after editing a `.bpf.c` file (`go generate`; needs the apt packages

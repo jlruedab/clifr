@@ -112,6 +112,25 @@ func newBudget(what string, perSec, maxPerSec int, bytesPerSec int64) *budget {
 func (b *budget) decide(now time.Time, bytes int64, whole ...bool) tier {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.decideLocked(now, bytes, len(whole) > 0 && whole[0])
+}
+
+// decideN counts n events of no size arriving at now, under one lock, and
+// returns how many are not shed: the first ones (tiers only get worse as the
+// window's count grows, and the memory pressure is read once).
+func (b *budget) decideN(now time.Time, n int) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	kept := 0
+	for range n {
+		if b.decideLocked(now, 0, false) != tierShed {
+			kept++
+		}
+	}
+	return kept
+}
+
+func (b *budget) decideLocked(now time.Time, bytes int64, whole bool) tier {
 	if now.Sub(b.winStart) >= budgetWindow || now.Before(b.winStart) {
 		b.winStart, b.n, b.bytes = now, 0, 0
 	}
@@ -136,7 +155,7 @@ func (b *budget) decide(now time.Time, bytes int64, whole ...bool) tier {
 	default:
 		b.bytes += bytes
 	}
-	if t == tierShed && len(whole) > 0 && whole[0] {
+	if t == tierShed && whole {
 		t = tierLite
 	}
 	if t == tierShed && b.pressured {

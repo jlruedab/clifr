@@ -107,6 +107,12 @@ OUT=$(realpath -m "$OUT") # workload.sh changes directory
 
 # --- prerequisites ---------------------------------------------------------
 check_common clifr clifrd load benchtool report
+# clifrd records the whole machine, not only the load: an open browser (its
+# processes, sandbox network namespaces and connections) added 0.3-0.4 point
+# of one core at the busy load (bench/results/cpu-ab-20261119).
+if b=$(pgrep -l -x 'chrome|chromium|firefox|firefox-bin|brave|msedge|GeckoMain' | awk '{print $2}' | sort -u | paste -sd' ') && [[ -n $b ]]; then
+    log "WARNING: browsers running ($b): close them, or the recorder's CPU figures are not comparable"
+fi
 for c in $CONFIGS; do
     case $c in
     A | B | C | D | U | M1) ;;
