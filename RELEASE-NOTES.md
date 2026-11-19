@@ -22,11 +22,11 @@ It never runs the command: it reads the recording, on the recorded host or anywh
 
 | File | What |
 |---|---|
-| `clifrd_0.1.0_amd64.deb`, `clifrd-0.1.0-1.x86_64.rpm` | the recorder: a static Go binary, the systemd unit, the sos plugin |
-| `clifr_0.1.0_amd64.deb`, `clifr-0.1.0-1.x86_64.rpm` | the query tool (needs glibc 2.28 or later) |
-| `SHA256SUMS`, `SHA256SUMS.asc` | checksums, and their signature |
+| [`clifrd_0.1.0_amd64.deb`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/clifrd_0.1.0_amd64.deb), [`clifrd-0.1.0-1.x86_64.rpm`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/clifrd-0.1.0-1.x86_64.rpm) | the recorder: a static Go binary, the systemd unit, the sos plugin |
+| [`clifr_0.1.0_amd64.deb`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/clifr_0.1.0_amd64.deb), [`clifr-0.1.0-1.x86_64.rpm`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/clifr-0.1.0-1.x86_64.rpm) | the query tool (needs glibc 2.28 or later) |
+| [`SHA256SUMS`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/SHA256SUMS), [`SHA256SUMS.asc`](https://github.com/jlruedab/clifr/releases/download/v0.1.0/SHA256SUMS.asc) | checksums, and their signature |
 
-Check the download before installing:
+Check the download before installing. The release key is [`KEYS`](https://raw.githubusercontent.com/jlruedab/clifr/v0.1.0/KEYS), in the repository:
 
 ```sh
 gpg --import KEYS                       # once: the release key, from the repository
