@@ -169,8 +169,8 @@ clifrd also keeps an eye on itself: above 2% of one core over 5 minutes it walks
 
 | | Desktop | Busy server (benchmark) |
 |---|---|---|
-| CPU | 0.35% of one core | 1.9% of one core |
-| Memory | 88 MiB | about 290 MiB on average, 335 MiB at most |
+| CPU | 0.35% of one core | 2.0% of one core |
+| Memory | 88 MiB | about 290 MiB on average, 333 MiB at most |
 | Disk | 20 MiB a day | capped at 2 GB |
 | Effect on the application | | about 1 µs (1–2%) added PostgreSQL latency |
 
@@ -1176,25 +1176,32 @@ before, which also took the recorder to 947 MiB).
 
 ### Cost at the busy load
 
-Three runs of 15 minutes each (2026-10-23, `report-20261023-2100`, commit
-`a1657bd`: after step 4 of phase 8, which added swap, modules, block
-devices, neighbours, locks, System V IPC, sysctl, slab caches, NUMA,
-conntrack and NFS counters). The 2026-10-22 batch (`report-20261022-1900`,
-commit `ff2f7ec`, after step 3: process fields) is in brackets.
+Three runs of 15 minutes each (2026-11-19, `busy-20261119-2017`, commit
+`d12d425`, browsers closed). The 2026-10-23 batch (`report-20261023-2100`,
+commit `a1657bd`, after step 4 of phase 8) is in brackets.
 
 | Metric | clifr, default (B) | atop 30 s |
 |---|---:|---:|
-| CPU, % of one core | 1.90 ± 0.05 (1.85) | 0.51 ± 0.01 |
-| CPU, % of the machine | 0.09 (0.08) | 0.02 |
-| Memory (anonymous), average | 287 MiB (286) | 27 MiB |
-| Memory (anonymous), max | 335 MiB (329) | 32 MiB |
-| Data kept per day | 4.06 GiB (4.05) | 0.32 GiB |
-| Written to disk per day | 11.5 GiB (11.5) | 0.73 GiB |
+| CPU, % of one core | 2.03 ± 0.02 (1.90) | 0.57 ± 0.04 |
+| CPU, % of the machine | 0.09 (0.09) | 0.03 |
+| Memory (anonymous), average | 290 MiB (287) | 26 MiB |
+| Memory (anonymous), max | 333 MiB (335) | 33 MiB |
+| Data kept per day | 4.07 GiB (4.06) | 0.32 GiB |
+| Written to disk per day | 11.5 GiB (11.5) | 0.74 GiB |
 
-The aggressive configuration (10 s / 60 s) used 2.94% (2.87; one of its
-three runs is high in every batch), the conservative one (60 s / 300 s)
-1.69% (1.63). The guard rail recorded one or two `budget_exceeded` events
-in each default run and kept the fd interval at 2 minutes. Step 4 added
+The aggressive configuration (10 s / 60 s) used 2.59% (2.94), the
+conservative one (60 s / 300 s) 1.82% (1.69). The guard rail recorded two
+`budget_exceeded` events in each default run and kept the fd interval at 2
+minutes. The default configuration costs about 0.1 point more than on
+2026-10-23: what came since (network namespaces, container names, the event
+budget, the integrity log, pstore, mounts and users read on another machine)
+adds small amounts that a profile cannot separate from noise. The TCP event
+budget's filter was made cheaper before this batch (one decision per batch
+of events: 2.11% against 2.09% in two runs each, `cpu-ab-20261119`).
+Browsers open on the benchmark machine added 0.3–0.4 point (clifrd records
+the whole machine), so the batches are run with them closed.
+
+In 2026-10-23's batch, step 4 added
 about 0.05 points: its reads at every system sample take about 0.3 ms
 together, those once a minute about 15 ms (block devices 6.6, sysctl 5.4,
 slabinfo 3 ms), which lengthens every other 30 s sample by that much (the
@@ -1212,17 +1219,17 @@ against no recorder:
 
 | Metric | No recorder | Difference | 95% interval |
 |---|---:|---:|---|
-| Transactions per second | 80,007 | −8 | −19 to +2, within noise |
-| Latency average | 0.070 ms | +0.000 ms | −0.001 to +0.002, within noise |
-| Latency p99 | 0.116 ms | +0.001 ms | −0.002 to +0.004, within noise |
-| Latency p99.9 | 0.177 ms | −0.001 ms | −0.054 to +0.052, within noise |
+| Transactions per second | 80,006 | −7 | −23 to +9, within noise |
+| Latency average | 0.072 ms | +0.000 ms | −0.001 to +0.002, within noise |
+| Latency p99 | 0.120 ms | +0.001 ms | −0.003 to +0.004, within noise |
+| Latency p99.9 | 0.183 ms | −0.009 ms | −0.033 to +0.015, within noise |
 
 The clifr configurations added up to about 1 µs to the average latency
-(0–1%) and up to 2 µs to p99 (0–1.7%), all within noise in this batch;
+and to p99 (under 1%), all within noise in this batch;
 p99 was measurable for the default configuration on 2026-10-22 (+3 µs,
 2.8%) and for all three on 2026-10-21 (+2 µs); atop added nothing
-measurable. The machine's CPU use rose by 0.3–0.6 points, about 7–13% of one core, more
-than the recorder's own 1.9%: most likely the eBPF programs, whose time is
+measurable. The machine's CPU use rose by 0.2–0.4 points (0.3–0.6 on 2026-10-23), about
+4–9% of one core, more than the recorder's own 2.0%: most likely the eBPF programs, whose time is
 charged to the processes they observe (not measured separately in these
 runs). The 2026-10-19 and 2026-10-17 batches showed no measurable change,
 but their no-recorder runs varied far more (average latency ±0.008 ms
@@ -1344,8 +1351,9 @@ continuous eBPF tracer, not a metrics exporter.
   missed too, `ss` shows a time-wait socket that did not exist for up to
   60 s.
 
-- **CPU is just under the 2% budget at the busy load**: 1.84% of one core
-  on average (runs of 1.7–2.1%), with a few `budget_exceeded` events; an hourly
+- **CPU is at the 2% budget at the busy load**: 2.03% of one core on
+  average (2026-11-19; 1.84–1.94% in the batches of 2026-10-19 to 11-09),
+  with two `budget_exceeded` events a run; an hourly
   compaction adds a burst of a few seconds. Every scaling point is within
   it. The guard rail lengthens the fd interval only when the fd walks are
   at least a quarter of the recorder's CPU (9–14% at the busy load), so it
