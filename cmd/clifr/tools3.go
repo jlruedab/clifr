@@ -251,8 +251,8 @@ func unameTool() *tool {
 			{short: 'r', long: "kernel-release", help: "kernel release"},
 			{short: 'v', long: "kernel-version", help: "kernel version"},
 			{short: 'm', long: "machine", help: "machine hardware name"},
-			{short: 'p', long: "processor", help: "processor type (the machine, as RHEL's and Debian's coreutils print it)"},
-			{short: 'i', long: "hardware-platform", help: "hardware platform (the machine, likewise)"},
+			{short: 'p', long: "processor", help: "processor type (the machine, as RHEL's and Debian's coreutils print it; \"unknown\" with uutils, Ubuntu 25.10 and later)"},
+			{short: 'i', long: "hardware-platform", help: "hardware platform (likewise)"},
 			{short: 'o', long: "operating-system", help: "operating system (GNU/Linux)"},
 		},
 		window: true,
@@ -267,9 +267,8 @@ func unameTool() *tool {
 			if c.w.IsRange() {
 				return nil, errors.New("uname: needs --at")
 			}
-			keys := []string{"kernel-name", "nodename", "kernel-release", "kernel-version", "machine", "processor", "hardware-platform", "operating-system"}
 			var want []string
-			for _, k := range keys {
+			for _, k := range query.UnameKeys {
 				if p.has("all") || p.has(k) {
 					want = append(want, k)
 				}
@@ -278,19 +277,11 @@ func unameTool() *tool {
 				want = []string{"kernel-name"}
 			}
 			return func() error {
-				at := func(key string) string { return query.MetaAt(c.db, key, c.w.At) }
-				machine := at("uname_machine")
-				if at("uname_release") == "" {
+				vals := query.UnameAt(c.db, c.w.At)
+				if vals["kernel-release"] == "" {
 					return fmt.Errorf("uname: not in this recording at %s (recorded since schema 3)", query.FormatMS(c.w.At))
 				}
-				vals := map[string]string{"kernel-name": at("uname_sysname"), "nodename": query.HostnameAt(c.db, c.w.At),
-					"kernel-release": at("uname_release"), "kernel-version": at("uname_version"), "machine": machine,
-					"processor": machine, "hardware-platform": machine, "operating-system": "GNU/Linux"}
-				var out []string
-				for _, k := range want {
-					out = append(out, vals[k])
-				}
-				line := strings.Join(out, " ")
+				line := query.UnameLine(vals, want, p.has("all"))
 				return c.emit(unameRow{Uname: line}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 					func(w io.Writer) { fmt.Fprintln(w, line) })
 			}, nil

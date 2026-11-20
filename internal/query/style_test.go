@@ -48,3 +48,29 @@ func TestStyle(t *testing.T) {
 		t.Errorf("free used (current): %d", rows[0].Used)
 	}
 }
+
+// TestUname: uutils (Ubuntu 25.10 and later) prints "unknown" for -p and -i
+// and leaves them out of -a; RHEL's and Debian's coreutils print the machine.
+func TestUname(t *testing.T) {
+	for _, c := range []struct {
+		id, version string
+		want        bool
+	}{{"ubuntu", "26.04", true}, {"ubuntu", "25.10", true}, {"ubuntu", "25.04", false}, {"ubuntu", "24.04", false},
+		{"debian", "13", false}, {"rhel", "9.6", false}, {"ubuntu", "", false}} {
+		if got := uutils(c.id, c.version); got != c.want {
+			t.Errorf("uutils(%q, %q) = %v", c.id, c.version, got)
+		}
+	}
+	vals := map[string]string{"kernel-name": "Linux", "nodename": "h", "kernel-release": "7.0", "kernel-version": "#1 SMP",
+		"machine": "x86_64", "processor": "unknown", "hardware-platform": "unknown", "operating-system": "GNU/Linux"}
+	if got, want := UnameLine(vals, UnameKeys, true), "Linux h 7.0 #1 SMP x86_64 GNU/Linux"; got != want {
+		t.Errorf("-a = %q, want %q", got, want)
+	}
+	if got := UnameLine(vals, []string{"processor"}, false); got != "unknown" {
+		t.Errorf("-p = %q", got)
+	}
+	vals["processor"], vals["hardware-platform"] = "x86_64", "x86_64"
+	if got, want := UnameLine(vals, UnameKeys, true), "Linux h 7.0 #1 SMP x86_64 x86_64 x86_64 GNU/Linux"; got != want {
+		t.Errorf("-a = %q, want %q", got, want)
+	}
+}

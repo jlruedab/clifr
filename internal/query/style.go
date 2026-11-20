@@ -3,6 +3,7 @@ package query
 import (
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"clifr/internal/store"
@@ -69,6 +70,11 @@ type ToolStyle struct {
 	// Mountstats233: nfs-utils 2.3.3's mountstats (RHEL 8): no mount age,
 	// no error counts, per-op lists not padded.
 	Mountstats233 bool
+	// UnameUnknown: uutils coreutils (Ubuntu 25.10 and later): uname -p and -i
+	// print "unknown" and -a leaves them out. RHEL's and Debian's coreutils
+	// print the machine for both. Set by StyleAt from the distribution, not
+	// a style of its own (all else is the current tools').
+	UnameUnknown bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -118,11 +124,55 @@ func StyleAt(db *store.DB, t int64) ToolStyle {
 	if s, ok := Styles[StyleOverride]; ok {
 		return s
 	}
-	name := StyleName(MetaAt(db, "os_id", t), MetaAt(db, "os_version_id", t), MetaAt(db, "os_id_like", t))
+	id, version := MetaAt(db, "os_id", t), MetaAt(db, "os_version_id", t)
+	name := StyleName(id, version, MetaAt(db, "os_id_like", t))
 	if name == "" {
-		return Styles["current"]
+		s := Styles["current"]
+		s.UnameUnknown = uutils(id, version)
+		return s
 	}
 	return Styles[name]
+}
+
+// uutils is whether the distribution ships uutils coreutils (Ubuntu since
+// 25.10, 2026-11-20: 26.04's uname is uutils 0.10.0).
+func uutils(id, version string) bool {
+	if id != "ubuntu" {
+		return false
+	}
+	y, m, _ := strings.Cut(version, ".")
+	year, err1 := strconv.Atoi(y)
+	month, err2 := strconv.Atoi(m)
+	return err1 == nil && err2 == nil && (year > 25 || year == 25 && month >= 10)
+}
+
+// UnameAt is uname's fields for the clifrd run covering t, by long option
+// name, as the host's uname prints them ("" values: not recorded).
+func UnameAt(db *store.DB, t int64) map[string]string {
+	at := func(key string) string { return MetaAt(db, key, t) }
+	m, cpu := at("uname_machine"), at("uname_machine")
+	if StyleAt(db, t).UnameUnknown {
+		cpu = "unknown"
+	}
+	return map[string]string{"kernel-name": at("uname_sysname"), "nodename": HostnameAt(db, t),
+		"kernel-release": at("uname_release"), "kernel-version": at("uname_version"), "machine": m,
+		"processor": cpu, "hardware-platform": cpu, "operating-system": "GNU/Linux"}
+}
+
+// UnameKeys is uname -a's order. -a leaves out processor and
+// hardware-platform when they are "unknown" (coreutils and uutils alike).
+var UnameKeys = []string{"kernel-name", "nodename", "kernel-release", "kernel-version", "machine", "processor", "hardware-platform", "operating-system"}
+
+// UnameLine joins the fields of keys (all: uname -a).
+func UnameLine(vals map[string]string, keys []string, all bool) string {
+	var out []string
+	for _, k := range keys {
+		if all && vals[k] == "unknown" && (k == "processor" || k == "hardware-platform") {
+			continue
+		}
+		out = append(out, vals[k])
+	}
+	return strings.Join(out, " ")
 }
 
 // StyleNote describes the style for an informational line, "" for current.

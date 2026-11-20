@@ -62,6 +62,14 @@ memory_guard: 384M     # live heap above which data is shed (guard event) before
 # instead of pinning it. TLS on loopback addresses too.
 #serve_tls_config: /etc/clifr/web-config.yml
 
+# Save the real tools' output (ps, ss, lsof, free, ...) this often, for
+# clifr verify to compare with what clifr reconstructs. Off by default: for
+# checking clifr on a machine, not for everyday recording (the tools run at
+# every checkpoint and cost CPU). Turn it off again afterwards. Under the
+# unit the tools see the service's own mount namespace, so df, mount,
+# findmnt and lsblk are not compared there.
+#verify_every: 15m
+
 # Masked in command lines (as ***) before they are stored: Go regular
 # expressions; with capture groups only the groups are masked. (The built-in
 # default is none; these are suggestions.)

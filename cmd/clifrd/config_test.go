@@ -81,3 +81,27 @@ func TestEventBudgetConfig(t *testing.T) {
 		t.Errorf("yamlName = %q", got)
 	}
 }
+
+// TestVerifyEveryConfig: verify_every sets --verify-every (a packaged clifrd
+// gets no flags: the unit's ExecStart has none), and a flag still wins.
+func TestVerifyEveryConfig(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "clifrd.yml")
+	os.WriteFile(p, []byte("verify_every: 15m\n"), 0o644)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{{nil, "15m"}, {[]string{"--verify-every", "5m"}, "5m"}} {
+		fs := testFlags()
+		fs.String("verify-every", "0s", "")
+		fs.Parse(c.args)
+		if err := applyConfig(fs, p, true); err != nil {
+			t.Fatal(err)
+		}
+		if got := fs.Lookup("verify-every").Value.String(); got != c.want {
+			t.Errorf("%v: verify-every = %q, want %q", c.args, got, c.want)
+		}
+	}
+	if got := yamlName("verify-every"); got != "verify_every" {
+		t.Errorf("yamlName = %q", got)
+	}
+}

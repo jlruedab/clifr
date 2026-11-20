@@ -656,7 +656,7 @@ resolved time and time zone and other informational lines go to stderr.
     clifr --at "13:28" "mpstat -P ALL"
     clifr --at "13:28" uptime
     clifr info
-    clifr verify                 # needs a recording made with --verify-every
+    clifr verify                 # needs a recording made with --verify-every (clifrd.yml: verify_every)
     clifr export tcp_conns       # one table as CSV
 
 Options: `-a/--at TIME`, or `-S/--since TIME` with `-U/--until TIME`

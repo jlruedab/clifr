@@ -1687,7 +1687,7 @@ Options on the command line override the file. `CLIFR_DATA_DIR` in the environme
 | `--event-budget-connections N` | `event_budget.connections` | `5000` | New TCP connections a second recorded; the rest only counted. |
 | `--redact REGEX` | `redact` | none | Mask in command lines; repeatable. |
 | `--log-level LEVEL` | `log_level` | `info` | `error`, `warn`, `info`, `debug`. |
-| `--verify-every DUR` | | off | Also save the real tools' output this often, for `clifr verify` (testing accuracy; costs CPU). |
+| `--verify-every DUR` | `verify_every` | off | Also save the real tools' output this often, for `clifr verify` (testing accuracy; costs CPU: turn it off afterwards). Under the service the tools see its own mount namespace, so `df`, `mount`, `findmnt` and `lsblk` are not compared there. |
 | `--bpf-stats` | | off | Measure the eBPF programs' own run time (shown by `clifr info`). |
 | `--duration DUR` | | until stopped | Stop after this long (tests). |
 | `-v`, `--version` | | | Print the version. |
@@ -1772,7 +1772,7 @@ Only the `gc_heap_target` change above has been measured. Lower values than the 
 | `--style STYLE` | Print as `rhel-8`, `rhel-9`, `ubuntu-22.04` or `current` tools do (default: the recorded host's). |
 | `-v`, `--version`, `-h`, `--help` | |
 
-Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount, findmnt; `clifr help diff`), `clifr verify` (compares real tool output saved with `--verify-every` with the reconstruction), `clifr verify --integrity [--seal-key KEY|@FILE] [--seal-anchor ANCHOR]` (checks every data file, and with a key the [seals](#sealing-showing-that-a-recording-was-not-altered)), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
+Other commands: `clifr info`, `clifr diff --at A --at B "COMMAND"` (ps, ss, netstat, lsof, df, mount, findmnt; `clifr help diff`), `clifr verify` (compares real tool output saved with `--verify-every`, or `verify_every` in clifrd.yml, with the reconstruction), `clifr verify --integrity [--seal-key KEY|@FILE] [--seal-anchor ANCHOR]` (checks every data file, and with a key the [seals](#sealing-showing-that-a-recording-was-not-altered)), `clifr export TABLE` (CSV), `clifr help [COMMAND]`.
 
 Environment: `CLIFR_DATA_DIR`, `CLIFR_TZ`, `CLIFR_STYLE`, `CLIFR_SINCE`, `CLIFR_UNTIL` set the defaults of the matching options.
 

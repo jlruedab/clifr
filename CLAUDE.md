@@ -388,7 +388,8 @@ wait for the user's go-ahead.
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,
   df, lsof, vmstat, iostat, systemd-cgls, swapon --summary and lsblk as the recorded distribution's tool versions do (rhel-8, rhel-9,
-  ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. Per-run values (hostname, uname,
+  ubuntu-22.04; current otherwise; `--style` overrides); each flag was confirmed in a VM. `UnameUnknown` (uutils coreutils, Ubuntu 25.10+:
+  `uname -p`/`-i` print "unknown", left out of `-a`) is set by `StyleAt` from the distribution, not a style. Per-run values (hostname, uname,
   boots for `last`) are read from the meta files by `query.MetaAt` / `query.Boots`, not the
   latest-wins table. `sys_samples` also holds /proc/net/sockstat and sockstat6 (schema 3; NULL
   before) for `ss -s`. `processes.argv0_len`: length of argv[0] in `cmdline` (0/NULL unknown; netstat names).

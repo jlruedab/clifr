@@ -816,9 +816,20 @@ var (
 	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link", "ip -o addr", "ip -d address", "ip route show table all", "ip -6 route show table all", "ip -4 rule list", "ip -6 rule list", "dmesg", "dmesg -T", "systemctl list-units --no-pager", "systemctl list-units --all --no-pager", "systemctl list-units --failed --no-pager", "ps alxwww", "ps auxZww", "pidstat -h -u -r -d -w -p ALL", "systemd-cgls --no-pager", "systemd-cgls --no-pager -l", "swapon --show", "swapon --summary", "lsmod", "lsblk", "lsblk -f", "mount -l", "ip neigh", "ip -s -s neigh", "ip netns", "lslocks", "ipcs", "ipcs -u", "sysctl -a", "slabtop -o", "numastat", "numastat -m", "conntrack -S", "nfsstat", "mountstats", "mountstats -x")
 )
 
+// noCheckpoints says how to get checkpoints. A packaged clifrd takes no
+// flags (the unit's ExecStart has none): the configuration file is the way.
+const noCheckpoints = `no verify checkpoints in this recording: clifrd saves the real tools' output only
+when asked to. Under the systemd unit, set in /etc/clifr/clifrd.yml
+    verify_every: 15m
+then run "systemctl restart clifrd". The first checkpoint comes within a minute
+and is on disk after the next flush (5 minutes by default). Run by hand:
+clifrd --verify-every 15m. The real tools run at every checkpoint and cost CPU:
+remove the setting and restart clifrd when done.
+`
+
 func Print(w io.Writer, rep *Report, verbose bool) {
 	if len(rep.Checkpoints) == 0 {
-		fmt.Fprintln(w, "no verify checkpoints in this database (record with --verify-every)")
+		fmt.Fprint(w, noCheckpoints)
 		return
 	}
 	for _, cp := range rep.Checkpoints {

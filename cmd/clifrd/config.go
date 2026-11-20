@@ -65,6 +65,7 @@ type fileConfig struct {
 	ServeTLSDir scalar   `yaml:"serve_tls_dir"`
 	ServeTLS    scalar   `yaml:"serve_tls_config"`
 	Redact      []string `yaml:"redact"`
+	VerifyEvery scalar   `yaml:"verify_every"`
 }
 
 // notYet names settings of the clifrd.yml spec that this release rejects.
@@ -113,6 +114,7 @@ func applyConfig(fset *flag.FlagSet, path string, named bool) error {
 		{"event-budget-processes", c.EventBudget.Processes}, {"event-budget-processes-max", c.EventBudget.ProcessesMax},
 		{"event-budget-cmdline", c.EventBudget.CmdlineBytes}, {"event-budget-connections", c.EventBudget.Connections},
 		{"metrics", c.Metrics}, {"metrics-tls-config", c.MetricsTLS}, {"serve", c.Serve}, {"serve-tokens", c.ServeTokens}, {"serve-tls-dir", c.ServeTLSDir}, {"serve-tls-config", c.ServeTLS},
+		{"verify-every", c.VerifyEvery},
 	} {
 		if s.v == "" || given[s.flag] || given[short[s.flag]] {
 			continue

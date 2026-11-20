@@ -1090,9 +1090,7 @@ func compareFindmnt(db *store.DB, snap snapshot) (Result, error) {
 // spaces, so the line as a whole).
 func compareUname(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
-	at := func(k string) string { return query.MetaAt(db, k, snap.ts) }
-	m := at("uname_machine")
-	rec := strings.Join([]string{at("uname_sysname"), query.HostnameAt(db, snap.ts), at("uname_release"), at("uname_version"), m, m, m, "GNU/Linux"}, " ")
+	rec := query.UnameLine(query.UnameAt(db, snap.ts), query.UnameKeys, true)
 	real := strings.TrimSpace(snap.output)
 	res.Real, res.Recon, res.Matched = 1, 1, 1
 	res.compare("uname -a", []fieldPair{{"LINE", real, rec}}, func() bool { return false })

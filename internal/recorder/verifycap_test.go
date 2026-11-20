@@ -58,3 +58,17 @@ func TestLookSystem(t *testing.T) {
 		t.Error("a missing tool was found")
 	}
 }
+
+// TestMountViews: every command skipped in another mount namespace is one
+// of the verify commands (a typo would compare the sandbox's mounts again).
+func TestMountViews(t *testing.T) {
+	cmds := map[string]bool{}
+	for _, argv := range verifyCommands {
+		cmds[strings.Join(argv, " ")] = true
+	}
+	for c := range mountViews {
+		if !cmds[c] {
+			t.Errorf("mountViews: %q is not a verify command", c)
+		}
+	}
+}

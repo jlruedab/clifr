@@ -81,6 +81,16 @@ var verifyCommands = [][]string{
 	{"lsof", "-n", "-P", "-K", "i"},
 }
 
+// mountViews show the mount table of the namespace they run in. Under the
+// shipped unit clifrd has one of its own (ProtectSystem, ProtectHome and
+// ProtectKernelTunables add bind mounts and options), while clifrd records
+// the host's (hostMountNS): compared, they would only show the sandbox
+// (2026-11-20, the packaged 0.1.0: mount 79%, findmnt 84%, lsblk 0%). Plain
+// df matched there (it hides those mounts), but not a namespace with a mount
+// of its own (a drop-in's PrivateTmp, another systemd's sandbox).
+var mountViews = map[string]bool{"df": true, "df -al -x autofs": true, "mount": true, "mount -l": true, "findmnt": true,
+	"lsblk": true, "lsblk -f": true}
+
 // verifyPath is where the real tools are looked for and what they get as
 // PATH: root's system directories only, whatever PATH clifrd was started with
 // (a user's directory early in it would have root run that user's "ps").
@@ -105,8 +115,13 @@ func lookSystem(name string) (string, error) {
 // 2 where NFS is not in use: "No Client Stats"), is skipped: nothing is
 // compared for it. That is said once per run, not at every checkpoint.
 func (r *Recorder) captureVerify(sampleTS int64) {
+	_, otherNS := hostMountNS()
 	for _, argv := range verifyCommands {
 		cmdline := strings.Join(argv, " ")
+		if otherNS != "" && mountViews[cmdline] {
+			r.verifySkip(cmdline, "clifrd runs in a mount namespace of its own (the service's sandbox), so the tool would show that one, not the host's")
+			continue
+		}
 		path, err := lookSystem(argv[0])
 		if err != nil {
 			r.verifySkip(cmdline, "not found")
