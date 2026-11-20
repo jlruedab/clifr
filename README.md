@@ -696,7 +696,13 @@ chooses one; a line on stderr says when a style other than current is used.
   `ps alx` is the BSD long format (F, PRI, NI, WCHAN). WCHAN is re-read
   when the process used CPU since the sample before, the label and cgroup
   when it is first sampled, at an exec and every fd walk (recorded since
-  2026-10-22: `-` before).
+  2026-10-22: `-` before). `--container CONTAINER` (clifr only; an id or
+  its first 4+ digits, a name, a pod, NAMESPACE/POD/CONTAINER or an LXC
+  name, as `ss -N` takes it) keeps one container's processes, by their
+  recorded cgroup; alone it lists all of them, with `-p`/`-u`/`-C` those
+  that also match. PIDs are the host's; processes only seen through
+  exec/exit events have no cgroup and are left out. Needs `--at`,
+  `--samples` or `--changes`.
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

@@ -24,7 +24,7 @@ func splitList(vals []string) []string {
 
 func psTool() *tool {
 	return &tool{
-		name: "ps", diff: true, synopsis: "aux[f|Z] | alx | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT]",
+		name: "ps", diff: true, synopsis: "aux[f|Z] | alx | -e|-p PIDS|-u USERS|-C NAMES [-f | -o FORMAT] [--container CONTAINER]",
 		about: "processes and their CPU, memory, state and command line",
 		opts: []opt{
 			{short: 'e', help: "every process"},
@@ -33,6 +33,7 @@ func psTool() *tool {
 			{short: 'u', arg: "USERS", help: "processes of these users (names or numbers)"},
 			{short: 'C', arg: "NAMES", help: "processes with these command names"},
 			{short: 'f', help: "full format: UID PID PPID C STIME TTY TIME CMD"},
+			{long: "container", arg: "CONTAINER", help: "only this container's processes (an id or its first 4+ digits, a name, a pod or NAMESPACE/POD/CONTAINER, an LXC name, as clifr containers lists them); alone it means every process of the container"},
 			{short: 'o', arg: "FORMAT", help: "these columns: pid ppid uid user comm args cmd rss vsz %cpu %mem c ni nlwp s stat lstart start stime etime etimes time tty f pri priority rtprio cls psr minflt majflt wchan label (KEY:WIDTH, KEY=HEADING)"},
 		},
 		window: true,
@@ -48,15 +49,26 @@ func psTool() *tool {
 			"processes only seen through exec/exit events show \"-\" for sampled values.",
 			"--since: every process seen in the range, identical commands collapsed, with first/last",
 			"seen and peaks (ps aux or ps -e).",
+			"--container (not an option of the real ps): selected by the cgroup recorded for each process,",
+			"so processes only seen through exec/exit events (no cgroup) are left out. PIDs stay the host's.",
+			"With -p, -u or -C, the processes that match them and are in the container.",
 		},
 		examples: []string{`clifr --at "02:45" "ps aux"`, `clifr --at "02:45" "ps -ef"`,
-			`clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"`, `clifr --since yesterday --until today "ps aux"`},
+			`clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"`, `clifr --since yesterday --until today "ps aux"`,
+			`clifr --at "02:45" "ps aux --container web"`},
 		prepare: preparePS,
 	}
 }
 
 func preparePS(p parsed, c *runCtx) (func() error, error) {
-	dash := len(p.set) > 0
+	spec, inCtr := p.set["container"]
+	if inCtr && spec == "" {
+		return nil, errors.New("ps: --container needs a container (clifr containers lists them)")
+	}
+	if inCtr && c.w.IsRange() && !c.g.samples && !c.g.changes {
+		return nil, errors.New("ps: --container needs --at, --samples or --changes, not the range summary")
+	}
+	dash := len(p.set) > 0 && !(inCtr && len(p.set) == 1)
 	if len(p.pos) > 0 {
 		bsd := p.pos[0]
 		has := func(l string) bool { return strings.Contains(bsd, l) }
@@ -75,9 +87,9 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 		if (forest || f != nil) && c.w.IsRange() && !c.g.samples && !c.g.changes {
 			return nil, fmt.Errorf("ps: %s needs --at, --samples or --changes, not the range summary", bsd)
 		}
-		return func() error { return runPS(c, nil, f, forest) }, nil
+		return func() error { return runPS(c, nil, spec, f, forest) }, nil
 	}
-	all := p.has("e") || p.has("A")
+	all := p.has("e") || p.has("A") || inCtr && !p.has("p") && !p.has("u") && !p.has("C")
 	pids, users, names := splitList(p.all["p"]), splitList(p.all["u"]), splitList(p.all["C"])
 	if !all && len(pids) == 0 && len(users) == 0 && len(names) == 0 {
 		return nil, errors.New("ps: add -e, -p, -u or -C: without them ps lists the processes of the current terminal")
@@ -124,11 +136,25 @@ func preparePS(p parsed, c *runCtx) (func() error, error) {
 			return false
 		}
 	}
-	return func() error { return runPS(c, sel, f, false) }, nil
+	return func() error { return runPS(c, sel, spec, f, false) }, nil
 }
 
 // runPS prints ps at a moment (aux when f is nil) or the range summary.
-func runPS(c *runCtx, sel func(*query.PSRow) bool, f query.PSFormat, forest bool) error {
+// ctrSpec: ps --container, resolved over the window and ANDed with sel.
+func runPS(c *runCtx, sel func(*query.PSRow) bool, ctrSpec string, f query.PSFormat, forest bool) error {
+	if ctrSpec != "" {
+		from, to := c.w.At, c.w.At
+		if c.w.IsRange() {
+			from, to = c.w.From, c.w.To
+		}
+		in, label, err := query.ContainerFilter(c.db, from, to, ctrSpec)
+		if err != nil {
+			return err
+		}
+		c.header("%s", label)
+		prev := sel
+		sel = func(r *query.PSRow) bool { return in(r.Cgroup) && (prev == nil || prev(r)) }
+	}
 	if ok, err := rangeView(c, psView(c, sel, f, forest)); ok {
 		return err
 	}

@@ -148,7 +148,7 @@ wait for the user's go-ahead.
   connections, once when first seen and all at a run's first keyframe, within 100 ms a keyframe
   (`netnsTCPBudget`, least recently read first); a namespace's first TCP read adopts as an
   initial keyframe. 100 namespaces, 2,100 sockets: keyframe sample 127 ms (host only 17 ms). `ss`/`netstat`
-  show the host's; `ss -N CONTAINER|PID` another (`query.NetNSOf`). TCPConn.Inode is 32 bits
+  show the host's; `ss -N CONTAINER|PID` another (`query.NetNSOf`); `ps --container X` filters by cgroup (`query.ContainerFilter`, the same container names: `ctrSpecMatch`). TCPConn.Inode is 32 bits
   (socket inodes are) so the row stays 128 bytes.
 - Container names (2026-11-09, `recorder/ctrnames.go`): `snapshots` source "containers", one
   line per container id, "runtime\tname\timage\tpod\tnamespace\tproject", every 5 min and at

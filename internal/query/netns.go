@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"clifr/internal/ctr"
 	"clifr/internal/store"
@@ -42,10 +41,6 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 		return uint32(n.Int64), fmt.Sprintf("process %d (%s)", pid, comm), nil
 	}
 	names := containerNames(db, t, t) // a container's runtime name, pod or NAMESPACE/POD/CONTAINER
-	named := func(id string) bool {
-		n, ok := names[id]
-		return ok && spec != "" && (n.name == spec || n.display() == spec || n.pod == spec)
-	}
 	rows, err := db.Query(`SELECT netns, cgroup FROM processes WHERE cgroup IS NOT NULL AND cgroup != ''
 		  AND first_seen <= ?1 AND COALESCE(ended, last_seen, ?2) >= ?1`, t, openEnd)
 	if err != nil {
@@ -66,7 +61,7 @@ func NetNSOf(db *store.DB, t int64, spec string) (ns uint32, label string, err e
 			if id == "" {
 				continue
 			}
-			if id == spec || len(spec) >= 4 && ctr.IsHexID(id) && strings.HasPrefix(id, spec) || named(id) {
+			if ctrSpecMatch(spec, id, names) {
 				ids[id] = rt
 				if !n.Valid {
 					noNS = true

@@ -281,10 +281,13 @@ START                   END                        DURATION     PID    PPID EXIT
 ```sh
 clifr --since "2 days ago" oom              # every OOM kill, with the largest processes at the time
 clifr --at "2026-11-05 13:20" containers    # containers whose processes were seen (by cgroup)
+clifr --at "2026-11-05 13:20" "ps aux --container web1"   # one container's processes (host PIDs)
 clifr --at "2026-11-05 13:20" "ss -tanp -N web1"   # a container's sockets (its name, id prefix, pod, or a PID)
 ```
 
 Containers are listed with their names (since 2026-11-09): Docker's, Podman's, and a pod's container as `NAMESPACE/POD/CONTAINER`. clifrd asks Docker's API for its list of running containers (read-only; names, image and labels, never the environment), reads rootful Podman's container list and the names of the kubelet's links in `/var/log/containers`, every 5 minutes and when a new container appears. `--json` adds the image, pod, namespace and Compose project.
+
+`ps --container` (not an option of the real ps) keeps one container's processes, picked by the cgroup recorded for each one; the container is named as for `ss -N`. It works with `aux`, `auxf`, `-e`, `-f`, `-o`, and with `-p`, `-u` or `-C` to narrow it further. PIDs are the host's, not the ones inside the container. A process seen only through its exec and exit events, between two samples, has no recorded cgroup and is not listed: `clifr events` shows those.
 
 `ss` and `netstat` show the host's network namespace, as they do on the host. A container or pod usually has its own: its connections are recorded too (since 2026-11-08), and `ss -N` shows them. In those namespaces Recv-Q and Send-Q come from `/proc/PID/net` at each keyframe, so a listener's backlog shows as 0.
 
