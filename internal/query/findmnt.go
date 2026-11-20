@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"clifr/internal/pqstore"
 	"clifr/internal/store"
@@ -210,41 +209,10 @@ func Boots(db *store.DB, t int64) ([]Boot, error) {
 // is "still running"; an earlier one ends at its last recorded sample (wtmp
 // has the shutdown time, or "crash"). begins: when the recording starts.
 func PrintLastReboot(w io.Writer, boots []Boot, begins int64, full bool) {
-	login := func(ms int64) string {
-		if full {
-			return time.UnixMilli(ms).Format("Mon Jan _2 15:04:05 2006")
-		}
-		return time.UnixMilli(ms).Format("Mon Jan _2 15:04")
+	t := int64(math.MaxInt64)
+	if n := len(boots); n > 0 {
+		t = max(boots[n-1].LastMS, boots[n-1].BootMS)
 	}
-	logout := func(ms int64) string {
-		if full {
-			return time.UnixMilli(ms).Format("Mon Jan _2 15:04:05 2006")
-		}
-		return time.UnixMilli(ms).Format("15:04")
-	}
-	for i := len(boots) - 1; i >= 0; i-- {
-		b := boots[i]
-		kernel := b.Kernel
-		if kernel == "" {
-			kernel = "-"
-		}
-		line := fmt.Sprintf("%-8.8s %-12.12s %-16.16s %s", "reboot", "system boot", kernel, login(b.BootMS))
-		if i == len(boots)-1 {
-			line += "   still running"
-		} else {
-			secs := (b.LastMS - b.BootMS) / 1000
-			mins, hours, days := secs/60%60, secs/3600%24, secs/86400
-			length := fmt.Sprintf(" (%02d:%02d)", hours, mins)
-			if days > 0 {
-				length = fmt.Sprintf("(%d+%02d:%02d)", days, hours, mins)
-			}
-			end := logout(b.LastMS)
-			if b.Crashed {
-				end = "crash"
-			}
-			line += " - " + end + " " + length
-		}
-		fmt.Fprintln(w, line)
-	}
-	fmt.Fprintf(w, "\nwtmp begins %s\n", time.UnixMilli(begins).Format("Mon Jan _2 15:04:05 2006"))
+	o := LastOptions{Full: full, Names: []string{"reboot"}}
+	PrintLast(w, LastAt(BootRecords(boots), t, 0, o, nil), begins, t, o)
 }

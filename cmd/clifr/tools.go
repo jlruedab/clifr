@@ -22,6 +22,7 @@ type tool struct {
 	notes    []string
 	examples []string
 	window   bool // needs --at or --since
+	history  bool // reads the recording up to the window (last), not only around it
 	diff     bool // has a view: --changes, --samples and diff work
 	prepare  func(p parsed, c *runCtx) (func() error, error)
 }

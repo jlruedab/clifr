@@ -1,0 +1,61 @@
+//go:build ignore
+
+// wtmpgen NOW: writes the last test's wtmp records to stdout, oldest first.
+package main
+
+import (
+	"encoding/binary"
+	"net/netip"
+	"os"
+	"strconv"
+)
+
+func rec(typ, pid int, line, id, user, host string, sec int64, addr string) []byte {
+	b := make([]byte, 384)
+	le := binary.LittleEndian
+	le.PutUint16(b[0:], uint16(typ))
+	le.PutUint32(b[4:], uint32(pid))
+	copy(b[8:40], line)
+	copy(b[40:44], id)
+	copy(b[44:76], user)
+	copy(b[76:332], host)
+	le.PutUint32(b[340:], uint32(sec))
+	if addr != "" {
+		a := netip.MustParseAddr(addr)
+		if a.Is4() {
+			v := a.As4()
+			copy(b[348:], v[:])
+		} else {
+			v := a.As16()
+			copy(b[348:], v[:])
+		}
+	}
+	return b
+}
+
+func main() {
+	now, _ := strconv.ParseInt(os.Args[1], 10, 64)
+	t0 := now - 3*86400 - 7200
+	var out []byte
+	w := func(b []byte) { out = append(out, b...) }
+	// boot A: crashes (no shutdown record)
+	w(rec(2, 0, "~", "~~", "reboot", "5.14.0-a", t0, ""))
+	w(rec(7, 101, "pts/0", "ts/0", "alice", "10.0.0.5", t0+60, "10.0.0.5"))
+	w(rec(7, 102, "tty1", "tty1", "bob", "", t0+120, ""))
+	w(rec(8, 101, "pts/0", "ts/0", "", "", t0+3600+59, ""))
+	// boot B: shut down cleanly
+	w(rec(2, 0, "~", "~~", "reboot", "5.14.0-b", t0+86400, ""))
+	w(rec(7, 201, "pts/1", "ts/1", "carol", "ws.example.com:0", t0+86400+300, "192.168.1.20"))
+	w(rec(7, 202, "pts/4", "ts/4", "frank", "h4", t0+86400+400, ""))
+	w(rec(8, 202, "pts/4", "ts/4", "", "", t0+86400+500, ""))
+	w(rec(7, 203, "pts/4", "ts/4", "gina", "h5", t0+86400+600, ""))
+	w(rec(8, 203, "pts/4", "ts/4", "", "", t0+86400+3*3600+700, ""))
+	w(rec(1, 0, "~", "~~", "shutdown", "5.14.0-b", t0+2*86400, ""))
+	// boot C: running
+	w(rec(2, 0, "~", "~~", "reboot", "5.14.0-c", t0+2*86400+600, ""))
+	w(rec(7, 1, "pts/2", "ts/2", "ghost", "fe80::1%eth0", now-3600, "fe80::1"))
+	w(rec(7, 99999, "pts/3", "ts/3", "eve", "10.9.9.9", now-1800, "10.9.9.9"))
+	w(rec(7, 301, "pts/5", "ts/5", "longusername1", "a-very-long-host-name.example.com", now-1700, ""))
+	w(rec(8, 301, "pts/5", "ts/5", "", "", now-1600, ""))
+	os.Stdout.Write(out)
+}

@@ -530,6 +530,7 @@ func runToolAt(g *globals, words []string, diff []string) error {
 	}
 	var win duck.Window
 	switch {
+	case t.history: // the whole recording (tables load only when queried)
 	case c.diffAt != nil:
 		win = duck.Window{From: c.diffAt[0], To: c.diffAt[1]}
 	case !c.w.IsRange():

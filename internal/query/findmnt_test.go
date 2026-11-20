@@ -179,7 +179,10 @@ func TestLastReboot(t *testing.T) {
 }
 
 // TestLastRebootCrash: a boot whose last clifrd run ended without a clean
-// stop ends in "crash", as last prints it when wtmp has no shutdown.
+// stop ends in "crash" with its length up to the last sample on disk.
+// util-linux runs such a boot on to the next shutdown record instead (it
+// prints "crash" only for the logins open then); clifr knows the crash and
+// says it (the user's choice, 2026-11-20).
 func TestLastRebootCrash(t *testing.T) {
 	dir := t.TempDir()
 	boot1 := time.Date(2026, 10, 19, 9, 0, 0, 0, time.Local).UnixMilli()

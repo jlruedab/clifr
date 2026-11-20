@@ -20,3 +20,9 @@ w-4.0.4-ubuntu.txt: Ubuntu 26.04's w (procps-ng 4.0.4-9ubuntu1, logind) on the d
 machinectl login (pts/2) and the GNOME session (tty2), then the process, terminal and logind
 session state it read (w4cap: the same dump as wrun.sh plus /run/systemd/sessions as clifrd's
 "logind" lines), trimmed to the sessions' processes and leaders, the user renamed testusr.
+
+last-2.32.1.txt, last-2.37.4.txt, last-2.37.2.txt: util-linux last in rockylinux:8, rockylinux:9 and
+ubuntu:22.04 containers, from lastrun.sh: a wtmp written by wtmpgen.go.txt (three boots: the first
+crashed, the second shut down, the third running; logins ended by a logout, a crash, a shutdown,
+a reused terminal, one alive (pid 1, user ghost whose uid is the containers' loginuid) and one
+gone), last's output for 14 option sets (-t and -s at NOW-2 and NOW-3 days), then the wtmp bytes.
