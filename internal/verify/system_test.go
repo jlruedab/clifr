@@ -4,10 +4,10 @@ import "testing"
 
 func TestParseSystemOutput(t *testing.T) {
 	up := parseUptime(" 18:11:47 up 2 days,  9:21,  1 user,  load average: 0.58, 0.56, 1.49\n")
-	if r := up[""]; r["up_min"] != "3441" || r["load1"] != "0.58" || r["load15"] != "1.49" {
+	if r := up[""]; r["up_min"] != "3441" || r["load1"] != "0.58" || r["load15"] != "1.49" || r["users"] != "1" {
 		t.Errorf("uptime = %v", up)
 	}
-	if r := parseUptime(" 18:11:47 up 5 min,  load average: 0.00, 0.01, 0.05\n")[""]; r["up_min"] != "5" || r["load5"] != "0.01" {
+	if r := parseUptime(" 18:11:47 up 5 min,  load average: 0.00, 0.01, 0.05\n")[""]; r["up_min"] != "5" || r["load5"] != "0.01" || r["users"] != "" {
 		t.Errorf("uptime without users = %v", r)
 	}
 	vm := parseColumns("procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------\n"+

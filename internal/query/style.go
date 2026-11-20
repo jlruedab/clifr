@@ -75,6 +75,11 @@ type ToolStyle struct {
 	// print the machine for both. Set by StyleAt from the distribution, not
 	// a style of its own (all else is the current tools').
 	UnameUnknown bool
+	// Procps3: procps-ng 3.3's w and uptime, which read utmp (procps 4 reads
+	// logind's sessions first). WNoFrom: w without the FROM column unless -f
+	// (RHEL 9's procps-ng 3.3.17 is built without W_SHOWFROM; RHEL 8's and
+	// Ubuntu's with it). Both checked in containers, 2026-11-20.
+	Procps3, WNoFrom bool
 }
 
 // Styles by distribution and major version (Ubuntu: its release). "current"
@@ -88,11 +93,12 @@ var Styles = map[string]ToolStyle{
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
 	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
-		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true},
+		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true, Procps3: true},
+	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
+		Procps3: true, WNoFrom: true},
 	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
-		NumastatOld: true, ConntrackOld: true},
+		NumastatOld: true, ConntrackOld: true, Procps3: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

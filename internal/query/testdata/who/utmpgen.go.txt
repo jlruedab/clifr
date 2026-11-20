@@ -1,0 +1,47 @@
+// utmpgen A B NOW: writes the w test's utmp records to stdout.
+package main
+
+import (
+	"encoding/binary"
+	"net/netip"
+	"os"
+	"strconv"
+)
+
+func rec(typ, pid int, line, id, user, host string, sec int64, addr string) []byte {
+	b := make([]byte, 384)
+	le := binary.LittleEndian
+	le.PutUint16(b[0:], uint16(typ))
+	le.PutUint32(b[4:], uint32(pid))
+	copy(b[8:40], line)
+	copy(b[40:44], id)
+	copy(b[44:76], user)
+	copy(b[76:332], host)
+	le.PutUint32(b[336:], uint32(pid))
+	le.PutUint32(b[340:], uint32(sec))
+	if addr != "" {
+		a := netip.MustParseAddr(addr)
+		if a.Is4() {
+			v := a.As4()
+			copy(b[348:], v[:])
+		} else {
+			v := a.As16()
+			copy(b[348:], v[:])
+		}
+	}
+	return b
+}
+
+func main() {
+	A, _ := strconv.Atoi(os.Args[1])
+	B, _ := strconv.Atoi(os.Args[2])
+	now, _ := strconv.ParseInt(os.Args[3], 10, 64)
+	var out []byte
+	out = append(out, rec(2, 0, "~", "~~", "reboot", "", now-86400*12, "")...)
+	out = append(out, rec(7, A, "pts/0", "ts/0", "root", "10.0.0.7", now-300, "10.0.0.7")...)
+	out = append(out, rec(7, B, "pts/1", "ts/1", "root", "ws.example.com:0", now-3*86400, "192.168.1.20")...)
+	out = append(out, rec(7, A, "pts/0", "ts/0", "bin", "fe80::1%eth0", now-10*86400, "fe80::1")...)
+	out = append(out, rec(7, 99999, "pts/5", "ts/5", "root", "gone", now-60, "")...)
+	out = append(out, rec(7, B, ":0", ":0", "root", ":0", now-7200, "")...)
+	os.Stdout.Write(out)
+}

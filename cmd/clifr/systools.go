@@ -80,7 +80,9 @@ func addSystemTools() {
 	})
 	addTool(&tool{
 		name: "uptime", about: "time since boot and load averages", window: true,
-		notes: []string{"The number of logged-in users is not recorded and not shown."},
+		notes: []string{"The number of logged-in users at the end of each interval, as procps counts them: utmp's",
+			"user records (procps 3.3: RHEL 8/9, Ubuntu 22.04), logind's user sessions (procps 4); left out",
+			"before 2026-11-20 (not recorded)."},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			if len(p.pos) > 0 {
 				return nil, fmt.Errorf("uptime: unexpected argument %q", p.pos[0])
@@ -89,6 +91,13 @@ func addSystemTools() {
 				rows, err := query.Uptime(c.db, spans)
 				if err != nil {
 					return err
+				}
+				for i := range rows {
+					rows[i].Users = query.UsersAt(c.db, spans[i].To, query.Procps3(c.db, spans[i].To))
+				}
+				if !c.w.IsRange() { // uptime run at T: T's clock, the uptime at T
+					rows[0].At(c.w.At)
+					rows[0].Users = query.UsersAt(c.db, c.w.At, query.Procps3(c.db, c.w.At))
 				}
 				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
 					func(w io.Writer) { query.PrintUptime(w, rows) })
@@ -114,6 +123,8 @@ func addSystemTools() {
 	addTool(nfsstatTool())
 	addTool(mountstatsTool())
 	addTool(lastTool())
+	addTool(whoTool())
+	addTool(wTool())
 	addTool(nstatTool())
 	addTool(ipTool())
 }
@@ -157,7 +168,7 @@ func prepareSys(name string, p parsed, c *runCtx, print func([]query.Span) error
 		switch {
 		case !c.w.IsRange():
 			if name == "uptime" {
-				c.header("uptime at the sample of %s (logged-in users are not recorded)", query.FormatMS(spans[0].To))
+				c.header("uptime at %s: load averages from the sample of %s", query.FormatMS(c.w.At), query.FormatMS(spans[0].To))
 			} else {
 				c.header("%s: averages since boot at the sample of %s", name, query.FormatMS(spans[0].To))
 			}

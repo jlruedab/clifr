@@ -1,0 +1,44 @@
+NOW 1795159860
+who (uutils coreutils) 0.10.0
+=== C.UTF-8|
+1000     seat0        2026-11-19 16:27
+1000     tty2         2026-11-19 16:27
+=== C.UTF-8|-H
+NAME     LINE         TIME       COMMENT
+1000     seat0        2026-11-19 16:27
+1000     tty2         2026-11-19 16:27
+=== C.UTF-8|-u
+1000     seat0        2026-11-19 16:27   ?             0
+1000     tty2         2026-11-19 16:27 old             0
+=== C.UTF-8|-a
+           system boot  2026-11-19 16:27
+1000     ? seat0        2026-11-19 16:27   ?             0
+1000     - tty2         2026-11-19 16:27 old             0
+=== C.UTF-8|-b
+         system boot  2026-11-19 16:27
+=== C.UTF-8|-r
+=== C.UTF-8|-q
+1000 1000
+# users=2
+=== C.UTF-8|-T
+1000     ? seat0        2026-11-19 16:27
+1000     - tty2         2026-11-19 16:27
+=== C.UTF-8|-l
+=== C.UTF-8|-d
+=== C.UTF-8|-p
+=== C.UTF-8|-t
+=== C.UTF-8|-s
+1000     seat0        2026-11-19 16:27
+1000     tty2         2026-11-19 16:27
+=== C.UTF-8|-H -u
+NAME     LINE         TIME       IDLE          PID COMMENT
+1000     seat0        2026-11-19 16:27   ?             0
+1000     tty2         2026-11-19 16:27 old             0
+=== C.UTF-8|-aH
+NAME       LINE         TIME       IDLE          PID COMMENT  EXIT
+           system boot  2026-11-19 16:27
+1000     ? seat0        2026-11-19 16:27   ?             0
+1000     - tty2         2026-11-19 16:27 old             0
+=== C|
+1000     seat0        Nov 19 16:27
+1000     tty2         Nov 19 16:27

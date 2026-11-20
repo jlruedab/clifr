@@ -132,6 +132,8 @@ func TopAt(db *store.DB, t int64) (TopReport, error) {
 		return rep, err
 	}
 	rep.Uptime = up[0]
+	rep.Uptime.At(t)
+	rep.Uptime.Users = UsersAt(db, t, Procps3(db, t))
 	rep.Mem = TopMem{Total: sys.MemTotal, Free: sys.MemFree, BuffCache: sys.Buffers + sys.Cached + sys.SReclaimable,
 		SwapTotal: sys.SwapTotal, SwapFree: sys.SwapFree, SwapUsed: sys.SwapTotal - sys.SwapFree, Available: sys.MemAvailable}
 	rep.Mem.Used = rep.Mem.Total - rep.Mem.Available
@@ -301,7 +303,7 @@ func PrintTop(w io.Writer, r TopReport, f TopFormat) {
 	} else {
 		up += fmt.Sprintf("%d min, ", min)
 	}
-	fmt.Fprintf(w, "top - %s up %s load average: %.2f, %.2f, %.2f\n", clock(r.Uptime.TS), up,
+	fmt.Fprintf(w, "top - %s up %s%s load average: %.2f, %.2f, %.2f\n", clock(r.Uptime.clockOf()), up, usersText(r.Uptime.Users),
 		r.Uptime.Load1, r.Uptime.Load5, r.Uptime.Load15)
 	t := r.Tasks
 	fmt.Fprintf(w, "Tasks: %3d total, %3d running, %3d sleeping, %3d stopped, %3d zombie\n",

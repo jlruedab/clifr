@@ -25,3 +25,19 @@ func TestDiffHelp(t *testing.T) {
 		t.Errorf("help diff: %v", err)
 	}
 }
+
+// TestMainHelpCommands: clifr --help's "Supported commands" names every
+// command (who and w were missing from it once).
+func TestMainHelpCommands(t *testing.T) {
+	_, list, _ := strings.Cut(mainHelp, "Supported commands:")
+	list, _, _ = strings.Cut(list, "Run \"clifr help COMMAND\"")
+	listed := map[string]bool{}
+	for _, f := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '(' }) {
+		listed[f] = true
+	}
+	for name := range tools {
+		if !listed[name] {
+			t.Errorf("clifr --help does not list %q", name)
+		}
+	}
+}

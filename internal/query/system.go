@@ -172,6 +172,31 @@ type UptimeRow struct {
 	Load1   float64 `json:"load1"`
 	Load5   float64 `json:"load5"`
 	Load15  float64 `json:"load15"`
+	// Users: the logged-in users as uptime counts them (nil: logins not
+	// recorded, before 2026-11-20).
+	Users *int `json:"users,omitempty"`
+	// ClockMS: the moment printed (--at T: T, the uptime extended from the
+	// sample to it, as uptime run at T prints its own clock); 0: the sample.
+	ClockMS  int64 `json:"clock_ms,omitempty"`
+	uptimeMS int64
+}
+
+// At makes the row print moment t: t's clock and the uptime at t (the
+// load averages stay the sample's).
+func (r *UptimeRow) At(t int64) {
+	if t <= r.TS || r.uptimeMS == 0 {
+		return
+	}
+	r.ClockMS = t
+	r.UptimeS = (r.uptimeMS + t - r.TS) / 1000
+}
+
+// clockOf is the time the row prints.
+func (r UptimeRow) clockOf() int64 {
+	if r.ClockMS > 0 {
+		return r.ClockMS
+	}
+	return r.TS
 }
 
 // Uptime returns one row per span end.
@@ -182,7 +207,7 @@ func Uptime(db *store.DB, spans []Span) ([]UptimeRow, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, UptimeRow{TS: s.TS, Time: FormatMS(s.TS), UptimeS: s.UptimeMS / 1000,
+		out = append(out, UptimeRow{TS: s.TS, Time: FormatMS(s.TS), UptimeS: s.UptimeMS / 1000, uptimeMS: s.UptimeMS,
 			Load1: float64(s.Load1) / 100, Load5: float64(s.Load5) / 100, Load15: float64(s.Load15) / 100})
 	}
 	return out, nil
@@ -206,8 +231,19 @@ func PrintUptime(w io.Writer, rows []UptimeRow) {
 		} else {
 			up += fmt.Sprintf("%d min, ", min)
 		}
-		fmt.Fprintf(w, " %s up %s load average: %.2f, %.2f, %.2f\n", clock(r.TS), up, r.Load1, r.Load5, r.Load15)
+		fmt.Fprintf(w, " %s up %s%s load average: %.2f, %.2f, %.2f\n", clock(r.clockOf()), up, usersText(r.Users), r.Load1, r.Load5, r.Load15)
 	}
+}
+
+// usersText is uptime's "%2d user(s), " ("" when not recorded).
+func usersText(n *int) string {
+	if n == nil {
+		return ""
+	}
+	if *n == 1 {
+		return " 1 user, "
+	}
+	return fmt.Sprintf("%2d users, ", *n)
 }
 
 // ---- vmstat ----

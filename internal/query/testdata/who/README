@@ -1,0 +1,22 @@
+Reference output of the real who for clifr's tests (2026-11-20).
+
+gnu-8.32.txt: GNU coreutils who 8.32 in an ubuntu:22.04 container (rockylinux:9's 8.32 and
+rockylinux:8's 8.30 printed the same), from run.sh: gen.py's utmp as /var/run/utmp and
+terminals /dev/tty7 (accessed 30 s before NOW, mode 620), tty8 (7500 s, 600) and ttyS9
+(3 days, 620), TZ=UTC. utmp-lines.txt: the same records as clifrd's "utmp" source lines.
+
+uutils-0.10.0.txt: Ubuntu 26.04's who (uutils 0.10.0, logind) on the desktop at NOW, TZ
+Australia/Adelaide (ACDT, +10:30); its AppArmor profile denies it /etc/passwd, so uids. The
+sessions, terminal and boot time are in uutils-logind.txt.
+
+w-3.3.15.txt, w-3.3.17-rocky9.txt, w-3.3.17-ubuntu.txt: procps-ng w in rockylinux:8, rockylinux:9
+and ubuntu:22.04 containers, from wrun.sh: two real pty sessions (script), a utmp written by
+utmpgen.go.txt (utmpgen.go: built static, mounted at /ref/gen/utmpgen) naming them, a second user
+on one, a stale pid and an X display; then each process's stat fields (pid ppid tty_nr pgrp tpgid
+euid ruid starttime utime+stime state comm|cmdline), the terminals (stat: atime, mode, hex
+major/minor) and the utmp bytes, TZ=UTC. The tests compare the lines after the uptime line.
+
+w-4.0.4-ubuntu.txt: Ubuntu 26.04's w (procps-ng 4.0.4-9ubuntu1, logind) on the desktop with a
+machinectl login (pts/2) and the GNOME session (tty2), then the process, terminal and logind
+session state it read (w4cap: the same dump as wrun.sh plus /run/systemd/sessions as clifrd's
+"logind" lines), trimmed to the sessions' processes and leaders, the user renamed testusr.

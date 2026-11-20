@@ -19,7 +19,7 @@ import (
 var systemCommands = []string{"uptime", "vmstat", "mpstat -P ALL", "iostat -dx"}
 
 func init() {
-	ignoredFields["uptime"] = "the number of users (not recorded); loads may differ by 0.05, the uptime by one minute"
+	ignoredFields["uptime"] = "the number of users before 2026-11-20 (not recorded); loads may differ by 0.05, the uptime by one minute"
 	ignoredFields["vmstat"] = "r and b (the moment the tool ran); cs (procps-ng 4.0.4 prints context switches per clock tick " +
 		"summed over the CPUs on its since-boot line; clifr prints them per second); numbers match within 1% or 0.02 (free, buff, cache: 2%)"
 	ignoredFields["mpstat -P ALL"] = "none; numbers match within 1% or 0.02"
@@ -80,6 +80,8 @@ func near(real, clifr string, rel, abs float64) bool {
 
 var uptimeRe = regexp.MustCompile(`up\s+(?:(\d+) days?,\s+)?(?:(\d+):(\d+)|(\d+) min),.*load average: ([\d.]+), ([\d.]+), ([\d.]+)`)
 
+var uptimeUsersRe = regexp.MustCompile(`,\s+(\d+) users?,`)
+
 // parseUptime turns an uptime line into one row: minutes up and the loads.
 func parseUptime(out string) sysTable {
 	m := uptimeRe.FindStringSubmatch(out)
@@ -88,7 +90,11 @@ func parseUptime(out string) sysTable {
 	}
 	n := func(s string) int { v, _ := strconv.Atoi(s); return v }
 	min := n(m[1])*1440 + n(m[2])*60 + n(m[3]) + n(m[4])
-	return sysTable{"": {"up_min": strconv.Itoa(min), "load1": m[5], "load5": m[6], "load15": m[7]}}
+	row := map[string]string{"up_min": strconv.Itoa(min), "load1": m[5], "load5": m[6], "load15": m[7]}
+	if u := uptimeUsersRe.FindStringSubmatch(out); u != nil {
+		row["users"] = u[1]
+	}
+	return sysTable{"": row}
 }
 
 func render(print func(*strings.Builder)) string {
@@ -113,8 +119,12 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 		if err != nil {
 			return res, err
 		}
+		rows[0].Users = query.UsersAt(db, snap.sampleTS, query.Procps3(db, snap.sampleTS))
 		real, recon = parseUptime(snap.output), parseUptime(render(func(sb *strings.Builder) { query.PrintUptime(sb, rows) }))
 		abs["up_min"], abs["load1"], abs["load5"], abs["load15"] = 1, 0.05, 0.05, 0.05
+		if recon[""]["users"] == "" { // logins not recorded
+			skip["users"] = true
+		}
 	case "vmstat":
 		rows, err := query.VMStat(db, spans)
 		if err != nil {

@@ -30,9 +30,9 @@ func topTool() *tool {
 		notes: []string{
 			"--at: the summary from the system sample at or before T; the processes alive at T with their",
 			"values from the process sample at or before it, %CPU over the interval since the sample before",
-			"(top's own first screen covers a fraction of a second). Not recorded: the number of users (left",
-			"out of the first line). Recordings before 2026-10-22 have no SHR (shown as -) and no priority",
-			"(PR is 20 + NI, never rt).",
+			"(top's own first screen covers a fraction of a second). The number of users at T as uptime counts",
+			"them (left out before 2026-11-20: not recorded). Recordings before 2026-10-22 have no SHR (shown",
+			"as -) and no priority (PR is 20 + NI, never rt).",
 			"Processes only seen through exec/exit events show - for every value and count as sleeping.",
 			"--since: one report per sample with --samples (-n and -d as for top).",
 		},

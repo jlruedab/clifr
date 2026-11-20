@@ -1,0 +1,170 @@
+NOW 1795160151
+who (GNU coreutils) 8.32
+=== C|
+alice    tty7         Nov 20 03:01
+bob      tty8         Nov 20 04:00 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00 (ws1.example:0)
+dave     pts/7        Nov 20 05:01 (fe80::1)
+=== C|-H
+NAME     LINE         TIME         COMMENT
+alice    tty7         Nov 20 03:01
+bob      tty8         Nov 20 04:00 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00 (ws1.example:0)
+dave     pts/7        Nov 20 05:01 (fe80::1)
+=== C|-u
+alice    tty7         Nov 20 03:01   .             1
+bob      tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     pts/7        Nov 20 05:01   ?             1 (fe80::1)
+=== C|-a
+           system boot  Nov 20 03:00
+           run-level 3  Nov 20 03:00                   last=S
+           tty9         Nov 20 03:00               812 id=9
+LOGIN      tty1         Nov 20 03:00               845 id=tty1
+alice    + tty7         Nov 20 03:01   .             1
+bob      - tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        Nov 20 05:01   ?             1 (fe80::1)
+           pts/3        Nov 20 05:05              4242 id=ts/3  term=0 exit=0
+           clock change Nov 20 05:06
+=== C|-aH
+NAME       LINE         TIME         IDLE          PID COMMENT  EXIT
+           system boot  Nov 20 03:00
+           run-level 3  Nov 20 03:00                   last=S
+           tty9         Nov 20 03:00               812 id=9
+LOGIN      tty1         Nov 20 03:00               845 id=tty1
+alice    + tty7         Nov 20 03:01   .             1
+bob      - tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        Nov 20 05:01   ?             1 (fe80::1)
+           pts/3        Nov 20 05:05              4242 id=ts/3  term=0 exit=0
+           clock change Nov 20 05:06
+=== C|-b
+         system boot  Nov 20 03:00
+=== C|-r
+         run-level 3  Nov 20 03:00                   last=S
+=== C|-q
+alice bob carol_long_name dave
+# users=4
+=== C|-T
+alice    + tty7         Nov 20 03:01
+bob      - tty8         Nov 20 04:00 (10.1.2.3)
+carol_long_name + ttyS9        Nov 20 05:00 (ws1.example:0)
+dave     ? pts/7        Nov 20 05:01 (fe80::1)
+=== C|-d
+         pts/3        Nov 20 05:05              4242 id=ts/3  term=0 exit=0
+=== C|-l
+LOGIN    tty1         Nov 20 03:00               845 id=tty1
+=== C|-p
+         tty9         Nov 20 03:00        812 id=9
+=== C|-t
+         clock change Nov 20 05:06
+=== C|-s -u
+alice    tty7         Nov 20 03:01
+bob      tty8         Nov 20 04:00 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00 (ws1.example:0)
+dave     pts/7        Nov 20 05:01 (fe80::1)
+=== C|-uT
+alice    + tty7         Nov 20 03:01   .             1
+bob      - tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        Nov 20 05:01   ?             1 (fe80::1)
+=== C|-H -u
+NAME     LINE         TIME         IDLE          PID COMMENT
+alice    tty7         Nov 20 03:01   .             1
+bob      tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     pts/7        Nov 20 05:01   ?             1 (fe80::1)
+=== C|-bH
+NAME     LINE         TIME                PID COMMENT
+         system boot  Nov 20 03:00
+=== C|-bu
+         system boot  Nov 20 03:00
+alice    tty7         Nov 20 03:01   .             1
+bob      tty8         Nov 20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        Nov 20 05:00  old            1 (ws1.example:0)
+dave     pts/7        Nov 20 05:01   ?             1 (fe80::1)
+=== C.UTF-8|
+alice    tty7         2026-11-20 03:01
+bob      tty8         2026-11-20 04:00 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01 (fe80::1)
+=== C.UTF-8|-H
+NAME     LINE         TIME             COMMENT
+alice    tty7         2026-11-20 03:01
+bob      tty8         2026-11-20 04:00 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01 (fe80::1)
+=== C.UTF-8|-u
+alice    tty7         2026-11-20 03:01   .             1
+bob      tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01   ?             1 (fe80::1)
+=== C.UTF-8|-a
+           system boot  2026-11-20 03:00
+           run-level 3  2026-11-20 03:00                   last=S
+           tty9         2026-11-20 03:00               812 id=9
+LOGIN      tty1         2026-11-20 03:00               845 id=tty1
+alice    + tty7         2026-11-20 03:01   .             1
+bob      - tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        2026-11-20 05:01   ?             1 (fe80::1)
+           pts/3        2026-11-20 05:05              4242 id=ts/3  term=0 exit=0
+           clock change 2026-11-20 05:06
+=== C.UTF-8|-aH
+NAME       LINE         TIME             IDLE          PID COMMENT  EXIT
+           system boot  2026-11-20 03:00
+           run-level 3  2026-11-20 03:00                   last=S
+           tty9         2026-11-20 03:00               812 id=9
+LOGIN      tty1         2026-11-20 03:00               845 id=tty1
+alice    + tty7         2026-11-20 03:01   .             1
+bob      - tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        2026-11-20 05:01   ?             1 (fe80::1)
+           pts/3        2026-11-20 05:05              4242 id=ts/3  term=0 exit=0
+           clock change 2026-11-20 05:06
+=== C.UTF-8|-b
+         system boot  2026-11-20 03:00
+=== C.UTF-8|-r
+         run-level 3  2026-11-20 03:00                   last=S
+=== C.UTF-8|-q
+alice bob carol_long_name dave
+# users=4
+=== C.UTF-8|-T
+alice    + tty7         2026-11-20 03:01
+bob      - tty8         2026-11-20 04:00 (10.1.2.3)
+carol_long_name + ttyS9        2026-11-20 05:00 (ws1.example:0)
+dave     ? pts/7        2026-11-20 05:01 (fe80::1)
+=== C.UTF-8|-d
+         pts/3        2026-11-20 05:05              4242 id=ts/3  term=0 exit=0
+=== C.UTF-8|-l
+LOGIN    tty1         2026-11-20 03:00               845 id=tty1
+=== C.UTF-8|-p
+         tty9         2026-11-20 03:00        812 id=9
+=== C.UTF-8|-t
+         clock change 2026-11-20 05:06
+=== C.UTF-8|-s -u
+alice    tty7         2026-11-20 03:01
+bob      tty8         2026-11-20 04:00 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01 (fe80::1)
+=== C.UTF-8|-uT
+alice    + tty7         2026-11-20 03:01   .             1
+bob      - tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name + ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     ? pts/7        2026-11-20 05:01   ?             1 (fe80::1)
+=== C.UTF-8|-H -u
+NAME     LINE         TIME             IDLE          PID COMMENT
+alice    tty7         2026-11-20 03:01   .             1
+bob      tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01   ?             1 (fe80::1)
+=== C.UTF-8|-bH
+NAME     LINE         TIME                    PID COMMENT
+         system boot  2026-11-20 03:00
+=== C.UTF-8|-bu
+         system boot  2026-11-20 03:00
+alice    tty7         2026-11-20 03:01   .             1
+bob      tty8         2026-11-20 04:00 02:05           1 (10.1.2.3)
+carol_long_name ttyS9        2026-11-20 05:00  old            1 (ws1.example:0)
+dave     pts/7        2026-11-20 05:01   ?             1 (fe80::1)

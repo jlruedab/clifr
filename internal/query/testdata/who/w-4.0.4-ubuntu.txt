@@ -1,0 +1,70 @@
+NOW 1795164696
+w from procps-ng 4.0.4
+=== 
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== -h
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== -s
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM               IDLE WHAT
+testusr  pts/2    -                 5.00s sleep 30
+testusr  tty2     -                26:54m /usr/libexec/gnome-session-init-worker ubuntu
+=== -f
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY       LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2     19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2      Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== -o
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21                   ?    sleep 30
+testusr  tty2     -                Thu16   26:54                /usr/libexec/gnome-session-init-worker ubuntu
+=== -i
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== -u
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== -p
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    1970631/1971059 sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s 8053/8504 /usr/libexec/gnome-session-init-worker ubuntu
+=== -s -u
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM               IDLE WHAT
+testusr  pts/2    -                 5.00s sleep 30
+testusr  tty2     -                26:54m /usr/libexec/gnome-session-init-worker ubuntu
+=== testusr
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+testusr  pts/2    -                19:21    5.00s  0.01s   ?    sleep 30
+testusr  tty2     -                Thu16   26:54m  0.02s  0.02s /usr/libexec/gnome-session-init-worker ubuntu
+=== nobody
+ 19:21:36 up 1 day,  2:54,  2 users,  load average: 0.82, 0.70, 0.52
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
+=== PROCS
+1970631	1	34818	1970631	1970631	1000	1000	9684983	1	S	bash|/bin/bash -c sleep 1; yes > /dev/null & sleep 3; kill %1; sleep 30; :
+1970699	1970631	34818	1970631	1970631	1000	1000	9685054	0	S	(sd-pam)|(sd-pam)
+1971059	1970631	34818	1970631	1970631	1000	1000	9685455	0	S	sleep|sleep 30
+4966	1	0	4966	-1	1000	1000	1322	705	S	systemd|/usr/lib/systemd/systemd --user
+8053	5002	0	5002	-1	0	0	1874	7	S	gdm-session-wor|gdm-session-worker [pam/gdm-password]
+8484	8053	1026	8484	8484	1000	1000	2294	0	S	gdm-wayland-ses|/usr/libexec/gdm-wayland-session /usr/bin/gnome-session --session=ubuntu
+8504	8484	1026	8484	8484	1000	1000	2295	2	S	gnome-session-i|/usr/libexec/gnome-session-init-worker ubuntu
+=== TTYS
+pts/0	1795164691	600	88	0
+pts/1	1795164560	600	88	1
+pts/2	1795164691	600	88	2
+tty2	1795067846	600	4	2
+=== LOGIND
+ID=57	UID=1000	USER=testusr	ACTIVE=1	IS_DISPLAY=0	STATE=active	REMOTE=0	TYPE=tty	CLASS=user	SCOPE=session-57.scope	TTY=pts/2	SERVICE=login	LEADER=1970631	REALTIME=1795164692239357	MONOTONIC=96850531188
+ID=3	UID=1000	USER=testusr	ACTIVE=1	IS_DISPLAY=1	STATE=active	REMOTE=0	TYPE=wayland	CLASS=user	SCOPE=session-3.scope	SEAT=seat0	TTY=tty2	SERVICE=gdm-password	VTNR=2	LEADER=8053	REALTIME=1795067864328231	MONOTONIC=22620063
+ID=1	UID=1000	USER=testusr	ACTIVE=1	IS_DISPLAY=0	STATE=active	REMOTE=0	TYPE=unspecified	CLASS=manager	SERVICE=systemd-user	LEADER=4966	REALTIME=1795067854948200	MONOTONIC=13240031
