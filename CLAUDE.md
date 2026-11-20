@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -281,7 +281,8 @@ wait for the user's go-ahead.
   from /sys/block). Values are the kernel's raw cumulative counters, so a report is a difference:
   `--at` = since boot (`uptime_ms`; what the real tool prints without an interval, and what
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
-  are stored; resolution = `--sys-interval`. `uptime` has no user count.
+  are stored; resolution = `--sys-interval`. `uptime` (and `w`'s, `top`'s first line) at `--at T`: T's
+  clock, the uptime extended to T (`UptimeRow.At`), the users at T (`query.UsersAt`), the sample's loads.
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
@@ -387,6 +388,23 @@ wait for the user's go-ahead.
   `conntrack -S` (`ConntrackOld`: conntrack-tools before 1.4.7 stop at search_restart), `nfsstat`
   (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a port of mountstats.py;
   `Mountstats233`: RHEL 8's 2.3.3).
+- Logins (2026-11-20, `recorder/sessions.go`, `query/who.go`, `w.go`, `last.go`): `snapshots` sources
+  "utmp" (every /run/utmp record as text, keyed "#slot"), "logind" (/run/systemd/sessions/ID, "ID=..."
+  then `logindKeys` only: no DEVICES, CONTROLLER, fds) and "ttyatime" (each session terminal: atime,
+  mode, tty_nr as /proc/PID/stat has it). Read at every system sample and 200 ms after an inotify
+  event (`sessWatch`; reads under one mutex so their times stay in order). `who`: utmp when recorded
+  (GNU coreutils 8.30/8.32), else logind as uutils 0.10.0 builds records (seat and tty lines, PID 0,
+  uids: Ubuntu 26.04's AppArmor profile denies its who /etc/passwd, `StyleAt(..).UnameUnknown`).
+  `w`/`uptime` by style: `Procps3` (rhel-8/9, ubuntu-22.04: utmp, pid order) or Debian/Ubuntu's
+  patched procps 4.0.4 (logind's class user* sessions, start-time order, the tty via the leader's
+  children); `WNoFrom`: RHEL 9's w has no FROM unless -f. `last`: util-linux 2.32/2.37 ported
+  (`LastAt` = process_wtmp_file + list) over records derived from the utmp/logind history
+  (`LoginRecords`: login on a new user record, logout at its DEAD record or when seen gone, none
+  across a reboot; `BootRecords`: boot + a shutdown at each clean boot's last sample). One deviation,
+  the user's (2026-11-20): a boot clifr knows crashed (`Boot.Crashed`) ends "- crash" at its last
+  sample; util-linux runs it on to the next shutdown. Tools with `history: true` (last) open the
+  whole recording (tables load lazily). Golden tests from the real tools: `query/testdata/who/`
+  (containers, crafted utmp/wtmp, real ptys; captures from this desktop trimmed and the user renamed).
 - `snapshots` source "passwd" (2026-11-08, a minute; `recorder/users.go`): the host's "uid name" pairs
   from /etc/passwd (nothing else of it), so a recording read on another machine (`--host`, a
   bundle) names users as the host did: `query.LoadUsers` at the queried moment, then
@@ -472,6 +490,6 @@ v2:
    every other 30 s sample that much longer (71 against 57.5 ms p50 without an fd walk).
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
-   mpstat|iostat`; `clifr verify` compares them. No user count for `uptime`. About 0.2 ms of
+   mpstat|iostat`; `clifr verify` compares them (`uptime`'s user count since 2026-11-20). About 0.2 ms of
    reads per sample (in the 1133 numbers, not in the 1050 ones).
 9. [x] README (v2: build, recording, querying, tests, benchmark, results of M6–M8, limitations)

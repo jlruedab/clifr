@@ -130,6 +130,8 @@ clifr --at "2026-11-05 13:20" "top -b -n 1"            # top's batch screen
 clifr --at "2026-11-05 13:20" "top -b -n 1 -o %MEM"    # sorted by memory
 clifr --at "2026-11-05 13:20" "free -h"
 clifr --at "2026-11-05 13:20" uptime
+clifr --at "2026-11-05 13:20" w                        # who was logged in and what they ran
+clifr --since "2026-11-05 08:00" --until "2026-11-05 13:20" last   # logins and logouts that morning
 clifr --at "2026-11-05 13:20" "df -h"
 clifr --at "2026-11-05 13:20" "ss -tanp"               # TCP connections with owners
 clifr --at "2026-11-05 13:20" "ss -ltnp"               # listening TCP ports
@@ -150,7 +152,7 @@ clifr: ip: option -b is not supported for recorded data (see: clifr help ip)
 
 `clifr help` lists every supported command, and `clifr help COMMAND` its options, notes on how exact each part is, and examples. The man page `man clifr` has the same text.
 
-Supported commands: `ps`, `top`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
+Supported commands: `ps`, `top`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
 
 ### Counters at a moment
 
@@ -341,6 +343,7 @@ clifr --json --plain --tz UTC --since "2026-11-04 00:00" "events --type gap"
 | What started or exited, however briefly? | `--since A --until B "events --type start,exit --name REGEX"`, `"life --name REGEX"` |
 | Who talked to whom over TCP? | `--since A --until B "ss -tanp"` (one row per process), `--list "ss -tnp"` (every connection) |
 | What was listening? | `--at T "ss -ltnp"` |
+| Who was logged in, from where? | `--at T "w"`, `--at T "who -a"`, `--since A --until B "last"` (logins with their logout) |
 | CPU, memory, disk and load over time | `--since A --until B "vmstat 60"`, `"mpstat -P ALL 60"`, `"iostat -x 60"`, `"pidstat -u 300"` |
 | What changed between a good and a bad moment? | `diff --at A --at B "ps aux"` (also ss, netstat, lsof, df, mount, findmnt; `change` is `+`, `-` or `~`) |
 | OOM kills, kernel messages | `--since A "oom"`, `--at T "dmesg"` |
@@ -736,7 +739,7 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
 
 **What to look for.** Shells or interpreters whose parent is a network service; processes running from `/tmp`, `/dev/shm` or a deleted executable; connections to unknown addresses on unusual ports, especially long-lived ones (command and control) or from processes that normally never connect out; a new listener; a new kernel module; a service unit you do not know.
 
-**What clifr cannot tell.** Who logged in and how (see [use case 7](#use-case-7-track-down-a-past-ssh-session)), which files were read or written (only files *held open* across two 2-minute walks are recorded), UDP traffic between the 5-minute socket dumps (DNS tunnelling, for example), and the content of any traffic. An attacker with root can stop clifrd or delete its data; with [sealing](#sealing-showing-that-a-recording-was-not-altered) set up they cannot change what was recorded before they got in without `clifr verify --integrity --seal-key` showing it. A gap in `events --type gap` that nobody explains is itself a finding. For forensics-grade evidence use auditd (see [use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)) and send logs off the host.
+**What clifr cannot tell.** How someone logged in (`last` and `w` show who, when and from where; see [use case 7](#use-case-7-track-down-a-past-ssh-session)), which files were read or written (only files *held open* across two 2-minute walks are recorded), UDP traffic between the 5-minute socket dumps (DNS tunnelling, for example), and the content of any traffic. An attacker with root can stop clifrd or delete its data; with [sealing](#sealing-showing-that-a-recording-was-not-altered) set up they cannot change what was recorded before they got in without `clifr verify --integrity --seal-key` showing it. A gap in `events --type gap` that nobody explains is itself a finding. For forensics-grade evidence use auditd (see [use case 8](#use-case-8-past-process-activity-clifr-compared-with-audit)) and send logs off the host.
 
 ### Use case 3. A process crashed two days ago. Why?
 
@@ -943,19 +946,36 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
 
 **Steps.**
 
-1. The sshd processes of the session. Each connection gets its own sshd process whose title shows the user (`sshd: alice [priv]`, `sshd: alice@pts/2`, or `sshd-session` in OpenSSH 9.8 and later):
+1. The logins: who, from where, on which terminal, when they ended (recorded since 2026-11-20; older recordings list only boots):
+
+   ```sh
+   clifr --since "2026-11-05 18:00" --until "2026-11-05 23:00" last
+   clifr --at "2026-11-05 19:30" w                   # who was on at 19:30, idle how long, running what
+   ```
+
+   ```console
+   $ clifr --since "2026-11-05 18:00" --until "2026-11-05 23:00" last
+   alice    pts/2        203.0.113.7      Thu Nov  5 19:12 - 21:40  (02:28)
+   bob      pts/1        10.0.4.21        Thu Nov  5 18:31 - 18:33  (00:01)
+
+   wtmp begins Mon Nov  2 09:00:12 2026
+   ```
+
+   `- crash` means the machine went down with the session open. The sshd processes below give the rest of the story, and also cover recordings from before logins were recorded.
+
+2. The sshd processes of the session. Each connection gets its own sshd process whose title shows the user (`sshd: alice [priv]`, `sshd: alice@pts/2`, or `sshd-session` in OpenSSH 9.8 and later):
 
    ```sh
    clifr --since "2026-11-05 18:00" --until "2026-11-05 23:00" "life --name 'sshd(-session)?:'"
    ```
 
-2. Where it came from: the TCP connection on port 22, with its open and close time and the peer address:
+3. Where it came from: the TCP connection on port 22, with its open and close time and the peer address:
 
    ```sh
    clifr --since "2026-11-05 18:00" --until "2026-11-05 23:00" --list "ss -tnp sport = :22"
    ```
 
-3. What they ran. At any moment during the session, the session's tree shows the shell and what runs in it; `life` and `events` show every command over the session, linked by `PPID` to the shell, including commands that lasted milliseconds:
+4. What they ran. At any moment during the session, the session's tree shows the shell and what runs in it; `life` and `events` show every command over the session, linked by `PPID` to the shell, including commands that lasted milliseconds:
 
    ```sh
    clifr --at "2026-11-05 19:30" "ps auxf"                     # find the session's sshd and shell pids, and its tty (pts/N)
@@ -966,14 +986,14 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
 
    (The 7th column of `life` is the parent pid. Repeat the `awk` with each child's pid to go further down. Commands are recorded however short they were.)
 
-4. What the session connected to from the host (lateral movement, downloads), and whether it used `sudo`:
+5. What the session connected to from the host (lateral movement, downloads), and whether it used `sudo`:
 
    ```sh
    clifr --since "2026-11-05 19:00" --until "2026-11-05 20:00" --list "ss -tnp" | grep -v ':22 '
    clifr --since "2026-11-05 19:00" --until "2026-11-05 20:00" "life --name '^sudo'"
    ```
 
-**What clifr cannot tell.** The login itself: the authentication method, the key used, failed attempts. clifr does not record logins (`clifr "last"` lists only reboots). Use `journalctl -u ssh -u sshd`, `/var/log/auth.log` (Debian, Ubuntu) or `/var/log/secure` (RHEL); `last` and `lastlog` on the host; in a sosreport `var/log/secure`, `var/log/auth.log`, `sos_commands/logs/`. What was typed inside an interactive program (an editor, a database shell) is not recorded either; only processes are.
+**What clifr cannot tell.** How the login was authenticated: the method, the key used, failed attempts (clifr records the session from utmp, not sshd's log). Use `journalctl -u ssh -u sshd`, `/var/log/auth.log` (Debian, Ubuntu) or `/var/log/secure` (RHEL); `last` and `lastlog` on the host; in a sosreport `var/log/secure`, `var/log/auth.log`, `sos_commands/logs/`. What was typed inside an interactive program (an editor, a database shell) is not recorded either; only processes are.
 
 ### Use case 8. Past process activity: clifr compared with audit
 
@@ -988,7 +1008,7 @@ They answer different questions, and on a server that matters they complement ea
 | Process tree and state at any moment (`ps`, `top`) | Yes | No |
 | TCP connections with owner, states, times | Yes, every connection | `connect`/`accept` syscalls only with rules; no states or close times |
 | File access (opened, read, written, deleted) | Only files held open for minutes, and deleted files still open | Yes, per file or directory watched (`-w /etc/shadow -p wa`) |
-| Who: login user across `sudo` and `su` | uid only | Yes: `auid` (the login user) follows the session through `sudo` |
+| Who: login user across `sudo` and `su` | uid only (logins themselves: `last`, `w`, from utmp) | Yes: `auid` (the login user) follows the session through `sudo` |
 | System counters (CPU, memory, disk, network) | Yes, every 10 s | No |
 | Tamper protection | Optional [sealing](#sealing-showing-that-a-recording-was-not-altered): what was recorded before a compromise cannot be changed unnoticed; root can still stop clifrd or delete it | Immutable rules (`-e 2`), remote logging (audisp-remote) |
 | Compliance (PCI-DSS, STIG, ISO 27001 evidence) | Not designed for it | The standard tool |
@@ -1053,7 +1073,7 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    2026-11-04 20:30:30.386  gap            - no samples for 12h52m18s, until 2026-11-05 09:22:48
    ```
 
-   The previous boot's recording ends at 20:30:30. When clifrd did not stop cleanly in that boot (the machine went down without a shutdown), `last` prints `- crash` instead of the end time, as the real `last` does when wtmp has no shutdown record, and the next start of clifrd recorded an `unclean_stop` guard event that says so and when the last sample on disk was:
+   The previous boot's recording ends at 20:30:30. When clifrd did not stop cleanly in that boot (the machine went down without a shutdown), `last` prints `- crash` instead of the end time (the real `last` has no record of the crash and would run that boot on to the next shutdown; the logins open then say `- crash` in both), and the next start of clifrd recorded an `unclean_stop` guard event that says so and when the last sample on disk was:
 
    ```console
    $ clifr --since "2026-11-05 09:00" "events --type guard"

@@ -15,7 +15,7 @@ It comes in two parts:
   - which processes existed, with their CPU, memory and command line;
   - every process that started or exited, even if it lived for a few milliseconds;
   - every network connection: who opened it, to whom, and when;
-  - open files, disks, mounts, network routes, kernel messages and the system-wide counters.
+  - open files, disks, mounts, network routes, logins, kernel messages and the system-wide counters.
 
   It keeps the data in `/var/lib/clifr`, 72 hours by default. It uses the kernel's eBPF so short-lived events don't slip through, and it is light: about 2% of one CPU core on a busy server in our tests.
 - **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and about 40 in total) **as they would have looked at a past moment**:
@@ -86,7 +86,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 | `free` | used and free memory |
 | `vmstat` | memory, CPU and swapping |
 | `mpstat` | per-CPU usage |
-| `uptime` | time since boot and load average |
+| `uptime` | time since boot, logged-in users and load average |
 | `slabtop` | the kernel's own memory |
 | `numastat` | memory per NUMA node |
 | `ipcs` | shared memory, semaphores and message queues |
@@ -96,7 +96,8 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 | Command | What it shows |
 |---|---|
 | `date`, `hostname`, `uname` | date, host name and kernel version |
-| `last reboot` | the machine's boots |
+| `who`, `w` | who was logged in, from where, and what they were running |
+| `last` | logins, logouts and boots |
 | `dmesg` | kernel messages |
 | `lsmod` | loaded kernel modules |
 | `sysctl` | kernel parameters |
@@ -413,6 +414,10 @@ What is recorded:
   within 1 s is skipped until it does (guard events `statfs_stuck`,
   `statfs_ok`): the others are still measured, and `clifr df` keeps its last
   usage with a header line saying since when it has not answered.
+- **Logins** (since 2026-11-20): every record of `/run/utmp`, or systemd-logind's
+  sessions where there is no utmp (user, terminal, seat, remote host, session leader, start
+  time), within a second of a change, and each session terminal's last access and mode. For
+  `who`, `w`, `last` and the user count of `uptime`, `w` and `top`.
 - **System-wide counters**, every `--sys-interval` (10 s): `/proc/stat` (per CPU),
   `loadavg`, `meminfo`, the paging counters of `/proc/vmstat` and
   `/proc/diskstats`, as the kernel's raw cumulative values.
@@ -715,11 +720,39 @@ chooses one; a line on stderr says when a style other than current is used.
   schema 9; before, when the clifrd run started; `-f` is not recorded).
   `uname [-asnrvmpio]`:
   the kernel the run covering the moment recorded (since schema 3; `-p` and
-  `-i` print the machine, as RHEL's and Debian's coreutils do). `last [-F]
-  reboot`: the boots within the recording, newest "still running"; an
-  earlier boot ends at its last recorded sample, where wtmp has the shutdown
-  time or "crash"; boot times are the kernel's (wtmp's record is written a
-  few seconds later, when systemd starts); logins are not recorded.
+  `-i` print the machine, as RHEL's and Debian's coreutils do).
+- Logins (recorded since 2026-11-20): clifrd keeps every record of
+  `/run/utmp` and, where there is none (Ubuntu 25.10+), systemd-logind's
+  sessions (`/run/systemd/sessions`: id, user, terminal, seat, remote host,
+  leader, start time; not the device list or the environment), read at
+  each system sample and within a second of a change (inotify), and each
+  session terminal's last access, mode and device. About 20 µs a read.
+  `who [-abdHlpqrstTu]`: GNU coreutils' who from utmp, uutils' from logind
+  (one line per seat and terminal, PID 0, user ids as Ubuntu 26.04's who
+  prints them: its AppArmor profile denies it /etc/passwd); IDLE and `-T`
+  from the terminal at T; a user record whose process was gone at T is left
+  out, as who does. `w [-hsfoiup] [USER]`: procps 3.3 (RHEL 8/9, Ubuntu
+  22.04: utmp, processes in pid order; RHEL 9's build has no FROM column
+  unless `-f`) or Debian/Ubuntu's patched 4.0.4 (logind's user sessions,
+  processes in start order); JCPU, PCPU and WHAT from the processes alive
+  at T with their CPU time at the last process sample. `last [-FRaiw] [-n
+  N] [USER|TTY|reboot...]`: util-linux's last, which reads wtmp; clifr has
+  no wtmp and writes its records from the utmp history (a login when a user
+  record appears, the logout at its dead record or when clifrd saw it gone,
+  none across a reboot), then runs util-linux's own pass over them
+  (`crash`, `down`, `still logged in`, `gone - no logout`); `--at T` is
+  `last -t T`, a range `-s A -t B`. Boots: the newest "still running", an
+  earlier one ends at its last recorded sample; boot times are the
+  kernel's (wtmp's record is written a few seconds later, when systemd
+  starts). One difference on purpose: a boot whose last clifrd run did not
+  stop cleanly ends in "crash" at its last sample on disk; util-linux runs
+  such a boot on to the next shutdown record, since wtmp has no record of
+  the crash. Older recordings: `last` lists the boots only, `who` and `w`
+  say logins were not recorded. Checked against the real tools in
+  containers (who 8.30/8.32, w 3.3.15/3.3.17, last 2.32/2.37, with crafted
+  utmp and wtmp and real pty sessions), on Ubuntu 26.04 (uutils who 0.10.0,
+  procps 4.0.4) and with ssh logins in the Rocky 8, Alma 9 and Ubuntu 22.04
+  VMs (identical but for the load averages, which are the sample's).
 - `findmnt [-l]`: util-linux's tree (C locale: ASCII), TARGET SOURCE
   FSTYPE OPTIONS. The parent mount is not recorded: the tree uses the mount
   on the longest prefix of each path, which differs from findmnt only for a
@@ -755,8 +788,8 @@ chooses one; a line on stderr says when a style other than current is used.
   procps-ng 4's batch output. The summary comes from the system sample at or
   before T, the processes from the process sample at or before it, with
   %CPU over the interval since the sample before (top's own first screen
-  covers a fraction of a second). Not recorded: the number of users (left
-  out of the first line). Recordings before 2026-10-22 have no SHR (`-`)
+  covers a fraction of a second). The first line has T's clock, the uptime
+  at T and the users as uptime counts them (since 2026-11-20). Recordings before 2026-10-22 have no SHR (`-`)
   and no priority (PR is 20 + NI, never `rt`). Over a range: one report per sample with `--samples`
   (`-n` and `-d` as top's).
 - `ss -s`: the counts of /proc/net/sockstat and sockstat6 at the system
@@ -896,7 +929,10 @@ chooses one; a line on stderr says when a style other than current is used.
   `killer_command`. `oom` the OOM kills with the largest processes; `mounts`
   the mount table at a moment or its changes over a range.
 - `uptime`, `vmstat`, `mpstat`, `iostat`: at a moment the averages since
-  boot, which is what the real tool prints without an interval; over a
+  boot, which is what the real tool prints without an interval (`uptime`
+  at `--at T`: T's clock, the uptime at T, the users logged in then as
+  procps counts them: utmp's user records with 3.3, logind's user sessions
+  with 4; the load averages of the sample at or before T); over a
   range one report for the range, or one per interval with `--samples` or
   an interval argument (`"vmstat 60"`, `"iostat -x 60 10"`). `mpstat -P
   ALL` or `-P 0,3`; `iostat -x` (extended), `-d` (devices only), `-p`
@@ -1417,7 +1453,8 @@ continuous eBPF tracer, not a metrics exporter.
   holding more makes other connections lose their owner until the next fd
   walk, or their reset and retransmit counts, without a count.
 - **System-wide tools**: resolution is the sample interval, so `mpstat 1`
-  cannot be reproduced. `uptime` has no user count. `vmstat`'s `r` and `b`
+  cannot be reproduced. `uptime` has no user count before 2026-11-20 (logins
+  not recorded). `vmstat`'s `r` and `b`
   are the values at the sample. On its since-boot line procps-ng 4.0.4
   prints a context-switch figure that is not per second; clifr prints the
   per-second rate. Interval output is not compared by `clifr verify`.
