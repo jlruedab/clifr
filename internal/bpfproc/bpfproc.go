@@ -69,6 +69,14 @@ type Event struct {
 	// classic fork tracepoint, OOM events and kernels before 4.19.
 	HaveTTY        bool
 	TTY, SID, PGRP int
+	// Exit by a signal, when its sender is known (Source.Killers): the
+	// process that sent it, or the kernel (KillerKernel: a fault, a timer,
+	// the terminal, the OOM killer; no process then).
+	HaveKiller   bool
+	KillerKernel bool
+	KillerPID    int
+	KillerUID    int
+	KillerComm   string
 }
 
 // ExitStatus decodes Status: the exit code, or the signal that killed it.
@@ -100,7 +108,10 @@ type Source struct {
 	Buffer string // "ringbuf" or "perf"
 	Fork   string // fork, exec and exit from "tp_btf" or classic "tracepoint"
 	OOM    bool   // the oom:mark_victim tracepoint is attached
-	lost   atomic.Uint64
+	// Killers: signal_generate is attached, so exits by a signal carry the
+	// signal's sender (tp_btf only).
+	Killers bool
+	lost    atomic.Uint64
 }
 
 // Open loads and attaches the programs, trying the preferred features first.
@@ -192,10 +203,12 @@ func open(perfBuf, btfFork bool, o Options) (s *Source, err error) {
 		}
 	}
 	s.OOM = attach("oom", "mark_victim", "handle_oom") == nil // optional
-	if s.OOM && btfFork {
-		// The victim's RSS where the OOM tracepoint lacks it (before 6.x).
+	if btfFork {
+		// The sender of a fatal signal, and the OOM victim's RSS where the
+		// OOM tracepoint lacks it (before 6.x). Optional.
 		if l, err := link.AttachTracing(link.TracingOptions{Program: coll.Programs["handle_kill_btf"]}); err == nil {
 			s.links = append(s.links, l)
+			s.Killers = true
 		}
 	}
 	if perfBuf {
@@ -364,6 +377,8 @@ const eventSize = int(unsafe.Sizeof(procRBEvent{}))
 const (
 	flagTTY      = 1 // FLAG_TTY in procevents.bpf.c
 	flagRSSPages = 2 // FLAG_RSS_PAGES
+	flagKiller   = 4 // FLAG_KILLER
+	flagKernel   = 8 // FLAG_KILLER_KERNEL
 )
 
 // decode copies the raw event into the generated struct (host layout, the
@@ -375,6 +390,10 @@ func decode(raw []byte) (Event, error) {
 	e := Event{Kind: Kind(r.Kind), PID: int(r.Pid), PPID: int(r.Ppid), UID: int(r.Uid), MonoNS: r.MonoNs,
 		StartNS: r.StartNs, Comm: cstr(r.Comm[:]), Status: r.ExitCode, RSSKB: r.RssKb,
 		HaveTTY: r.Flags&flagTTY != 0, TTY: int(r.TtyNr), SID: int(r.Sid), PGRP: int(r.Pgrp)}
+	if e.Kind == Exit && r.Flags&flagKiller != 0 {
+		e.HaveKiller, e.KillerKernel = true, r.Flags&flagKernel != 0
+		e.KillerPID, e.KillerUID, e.KillerComm = int(r.KillerPid), int(r.KillerUid), cstr(r.KillerComm[:])
+	}
 	if r.Flags&flagRSSPages != 0 {
 		e.RSSKB = r.RssKb * uint64(os.Getpagesize()/1024)
 	}

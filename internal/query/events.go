@@ -21,6 +21,10 @@ type Event struct {
 	Detail string `json:"detail"`
 }
 
+// killerCmdMax: runes of a signal sender's command line in an exit's
+// detail (--json has it whole, in life).
+const killerCmdMax = 60
+
 // EventKinds are the kinds Events can return, in the order help lists them.
 var EventKinds = []string{"start", "exit", "oom", "mount", "unmount", "remount", "gap", "skipped", "guard"}
 
@@ -49,7 +53,16 @@ func Events(db *store.DB, from, to int64, re *regexp.Regexp, kinds map[string]bo
 			// exit only if the recorder took another sample; otherwise the
 			// recorder stopped.
 			if want("exit") && (r.EndKind == "exact" || r.EndKind == "after" && sampled(r.End)) && r.End >= from && r.End <= to {
-				d := fmt.Sprintf("%s after %s: %s", r.Exit(), fmtDur(r.Duration), r.Command)
+				exit := r.Exit()
+				if by := r.SentBy(); by != "" {
+					exit += " from " + by
+					if c := []rune(r.KillerCommand); len(c) > killerCmdMax {
+						exit += " [" + string(c[:killerCmdMax]) + "...]"
+					} else if len(c) > 0 {
+						exit += " [" + r.KillerCommand + "]"
+					}
+				}
+				d := fmt.Sprintf("%s after %s: %s", exit, fmtDur(r.Duration), r.Command)
 				if r.EndKind == "after" {
 					d = "between this sample and the next, " + d
 				}

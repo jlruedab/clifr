@@ -43,8 +43,10 @@ type procEvent struct {
 	tty      int
 	sid      int
 	pgrp     int
-	// Exit (eBPF): exactly one of exitCode and signal is set.
+	// Exit (eBPF): exactly one of exitCode and signal is set; killer: who
+	// sent signal, when known.
 	exitCode, signal *int
+	killer           *store.Killer
 	// OOM: the victim's RSS at the kill, 0 if unknown.
 	rssKB int64
 	// Fork (eBPF): the command line is the parent's, set when the event is
@@ -60,6 +62,7 @@ type evProc struct {
 	exit     int64     // exit time, 0 if not seen
 	exitCode *int
 	signal   *int
+	killer   *store.Killer
 	oom      bool
 }
 
@@ -438,6 +441,9 @@ func (r *Recorder) fromBPF(e bpfproc.Event, now time.Time) (procEvent, bool) {
 		code, sig := e.ExitStatus()
 		if sig != 0 {
 			pe.signal = &sig
+			if e.HaveKiller {
+				pe.killer = &store.Killer{PID: e.KillerPID, UID: e.KillerUID, Comm: e.KillerComm}
+			}
 		} else {
 			pe.exitCode = &code
 		}
@@ -659,7 +665,7 @@ func (r *Recorder) applyEvent(ev procEvent, b *store.Batch) {
 			if e := r.procs[key]; e != nil {
 				e.exit = ev.ts
 				if ev.exitCode != nil || ev.signal != nil {
-					b.ProcExits = append(b.ProcExits, store.ProcExit{ID: e.id, ExitTS: &ev.ts, ExitCode: ev.exitCode, Signal: ev.signal})
+					b.ProcExits = append(b.ProcExits, store.ProcExit{ID: e.id, ExitTS: &ev.ts, ExitCode: ev.exitCode, Signal: ev.signal, Killer: ev.killer})
 				}
 				return
 			}
@@ -674,7 +680,7 @@ func (r *Recorder) applyEvent(ev procEvent, b *store.Batch) {
 				}
 				ep = r.evProc(ev) // eBPF: seen only at its exit, which says who it was
 			}
-			ep.exit, ep.exitCode, ep.signal = ev.ts, ev.exitCode, ev.signal
+			ep.exit, ep.exitCode, ep.signal, ep.killer = ev.ts, ev.exitCode, ev.signal, ev.killer
 		case evOOM:
 			r.applyOOM(ev, b)
 		}
@@ -775,7 +781,7 @@ func (r *Recorder) flushEvProcs(ts int64, b *store.Batch, exitedOnly bool) {
 		row := store.ProcRow{ID: r.nextID("processes"), PID: key.pid, StartTime: key.start,
 			PPID: ev.attrs.PPID, UID: ev.attrs.UID, RUID: ev.attrs.UID, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline, Argv0Len: ev.attrs.Argv0Len,
 			TTY: ev.tty, SID: ev.sid, PGRP: ev.pgrp, FirstSeen: key.start, Source: ev.attrs.Source,
-			Exe: ev.attrs.Exe, ExitCode: ep.exitCode, Signal: ep.signal, OOMKilled: ep.oom}
+			Exe: ev.attrs.Exe, ExitCode: ep.exitCode, Signal: ep.signal, Killer: ep.killer, OOMKilled: ep.oom}
 		if ev.attrs.ExecTS != 0 {
 			row.ExecTS = &ev.attrs.ExecTS
 		}

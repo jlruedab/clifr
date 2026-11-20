@@ -25,13 +25,16 @@ type lifeProc struct {
 	command, source  string
 	exitCode, signal sql.NullInt64
 	oom              bool
+	killerPID        sql.NullInt64 // schema 11; 0: the kernel
+	killerUID        sql.NullInt64
+	killerComm       sql.NullString
 }
 
 // processesInRange returns processes that existed at some point in [from, to].
 func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 	rows, err := db.Query(`
 		SELECT id, pid, ppid, start_time, first_seen, last_seen, ended, comm, cmdline, source,
-		       exit_code, signal, COALESCE(oom_killed, 0)
+		       exit_code, signal, COALESCE(oom_killed, 0), killer_pid, killer_uid, killer_comm
 		FROM processes
 		WHERE first_seen <= ?2 AND COALESCE(ended, last_seen, ?3) >= ?1
 		ORDER BY start_time, pid`, from, to, openEnd)
@@ -45,7 +48,7 @@ func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 		var comm, cmdline string
 		var oom int
 		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.start, &p.first, &p.last, &p.ended, &comm, &cmdline, &p.source,
-			&p.exitCode, &p.signal, &oom); err != nil {
+			&p.exitCode, &p.signal, &oom, &p.killerPID, &p.killerUID, &p.killerComm); err != nil {
 			return nil, err
 		}
 		p.oom = oom != 0
@@ -69,6 +72,31 @@ type LifeRow struct {
 	ExitCode  *int64 `json:"exit_code,omitempty"`
 	Signal    *int64 `json:"signal,omitempty"`
 	OOMKilled bool   `json:"oom_killed,omitempty"`
+	// Who sent Signal (schema 11, eBPF), when known: a process, or the
+	// kernel (KillerPID 0). KillerCommand: the sender's command line when
+	// the recording has it.
+	KillerPID     *int64 `json:"killer_pid,omitempty"`
+	KillerUID     *int64 `json:"killer_uid,omitempty"`
+	KillerComm    string `json:"killer_comm,omitempty"`
+	KillerCommand string `json:"killer_command,omitempty"`
+}
+
+// SentBy is who sent the signal that ended the process: "PID (COMM, USER)",
+// "the kernel", or "" when unknown.
+func (r LifeRow) SentBy() string {
+	switch {
+	case r.KillerPID == nil || r.Signal == nil:
+		return ""
+	case *r.KillerPID == 0:
+		return "the kernel"
+	case int(*r.KillerPID) == r.PID:
+		return "itself"
+	}
+	who := r.KillerComm
+	if r.KillerUID != nil {
+		who += ", " + UserName(int(*r.KillerUID), false)
+	}
+	return fmt.Sprintf("%d (%s)", *r.KillerPID, who)
 }
 
 // Exit is the EXIT column: the exit code, the signal name, "OOM" or "-".
@@ -106,6 +134,12 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 		}
 		if p.signal.Valid {
 			r.Signal = &p.signal.Int64
+			if p.killerPID.Valid {
+				r.KillerPID, r.KillerComm = &p.killerPID.Int64, p.killerComm.String
+				if p.killerUID.Valid {
+					r.KillerUID = &p.killerUID.Int64
+				}
+			}
 		}
 		switch {
 		case p.ended.Valid:
@@ -118,7 +152,33 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 		r.Duration = max(r.End-r.Start, 0)
 		out = append(out, r)
 	}
+	if err := killerCommands(db, out); err != nil {
+		return nil, err
+	}
 	return out, markLoggedOOM(db, from, to, out)
+}
+
+// killerCommands fills in the command line of each signal's sender: the
+// process with that pid alive when the signal ended the row's process.
+func killerCommands(db *store.DB, rows []LifeRow) error {
+	for i := range rows {
+		r := &rows[i]
+		if r.KillerPID == nil || *r.KillerPID == 0 || int(*r.KillerPID) == r.PID {
+			continue
+		}
+		var comm, cmdline string
+		err := db.QueryRow(`SELECT comm, cmdline FROM processes WHERE pid = ?1 AND start_time <= ?2
+			  AND COALESCE(ended, last_seen, ?3) >= ?2 - 1000 ORDER BY start_time DESC LIMIT 1`,
+			*r.KillerPID, r.End, openEnd).Scan(&comm, &cmdline)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		r.KillerCommand = commandOf(cmdline, comm, "")
+	}
+	return nil
 }
 
 // markLoggedOOM marks as OOM kills the processes killed by SIGKILL that the
@@ -168,8 +228,23 @@ func fmtDur(ms int64) string {
 	return d.Round(time.Second).String()
 }
 
+// PrintLife prints the lifetimes; a SENT BY column (the signal's sender)
+// when any row has one.
 func PrintLife(w io.Writer, rows []LifeRow) {
-	fmt.Fprintf(w, "%-23s %-24s %10s %7s %7s %-7s %-6s %s\n", "START", "END", "DURATION", "PID", "PPID", "EXIT", "SOURCE", "COMMAND")
+	by := 0
+	for _, r := range rows {
+		by = max(by, len(r.SentBy()))
+	}
+	sentBy := func(s string) string {
+		if by == 0 {
+			return ""
+		}
+		if s == "" {
+			s = "-"
+		}
+		return fmt.Sprintf("%-*s ", max(by, 7), s)
+	}
+	fmt.Fprintf(w, "%-23s %-24s %10s %7s %7s %-7s %s%-6s %s\n", "START", "END", "DURATION", "PID", "PPID", "EXIT", sentBy("SENT BY"), "SOURCE", "COMMAND")
 	for _, r := range rows {
 		end := time.UnixMilli(r.End).Format(msLayout)
 		dur := fmtDur(r.Duration)
@@ -179,8 +254,8 @@ func PrintLife(w io.Writer, rows []LifeRow) {
 		case "running":
 			end, dur = "running", ">"+dur
 		}
-		fmt.Fprintf(w, "%-23s %-24s %10s %7d %7d %-7s %-6s %s\n", time.UnixMilli(r.Start).Format(msLayout),
-			end, dur, r.PID, r.PPID, r.Exit(), shortSource(r.Source), r.Command)
+		fmt.Fprintf(w, "%-23s %-24s %10s %7d %7d %-7s %s%-6s %s\n", time.UnixMilli(r.Start).Format(msLayout),
+			end, dur, r.PID, r.PPID, r.Exit(), sentBy(r.SentBy()), shortSource(r.Source), r.Command)
 	}
 }
 

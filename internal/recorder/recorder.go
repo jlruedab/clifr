@@ -856,7 +856,7 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 		}
 		e.first, e.exit = key.start, ep.exit
 		e.upd.Exe, e.upd.ExecTS = ep.ev.attrs.Exe, ep.ev.attrs.ExecTS
-		row.Exe, row.ExitCode, row.Signal, row.OOMKilled = ep.ev.attrs.Exe, ep.exitCode, ep.signal, ep.oom
+		row.Exe, row.ExitCode, row.Signal, row.Killer, row.OOMKilled = ep.ev.attrs.Exe, ep.exitCode, ep.signal, ep.killer, ep.oom
 		if ep.ev.attrs.ExecTS != 0 {
 			row.ExecTS = &ep.ev.attrs.ExecTS
 		}

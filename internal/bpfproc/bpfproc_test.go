@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -81,6 +82,72 @@ func TestStartTicksMatchProc(t *testing.T) {
 		cmd.Wait()
 		if err != nil || ev.Kind != Exec || ev.StartTicks() != st.StartTime {
 			t.Fatalf("pid %d: event start %d ticks, /proc %d (%v)", pid, ev.StartTicks(), st.StartTime, err)
+		}
+	}
+}
+
+// TestKillers checks the sender of the signal that killed a process: another
+// process, the process itself, a handler that re-raises (the first sender
+// stays) and the kernel (SIGXCPU from a CPU time limit).
+func TestKillers(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root (CAP_BPF, CAP_PERFMON)")
+	}
+	s, err := Open(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if !s.Killers {
+		t.Skip("signal_generate not attached (no tp_btf)")
+	}
+	exitOf := func(pid int) Event {
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			if e, err := s.Read(200 * time.Millisecond); err == nil && e.PID == pid && e.Kind == Exit {
+				return e
+			}
+		}
+		t.Fatalf("no exit event for %d", pid)
+		return Event{}
+	}
+	me, _ := os.ReadFile("/proc/self/comm")
+	for _, c := range []struct {
+		name, script string
+		term         bool // the test sends SIGTERM
+		sig          int
+		self, kernel bool
+	}{
+		{"other", "sleep 30", true, 15, false, false},
+		{"self", "kill -TERM $$", false, 15, true, false},
+		{"re-raise", `trap 'trap - TERM; kill -TERM $$' TERM; sleep 30 & wait`, true, 15, false, false},
+		{"kernel", "ulimit -S -t 1; while :; do :; done", false, 24, false, true},
+	} {
+		cmd := exec.Command("/bin/sh", "-c", c.script)
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		pid := cmd.Process.Pid
+		if c.term {
+			time.Sleep(300 * time.Millisecond)
+			cmd.Process.Signal(syscall.SIGTERM)
+		}
+		cmd.Wait()
+		e := exitOf(pid)
+		_, sig := e.ExitStatus()
+		want := os.Getpid()
+		comm := strings.TrimSpace(string(me))
+		if c.self {
+			want, comm = pid, "sh"
+		}
+		switch {
+		case sig != c.sig || !e.HaveKiller:
+			t.Errorf("%s: signal %d (want %d), sender known %v", c.name, sig, c.sig, e.HaveKiller)
+		case c.kernel && (!e.KillerKernel || e.KillerPID != 0):
+			t.Errorf("%s: sender %d %q, want the kernel", c.name, e.KillerPID, e.KillerComm)
+		case !c.kernel && (e.KillerKernel || e.KillerPID != want || e.KillerComm != comm || e.KillerUID != 0):
+			t.Errorf("%s: sender %d %q uid %d kernel %v, want %d %q", c.name, e.KillerPID, e.KillerComm, e.KillerUID, e.KillerKernel, want, comm)
+		default:
+			t.Logf("%s: signal %d from %d %q (kernel %v)", c.name, sig, e.KillerPID, e.KillerComm, e.KillerKernel)
 		}
 	}
 }

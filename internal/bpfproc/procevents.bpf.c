@@ -116,12 +116,19 @@ struct event {
 	__s32 pgrp;
 	__u32 flags; // FLAG_*
 	char comm[TASK_COMM_LEN];
+	// exit by a signal, with FLAG_KILLER: who sent it (the last sender of that
+	// signal; FLAG_KILLER_KERNEL: the kernel, pid 0)
+	__u32 killer_pid;
+	__u32 killer_uid;
+	char killer_comm[TASK_COMM_LEN];
 	char filename[FILENAME_MAX_];
 	char args[ARGS_MAX];
 };
 
 #define FLAG_TTY 1 // tty_nr, sid and pgrp are set
 #define FLAG_RSS_PAGES 2 // oom: rss_kb holds pages (userspace knows the page size)
+#define FLAG_KILLER 4 // exit: killer_* are set
+#define FLAG_KILLER_KERNEL 8 // exit: the kernel sent the signal
 
 // Fork, exit and OOM events are sent without filename and args.
 #define SHORT_EVENT __builtin_offsetof(struct event, filename)
@@ -185,6 +192,9 @@ static __always_inline struct event *new_event(__u32 kind, __u32 slot)
 	e->sid = 0;
 	e->pgrp = 0;
 	e->flags = 0;
+	e->killer_pid = 0;
+	e->killer_uid = 0;
+	e->killer_comm[0] = 0;
 	return e;
 }
 
@@ -253,6 +263,42 @@ static __always_inline void fill_current(struct event *e, struct task_struct *t)
 	fill_tty(e, t);
 }
 
+// ---- who sent a fatal signal ----
+
+// The last sender of a signal that ends a process unless handled, per
+// target process (tgid), written by signal_generate and read at the exit.
+struct killer {
+	__u64 target_start; // the target's start time (pid reuse)
+	__u32 pid; // the sender's tgid (0: the kernel)
+	__u32 uid;
+	__u32 sig;
+	__u32 kernel;
+	char comm[TASK_COMM_LEN];
+};
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 4096);
+	__type(key, __u32);
+	__type(value, struct killer);
+} killers SEC(".maps");
+
+// add_killer fills e's sender when the process e describes was killed by sig
+// and the last sender of sig to it is known.
+static __always_inline void add_killer(struct event *e, __u32 sig)
+{
+	__u32 pid = e->pid;
+	struct killer *k = bpf_map_lookup_elem(&killers, &pid);
+	if (!k)
+		return;
+	if (k->sig == sig && k->target_start == e->start_ns) {
+		e->killer_pid = k->pid;
+		e->killer_uid = k->uid;
+		__builtin_memcpy(e->killer_comm, k->comm, TASK_COMM_LEN);
+		e->flags |= FLAG_KILLER | (k->kernel ? FLAG_KILLER_KERNEL : 0);
+	}
+	bpf_map_delete_elem(&killers, &pid);
+}
+
 static __always_inline int exec_event(void *ctx, __u32 slot, const char *filename)
 {
 	struct event *e = new_event(EV_EXEC, slot);
@@ -288,6 +334,9 @@ static __always_inline int exit_event(void *ctx, __u32 slot)
 		return 0;
 	fill_current(e, t);
 	e->exit_code = BPF_CORE_READ(t, exit_code);
+	__u32 sig = e->exit_code & 0x7f;
+	if (sig && !(e->exit_code & 0xff00))
+		add_killer(e, sig);
 	send(ctx, e, SHORT_EVENT, 0);
 	return 0;
 }
@@ -447,14 +496,63 @@ static __always_inline __u64 rss_pages(struct task_struct *t)
 #define SIGKILL_ 9
 #define SEND_SIG_PRIV_ 1 // the kernel's own sender ((struct kernel_siginfo *)1)
 
+// Signals whose default action ends the process (signal(7): Term and Core),
+// as a mask of signals 1-31; the real-time ones (32-64) all do.
+#define FATAL_MASK ((1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) | (1u << 6) | (1u << 7) | \
+	(1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13) | (1u << 14) | (1u << 15) | \
+	(1u << 16) | (1u << 24) | (1u << 25) | (1u << 26) | (1u << 27) | (1u << 29) | (1u << 30) | (1u << 31))
+#define TRACE_SIGNAL_DELIVERED_ 0
+#define TRACE_SIGNAL_LOSE_INFO_ 4
+#define SI_USER_ 0
+#define SI_QUEUE_ (-1)
+#define SI_TKILL_ (-6)
+
+// Every signal sent. Two uses: the RSS of a process the kernel sends SIGKILL
+// (OOM, below), and the sender of each signal that would end its target,
+// kept for the target's exit (killers). The sender is the current task when
+// a process sent it (kill, sigqueue, tkill: si_code SI_USER, SI_QUEUE,
+// SI_TKILL, or no siginfo); otherwise the kernel sent it (a fault, a timer,
+// the terminal's ^C, the OOM killer...).
 SEC("tp_btf/signal_generate")
 int BPF_PROG(handle_kill_btf, int sig, void *info, struct task_struct *task, int group, int result)
 {
-	if (sig != SIGKILL_ || (__u64)info != SEND_SIG_PRIV_)
+	if (sig <= 0 || sig > 64 || sig < 32 && !(FATAL_MASK & (1u << sig)))
 		return 0;
+	if (result != TRACE_SIGNAL_DELIVERED_ && result != TRACE_SIGNAL_LOSE_INFO_)
+		return 0; // ignored, or already pending: the first sender's stands
 	__u32 pid = BPF_CORE_READ(task, tgid);
-	__u64 pages = rss_pages(task);
-	bpf_map_update_elem(&kill_rss, &pid, &pages, BPF_ANY);
+	if (sig == SIGKILL_ && (__u64)info == SEND_SIG_PRIV_) {
+		__u64 pages = rss_pages(task);
+		bpf_map_update_elem(&kill_rss, &pid, &pages, BPF_ANY);
+	}
+	int kernel = 1;
+	if ((__u64)info == 0) { // SEND_SIG_NOINFO: from the current process
+		kernel = 0;
+	} else if ((__u64)info > 2) { // 1 SEND_SIG_PRIV, 2 SEND_SIG_FORCED (before 4.20): the kernel's
+		int code = 0;
+		// si_code: the third int of siginfo on every architecture clifr
+		// supports (x86_64, arm64; MIPS swaps it with si_errno).
+		bpf_probe_read_kernel(&code, sizeof(code), (char *)info + 8);
+		kernel = !(code == SI_USER_ || code == SI_QUEUE_ || code == SI_TKILL_);
+	}
+	struct killer k = {};
+	k.target_start = task_start(BPF_CORE_READ(task, group_leader));
+	k.sig = sig;
+	k.kernel = kernel;
+	if (!kernel) {
+		struct task_struct *cur = (void *)bpf_get_current_task();
+		k.pid = bpf_get_current_pid_tgid() >> 32;
+		k.uid = (__u32)bpf_get_current_uid_gid();
+		BPF_CORE_READ_STR_INTO(&k.comm, cur, group_leader, comm);
+		if (k.pid == pid) {
+			// A handler that re-raises its signal after cleaning up
+			// (SIG_DFL, then raise): the first sender stays.
+			struct killer *old = bpf_map_lookup_elem(&killers, &pid);
+			if (old && old->sig == sig && old->target_start == k.target_start)
+				return 0;
+		}
+	}
+	bpf_map_update_elem(&killers, &pid, &k, BPF_ANY);
 	return 0;
 }
 

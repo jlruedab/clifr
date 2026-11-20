@@ -28,7 +28,7 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 		return fmt.Errorf("load: %w", err)
 	}
 	defer src.Close()
-	fmt.Printf("loaded: buffer %s, fork/exec/exit %s, oom tracepoint %v\n", src.Buffer, src.Fork, src.OOM)
+	fmt.Printf("loaded: buffer %s, fork/exec/exit %s, oom tracepoint %v, signal senders %v\n", src.Buffer, src.Fork, src.OOM, src.Killers)
 
 	evs := make(chan bpfproc.Event, 4096)
 	stop := make(chan struct{})
@@ -116,6 +116,20 @@ func testEBPF(o bpfproc.Options, to bpftcp.Options) error {
 	e = wait(cmd.Process.Pid, bpfproc.Exec, bpfproc.Exit)[bpfproc.Exit]
 	code, sig = e.ExitStatus()
 	check("exit by signal", e.Kind == bpfproc.Exit && sig == int(syscall.SIGTERM), fmt.Sprintf("code %d, signal %d", code, sig))
+	if src.Killers {
+		check("exit by signal: its sender", e.HaveKiller && !e.KillerKernel && e.KillerPID == os.Getpid() && e.KillerUID == os.Geteuid(),
+			fmt.Sprintf("from %d (%s, uid %d), kernel %v; we are %d", e.KillerPID, e.KillerComm, e.KillerUID, e.KillerKernel, os.Getpid()))
+		// The kernel's: SIGXCPU at the soft CPU time limit.
+		cmd = exec.Command("/bin/sh", "-c", "ulimit -S -t 1; while :; do :; done")
+		cmd.Start()
+		cmd.Wait()
+		e = wait(cmd.Process.Pid, bpfproc.Exit)[bpfproc.Exit]
+		_, sig = e.ExitStatus()
+		check("exit by the kernel's signal", sig == int(syscall.SIGXCPU) && e.HaveKiller && e.KillerKernel,
+			fmt.Sprintf("signal %d, sender known %v, kernel %v", sig, e.HaveKiller, e.KillerKernel))
+	} else {
+		fmt.Println("SKIP  exit by signal: its sender          signal_generate not attached (no tp_btf)")
+	}
 
 	// A multi-threaded process: its exit is reported by whichever thread exits
 	// last, but must carry the process's start time (the key).

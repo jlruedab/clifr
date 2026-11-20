@@ -14,23 +14,36 @@ import (
 )
 
 type procRBEvent struct {
-	_        structs.HostLayout
-	Kind     uint32
-	Pid      uint32
-	Ppid     uint32
-	Uid      uint32
-	MonoNs   uint64
-	StartNs  uint64
-	ExitCode int32
-	ArgsLen  uint32
-	RssKb    uint64
-	TtyNr    uint32
-	Sid      int32
-	Pgrp     int32
-	Flags    uint32
-	Comm     [16]int8
-	Filename [256]int8
-	Args     [1024]int8
+	_          structs.HostLayout
+	Kind       uint32
+	Pid        uint32
+	Ppid       uint32
+	Uid        uint32
+	MonoNs     uint64
+	StartNs    uint64
+	ExitCode   int32
+	ArgsLen    uint32
+	RssKb      uint64
+	TtyNr      uint32
+	Sid        int32
+	Pgrp       int32
+	Flags      uint32
+	Comm       [16]int8
+	KillerPid  uint32
+	KillerUid  uint32
+	KillerComm [16]int8
+	Filename   [256]int8
+	Args       [1024]int8
+}
+
+type procRBKiller struct {
+	_           structs.HostLayout
+	TargetStart uint64
+	Pid         uint32
+	Uid         uint32
+	Sig         uint32
+	Kernel      uint32
+	Comm        [16]int8
 }
 
 // Names of all BPF objects in the ELF.
@@ -41,6 +54,7 @@ const (
 	procRBMapDrops           = "drops"
 	procRBMapEvents          = "events"
 	procRBMapKillRss         = "kill_rss"
+	procRBMapKillers         = "killers"
 	procRBMapScratch         = "scratch"
 	procRBProgHandleExec     = "handle_exec"
 	procRBProgHandleExecBtf  = "handle_exec_btf"
@@ -116,6 +130,7 @@ type procRBMapSpecs struct {
 	Drops   *ebpf.MapSpec `ebpf:"drops"`
 	Events  *ebpf.MapSpec `ebpf:"events"`
 	KillRss *ebpf.MapSpec `ebpf:"kill_rss"`
+	Killers *ebpf.MapSpec `ebpf:"killers"`
 	Scratch *ebpf.MapSpec `ebpf:"scratch"`
 }
 
@@ -149,6 +164,7 @@ type procRBMaps struct {
 	Drops   *ebpf.Map `ebpf:"drops"`
 	Events  *ebpf.Map `ebpf:"events"`
 	KillRss *ebpf.Map `ebpf:"kill_rss"`
+	Killers *ebpf.Map `ebpf:"killers"`
 	Scratch *ebpf.Map `ebpf:"scratch"`
 }
 
@@ -158,6 +174,7 @@ func (m *procRBMaps) Close() error {
 		m.Drops,
 		m.Events,
 		m.KillRss,
+		m.Killers,
 		m.Scratch,
 	)
 }

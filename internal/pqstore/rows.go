@@ -53,6 +53,10 @@ type processRow struct {
 	NetNS      int64  `parquet:"netns"`
 	RUID       int32  `parquet:"ruid"`
 	CmdlinePad int32  `parquet:"cmdline_pad"`
+	// Schema 11: the sender of Signal (killer_pid 0: the kernel; NULL: unknown).
+	KillerPID  *int32 `parquet:"killer_pid,optional"`
+	KillerUID  *int32 `parquet:"killer_uid,optional"`
+	KillerComm string `parquet:"killer_comm,dict"`
 }
 
 type procSampleRow struct {
@@ -361,12 +365,20 @@ func sampleOf(s store.Sample) sampleRow {
 }
 
 func processOf(p store.ProcRow) processRow {
-	return processRow{ID: p.ID, PID: int32(p.PID), StartTime: p.StartTime, PPID: int32(p.PPID), UID: int32(p.UID),
+	r := processRow{ID: p.ID, PID: int32(p.PID), StartTime: p.StartTime, PPID: int32(p.PPID), UID: int32(p.UID),
 		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
 		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), CmdlinePad: int32(p.CmdlinePad),
 		NetNS: int64(p.NetNS)}
+	setKiller(&r, p.Killer)
+	return r
+}
+
+func setKiller(r *processRow, k *store.Killer) {
+	if k != nil {
+		r.KillerPID, r.KillerUID, r.KillerComm = ptr(int32(k.PID)), ptr(int32(k.UID)), k.Comm
+	}
 }
 
 func i32p(p *int) *int32 {

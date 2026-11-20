@@ -393,7 +393,10 @@ What is recorded:
   executable; state, CPU time, RSS, VSZ, threads and I/O counters per
   sample, written only when they change. fork, exec and exit come from eBPF, so a process shorter
   than the interval is recorded with exact start and end, exit code and
-  signal, up to the [event budget](#event-budget). OOM kills are recorded with the victim's RSS.
+  signal, up to the [event budget](#event-budget); for a process killed by a signal, who sent
+  it (a process's pid, uid and command, or the kernel; since 2026-11-20, with eBPF's `tp_btf`
+  programs: Rocky 8.10, Alma 9, Ubuntu 22.04 and later tested; not with classic tracepoints or
+  the proc connector). OOM kills are recorded with the victim's RSS.
 - **TCP connections**: every state change from eBPF (up to the [event budget](#event-budget)), with the owning process
   and fd, the direction, the application's close, time-wait start and end,
   retransmits and resets. A full socket dump every 5 minutes (keyframe) adds
@@ -883,7 +886,14 @@ chooses one; a line on stderr says when a style other than current is used.
   zeros; `-l` no network file systems). FUSE mounts without `allow_other` cannot be measured by
   root and are left out. Over a range with `--samples`.
 - `life` (clifr only) lists start, end, duration, pid, ppid, command, exit
-  code or signal; `oom` the OOM kills with the largest processes; `mounts`
+  code or signal, and a SENT BY column with the signal's sender when one is
+  known: `PID (COMM, USER)`, `the kernel` (a fault, a timer or resource
+  limit, the terminal's ^C, the OOM killer) or `itself` (`abort()`, `kill
+  $$`). The sender is the last process to send that signal before the exit;
+  a handler that re-raises its signal keeps the first sender. `events` adds
+  it to the exit ("SIGTERM from 4321 (bash, root) [its command line]");
+  `--json` has `killer_pid` (0: the kernel), `killer_uid`, `killer_comm`,
+  `killer_command`. `oom` the OOM kills with the largest processes; `mounts`
   the mount table at a moment or its changes over a range.
 - `uptime`, `vmstat`, `mpstat`, `iostat`: at a moment the averages since
   boot, which is what the real tool prints without an interval; over a

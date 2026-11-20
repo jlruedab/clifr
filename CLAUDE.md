@@ -186,6 +186,17 @@ wait for the user's go-ahead.
   OOM RSS where `mark_victim` lacks it (before 6.x): `tp_btf/signal_generate` stores the RSS
   (pages, `mm->rss_stat` in both layouts) of a kernel-sent SIGKILL's target, sent just before
   the victim is marked; `FLAG_RSS_PAGES`, converted with the page size in Go.
+  Signal senders (schema 11, 2026-11-20, HANDOFF 0d): the same `signal_generate` program keeps,
+  per target tgid (LRU map `killers`, 4096), the last sender of each signal whose default action
+  ends a process (`FATAL_MASK` 1-31 Term/Core, and 32-64), delivered or LOSE_INFO only (an
+  already pending one keeps the first sender); sender = the current task for SEND_SIG_NOINFO and
+  si_code SI_USER/SI_QUEUE/SI_TKILL (si_code read at offset 8: x86_64 and arm64), else the kernel
+  (pid 0). A self-sent re-raise of the same signal keeps the earlier sender. At the exit, when the
+  wait status is that signal and the target's start time matches, the exit event carries it
+  (`FLAG_KILLER`, `FLAG_KILLER_KERNEL`) -> `store.Killer` -> `processes.killer_pid|uid|comm`
+  (NULL: unknown). Attached whenever fork/exec/exit use tp_btf (`Source.Killers`); none with
+  classic tracepoints or the proc connector (Rocky 8.10's 4.18 has tp_btf: senders there too). `query.LifeRow.SentBy`, life's SENT BY
+  column, events' "SIGTERM from PID (COMM, USER) [command]".
 - `tcp:tcp_send_reset` also fires for active resets since Linux 6.10 (no skb): not counted
   there, `EV_ACTIVE_RESET` reports them. A reset or retransmit counted on a socket already in
   TCP_CLOSE (e.g. an RST to a segment in flight after an abort) is an `EV_LATE_COUNT` event,
@@ -382,8 +393,8 @@ wait for the user's go-ahead.
   `query.UserName`. Older recordings: this machine's names (a header says so when the machine-id
   differs). Never use `user.LookupId` for a recorded uid when the recording has names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
-  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 10 since
-  2026-11-08; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 11 since
+  2026-11-20; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

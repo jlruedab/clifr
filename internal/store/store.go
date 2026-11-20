@@ -21,9 +21,10 @@ import (
 // 8: process fields (faults, scheduling, SHR, context switches, wchan,
 // label, cgroup); 9: snapshots (whole files: swaps, modules, hostname),
 // blockdevs, neighs; 10 (2026-11-08): netns in processes, tcp_conns and
-// tcp_keyframes (containers' connections: other network namespaces).
-// Readers refuse versions newer than theirs.
-const SchemaVersion = 10
+// tcp_keyframes (containers' connections: other network namespaces); 11
+// (2026-11-20): killer_pid, killer_uid, killer_comm in processes (who sent the
+// signal that ended a process). Readers refuse versions newer than theirs.
+const SchemaVersion = 11
 
 type DB struct {
 	*sql.DB

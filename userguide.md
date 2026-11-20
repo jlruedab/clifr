@@ -274,6 +274,8 @@ START                   END                        DURATION     PID    PPID EXIT
 2026-11-04 09:09:00.496 >2026-11-04 20:30:30.386 >11h21m30s    3089       1 0       sample sshd: /usr/sbin/sshd -D [listener] …
 ```
 
+When a signal ended a process, a `SENT BY` column says who sent it (recorded since 2026-11-20): `4321 (bash, root)` for a process, `the kernel` for a fault, a timer or resource limit, the terminal's ^C or the OOM killer, `itself` for `abort()` or `kill $$`. `events` puts the sender's command line after it. It is `-` when the sender is unknown: an older recording, a kernel without BTF tracing programs (`clifrd doctor` says which it uses), or clifrd on the proc connector fallback.
+
 `SOURCE ebpf` means start and end are exact. `sample` means the process was seen only at samples (it was already running when the recording started, or the end was not observed), and `>t` means it ended after `t` and before the next sample.
 
 ### OOM kills and containers
@@ -751,7 +753,7 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
    $ clifr --since "2026-11-04" --until "2026-11-05" life | grep -E 'SIG(SEGV|ABRT|BUS|ILL|FPE|KILL)'
    ```
 
-   An exit code other than 0 means the program chose to stop (read its log). `SIGSEGV`, `SIGBUS`, `SIGILL`, `SIGFPE` and `SIGABRT` are crashes (a core dump may exist: `coredumpctl list`). `SIGKILL` is sent by someone: the OOM killer (step 3), systemd after a stop timeout, an administrator or a script (`kill -9`).
+   An exit code other than 0 means the program chose to stop (read its log). `SIGSEGV`, `SIGBUS`, `SIGILL`, `SIGFPE` and `SIGABRT` are crashes (a core dump may exist: `coredumpctl list`). `SIGKILL` is sent by someone: the OOM killer (step 3), systemd after a stop timeout, an administrator or a script (`kill -9`). The `SENT BY` column names who: `1 (systemd, root)` is systemd (a stop, a restart, a timeout), another pid is a person's shell or a script (`events` shows its command line), `the kernel` with `OOM` in `EXIT` is the OOM killer.
 
 2. The moments around the end, with the exact exit time from step 1:
 

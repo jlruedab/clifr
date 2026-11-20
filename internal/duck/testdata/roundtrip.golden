@@ -23,9 +23,9 @@ writes_stop | 1
 == proc_samples: proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan
 101 | 1000 | S | 5 | 100 | 200 | 2 | 7 | 4096 | 8192 | 11 | 2 | 40 | -51 | 1 | 50 | 3 | 5 | 2 | 1 | 6 | 96 | 12345 | 9 | 4 | do_epoll_wait
 101 | 2000 | R | 9 | 120 | 200 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 
-== processes: id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns
-101 | 10 | 900 | 1 | 5 | srv | srv -y | 1000 | 2000 | 2500 | sample | /usr/bin/srv | 1900 | 2500 | <nil> | 9 | 1 | unconfined | 0::/system.slice/srv.service | 7 | 0
-102 | 11 | 1600 | 10 | 0 | sh | sh -c true | 1600 | 1700 | 1700 | ebpf | /bin/sh | 1600 | 1700 | 3 | <nil> | 0 |  |  | 0 | 4026532512
+== processes: id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns, killer_pid, killer_uid, killer_comm
+101 | 10 | 900 | 1 | 5 | srv | srv -y | 1000 | 2000 | 2500 | sample | /usr/bin/srv | 1900 | 2500 | <nil> | 9 | 1 | unconfined | 0::/system.slice/srv.service | 7 | 0 | 4321 | 0 | pkill
+102 | 11 | 1600 | 10 | 0 | sh | sh -c true | 1600 | 1700 | 1700 | ebpf | /bin/sh | 1600 | 1700 | 3 | <nil> | 0 |  |  | 0 | 4026532512 | <nil> | <nil> | 
 == reconcile: ts, kind, dump_rows, missing_from_events, extra_in_events
 2000 | tcp | 1 | 0 | 0
 == recorder_stats: ts, source, events, dropped

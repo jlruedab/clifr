@@ -399,6 +399,7 @@ func (s *Store) Write(b *store.Batch) error {
 		if x.Signal != nil {
 			r.Signal = i32p(x.Signal)
 		}
+		setKiller(r, x.Killer)
 		if x.OOMKilled {
 			r.OOMKilled = 1
 		}

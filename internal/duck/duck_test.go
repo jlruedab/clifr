@@ -76,7 +76,7 @@ func ip(s string) store.Addr { return store.AddrOf(netip.MustParseAddr(s)) }
 func shutdown() *store.Batch {
 	return &store.Batch{
 		ProcCloses: []store.Close{{ID: 101, LastSeen: 2000, Ended: p64(2500)}},
-		ProcExits:  []store.ProcExit{{ID: 101, ExitTS: p64(2500), Signal: pint(9)}},
+		ProcExits:  []store.ProcExit{{ID: 101, ExitTS: p64(2500), Signal: pint(9), Killer: &store.Killer{PID: 4321, UID: 0, Comm: "pkill"}}},
 		TCPConns: []store.TCPConn{{ID: 501, PID: 10, StartTime: 900, FD: 5, OwnerUntil: 2400, Inode: 777, Family: 4, LAddr: ip("127.0.0.1"),
 			LPort: 4000, RAddr: ip("127.0.0.2"), RPort: 80, Direction: store.DirActive, OpenTS: 1500, CloseTS: 2450, FirstState: 2,
 			FinalState: 5, LingerState: 6, LingerUntil: 62450, Retransmits: 2, Source: store.SrcEBPF, LastSeen: 2450}},
@@ -117,7 +117,7 @@ func dump(t *testing.T, db *sql.DB, table, cols string) string {
 
 var compare = map[string]string{
 	"samples":          "ts, fd_walk, skipped, nproc, rows, cpu_us",
-	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns",
+	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns, killer_pid, killer_uid, killer_comm",
 	"oom_events":       "ts, pid, start_time, comm, rss_kb, snapshot",
 	"recorder_stats":   "ts, source, events, dropped",
 	"tcp_conns":        "id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source, netns",

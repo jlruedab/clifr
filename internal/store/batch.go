@@ -22,6 +22,7 @@ type ProcRow struct {
 	Exe              string
 	ExecTS, ExitTS   *int64
 	ExitCode, Signal *int
+	Killer           *Killer // who sent Signal (schema 11; nil: unknown)
 	OOMKilled        bool
 	// Read from /proc when the process is first sampled, at its exec and on
 	// fd walks (schema 8); empty for event-only processes.
@@ -57,7 +58,16 @@ type ProcExit struct {
 	ID               int64
 	ExitTS           *int64
 	ExitCode, Signal *int
+	Killer           *Killer
 	OOMKilled        bool
+}
+
+// Killer is the sender of the signal that ended a process (eBPF's
+// signal_generate; schema 11): a process, or the kernel (PID 0: a fault, a
+// timer or resource limit, the terminal, the OOM killer).
+type Killer struct {
+	PID, UID int
+	Comm     string
 }
 
 // OOMEvent is an OOM kill. The victim is identified by pid and start time
