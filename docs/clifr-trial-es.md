@@ -142,7 +142,7 @@ El informe está en inglés.
 | clifrd running at every sample (en marcha en cada muestra) | nunca se encontró parado |
 | reboot / kernel or OS update / clifrd upgrade (reinicio / actualización del sistema / de clifrd) | ocurrió durante la prueba |
 | CPU within 2% of one core (CPU) | 2% de un núcleo como máximo, de media y cada día |
-| memory below the unit's limit (memoria) | máximo por debajo del 90% de `MemoryMax` (768 MiB) |
+| memory below the unit's limit (memoria) | el máximo de RSS de clifrd por debajo del 90% de `MemoryMax` (768 MiB), y ningún OOM kill. El máximo del cgroup se muestra pero no se juzga: incluye la caché de páginas (los archivos de datos), que en un servidor ocupado llega al límite y el kernel la libera ahí |
 | disk within max_size (disco) | la grabación no pasó de `max_size` (2 GB) |
 | retention (retención) | la grabación guarda las 72 horas configuradas, no más |
 | no lost events (ningún evento perdido) | ninguna fuente perdió eventos |

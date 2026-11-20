@@ -65,7 +65,8 @@ DRILL_HOLD = int(os.environ.get("CLIFR_TRIAL_DRILL_HOLD", DRILL_HOLD))
 HOURLY_COLS = ["ts", "boot", "kernel", "clifrd_version", "state", "n_restarts", "pid", "pid_start",
                "cpu_ticks", "clk_tck", "rss_kb", "hwm_kb", "cg_mem", "cg_mem_peak", "data_bytes",
                "data_files", "fs_free_bytes", "host_cpus", "host_jiffies", "host_idle_jiffies",
-               "load1", "load5", "load15", "mem_total_kb", "mem_avail_kb", "psi_cpu", "psi_mem", "psi_io"]
+               "load1", "load5", "load15", "mem_total_kb", "mem_avail_kb", "psi_cpu", "psi_mem", "psi_io",
+               "cg_anon", "cg_file", "cg_kernel", "cg_limit_hits", "cg_oom_kills"]
 ACC_COLS = ["ts", "checked_ts", "ps_real", "ps_missing", "ps_extra", "listen_real", "listen_missing",
             "listen_extra", "estab_real", "estab_clifr", "estab_common", "mounts_real",
             "mounts_missing", "mounts_extra", "error"]
@@ -416,6 +417,32 @@ def pid_stats(pid):
             "rss_kb": rss.group(1) if rss else "", "hwm_kb": hwm.group(1) if hwm else ""}
 
 
+def cgroup_memory(cg):
+    """clifrd's cgroup memory by kind (bytes) and its counters since the
+    cgroup was created (a restart makes a new one): times the usage reached
+    the limit (the kernel then reclaims, page cache first) and OOM kills.
+    The cgroup's usage and peak include page cache (the data files written
+    and read), which the kernel reclaims under the limit: not clifrd's own
+    memory. cgroup v2, or v1's memory controller (RHEL 8's default)."""
+    out = {}
+    if not cg:
+        return out
+    stat = lambda text: dict((l.split()[0], l.split()[1]) for l in text.splitlines() if len(l.split()) == 2)
+    v2 = "/sys/fs/cgroup" + cg
+    if os.path.exists(v2 + "/memory.stat"):
+        st, ev = stat(read(v2 + "/memory.stat")), stat(read(v2 + "/memory.events"))
+        out.update({"cg_anon": st.get("anon", ""), "cg_file": st.get("file", ""), "cg_kernel": st.get("kernel", ""),
+                    "cg_limit_hits": ev.get("max", ""), "cg_oom_kills": ev.get("oom_kill", "")})
+        return out
+    v1 = "/sys/fs/cgroup/memory" + cg
+    if os.path.exists(v1 + "/memory.stat"):
+        st, oc = stat(read(v1 + "/memory.stat")), stat(read(v1 + "/memory.oom_control"))
+        out.update({"cg_anon": st.get("total_rss", st.get("rss", "")), "cg_file": st.get("total_cache", st.get("cache", "")),
+                    "cg_kernel": read(v1 + "/memory.kmem.usage_in_bytes").strip(),
+                    "cg_limit_hits": read(v1 + "/memory.failcnt").strip(), "cg_oom_kills": oc.get("oom_kill", "")})
+    return out
+
+
 def dir_size(path):
     total, files = 0, 0
     for root, dirs, names in os.walk(path):
@@ -435,7 +462,7 @@ def psi(kind):
 
 def hourly_row():
     now = int(time.time())
-    p = unit_props("ActiveState", "NRestarts", "MainPID", "MemoryCurrent", "MemoryPeak")
+    p = unit_props("ActiveState", "NRestarts", "MainPID", "MemoryCurrent", "MemoryPeak", "ControlGroup")
     row = {"ts": now, "boot": read("/proc/sys/kernel/random/boot_id").strip(), "kernel": os.uname().release,
            "clifrd_version": run(["clifrd", "--version"], timeout=30)[1].strip().replace("clifrd ", ""),
            "state": p.get("ActiveState", ""), "n_restarts": p.get("NRestarts", ""), "pid": p.get("MainPID", ""),
@@ -445,6 +472,7 @@ def hourly_row():
         row["cg_mem" if k == "MemoryCurrent" else "cg_mem_peak"] = v if v.isdigit() and int(v) < 2 ** 62 else ""
     if row["pid"] not in ("", "0"):
         row.update(pid_stats(row["pid"]))
+        row.update(cgroup_memory(p.get("ControlGroup", "")))
     row["data_bytes"], row["data_files"] = dir_size(os.path.realpath(DATA_DIR))
     try:
         sv = os.statvfs(DATA_DIR)
@@ -1013,6 +1041,12 @@ def analyze(st):
             p["rss_max"] = max(p["rss_max"], int(num(r.get("rss_kb"), 0)))
             p["hwm_max"] = max(p["hwm_max"], int(num(r.get("hwm_kb"), 0)))
             p["cg_max"] = max(p.get("cg_max", 0), int(num(r.get("cg_mem_peak"), 0) or num(r.get("cg_mem"), 0)))
+            p["anon_max"] = max(p.get("anon_max", 0), int(num(r.get("cg_anon"), 0)))
+            # Counters per cgroup, i.e. per run of clifrd: the highest seen in each.
+            for k in ("cg_limit_hits", "cg_oom_kills"):
+                if r.get(k, "") != "" and r.get("pid"):
+                    runs = a.setdefault(k, {})
+                    runs[r["pid"]] = max(runs.get(r["pid"], 0), int(num(r[k], 0)))
             p["load_max"] = max(p["load_max"], num(r.get("load5"), 0))
             p["data_bytes"] = int(num(r.get("data_bytes"), 0))
             p["free_bytes"] = int(num(r.get("fs_free_bytes"), 0))
@@ -1027,6 +1061,9 @@ def analyze(st):
     a["cpu_days_over_budget"] = sorted(d for d, v in days_cpu.items() if v > 2.0)
     a["mem_peak_kb"] = max([p["hwm_max"] for p in per_day.values()] + [0])
     a["cg_peak_bytes"] = max([p.get("cg_max", 0) for p in per_day.values()] + [0])
+    a["anon_peak_bytes"] = max([p.get("anon_max", 0) for p in per_day.values()] + [0])
+    a["limit_hits"] = sum(a.get("cg_limit_hits", {}).values()) if "cg_limit_hits" in a else None
+    a["oom_kills"] = sum(a.get("cg_oom_kills", {}).values()) if "cg_oom_kills" in a else None
     a["data_max_bytes"] = max([int(num(r.get("data_bytes"), 0)) for r in rows] + [0])
     # Journal: unplanned stops, warnings, message templates.
     jl = read_jsonl("journal.jsonl")
@@ -1109,10 +1146,16 @@ def verdicts(a, st):
         add("CPU within 2% of one core", "PASS" if c <= 2.0 and not bad else "FAIL",
             "%.2f%% average, busiest hour %.2f%%; days over 2%%: %s" % (c, a["cpu_pct_peak_hour"], ", ".join(bad) or "none"))
     mm = size_bytes(st.get("memory_max", ""), 768 * 1048576)
-    peak = max(a["mem_peak_kb"] * 1024, a["cg_peak_bytes"])
-    add("memory below the unit's limit", "PASS" if peak and peak < 0.9 * mm else ("NO DATA" if not peak else "FAIL"),
-        "peak %.0f MiB (process %.0f MiB, cgroup %.0f MiB) of %.0f MiB" % (
-            peak / 1048576.0, a["mem_peak_kb"] / 1024.0, a["cg_peak_bytes"] / 1048576.0, mm / 1048576.0))
+    # clifrd's own memory: its peak RSS (VmHWM). The cgroup's peak also
+    # counts page cache, which fills up to the limit on a busy host and is
+    # reclaimed there: shown, not judged. An OOM kill fails it.
+    peak = a["mem_peak_kb"] * 1024
+    ooms = a.get("oom_kills")
+    why = "process peak %.0f MiB of %.0f MiB; cgroup peak %.0f MiB (with page cache), anon at most %.0f MiB" % (
+        peak / 1048576.0, mm / 1048576.0, a["cg_peak_bytes"] / 1048576.0, a.get("anon_peak_bytes", 0) / 1048576.0)
+    if a.get("limit_hits") is not None:
+        why += "; limit reached %d times, OOM kills %d" % (a["limit_hits"], ooms or 0)
+    add("memory below the unit's limit", "NO DATA" if not peak else ("PASS" if peak < 0.9 * mm and not ooms else "FAIL"), why)
     ms = size_bytes(config_value("max_size", "2G"), 2 * 1024 ** 3)
     add("disk within max_size", "PASS" if a["data_max_bytes"] <= ms * 1.05 else "FAIL",
         "at most %.2f GiB of %.2f GiB" % (a["data_max_bytes"] / 1024.0 ** 3, ms / 1024.0 ** 3))

@@ -134,7 +134,7 @@ another one). It holds:
 | clifrd running at every sample | never found stopped |
 | went through a reboot / a kernel or OS update / a clifrd upgrade | it happened during the trial |
 | CPU within 2% of one core | on average and on every day |
-| memory below the unit's limit | peak below 90% of `MemoryMax` (768 MiB) |
+| memory below the unit's limit | clifrd's peak RSS below 90% of `MemoryMax` (768 MiB), and no OOM kill. The cgroup's peak is shown too but not judged: it includes page cache (the data files), which reaches the limit on a busy server and is reclaimed there |
 | disk within max_size | the recording stayed within `max_size` (2 GB) |
 | retention | the recording holds the configured 72 hours, no more |
 | no lost events | no events dropped by any source |
