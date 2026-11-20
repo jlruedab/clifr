@@ -128,6 +128,7 @@ type Recorder struct {
 	mounts                        *mountWatch
 	net                           *netWatch // interface addresses
 	kmsg                          *kmsgWatch
+	sessions                      *sessWatch
 	units                         *unitWatch
 	fsUsage                       fsUsage
 	lostReported                  int
@@ -449,6 +450,11 @@ func (r *Recorder) Run(ctx context.Context) error {
 	if stop := r.startKmsg(kmsgDone); stop != nil {
 		defer stop()
 		defer close(kmsgDone)
+	}
+	sessDone := make(chan struct{})
+	if stop := r.startSessions(sessDone); stop != nil {
+		defer stop()
+		defer close(sessDone)
 	}
 	ueventsDone := make(chan struct{})
 	if stop := r.startUevents(ueventsDone); stop != nil {

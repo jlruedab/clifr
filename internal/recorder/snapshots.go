@@ -100,29 +100,40 @@ func (r *Recorder) sampleSnapshots(ts int64, b *store.Batch, fail func(string, e
 		if fail(src.name, err) {
 			continue
 		}
-		keys := make([]string, len(lines))
+		r.snapRows(ts, b, src.name, lines)
+	}
+	if s.sysfs {
+		r.sampleSessions(b, fail)
+	}
+}
+
+// snapRows adds the rows of one read of a snapshot source at ts: the
+// whole source at its first read, every NetCountersFullMS and when its keys
+// or their order changed; otherwise only its changed lines.
+func (r *Recorder) snapRows(ts int64, b *store.Batch, name string, lines []procfs.SnapLine) {
+	s := r.sys
+	keys := make([]string, len(lines))
+	for i, l := range lines {
+		keys[i] = l.Key
+	}
+	st := s.snaps[name]
+	if st == nil || ts-st.full >= store.NetCountersFullMS || !slices.Equal(keys, st.keys) {
+		st = &snapState{lines: make(map[string]string, len(lines)), keys: keys, full: ts, read: ts}
+		s.snaps[name] = st
 		for i, l := range lines {
-			keys[i] = l.Key
+			b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: name, Key: l.Key, Pos: i, Full: true, Line: l.Line})
+			st.lines[l.Key] = l.Line
 		}
-		st := s.snaps[src.name]
-		if st == nil || ts-st.full >= store.NetCountersFullMS || !slices.Equal(keys, st.keys) {
-			st = &snapState{lines: make(map[string]string, len(lines)), keys: keys, full: ts, read: ts}
-			s.snaps[src.name] = st
-			for i, l := range lines {
-				b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: src.name, Key: l.Key, Pos: i, Full: true, Line: l.Line})
-				st.lines[l.Key] = l.Line
-			}
-			if len(lines) == 0 {
-				b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: src.name, Pos: -1, Full: true})
-			}
-			continue
+		if len(lines) == 0 {
+			b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: name, Pos: -1, Full: true})
 		}
-		st.read = ts
-		for i, l := range lines {
-			if st.lines[l.Key] != l.Line {
-				b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: src.name, Key: l.Key, Pos: i, Line: l.Line})
-				st.lines[l.Key] = l.Line
-			}
+		return
+	}
+	st.read = ts
+	for i, l := range lines {
+		if st.lines[l.Key] != l.Line {
+			b.Snapshots = append(b.Snapshots, store.SnapshotRow{TS: ts, Source: name, Key: l.Key, Pos: i, Line: l.Line})
+			st.lines[l.Key] = l.Line
 		}
 	}
 }
