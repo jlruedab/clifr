@@ -435,6 +435,15 @@ func firstLine(err error) error {
 // loadQuery is the CREATE TABLE of a table from files.
 func (l *loader) loadQuery(table, empty string, files []string, where string) string {
 	src := source(append([]string{empty}, files...))
+	if cols := pqstore.ZeroNull(table); len(cols) > 0 {
+		// A 0 parquet-go stored instead of NULL (pqstore.ZeroNull), before
+		// the filters and the choice of an entity's row see it.
+		r := make([]string, len(cols))
+		for i, c := range cols {
+			r[i] = fmt.Sprintf("NULLIF(%s, 0) AS %s", c, c)
+		}
+		src = `(SELECT * REPLACE (` + strings.Join(r, ", ") + `) FROM ` + src + `)`
+	}
 	var q string
 	switch {
 	case table == "meta":

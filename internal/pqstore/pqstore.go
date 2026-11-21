@@ -28,6 +28,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -1231,44 +1232,54 @@ func (s *Store) expire(now time.Time) error {
 // WriteEmpty writes a Parquet file with the table's schema and no rows, so
 // readers can load a table that has no data yet.
 func WriteEmpty(table, path string) error {
-	w, ok := emptyWriters[table]
+	r, ok := tableRows[table]
 	if !ok {
 		return fmt.Errorf("unknown table %q", table)
 	}
-	return w(path)
+	return r.writeEmpty(path)
 }
 
-var emptyWriters = map[string]func(string) error{
-	"samples":          func(p string) error { return writeFile[sampleRow](p, nil) },
-	"processes":        func(p string) error { return writeFile[processRow](p, nil) },
-	"proc_samples":     func(p string) error { return writeFile[procSampleRow](p, nil) },
-	"sockets":          func(p string) error { return writeFile[socketRow](p, nil) },
-	"sock_samples":     func(p string) error { return writeFile[sockSampleRow](p, nil) },
-	"sock_owners":      func(p string) error { return writeFile[ownerRow](p, nil) },
-	"open_files":       func(p string) error { return writeFile[fileRow](p, nil) },
-	"oom_events":       func(p string) error { return writeFile[oomRow](p, nil) },
-	"tcp_conns":        func(p string) error { return writeFile[tcpConnRow](p, nil) },
-	"fds_held":         func(p string) error { return writeFile[heldRow](p, nil) },
-	"mounts":           func(p string) error { return writeFile[mountRow](p, nil) },
-	"tcp_transitions":  func(p string) error { return writeFile[tcpTransRow](p, nil) },
-	"tcp_keyframes":    func(p string) error { return writeFile[keyframeRow](p, nil) },
-	"reconcile":        func(p string) error { return writeFile[reconcileRow](p, nil) },
-	"recorder_stats":   func(p string) error { return writeFile[statRow](p, nil) },
-	"guard_events":     func(p string) error { return writeFile[guardRow](p, nil) },
-	"verify_snapshots": func(p string) error { return writeFile[verifyRow](p, nil) },
-	"sys_samples":      func(p string) error { return writeFile[sysRow](p, nil) },
-	"cpu_samples":      func(p string) error { return writeFile[cpuRow](p, nil) },
-	"disk_samples":     func(p string) error { return writeFile[diskRow](p, nil) },
-	"fs_samples":       func(p string) error { return writeFile[fsRow](p, nil) },
-	"net_counters":     func(p string) error { return writeFile[netCounterRow](p, nil) },
-	"links":            func(p string) error { return writeFile[linkRow](p, nil) },
-	"addrs":            func(p string) error { return writeFile[addrRow](p, nil) },
-	"routing":          func(p string) error { return writeFile[routingRow](p, nil) },
-	"kmsg":             func(p string) error { return writeFile[kmsgRow](p, nil) },
-	"units":            func(p string) error { return writeFile[unitRow](p, nil) },
-	"cgroups":          func(p string) error { return writeFile[cgroupRow](p, nil) },
-	"snapshots":        func(p string) error { return writeFile[snapshotRow](p, nil) },
-	"blockdevs":        func(p string) error { return writeFile[blockDevRow](p, nil) },
-	"neighs":           func(p string) error { return writeFile[neighRow](p, nil) },
-	"meta":             func(p string) error { return writeFile[metaRow](p, nil) },
+// tableRow is a table's row type.
+type tableRow struct {
+	typ        reflect.Type
+	writeEmpty func(path string) error
+}
+
+func rowOf[T any]() tableRow {
+	return tableRow{reflect.TypeFor[T](), func(p string) error { return writeFile[T](p, nil) }}
+}
+
+var tableRows = map[string]tableRow{
+	"samples":          rowOf[sampleRow](),
+	"processes":        rowOf[processRow](),
+	"proc_samples":     rowOf[procSampleRow](),
+	"sockets":          rowOf[socketRow](),
+	"sock_samples":     rowOf[sockSampleRow](),
+	"sock_owners":      rowOf[ownerRow](),
+	"open_files":       rowOf[fileRow](),
+	"oom_events":       rowOf[oomRow](),
+	"tcp_conns":        rowOf[tcpConnRow](),
+	"fds_held":         rowOf[heldRow](),
+	"mounts":           rowOf[mountRow](),
+	"tcp_transitions":  rowOf[tcpTransRow](),
+	"tcp_keyframes":    rowOf[keyframeRow](),
+	"reconcile":        rowOf[reconcileRow](),
+	"recorder_stats":   rowOf[statRow](),
+	"guard_events":     rowOf[guardRow](),
+	"verify_snapshots": rowOf[verifyRow](),
+	"sys_samples":      rowOf[sysRow](),
+	"cpu_samples":      rowOf[cpuRow](),
+	"disk_samples":     rowOf[diskRow](),
+	"fs_samples":       rowOf[fsRow](),
+	"net_counters":     rowOf[netCounterRow](),
+	"links":            rowOf[linkRow](),
+	"addrs":            rowOf[addrRow](),
+	"routing":          rowOf[routingRow](),
+	"kmsg":             rowOf[kmsgRow](),
+	"units":            rowOf[unitRow](),
+	"cgroups":          rowOf[cgroupRow](),
+	"snapshots":        rowOf[snapshotRow](),
+	"blockdevs":        rowOf[blockDevRow](),
+	"neighs":           rowOf[neighRow](),
+	"meta":             rowOf[metaRow](),
 }

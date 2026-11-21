@@ -144,3 +144,18 @@ func TestMergeConnsRandom(t *testing.T) {
 		t.Error("no row dropped: the test has no versions")
 	}
 }
+
+// TestZeroNull: the columns read as NULL when 0 (a new optional number
+// field shows up here: is 0 a value there?).
+func TestZeroNull(t *testing.T) {
+	want := map[string][]string{
+		"tcp_conns": {"owner_until", "close_ts", "linger_until", "last_seen"},
+		"processes": {"last_seen", "ended", "exec_ts", "exit_ts"},
+		"fds_held":  {"last_seen"}, "sockets": {"last_seen"}, "sock_owners": {"last_seen"}, "open_files": {"last_seen"},
+	}
+	for table := range tableRows {
+		if got := ZeroNull(table); !slices.Equal(got, want[table]) {
+			t.Errorf("%s: %v, want %v", table, got, want[table])
+		}
+	}
+}
