@@ -67,8 +67,8 @@ type ToolStyle struct {
 	// ConntrackOld: conntrack-tools before 1.4.7 (RHEL 8's 1.4.4, Ubuntu
 	// 22.04's 1.4.6): the counters past search_restart named "(null)".
 	ConntrackOld bool
-	// Mountstats233: nfs-utils 2.3.3's mountstats (RHEL 8): no mount age,
-	// no error counts, per-op lists not padded.
+	// Mountstats233: nfs-utils 2.3.3's mountstats (RHEL 8): no mount age;
+	// -R knows the NFSv4 operations only up to CLONE.
 	Mountstats233 bool
 	// UnameUnknown: uutils coreutils (Ubuntu 25.10 and later): uname -p and -i
 	// print "unknown" and -a leaves them out. RHEL's and Debian's coreutils

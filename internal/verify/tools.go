@@ -1945,7 +1945,7 @@ func compareNFS(db *store.DB, snap snapshot) (Result, error) {
 		}
 		text = render(func(sb *strings.Builder) { query.PrintNFSStat(sb, stats, query.NFSStatOptions{}) })
 	} else {
-		mounts, err := query.MountstatsAt(db, snap.ts, !st.Mountstats233)
+		mounts, err := query.MountstatsAt(db, snap.ts)
 		if err != nil {
 			res.example("%s: %v", snap.cmd, err)
 			return res, nil

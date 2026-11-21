@@ -1401,7 +1401,7 @@ func mountstatsTool() *tool {
 		notes: []string{
 			"The NFS mounts of the host's mountstats as clifrd last read it at or before T (every minute; init's",
 			"mount namespace; recorded since schema 9), in the recorded host's nfs-utils layout (RHEL 8's 2.3.3",
-			"has no mount age and no error counts).",
+			"has no mount age).",
 		},
 		examples: []string{`clifr --at "02:45" mountstats`, `clifr --at "02:45" "mountstats -r /data"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
@@ -1419,14 +1419,20 @@ func mountstatsTool() *tool {
 			}
 			return func() error {
 				st := query.StyleAt(c.db, c.w.At)
-				mounts, err := query.MountstatsAt(c.db, c.w.At, !st.Mountstats233)
+				mounts, err := query.MountstatsAt(c.db, c.w.At)
 				if err != nil {
 					return err
 				}
 				o := query.MountstatsOptions{NFS: p.has("nfs"), RPC: p.has("rpc"), Xprt: p.has("xprt"), Raw: p.has("raw"),
 					MountPoints: p.pos, V233: st.Mountstats233}
-				return c.emit(mounts, func(int) rowMeta { return rowMeta{TS: c.w.At} },
-					func(w io.Writer) { query.PrintMountstats(w, mounts, o) })
+				found := true
+				err = c.emit(mounts, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					func(w io.Writer) { found = query.PrintMountstats(w, mounts, o) })
+				if err == nil && !found {
+					// mountstats exits with status 1 after its message
+					err = errors.New("mountstats: no NFS mount points were found")
+				}
+				return err
 			}, nil
 		},
 	}

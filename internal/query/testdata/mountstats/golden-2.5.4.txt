@@ -1,0 +1,4445 @@
+=== INPUT alma9.txt | OPTS 
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (38%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.030769 (milliseconds)
+WRITE:
+	20 ops (11%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 126
+	backlog wait: 0.000000 	RTT: 1.100000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 216	avg bytes received per op: 178
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9 ops (5%) 
+	avg bytes sent per op: 189	avg bytes received per op: 252
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 304	avg bytes received per op: 388
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 185	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.571429 	total execute time: 0.571429 (milliseconds)
+GETACL:
+	7 ops (4%) 
+	avg bytes sent per op: 186	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 236	avg bytes received per op: 272
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	6 ops (3%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3 ops (1%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1232
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 330
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2 ops (1%) 	1 errors (50%)
+	avg bytes sent per op: 202	avg bytes received per op: 198
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 184	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 268	avg bytes received per op: 108
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 6.000000 	total execute time: 6.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 184	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 248	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 232	avg bytes received per op: 348
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 176	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 208	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 132	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 17.000000 	total execute time: 17.000000 (milliseconds)
+
+--- stderr
+=== INPUT alma9.txt | OPTS -n
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1 times
+  attribute cache invalidated 1 times
+
+VFS calls:
+  VFS requested 5 inode revalidations
+  VFS requested 75 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 10 times
+  VFS called nfs_permission() 123 times
+  VFS called nfs_file_open() 12 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2 times
+  attribute cache invalidated 7 times
+
+VFS calls:
+  VFS requested 8 inode revalidations
+  VFS requested 82 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 4 times
+  VFS called nfs_permission() 135 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT alma9.txt | OPTS -r
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (38%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.030769 (milliseconds)
+WRITE:
+	20 ops (11%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 126
+	backlog wait: 0.000000 	RTT: 1.100000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 216	avg bytes received per op: 178
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9 ops (5%) 
+	avg bytes sent per op: 189	avg bytes received per op: 252
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 304	avg bytes received per op: 388
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 185	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.571429 	total execute time: 0.571429 (milliseconds)
+GETACL:
+	7 ops (4%) 
+	avg bytes sent per op: 186	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 236	avg bytes received per op: 272
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	6 ops (3%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3 ops (1%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1232
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 330
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2 ops (1%) 	1 errors (50%)
+	avg bytes sent per op: 202	avg bytes received per op: 198
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 184	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 268	avg bytes received per op: 108
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 6.000000 	total execute time: 6.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 184	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 248	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 232	avg bytes received per op: 348
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 176	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 208	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 132	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 17.000000 	total execute time: 17.000000 (milliseconds)
+
+--- stderr
+=== INPUT alma9.txt | OPTS -x
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 938
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+	Transport protocol: tcp
+	Source port: 0
+	Bind count: 0
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 168
+	RPC replies: 168
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT alma9.txt | OPTS -R
+--- rc 0
+--- stdout
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	0
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	5 75 1 1 12 10 123 1024 0 0 0 2 5 6 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/3 (nfs)
+	xprt:	tcp 938 1 2 0 0 143 143 0 144 0 2 0 1
+	per-op statistics
+	        NULL: 1 1 0 44 24 0 0 0 0
+	     GETATTR: 7 7 0 844 784 0 1 1 0
+	     SETATTR: 6 6 0 920 864 0 4 4 0
+	      LOOKUP: 8 8 0 1040 928 0 0 0 8
+	      ACCESS: 3 3 0 372 360 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	        READ: 65 65 0 8840 4202624 0 1 1 0
+	       WRITE: 20 20 0 4262720 2720 0 26 26 0
+	      CREATE: 7 7 0 1132 1960 0 7 7 0
+	       MKDIR: 1 1 0 152 280 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	       MKNOD: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 6 6 0 784 864 0 5 5 0
+	       RMDIR: 1 1 0 124 144 0 0 0 0
+	      RENAME: 1 1 0 184 260 0 1 1 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 0 0 0 0 0 0 0 0 0
+	 READDIRPLUS: 2 2 0 296 2536 0 0 0 0
+	      FSSTAT: 1 1 0 124 84 0 0 0 0
+	      FSINFO: 2 2 0 224 160 0 0 0 0
+	    PATHCONF: 1 1 0 112 56 0 0 0 0
+	      COMMIT: 1 1 0 136 128 0 4 4 0
+
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	0
+	caps:	caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	8 82 2 7 3 4 135 1024 0 0 0 2 5 7 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 169 0 2 0 1
+	per-op statistics
+	        NULL: 1 1 0 44 24 0 0 0 0
+	        READ: 65 65 0 13520 4201064 0 1 2 0
+	       WRITE: 20 20 0 4264144 2528 0 22 22 0
+	      COMMIT: 1 1 0 192 104 0 6 6 0
+	        OPEN: 7 7 0 2128 2720 0 5 5 0
+	OPEN_CONFIRM: 0 0 0 0 0 0 0 0 0
+	 OPEN_NOATTR: 2 2 0 520 660 0 0 0 0
+	OPEN_DOWNGRADE: 0 0 0 0 0 0 0 0 0
+	       CLOSE: 9 9 0 1944 1604 0 0 0 0
+	     SETATTR: 6 6 0 1420 1632 0 3 3 0
+	      FSINFO: 1 1 0 184 168 0 0 0 0
+	       RENEW: 0 0 0 0 0 0 0 0 0
+	 SETCLIENTID: 0 0 0 0 0 0 0 0 0
+	SETCLIENTID_CONFIRM: 0 0 0 0 0 0 0 0 0
+	        LOCK: 0 0 0 0 0 0 0 0 0
+	       LOCKT: 0 0 0 0 0 0 0 0 0
+	       LOCKU: 0 0 0 0 0 0 0 0 0
+	      ACCESS: 6 6 0 1164 1008 0 0 0 0
+	     GETATTR: 9 9 0 1704 2268 0 0 0 0
+	      LOOKUP: 2 2 0 404 396 0 0 0 1
+	 LOOKUP_ROOT: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 7 7 0 1300 812 0 4 4 0
+	      RENAME: 1 1 0 248 152 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	      CREATE: 1 1 0 232 348 0 0 0 0
+	    PATHCONF: 1 1 0 176 116 0 0 0 0
+	      STATFS: 1 1 0 192 160 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 3 3 0 648 3696 0 0 0 0
+	 SERVER_CAPS: 2 2 0 368 344 0 0 0 0
+	 DELEGRETURN: 0 0 0 0 0 0 0 0 0
+	      GETACL: 7 7 0 1304 1316 0 0 0 0
+	      SETACL: 0 0 0 0 0 0 0 0 0
+	FS_LOCATIONS: 0 0 0 0 0 0 0 0 0
+	RELEASE_LOCKOWNER: 0 0 0 0 0 0 0 0 0
+	     SECINFO: 0 0 0 0 0 0 0 0 0
+	FSID_PRESENT: 0 0 0 0 0 0 0 0 0
+	 EXCHANGE_ID: 2 2 0 536 216 0 0 0 0
+	CREATE_SESSION: 1 1 0 208 124 0 0 0 0
+	DESTROY_SESSION: 0 0 0 0 0 0 0 0 0
+	    SEQUENCE: 0 0 0 0 0 0 0 0 0
+	GET_LEASE_TIME: 0 0 0 0 0 0 0 0 0
+	RECLAIM_COMPLETE: 1 1 0 132 88 0 17 17 0
+	   LAYOUTGET: 0 0 0 0 0 0 0 0 0
+	GETDEVICEINFO: 0 0 0 0 0 0 0 0 0
+	LAYOUTCOMMIT: 0 0 0 0 0 0 0 0 0
+	LAYOUTRETURN: 0 0 0 0 0 0 0 0 0
+	SECINFO_NO_NAME: 0 0 0 0 0 0 0 0 0
+	TEST_STATEID: 0 0 0 0 0 0 0 0 0
+	FREE_STATEID: 0 0 0 0 0 0 0 0 0
+	GETDEVICELIST: 0 0 0 0 0 0 0 0 0
+	BIND_CONN_TO_SESSION: 0 0 0 0 0 0 0 0 0
+	DESTROY_CLIENTID: 0 0 0 0 0 0 0 0 0
+	        SEEK: 0 0 0 0 0 0 0 0 0
+	    ALLOCATE: 0 0 0 0 0 0 0 0 0
+	  DEALLOCATE: 0 0 0 0 0 0 0 0 0
+	 LAYOUTSTATS: 0 0 0 0 0 0 0 0 0
+	       CLONE: 0 0 0 0 0 0 0 0 0
+	        COPY: 0 0 0 0 0 0 0 0 0
+	OFFLOAD_CANCEL: 0 0 0 0 0 0 0 0 0
+	     LOOKUPP: 0 0 0 0 0 0 0 0 0
+	 LAYOUTERROR: 0 0 0 0 0 0 0 0 0
+	 COPY_NOTIFY: 0 0 0 0 0 0 0 0 0
+
+
+--- stderr
+=== INPUT alma9.txt | OPTS /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT alma9.txt | OPTS -n /mnt/v42
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2 times
+  attribute cache invalidated 7 times
+
+VFS calls:
+  VFS requested 8 inode revalidations
+  VFS requested 82 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 4 times
+  VFS called nfs_permission() 135 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT alma9.txt | OPTS -x /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 938
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT alma9.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT big1.txt | OPTS 
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	458 ops (320%) 	3 errors (0%)
+	avg bytes sent per op: 147	avg bytes received per op: 64232
+	backlog wait: 0.006550 	RTT: 0.006550 	total execute time: 0.021834 (milliseconds)
+WRITE:
+	143 ops (100%) 	3 errors (2%)
+	avg bytes sent per op: 208676	avg bytes received per op: 133
+	backlog wait: 0.069930 	RTT: 1.342657 	total execute time: 1.440559 (milliseconds)
+LOOKUP:
+	59 ops (41%) 	59 errors (100%)
+	avg bytes sent per op: 134	avg bytes received per op: 110
+	backlog wait: 0.050847 	RTT: 0.050847 	total execute time: 0.050847 (milliseconds)
+GETATTR:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 124	avg bytes received per op: 105
+	backlog wait: 0.057692 	RTT: 0.057692 	total execute time: 0.057692 (milliseconds)
+CREATE:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 163	avg bytes received per op: 263
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+SETATTR:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 154	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+REMOVE:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 133	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+ACCESS:
+	24 ops (16%) 	3 errors (12%)
+	avg bytes sent per op: 119	avg bytes received per op: 105
+	backlog wait: 0.125000 	RTT: 0.125000 	total execute time: 0.125000 (milliseconds)
+READDIRPLUS:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 131	avg bytes received per op: 1044
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+FSINFO:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 102	avg bytes received per op: 66
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+NULL:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 31	avg bytes received per op: 17
+	backlog wait: 1.000000 	RTT: 0.300000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 115	avg bytes received per op: 196
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RMDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 101
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RENAME:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 137	avg bytes received per op: 182
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+FSSTAT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 59
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+PATHCONF:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 87	avg bytes received per op: 39
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+COMMIT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 103	avg bytes received per op: 89
+	backlog wait: 0.300000 	RTT: 3.100000 	total execute time: 3.100000 (milliseconds)
+READLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SYMLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+MKNOD:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+READDIR:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	458 ops (272%) 	3 errors (0%)
+	avg bytes sent per op: 218	avg bytes received per op: 64208
+	backlog wait: 0.006550 	RTT: 0.006550 	total execute time: 0.021834 (milliseconds)
+WRITE:
+	143 ops (85%) 	3 errors (2%)
+	avg bytes sent per op: 208746	avg bytes received per op: 122
+	backlog wait: 0.069930 	RTT: 1.342657 	total execute time: 1.440559 (milliseconds)
+CLOSE:
+	66 ops (39%) 	3 errors (4%)
+	avg bytes sent per op: 217	avg bytes received per op: 171
+	backlog wait: 0.045455 	RTT: 0.045455 	total execute time: 0.045455 (milliseconds)
+GETATTR:
+	66 ops (39%) 	3 errors (4%)
+	avg bytes sent per op: 192	avg bytes received per op: 229
+	backlog wait: 0.045455 	RTT: 0.045455 	total execute time: 0.045455 (milliseconds)
+OPEN:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 297	avg bytes received per op: 354
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+REMOVE:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 186	avg bytes received per op: 109
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+GETACL:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 186	avg bytes received per op: 177
+	backlog wait: 0.057692 	RTT: 0.057692 	total execute time: 0.057692 (milliseconds)
+SETATTR:
+	45 ops (26%) 	3 errors (6%)
+	avg bytes sent per op: 232	avg bytes received per op: 246
+	backlog wait: 0.066667 	RTT: 0.688889 	total execute time: 0.688889 (milliseconds)
+ACCESS:
+	45 ops (26%) 	3 errors (6%)
+	avg bytes sent per op: 192	avg bytes received per op: 156
+	backlog wait: 0.066667 	RTT: 0.066667 	total execute time: 0.066667 (milliseconds)
+READDIR:
+	24 ops (14%) 	3 errors (12%)
+	avg bytes sent per op: 199	avg bytes received per op: 1025
+	backlog wait: 0.125000 	RTT: 0.125000 	total execute time: 0.125000 (milliseconds)
+OPEN_NOATTR:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 224	avg bytes received per op: 262
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+LOOKUP:
+	17 ops (10%) 	10 errors (58%)
+	avg bytes sent per op: 176	avg bytes received per op: 158
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+SERVER_CAPS:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 161	avg bytes received per op: 135
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+EXCHANGE_ID:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 224	avg bytes received per op: 108
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+NULL:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 31	avg bytes received per op: 17
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+COMMIT:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 143	avg bytes received per op: 73
+	backlog wait: 0.300000 	RTT: 2.400000 	total execute time: 2.400000 (milliseconds)
+FSINFO:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 137	avg bytes received per op: 117
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RENAME:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 182	avg bytes received per op: 106
+	backlog wait: 0.300000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CREATE:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 171	avg bytes received per op: 235
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+PATHCONF:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 131	avg bytes received per op: 81
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+STATFS:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 143	avg bytes received per op: 112
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+CREATE_SESSION:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 162	avg bytes received per op: 87
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RECLAIM_COMPLETE:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 101	avg bytes received per op: 61
+	backlog wait: 0.300000 	RTT: 3.100000 	total execute time: 3.100000 (milliseconds)
+OPEN_CONFIRM:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+OPEN_DOWNGRADE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RENEW:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETCLIENTID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETCLIENTID_CONFIRM:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCKT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCKU:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOOKUP_ROOT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SYMLINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+READLINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DELEGRETURN:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETACL:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FS_LOCATIONS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RELEASE_LOCKOWNER:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SECINFO:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSID_PRESENT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DESTROY_SESSION:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SEQUENCE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GET_LEASE_TIME:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTGET:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETDEVICEINFO:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTCOMMIT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTRETURN:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SECINFO_NO_NAME:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+TEST_STATEID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FREE_STATEID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETDEVICELIST:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+BIND_CONN_TO_SESSION:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DESTROY_CLIENTID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SEEK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+ALLOCATE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DEALLOCATE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTSTATS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CLONE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+COPY:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+OFFLOAD_CANCEL:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOOKUPP:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTERROR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LISTXATTRS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+REMOVEXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+
+--- stderr
+=== INPUT big1.txt | OPTS -n
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 10 times
+  attribute cache invalidated 10 times
+
+VFS calls:
+  VFS requested 38 inode revalidations
+  VFS requested 528 dentry revalidations
+
+  VFS called nfs_readdir() 38 times
+  VFS called nfs_lookup() 73 times
+  VFS called nfs_permission() 864 times
+  VFS called nfs_file_open() 87 times
+  VFS called nfs_file_flush() 122 times
+  VFS called nfs_lock() 3 times
+  VFS called nfs_fsync() 10 times
+  VFS called nfs_file_release() 66 times
+
+VM calls:
+  VFS called nfs_readpage() 3 times
+  VFS called nfs_readpages() 3 times
+  VFS called nfs_writepage() 3 times
+  VFS called nfs_writepages() 17 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 10  extending WRITEs: 7171
+  3 silly renames
+  short reads: 3  short writes: 3
+  NFSERR_DELAYs from server: 3
+  pNFS READs: 3
+  pNFS WRITEs: 3
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 17 times
+  attribute cache invalidated 52 times
+
+VFS calls:
+  VFS requested 59 inode revalidations
+  VFS requested 577 dentry revalidations
+
+  VFS called nfs_readdir() 38 times
+  VFS called nfs_lookup() 31 times
+  VFS called nfs_permission() 948 times
+  VFS called nfs_file_open() 24 times
+  VFS called nfs_file_flush() 122 times
+  VFS called nfs_lock() 3 times
+  VFS called nfs_fsync() 10 times
+  VFS called nfs_file_release() 66 times
+
+VM calls:
+  VFS called nfs_readpage() 3 times
+  VFS called nfs_readpages() 3 times
+  VFS called nfs_writepage() 3 times
+  VFS called nfs_writepages() 17 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 10  extending WRITEs: 7171
+  3 silly renames
+  short reads: 3  short writes: 3
+  NFSERR_DELAYs from server: 3
+  pNFS READs: 3
+  pNFS WRITEs: 3
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+
+--- stderr
+=== INPUT big1.txt | OPTS -r
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	458 ops (320%) 	3 errors (0%)
+	avg bytes sent per op: 147	avg bytes received per op: 64232
+	backlog wait: 0.006550 	RTT: 0.006550 	total execute time: 0.021834 (milliseconds)
+WRITE:
+	143 ops (100%) 	3 errors (2%)
+	avg bytes sent per op: 208676	avg bytes received per op: 133
+	backlog wait: 0.069930 	RTT: 1.342657 	total execute time: 1.440559 (milliseconds)
+LOOKUP:
+	59 ops (41%) 	59 errors (100%)
+	avg bytes sent per op: 134	avg bytes received per op: 110
+	backlog wait: 0.050847 	RTT: 0.050847 	total execute time: 0.050847 (milliseconds)
+GETATTR:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 124	avg bytes received per op: 105
+	backlog wait: 0.057692 	RTT: 0.057692 	total execute time: 0.057692 (milliseconds)
+CREATE:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 163	avg bytes received per op: 263
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+SETATTR:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 154	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+REMOVE:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 133	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+ACCESS:
+	24 ops (16%) 	3 errors (12%)
+	avg bytes sent per op: 119	avg bytes received per op: 105
+	backlog wait: 0.125000 	RTT: 0.125000 	total execute time: 0.125000 (milliseconds)
+READDIRPLUS:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 131	avg bytes received per op: 1044
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+FSINFO:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 102	avg bytes received per op: 66
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+NULL:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 31	avg bytes received per op: 17
+	backlog wait: 1.000000 	RTT: 0.300000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 115	avg bytes received per op: 196
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RMDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 101
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RENAME:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 137	avg bytes received per op: 182
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+FSSTAT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 59
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+PATHCONF:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 87	avg bytes received per op: 39
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+COMMIT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 103	avg bytes received per op: 89
+	backlog wait: 0.300000 	RTT: 3.100000 	total execute time: 3.100000 (milliseconds)
+READLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SYMLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+MKNOD:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+READDIR:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	458 ops (272%) 	3 errors (0%)
+	avg bytes sent per op: 218	avg bytes received per op: 64208
+	backlog wait: 0.006550 	RTT: 0.006550 	total execute time: 0.021834 (milliseconds)
+WRITE:
+	143 ops (85%) 	3 errors (2%)
+	avg bytes sent per op: 208746	avg bytes received per op: 122
+	backlog wait: 0.069930 	RTT: 1.342657 	total execute time: 1.440559 (milliseconds)
+CLOSE:
+	66 ops (39%) 	3 errors (4%)
+	avg bytes sent per op: 217	avg bytes received per op: 171
+	backlog wait: 0.045455 	RTT: 0.045455 	total execute time: 0.045455 (milliseconds)
+GETATTR:
+	66 ops (39%) 	3 errors (4%)
+	avg bytes sent per op: 192	avg bytes received per op: 229
+	backlog wait: 0.045455 	RTT: 0.045455 	total execute time: 0.045455 (milliseconds)
+OPEN:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 297	avg bytes received per op: 354
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+REMOVE:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 186	avg bytes received per op: 109
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+GETACL:
+	52 ops (30%) 	3 errors (5%)
+	avg bytes sent per op: 186	avg bytes received per op: 177
+	backlog wait: 0.057692 	RTT: 0.057692 	total execute time: 0.057692 (milliseconds)
+SETATTR:
+	45 ops (26%) 	3 errors (6%)
+	avg bytes sent per op: 232	avg bytes received per op: 246
+	backlog wait: 0.066667 	RTT: 0.688889 	total execute time: 0.688889 (milliseconds)
+ACCESS:
+	45 ops (26%) 	3 errors (6%)
+	avg bytes sent per op: 192	avg bytes received per op: 156
+	backlog wait: 0.066667 	RTT: 0.066667 	total execute time: 0.066667 (milliseconds)
+READDIR:
+	24 ops (14%) 	3 errors (12%)
+	avg bytes sent per op: 199	avg bytes received per op: 1025
+	backlog wait: 0.125000 	RTT: 0.125000 	total execute time: 0.125000 (milliseconds)
+OPEN_NOATTR:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 224	avg bytes received per op: 262
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+LOOKUP:
+	17 ops (10%) 	10 errors (58%)
+	avg bytes sent per op: 176	avg bytes received per op: 158
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+SERVER_CAPS:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 161	avg bytes received per op: 135
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+EXCHANGE_ID:
+	17 ops (10%) 	3 errors (17%)
+	avg bytes sent per op: 224	avg bytes received per op: 108
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+NULL:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 31	avg bytes received per op: 17
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+COMMIT:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 143	avg bytes received per op: 73
+	backlog wait: 0.300000 	RTT: 2.400000 	total execute time: 2.400000 (milliseconds)
+FSINFO:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 137	avg bytes received per op: 117
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RENAME:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 182	avg bytes received per op: 106
+	backlog wait: 0.300000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CREATE:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 171	avg bytes received per op: 235
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+PATHCONF:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 131	avg bytes received per op: 81
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+STATFS:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 143	avg bytes received per op: 112
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+CREATE_SESSION:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 162	avg bytes received per op: 87
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RECLAIM_COMPLETE:
+	10 ops (5%) 	3 errors (30%)
+	avg bytes sent per op: 101	avg bytes received per op: 61
+	backlog wait: 0.300000 	RTT: 3.100000 	total execute time: 3.100000 (milliseconds)
+OPEN_CONFIRM:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+OPEN_DOWNGRADE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RENEW:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETCLIENTID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETCLIENTID_CONFIRM:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCKT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOCKU:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOOKUP_ROOT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SYMLINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+READLINK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DELEGRETURN:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETACL:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FS_LOCATIONS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RELEASE_LOCKOWNER:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SECINFO:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSID_PRESENT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DESTROY_SESSION:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SEQUENCE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GET_LEASE_TIME:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTGET:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETDEVICEINFO:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTCOMMIT:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTRETURN:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SECINFO_NO_NAME:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+TEST_STATEID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FREE_STATEID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETDEVICELIST:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+BIND_CONN_TO_SESSION:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DESTROY_CLIENTID:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SEEK:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+ALLOCATE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+DEALLOCATE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTSTATS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CLONE:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+COPY:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+OFFLOAD_CANCEL:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LOOKUPP:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LAYOUTERROR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+GETXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LISTXATTRS:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+REMOVEXATTR:
+	3 ops (1%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+
+--- stderr
+=== INPUT big1.txt | OPTS -x
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 792
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+	Transport protocol: tcp
+	Source port: 0
+	Bind count: 0
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 168
+	RPC replies: 168
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT big1.txt | OPTS -R
+--- rc 0
+--- stdout
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	266405
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	38 528 10 10 87 73 864 7171 3 3 3 17 38 45 122 10 3 66 3 10 7171 3 3 3 3 3 3
+	bytes:	3 29360131 29818883 458755 29360131 29818883 3 7171
+	RPC iostats version: 1.1 p/v: 100003/3 (nfs)
+	xprt:	tcp 792 1 2 0 0 143 143 0 149 0 4 0 6
+	per-op statistics
+	        NULL: 10 10 3 311 171 10 3 10 3
+	     GETATTR: 52 52 3 6499 5491 3 3 3 3
+	     SETATTR: 45 45 3 6947 6051 3 24 24 3
+	      LOOKUP: 59 59 3 7955 6499 3 3 3 59
+	      ACCESS: 24 24 3 2859 2523 3 3 3 3
+	    READLINK: 3 3 3 3 3 3 3 3 3
+	        READ: 458 458 3 67343 29418371 3 3 10 3
+	       WRITE: 143 143 3 29840723 19043 10 192 206 3
+	      CREATE: 52 52 3 8515 13723 3 38 38 3
+	       MKDIR: 10 10 3 1151 1963 3 3 3 3
+	     SYMLINK: 3 3 3 3 3 3 3 3 3
+	       MKNOD: 3 3 3 3 3 3 3 3 3
+	      REMOVE: 45 45 3 5995 6051 3 24 24 3
+	       RMDIR: 10 10 3 955 1011 3 3 3 3
+	      RENAME: 10 10 3 1375 1823 3 3 3 3
+	        LINK: 3 3 3 3 3 3 3 3 3
+	     READDIR: 3 3 3 3 3 3 3 3 3
+	 READDIRPLUS: 17 17 3 2243 17755 3 3 3 3
+	      FSSTAT: 10 10 3 955 591 3 3 3 3
+	      FSINFO: 17 17 3 1739 1123 3 3 3 3
+	    PATHCONF: 10 10 3 871 395 3 3 3 3
+	      COMMIT: 10 10 3 1039 899 3 31 31 3
+
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	266405
+	caps:	caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	59 577 17 52 24 31 948 7171 3 3 3 17 38 52 122 10 3 66 3 10 7171 3 3 3 3 3 3
+	bytes:	3 29360131 29818883 458755 29360131 29818883 3 7171
+	RPC iostats version: 1.1 p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 174 0 4 9 0
+	per-op statistics
+	        NULL: 10 10 3 311 171 3 3 3 3
+	        READ: 458 458 3 100103 29407451 3 3 10 3
+	       WRITE: 143 143 3 29850691 17475 10 192 206 3
+	      COMMIT: 10 10 3 1431 731 3 24 24 3
+	        OPEN: 52 52 3 15487 18455 3 38 38 3
+	OPEN_CONFIRM: 3 3 3 3 3 3 3 3 3
+	 OPEN_NOATTR: 17 17 3 3811 4455 3 3 3 3
+	OPEN_DOWNGRADE: 3 3 3 3 3 3 3 3 3
+	       CLOSE: 66 66 3 14367 11287 3 3 3 3
+	     SETATTR: 45 45 3 10447 11091 3 31 31 3
+	      FSINFO: 10 10 3 1375 1179 3 3 3 3
+	       RENEW: 3 3 3 3 3 3 3 3 3
+	 SETCLIENTID: 3 3 3 3 3 3 3 3 3
+	SETCLIENTID_CONFIRM: 3 3 3 3 3 3 3 3 3
+	        LOCK: 3 3 3 3 3 3 3 3 3
+	       LOCKT: 3 3 3 3 3 3 3 3 3
+	       LOCKU: 3 3 3 3 3 3 3 3 3
+	      ACCESS: 45 45 3 8655 7059 3 3 3 3
+	     GETATTR: 66 66 3 12687 15123 3 3 3 3
+	      LOOKUP: 17 17 3 2999 2691 3 3 3 10
+	 LOOKUP_ROOT: 3 3 3 3 3 3 3 3 3
+	      REMOVE: 52 52 3 9691 5687 3 38 38 3
+	      RENAME: 10 10 3 1823 1067 3 10 10 3
+	        LINK: 3 3 3 3 3 3 3 3 3
+	     SYMLINK: 3 3 3 3 3 3 3 3 3
+	      CREATE: 10 10 3 1711 2355 3 3 3 3
+	    PATHCONF: 10 10 3 1319 815 3 3 3 3
+	      STATFS: 10 10 3 1431 1123 3 3 3 3
+	    READLINK: 3 3 3 3 3 3 3 3 3
+	     READDIR: 24 24 3 4791 24615 3 3 3 3
+	 SERVER_CAPS: 17 17 3 2747 2299 3 3 3 3
+	 DELEGRETURN: 3 3 3 3 3 3 3 3 3
+	      GETACL: 52 52 3 9719 9215 3 3 3 3
+	      SETACL: 3 3 3 3 3 3 3 3 3
+	FS_LOCATIONS: 3 3 3 3 3 3 3 3 3
+	RELEASE_LOCKOWNER: 3 3 3 3 3 3 3 3 3
+	     SECINFO: 3 3 3 3 3 3 3 3 3
+	FSID_PRESENT: 3 3 3 3 3 3 3 3 3
+	 EXCHANGE_ID: 17 17 3 3811 1851 3 3 3 3
+	CREATE_SESSION: 10 10 3 1627 871 3 3 3 3
+	DESTROY_SESSION: 3 3 3 3 3 3 3 3 3
+	    SEQUENCE: 3 3 3 3 3 3 3 3 3
+	GET_LEASE_TIME: 3 3 3 3 3 3 3 3 3
+	RECLAIM_COMPLETE: 10 10 3 1011 619 3 31 31 3
+	   LAYOUTGET: 3 3 3 3 3 3 3 3 3
+	GETDEVICEINFO: 3 3 3 3 3 3 3 3 3
+	LAYOUTCOMMIT: 3 3 3 3 3 3 3 3 3
+	LAYOUTRETURN: 3 3 3 3 3 3 3 3 3
+	SECINFO_NO_NAME: 3 3 3 3 3 3 3 3 3
+	TEST_STATEID: 3 3 3 3 3 3 3 3 3
+	FREE_STATEID: 3 3 3 3 3 3 3 3 3
+	GETDEVICELIST: 3 3 3 3 3 3 3 3 3
+	BIND_CONN_TO_SESSION: 3 3 3 3 3 3 3 3 3
+	DESTROY_CLIENTID: 3 3 3 3 3 3 3 3 3
+	        SEEK: 3 3 3 3 3 3 3 3 3
+	    ALLOCATE: 3 3 3 3 3 3 3 3 3
+	  DEALLOCATE: 3 3 3 3 3 3 3 3 3
+	 LAYOUTSTATS: 3 3 3 3 3 3 3 3 3
+	       CLONE: 3 3 3 3 3 3 3 3 3
+	        COPY: 3 3 3 3 3 3 3 3 3
+	OFFLOAD_CANCEL: 3 3 3 3 3 3 3 3 3
+	     LOOKUPP: 3 3 3 3 3 3 3 3 3
+	 LAYOUTERROR: 3 3 3 3 3 3 3 3 3
+
+
+--- stderr
+=== INPUT big1.txt | OPTS /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	458 ops (320%) 	3 errors (0%)
+	avg bytes sent per op: 147	avg bytes received per op: 64232
+	backlog wait: 0.006550 	RTT: 0.006550 	total execute time: 0.021834 (milliseconds)
+WRITE:
+	143 ops (100%) 	3 errors (2%)
+	avg bytes sent per op: 208676	avg bytes received per op: 133
+	backlog wait: 0.069930 	RTT: 1.342657 	total execute time: 1.440559 (milliseconds)
+LOOKUP:
+	59 ops (41%) 	59 errors (100%)
+	avg bytes sent per op: 134	avg bytes received per op: 110
+	backlog wait: 0.050847 	RTT: 0.050847 	total execute time: 0.050847 (milliseconds)
+GETATTR:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 124	avg bytes received per op: 105
+	backlog wait: 0.057692 	RTT: 0.057692 	total execute time: 0.057692 (milliseconds)
+CREATE:
+	52 ops (36%) 	3 errors (5%)
+	avg bytes sent per op: 163	avg bytes received per op: 263
+	backlog wait: 0.057692 	RTT: 0.730769 	total execute time: 0.730769 (milliseconds)
+SETATTR:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 154	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+REMOVE:
+	45 ops (31%) 	3 errors (6%)
+	avg bytes sent per op: 133	avg bytes received per op: 134
+	backlog wait: 0.066667 	RTT: 0.533333 	total execute time: 0.533333 (milliseconds)
+ACCESS:
+	24 ops (16%) 	3 errors (12%)
+	avg bytes sent per op: 119	avg bytes received per op: 105
+	backlog wait: 0.125000 	RTT: 0.125000 	total execute time: 0.125000 (milliseconds)
+READDIRPLUS:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 131	avg bytes received per op: 1044
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+FSINFO:
+	17 ops (11%) 	3 errors (17%)
+	avg bytes sent per op: 102	avg bytes received per op: 66
+	backlog wait: 0.176471 	RTT: 0.176471 	total execute time: 0.176471 (milliseconds)
+NULL:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 31	avg bytes received per op: 17
+	backlog wait: 1.000000 	RTT: 0.300000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 115	avg bytes received per op: 196
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RMDIR:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 101
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+RENAME:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 137	avg bytes received per op: 182
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+FSSTAT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 95	avg bytes received per op: 59
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+PATHCONF:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 87	avg bytes received per op: 39
+	backlog wait: 0.300000 	RTT: 0.300000 	total execute time: 0.300000 (milliseconds)
+COMMIT:
+	10 ops (6%) 	3 errors (30%)
+	avg bytes sent per op: 103	avg bytes received per op: 89
+	backlog wait: 0.300000 	RTT: 3.100000 	total execute time: 3.100000 (milliseconds)
+READLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SYMLINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+MKNOD:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+LINK:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+READDIR:
+	3 ops (2%) 	3 errors (100%)
+	avg bytes sent per op: 1	avg bytes received per op: 1
+	backlog wait: 1.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+
+--- stderr
+=== INPUT big1.txt | OPTS -n /mnt/v42
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 3 days, 2:00:05
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 17 times
+  attribute cache invalidated 52 times
+
+VFS calls:
+  VFS requested 59 inode revalidations
+  VFS requested 577 dentry revalidations
+
+  VFS called nfs_readdir() 38 times
+  VFS called nfs_lookup() 31 times
+  VFS called nfs_permission() 948 times
+  VFS called nfs_file_open() 24 times
+  VFS called nfs_file_flush() 122 times
+  VFS called nfs_lock() 3 times
+  VFS called nfs_fsync() 10 times
+  VFS called nfs_file_release() 66 times
+
+VM calls:
+  VFS called nfs_readpage() 3 times
+  VFS called nfs_readpages() 3 times
+  VFS called nfs_writepage() 3 times
+  VFS called nfs_writepages() 17 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 10  extending WRITEs: 7171
+  3 silly renames
+  short reads: 3  short writes: 3
+  NFSERR_DELAYs from server: 3
+  pNFS READs: 3
+  pNFS WRITEs: 3
+
+NFS byte counts:
+  applications read 3 bytes via read(2)
+  applications wrote 29360131 bytes via write(2)
+  applications read 29818883 bytes via O_DIRECT read(2)
+  applications wrote 458755 bytes via O_DIRECT write(2)
+  client read 29360131 bytes via NFS READ
+  client wrote 29818883 bytes via NFS WRITE
+
+--- stderr
+=== INPUT big1.txt | OPTS -x /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 792
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT big1.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT big2.txt | OPTS 
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65000195 ops (45454681%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20000060 ops (13986055%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8000024 ops (5594422%) 	8000024 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3000009 ops (2097908%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65000195 ops (38690592%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.030769 (milliseconds)
+WRITE:
+	20000060 ops (11904797%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 126
+	backlog wait: 0.000000 	RTT: 1.100000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9000027 ops (5357158%) 
+	avg bytes sent per op: 216	avg bytes received per op: 178
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9000027 ops (5357158%) 
+	avg bytes sent per op: 189	avg bytes received per op: 252
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 304	avg bytes received per op: 388
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 185	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.571429 	total execute time: 0.571429 (milliseconds)
+GETACL:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 186	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6000018 ops (3571439%) 
+	avg bytes sent per op: 236	avg bytes received per op: 272
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	6000018 ops (3571439%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3000009 ops (1785719%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1232
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 260	avg bytes received per op: 330
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2000006 ops (1190479%) 	1000003 errors (50%)
+	avg bytes sent per op: 202	avg bytes received per op: 198
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 184	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 268	avg bytes received per op: 108
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 6.000000 	total execute time: 6.000000 (milliseconds)
+FSINFO:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 184	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 248	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 232	avg bytes received per op: 348
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 176	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 208	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 132	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 17.000000 	total execute time: 17.000000 (milliseconds)
+
+--- stderr
+=== INPUT big2.txt | OPTS -n
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1000003 times
+  attribute cache invalidated 1000003 times
+
+VFS calls:
+  VFS requested 5000015 inode revalidations
+  VFS requested 75000225 dentry revalidations
+
+  VFS called nfs_readdir() 5000015 times
+  VFS called nfs_lookup() 10000030 times
+  VFS called nfs_permission() 123000369 times
+  VFS called nfs_file_open() 12000036 times
+  VFS called nfs_file_flush() 17000051 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1000003 times
+  VFS called nfs_file_release() 9000027 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2000006 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1000003  extending WRITEs: 1024003072
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2000006 times
+  attribute cache invalidated 7000021 times
+
+VFS calls:
+  VFS requested 8000024 inode revalidations
+  VFS requested 82000246 dentry revalidations
+
+  VFS called nfs_readdir() 5000015 times
+  VFS called nfs_lookup() 4000012 times
+  VFS called nfs_permission() 135000405 times
+  VFS called nfs_file_open() 3000009 times
+  VFS called nfs_file_flush() 17000051 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1000003 times
+  VFS called nfs_file_release() 9000027 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2000006 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1000003  extending WRITEs: 1024003072
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+
+--- stderr
+=== INPUT big2.txt | OPTS -r
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65000195 ops (45454681%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20000060 ops (13986055%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8000024 ops (5594422%) 	8000024 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3000009 ops (2097908%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65000195 ops (38690592%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.030769 (milliseconds)
+WRITE:
+	20000060 ops (11904797%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 126
+	backlog wait: 0.000000 	RTT: 1.100000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9000027 ops (5357158%) 
+	avg bytes sent per op: 216	avg bytes received per op: 178
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9000027 ops (5357158%) 
+	avg bytes sent per op: 189	avg bytes received per op: 252
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 304	avg bytes received per op: 388
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 185	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.571429 	total execute time: 0.571429 (milliseconds)
+GETACL:
+	7000021 ops (4166679%) 
+	avg bytes sent per op: 186	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6000018 ops (3571439%) 
+	avg bytes sent per op: 236	avg bytes received per op: 272
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	6000018 ops (3571439%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3000009 ops (1785719%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1232
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 260	avg bytes received per op: 330
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2000006 ops (1190479%) 	1000003 errors (50%)
+	avg bytes sent per op: 202	avg bytes received per op: 198
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 184	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2000006 ops (1190479%) 
+	avg bytes sent per op: 268	avg bytes received per op: 108
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 6.000000 	total execute time: 6.000000 (milliseconds)
+FSINFO:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 184	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 248	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 232	avg bytes received per op: 348
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 176	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 208	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1000003 ops (595239%) 
+	avg bytes sent per op: 132	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 17.000000 	total execute time: 17.000000 (milliseconds)
+
+--- stderr
+=== INPUT big2.txt | OPTS -x
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 938
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+	Transport protocol: tcp
+	Source port: 0
+	Bind count: 0
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 168
+	RPC replies: 168
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT big2.txt | OPTS -R
+--- rc 0
+--- stdout
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	86461
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	5000015 75000225 1000003 1000003 12000036 10000030 123000369 1024003072 0 0 0 2000006 5000015 6000018 17000051 1000003 0 9000027 0 1000003 1024003072 0 0 0 0 0 0
+	bytes:	0 4194316582912 4259852779520 65536196608 4194316582912 4259852779520 0 1024003072
+	RPC iostats version: 1.1 p/v: 100003/3 (nfs)
+	xprt:	tcp 938 1 2 0 0 143 143 0 144 0 2 0 1
+	per-op statistics
+	        NULL: 1000003 1000003 0 44000132 24000072 0 0 0 0
+	     GETATTR: 7000021 7000021 0 844002532 784002352 0 1000003 1000003 0
+	     SETATTR: 6000018 6000018 0 920002760 864002592 0 4000012 4000012 0
+	      LOOKUP: 8000024 8000024 0 1040003120 928002784 0 0 0 8000024
+	      ACCESS: 3000009 3000009 0 372001116 360001080 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	        READ: 65000195 65000195 0 8840026520 4202636607872 0 1000003 1000003 0
+	       WRITE: 20000060 20000060 0 4262732788160 2720008160 0 26000078 26000078 0
+	      CREATE: 7000021 7000021 0 1132003396 1960005880 0 7000021 7000021 0
+	       MKDIR: 1000003 1000003 0 152000456 280000840 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	       MKNOD: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 6000018 6000018 0 784002352 864002592 0 5000015 5000015 0
+	       RMDIR: 1000003 1000003 0 124000372 144000432 0 0 0 0
+	      RENAME: 1000003 1000003 0 184000552 260000780 0 1000003 1000003 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 0 0 0 0 0 0 0 0 0
+	 READDIRPLUS: 2000006 2000006 0 296000888 2536007608 0 0 0 0
+	      FSSTAT: 1000003 1000003 0 124000372 84000252 0 0 0 0
+	      FSINFO: 2000006 2000006 0 224000672 160000480 0 0 0 0
+	    PATHCONF: 1000003 1000003 0 112000336 56000168 0 0 0 0
+	      COMMIT: 1000003 1000003 0 136000408 128000384 0 4000012 4000012 0
+
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	86461
+	caps:	caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	8000024 82000246 2000006 7000021 3000009 4000012 135000405 1024003072 0 0 0 2000006 5000015 7000021 17000051 1000003 0 9000027 0 1000003 1024003072 0 0 0 0 0 0
+	bytes:	0 4194316582912 4259852779520 65536196608 4194316582912 4259852779520 0 1024003072
+	RPC iostats version: 1.1 p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 169 0 2 0 1
+	per-op statistics
+	        NULL: 1000003 1000003 0 44000132 24000072 0 0 0 0
+	        READ: 65000195 65000195 0 13520040560 4201076603192 0 1000003 2000006 0
+	       WRITE: 20000060 20000060 0 4264156792432 2528007584 0 22000066 22000066 0
+	      COMMIT: 1000003 1000003 0 192000576 104000312 0 6000018 6000018 0
+	        OPEN: 7000021 7000021 0 2128006384 2720008160 0 5000015 5000015 0
+	OPEN_CONFIRM: 0 0 0 0 0 0 0 0 0
+	 OPEN_NOATTR: 2000006 2000006 0 520001560 660001980 0 0 0 0
+	OPEN_DOWNGRADE: 0 0 0 0 0 0 0 0 0
+	       CLOSE: 9000027 9000027 0 1944005832 1604004812 0 0 0 0
+	     SETATTR: 6000018 6000018 0 1420004260 1632004896 0 3000009 3000009 0
+	      FSINFO: 1000003 1000003 0 184000552 168000504 0 0 0 0
+	       RENEW: 0 0 0 0 0 0 0 0 0
+	 SETCLIENTID: 0 0 0 0 0 0 0 0 0
+	SETCLIENTID_CONFIRM: 0 0 0 0 0 0 0 0 0
+	        LOCK: 0 0 0 0 0 0 0 0 0
+	       LOCKT: 0 0 0 0 0 0 0 0 0
+	       LOCKU: 0 0 0 0 0 0 0 0 0
+	      ACCESS: 6000018 6000018 0 1164003492 1008003024 0 0 0 0
+	     GETATTR: 9000027 9000027 0 1704005112 2268006804 0 0 0 0
+	      LOOKUP: 2000006 2000006 0 404001212 396001188 0 0 0 1000003
+	 LOOKUP_ROOT: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 7000021 7000021 0 1300003900 812002436 0 4000012 4000012 0
+	      RENAME: 1000003 1000003 0 248000744 152000456 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	      CREATE: 1000003 1000003 0 232000696 348001044 0 0 0 0
+	    PATHCONF: 1000003 1000003 0 176000528 116000348 0 0 0 0
+	      STATFS: 1000003 1000003 0 192000576 160000480 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 3000009 3000009 0 648001944 3696011088 0 0 0 0
+	 SERVER_CAPS: 2000006 2000006 0 368001104 344001032 0 0 0 0
+	 DELEGRETURN: 0 0 0 0 0 0 0 0 0
+	      GETACL: 7000021 7000021 0 1304003912 1316003948 0 0 0 0
+	      SETACL: 0 0 0 0 0 0 0 0 0
+	FS_LOCATIONS: 0 0 0 0 0 0 0 0 0
+	RELEASE_LOCKOWNER: 0 0 0 0 0 0 0 0 0
+	     SECINFO: 0 0 0 0 0 0 0 0 0
+	FSID_PRESENT: 0 0 0 0 0 0 0 0 0
+	 EXCHANGE_ID: 2000006 2000006 0 536001608 216000648 0 0 0 0
+	CREATE_SESSION: 1000003 1000003 0 208000624 124000372 0 0 0 0
+	DESTROY_SESSION: 0 0 0 0 0 0 0 0 0
+	    SEQUENCE: 0 0 0 0 0 0 0 0 0
+	GET_LEASE_TIME: 0 0 0 0 0 0 0 0 0
+	RECLAIM_COMPLETE: 1000003 1000003 0 132000396 88000264 0 17000051 17000051 0
+	   LAYOUTGET: 0 0 0 0 0 0 0 0 0
+	GETDEVICEINFO: 0 0 0 0 0 0 0 0 0
+	LAYOUTCOMMIT: 0 0 0 0 0 0 0 0 0
+	LAYOUTRETURN: 0 0 0 0 0 0 0 0 0
+	SECINFO_NO_NAME: 0 0 0 0 0 0 0 0 0
+	TEST_STATEID: 0 0 0 0 0 0 0 0 0
+	FREE_STATEID: 0 0 0 0 0 0 0 0 0
+	GETDEVICELIST: 0 0 0 0 0 0 0 0 0
+	BIND_CONN_TO_SESSION: 0 0 0 0 0 0 0 0 0
+	DESTROY_CLIENTID: 0 0 0 0 0 0 0 0 0
+	        SEEK: 0 0 0 0 0 0 0 0 0
+	    ALLOCATE: 0 0 0 0 0 0 0 0 0
+	  DEALLOCATE: 0 0 0 0 0 0 0 0 0
+	 LAYOUTSTATS: 0 0 0 0 0 0 0 0 0
+	       CLONE: 0 0 0 0 0 0 0 0 0
+	        COPY: 0 0 0 0 0 0 0 0 0
+	OFFLOAD_CANCEL: 0 0 0 0 0 0 0 0 0
+	     LOOKUPP: 0 0 0 0 0 0 0 0 0
+	 LAYOUTERROR: 0 0 0 0 0 0 0 0 0
+	 COPY_NOTIFY: 0 0 0 0 0 0 0 0 0
+
+
+--- stderr
+=== INPUT big2.txt | OPTS /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65000195 ops (45454681%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20000060 ops (13986055%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.300000 (milliseconds)
+LOOKUP:
+	8000024 ops (5594422%) 	8000024 errors (100%)
+	avg bytes sent per op: 130	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 120	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.142857 	total execute time: 0.142857 (milliseconds)
+CREATE:
+	7000021 ops (4895119%) 
+	avg bytes sent per op: 161	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+SETATTR:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+REMOVE:
+	6000018 ops (4195816%) 
+	avg bytes sent per op: 130	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3000009 ops (2097908%) 
+	avg bytes sent per op: 124	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2000006 ops (1398605%) 
+	avg bytes sent per op: 112	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 152	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 184	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+FSSTAT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 112	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1000003 ops (699302%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT big2.txt | OPTS -n /mnt/v42
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 1 day, 0:01:01
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2000006 times
+  attribute cache invalidated 7000021 times
+
+VFS calls:
+  VFS requested 8000024 inode revalidations
+  VFS requested 82000246 dentry revalidations
+
+  VFS called nfs_readdir() 5000015 times
+  VFS called nfs_lookup() 4000012 times
+  VFS called nfs_permission() 135000405 times
+  VFS called nfs_file_open() 3000009 times
+  VFS called nfs_file_flush() 17000051 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1000003 times
+  VFS called nfs_file_release() 9000027 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2000006 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1000003  extending WRITEs: 1024003072
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194316582912 bytes via write(2)
+  applications read 4259852779520 bytes via O_DIRECT read(2)
+  applications wrote 65536196608 bytes via O_DIRECT write(2)
+  client read 4194316582912 bytes via NFS READ
+  client wrote 4259852779520 bytes via NFS WRITE
+
+--- stderr
+=== INPUT big2.txt | OPTS -x /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 938
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT big2.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS 
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -n
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -r
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -x
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -R
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS /mnt/v3
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -n /mnt/v42
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS -x /mnt/v3
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT nonfs.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT rocky8.txt | OPTS 
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 148	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213148	avg bytes received per op: 136
+	backlog wait: 0.050000 	RTT: 1.350000 	total execute time: 1.450000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 142	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 132	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 173	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 165	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 142	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 136	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 160	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 124	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 1.000000 	RTT: 0.000000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 164	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 196	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 148	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (38%) 
+	avg bytes sent per op: 220	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (11%) 
+	avg bytes sent per op: 213219	avg bytes received per op: 124
+	backlog wait: 0.050000 	RTT: 1.350000 	total execute time: 1.450000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 228	avg bytes received per op: 179
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9 ops (5%) 
+	avg bytes sent per op: 201	avg bytes received per op: 240
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 316	avg bytes received per op: 376
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 197	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+GETACL:
+	7 ops (4%) 
+	avg bytes sent per op: 198	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 248	avg bytes received per op: 264
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+ACCESS:
+	6 ops (3%) 
+	avg bytes sent per op: 206	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3 ops (1%) 
+	avg bytes sent per op: 228	avg bytes received per op: 1172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 272	avg bytes received per op: 318
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2 ops (1%) 	1 errors (50%)
+	avg bytes sent per op: 214	avg bytes received per op: 192
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 196	avg bytes received per op: 164
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 272	avg bytes received per op: 132
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 204	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 3.000000 	total execute time: 3.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 196	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 260	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 244	avg bytes received per op: 336
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 188	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 204	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 232	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 144	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -n
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1 times
+  attribute cache invalidated 1 times
+
+VFS calls:
+  VFS requested 5 inode revalidations
+  VFS requested 75 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 10 times
+  VFS called nfs_permission() 123 times
+  VFS called nfs_file_open() 12 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2 times
+  attribute cache invalidated 7 times
+
+VFS calls:
+  VFS requested 8 inode revalidations
+  VFS requested 82 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 4 times
+  VFS called nfs_permission() 135 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -r
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 148	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213148	avg bytes received per op: 136
+	backlog wait: 0.050000 	RTT: 1.350000 	total execute time: 1.450000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 142	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 132	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 173	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 165	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 142	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 136	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 160	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 124	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 1.000000 	RTT: 0.000000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 164	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 196	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 148	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+RPC statistics:
+  168 RPC requests sent, 168 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (38%) 
+	avg bytes sent per op: 220	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (11%) 
+	avg bytes sent per op: 213219	avg bytes received per op: 124
+	backlog wait: 0.050000 	RTT: 1.350000 	total execute time: 1.450000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 228	avg bytes received per op: 179
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	9 ops (5%) 
+	avg bytes sent per op: 201	avg bytes received per op: 240
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 316	avg bytes received per op: 376
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 197	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+GETACL:
+	7 ops (4%) 
+	avg bytes sent per op: 198	avg bytes received per op: 188
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 248	avg bytes received per op: 264
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+ACCESS:
+	6 ops (3%) 
+	avg bytes sent per op: 206	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	3 ops (1%) 
+	avg bytes sent per op: 228	avg bytes received per op: 1172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 272	avg bytes received per op: 318
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	2 ops (1%) 	1 errors (50%)
+	avg bytes sent per op: 214	avg bytes received per op: 192
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 196	avg bytes received per op: 164
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 272	avg bytes received per op: 132
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 204	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 3.000000 	total execute time: 3.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 196	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 260	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 244	avg bytes received per op: 336
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 188	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 204	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 232	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 144	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -x
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 792
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+	Transport protocol: tcp
+	Source port: 0
+	Bind count: 0
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 168
+	RPC replies: 168
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -R
+--- rc 0
+--- stdout
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	0
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	5 75 1 1 12 10 123 1024 0 0 0 2 5 6 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/3 (nfs)
+	xprt:	tcp 792 1 2 0 0 143 143 0 149 0 4 0 6
+	per-op statistics
+	        NULL: 1 1 0 44 24 1 0 1 0
+	     GETATTR: 7 7 0 928 784 0 0 0 0
+	     SETATTR: 6 6 0 992 864 0 3 3 0
+	      LOOKUP: 8 8 0 1136 928 0 0 0 8
+	      ACCESS: 3 3 0 408 360 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	        READ: 65 65 0 9620 4202624 0 0 1 0
+	       WRITE: 20 20 0 4262960 2720 1 27 29 0
+	      CREATE: 7 7 0 1216 1960 0 5 5 0
+	       MKDIR: 1 1 0 164 280 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	       MKNOD: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 6 6 0 856 864 0 3 3 0
+	       RMDIR: 1 1 0 136 144 0 0 0 0
+	      RENAME: 1 1 0 196 260 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 0 0 0 0 0 0 0 0 0
+	 READDIRPLUS: 2 2 0 320 2536 0 0 0 0
+	      FSSTAT: 1 1 0 136 84 0 0 0 0
+	      FSINFO: 2 2 0 248 160 0 0 0 0
+	    PATHCONF: 1 1 0 124 56 0 0 0 0
+	      COMMIT: 1 1 0 148 128 0 4 4 0
+
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	0
+	caps:	caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	8 82 2 7 3 4 135 1024 0 0 0 2 5 7 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 174 0 4 9 0
+	per-op statistics
+	        NULL: 1 1 0 44 24 0 0 0 0
+	        READ: 65 65 0 14300 4201064 0 0 1 0
+	       WRITE: 20 20 0 4264384 2496 1 27 29 0
+	      COMMIT: 1 1 0 204 104 0 3 3 0
+	        OPEN: 7 7 0 2212 2636 0 5 5 0
+	OPEN_CONFIRM: 0 0 0 0 0 0 0 0 0
+	 OPEN_NOATTR: 2 2 0 544 636 0 0 0 0
+	OPEN_DOWNGRADE: 0 0 0 0 0 0 0 0 0
+	       CLOSE: 9 9 0 2052 1612 0 0 0 0
+	     SETATTR: 6 6 0 1492 1584 0 4 4 0
+	      FSINFO: 1 1 0 196 168 0 0 0 0
+	       RENEW: 0 0 0 0 0 0 0 0 0
+	 SETCLIENTID: 0 0 0 0 0 0 0 0 0
+	SETCLIENTID_CONFIRM: 0 0 0 0 0 0 0 0 0
+	        LOCK: 0 0 0 0 0 0 0 0 0
+	       LOCKT: 0 0 0 0 0 0 0 0 0
+	       LOCKU: 0 0 0 0 0 0 0 0 0
+	      ACCESS: 6 6 0 1236 1008 0 0 0 0
+	     GETATTR: 9 9 0 1812 2160 0 0 0 0
+	      LOOKUP: 2 2 0 428 384 0 0 0 1
+	 LOOKUP_ROOT: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 7 7 0 1384 812 0 5 5 0
+	      RENAME: 1 1 0 260 152 0 1 1 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	      CREATE: 1 1 0 244 336 0 0 0 0
+	    PATHCONF: 1 1 0 188 116 0 0 0 0
+	      STATFS: 1 1 0 204 160 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 3 3 0 684 3516 0 0 0 0
+	 SERVER_CAPS: 2 2 0 392 328 0 0 0 0
+	 DELEGRETURN: 0 0 0 0 0 0 0 0 0
+	      GETACL: 7 7 0 1388 1316 0 0 0 0
+	      SETACL: 0 0 0 0 0 0 0 0 0
+	FS_LOCATIONS: 0 0 0 0 0 0 0 0 0
+	RELEASE_LOCKOWNER: 0 0 0 0 0 0 0 0 0
+	     SECINFO: 0 0 0 0 0 0 0 0 0
+	FSID_PRESENT: 0 0 0 0 0 0 0 0 0
+	 EXCHANGE_ID: 2 2 0 544 264 0 0 0 0
+	CREATE_SESSION: 1 1 0 232 124 0 0 0 0
+	DESTROY_SESSION: 0 0 0 0 0 0 0 0 0
+	    SEQUENCE: 0 0 0 0 0 0 0 0 0
+	GET_LEASE_TIME: 0 0 0 0 0 0 0 0 0
+	RECLAIM_COMPLETE: 1 1 0 144 88 0 4 4 0
+	   LAYOUTGET: 0 0 0 0 0 0 0 0 0
+	GETDEVICEINFO: 0 0 0 0 0 0 0 0 0
+	LAYOUTCOMMIT: 0 0 0 0 0 0 0 0 0
+	LAYOUTRETURN: 0 0 0 0 0 0 0 0 0
+	SECINFO_NO_NAME: 0 0 0 0 0 0 0 0 0
+	TEST_STATEID: 0 0 0 0 0 0 0 0 0
+	FREE_STATEID: 0 0 0 0 0 0 0 0 0
+	GETDEVICELIST: 0 0 0 0 0 0 0 0 0
+	BIND_CONN_TO_SESSION: 0 0 0 0 0 0 0 0 0
+	DESTROY_CLIENTID: 0 0 0 0 0 0 0 0 0
+	        SEEK: 0 0 0 0 0 0 0 0 0
+	    ALLOCATE: 0 0 0 0 0 0 0 0 0
+	  DEALLOCATE: 0 0 0 0 0 0 0 0 0
+	 LAYOUTSTATS: 0 0 0 0 0 0 0 0 0
+	       CLONE: 0 0 0 0 0 0 0 0 0
+	        COPY: 0 0 0 0 0 0 0 0 0
+	OFFLOAD_CANCEL: 0 0 0 0 0 0 0 0 0
+	     LOOKUPP: 0 0 0 0 0 0 0 0 0
+	 LAYOUTERROR: 0 0 0 0 0 0 0 0 0
+
+
+--- stderr
+=== INPUT rocky8.txt | OPTS /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 148	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213148	avg bytes received per op: 136
+	backlog wait: 0.050000 	RTT: 1.350000 	total execute time: 1.450000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 142	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 132	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 173	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 165	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 142	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.500000 	total execute time: 0.500000 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 136	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 160	avg bytes received per op: 1268
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 124	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 1.000000 	RTT: 0.000000 	total execute time: 1.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 164	avg bytes received per op: 280
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 196	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 148	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -n /mnt/v42
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 2 times
+  attribute cache invalidated 7 times
+
+VFS calls:
+  VFS requested 8 inode revalidations
+  VFS requested 82 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 4 times
+  VFS called nfs_permission() 135 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT rocky8.txt | OPTS -x /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/nfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 792
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT rocky8.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS 
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=42086,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.350000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 131	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 121	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 162	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.142857 	total execute time: 1.142857 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 131	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 125	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1244
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 116	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 156	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 128	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 180	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 116	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  166 RPC requests sent, 166 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (39%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (12%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 124
+	backlog wait: 0.050000 	RTT: 1.000000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 216	avg bytes received per op: 179
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	8 ops (4%) 
+	avg bytes sent per op: 190	avg bytes received per op: 240
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 305	avg bytes received per op: 372
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.857143 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 186	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 236	avg bytes received per op: 264
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+ACCESS:
+	3 ops (1%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 318
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	2 ops (1%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 188	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 3.000000 	total execute time: 3.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 188	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	1 ops (0%) 	1 errors (100%)
+	avg bytes sent per op: 208	avg bytes received per op: 96
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 244	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 236	avg bytes received per op: 332
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 180	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FS_LOCATIONS:
+	1 ops (0%) 
+	avg bytes sent per op: 176	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 216	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 7.000000 	total execute time: 7.000000 (milliseconds)
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -n
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=42086,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1 times
+  attribute cache invalidated 1 times
+
+VFS calls:
+  VFS requested 5 inode revalidations
+  VFS requested 62 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 10 times
+  VFS called nfs_permission() 108 times
+  VFS called nfs_file_open() 12 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1 times
+  attribute cache invalidated 4 times
+
+VFS calls:
+  VFS requested 7 inode revalidations
+  VFS requested 44 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 3 times
+  VFS called nfs_permission() 90 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -r
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.350000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 131	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 121	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 162	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.142857 	total execute time: 1.142857 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 131	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 125	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1244
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 116	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 156	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 128	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 180	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 116	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42:
+
+RPC statistics:
+  166 RPC requests sent, 166 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (39%) 
+	avg bytes sent per op: 208	avg bytes received per op: 64631
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (12%) 
+	avg bytes sent per op: 213207	avg bytes received per op: 124
+	backlog wait: 0.050000 	RTT: 1.000000 	total execute time: 1.100000 (milliseconds)
+CLOSE:
+	9 ops (5%) 
+	avg bytes sent per op: 216	avg bytes received per op: 179
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	8 ops (4%) 
+	avg bytes sent per op: 190	avg bytes received per op: 240
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN:
+	7 ops (4%) 
+	avg bytes sent per op: 305	avg bytes received per op: 372
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.857143 (milliseconds)
+REMOVE:
+	7 ops (4%) 
+	avg bytes sent per op: 186	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.714286 	total execute time: 0.714286 (milliseconds)
+SETATTR:
+	6 ops (3%) 
+	avg bytes sent per op: 236	avg bytes received per op: 264
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.666667 (milliseconds)
+ACCESS:
+	3 ops (1%) 
+	avg bytes sent per op: 194	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+OPEN_NOATTR:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 318
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIR:
+	2 ops (1%) 
+	avg bytes sent per op: 216	avg bytes received per op: 1152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+SERVER_CAPS:
+	2 ops (1%) 
+	avg bytes sent per op: 188	avg bytes received per op: 172
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+EXCHANGE_ID:
+	2 ops (1%) 
+	avg bytes sent per op: 260	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 104
+	backlog wait: 0.000000 	RTT: 3.000000 	total execute time: 3.000000 (milliseconds)
+FSINFO:
+	1 ops (0%) 
+	avg bytes sent per op: 188	avg bytes received per op: 168
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+LOOKUP:
+	1 ops (0%) 	1 errors (100%)
+	avg bytes sent per op: 208	avg bytes received per op: 96
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 244	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	1 ops (0%) 
+	avg bytes sent per op: 236	avg bytes received per op: 332
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 180	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+STATFS:
+	1 ops (0%) 
+	avg bytes sent per op: 192	avg bytes received per op: 160
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FS_LOCATIONS:
+	1 ops (0%) 
+	avg bytes sent per op: 176	avg bytes received per op: 152
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE_SESSION:
+	1 ops (0%) 
+	avg bytes sent per op: 216	avg bytes received per op: 124
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RECLAIM_COMPLETE:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 88
+	backlog wait: 0.000000 	RTT: 7.000000 	total execute time: 7.000000 (milliseconds)
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -x
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 743
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42:
+
+	Transport protocol: tcp
+	Source port: 0
+	Bind count: 0
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 166
+	RPC replies: 166
+	XIDs not found: 0
+	Max slots: 4
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -R
+--- rc 0
+--- stdout
+device 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=42086,mountproto=udp,local_lock=none
+	age:	0
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	5 62 1 1 12 10 108 1024 0 0 0 2 5 6 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/3 (nfs)
+	xprt:	tcp 743 1 2 0 0 143 143 0 145 0 2 0 2
+	per-op statistics
+	        NULL: 1 1 0 44 24 0 0 0 0
+	     GETATTR: 7 7 0 852 784 0 0 0 0
+	     SETATTR: 6 6 0 920 864 0 5 5 0
+	      LOOKUP: 8 8 0 1048 928 0 0 0 8
+	      ACCESS: 3 3 0 376 360 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	        READ: 65 65 0 8840 4202624 0 1 1 0
+	       WRITE: 20 20 0 4262720 2720 0 26 27 0
+	      CREATE: 7 7 0 1140 1932 0 8 8 0
+	       MKDIR: 1 1 0 156 276 0 1 1 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	       MKNOD: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 6 6 0 788 864 0 4 5 0
+	       RMDIR: 1 1 0 128 144 0 0 0 0
+	      RENAME: 1 1 0 180 260 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 0 0 0 0 0 0 0 0 0
+	 READDIRPLUS: 2 2 0 296 2488 0 0 0 0
+	      FSSTAT: 1 1 0 124 84 0 0 0 0
+	      FSINFO: 2 2 0 232 160 0 0 0 0
+	    PATHCONF: 1 1 0 116 56 0 0 0 0
+	      COMMIT: 1 1 0 136 128 0 4 4 0
+
+
+device 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	0
+	caps:	caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=0
+	events:	7 44 1 4 3 3 90 1024 0 0 0 2 5 7 17 1 0 9 0 1 1024 0 0 0 0 0 0
+	bytes:	0 4194304 4259840 65536 4194304 4259840 0 1024
+	RPC iostats version: 1.1 p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 166 166 0 170 0 4 0 4
+	per-op statistics
+	        NULL: 1 1 0 44 24 0 0 0 0
+	        READ: 65 65 0 13520 4201064 0 1 1 0
+	       WRITE: 20 20 0 4264144 2496 1 20 22 0
+	      COMMIT: 1 1 0 192 104 0 3 3 0
+	        OPEN: 7 7 0 2136 2608 0 5 6 0
+	OPEN_CONFIRM: 0 0 0 0 0 0 0 0 0
+	 OPEN_NOATTR: 2 2 0 520 636 0 0 0 0
+	OPEN_DOWNGRADE: 0 0 0 0 0 0 0 0 0
+	       CLOSE: 9 9 0 1944 1612 0 0 0 0
+	     SETATTR: 6 6 0 1420 1584 0 4 4 0
+	      FSINFO: 1 1 0 188 168 0 0 0 0
+	       RENEW: 0 0 0 0 0 0 0 0 0
+	 SETCLIENTID: 0 0 0 0 0 0 0 0 0
+	SETCLIENTID_CONFIRM: 0 0 0 0 0 0 0 0 0
+	        LOCK: 0 0 0 0 0 0 0 0 0
+	       LOCKT: 0 0 0 0 0 0 0 0 0
+	       LOCKU: 0 0 0 0 0 0 0 0 0
+	      ACCESS: 3 3 0 584 504 0 0 0 0
+	     GETATTR: 8 8 0 1520 1920 0 0 0 0
+	      LOOKUP: 1 1 0 208 96 0 0 0 1
+	 LOOKUP_ROOT: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 7 7 0 1308 812 0 5 5 0
+	      RENAME: 1 1 0 244 152 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	      CREATE: 1 1 0 236 332 0 0 0 0
+	    PATHCONF: 1 1 0 180 116 0 0 0 0
+	      STATFS: 1 1 0 192 160 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 2 2 0 432 2304 0 0 0 0
+	 SERVER_CAPS: 2 2 0 376 344 0 0 0 0
+	 DELEGRETURN: 0 0 0 0 0 0 0 0 0
+	      GETACL: 0 0 0 0 0 0 0 0 0
+	      SETACL: 0 0 0 0 0 0 0 0 0
+	FS_LOCATIONS: 1 1 0 176 152 0 0 0 0
+	RELEASE_LOCKOWNER: 0 0 0 0 0 0 0 0 0
+	     SECINFO: 0 0 0 0 0 0 0 0 0
+	FSID_PRESENT: 0 0 0 0 0 0 0 0 0
+	 EXCHANGE_ID: 2 2 0 520 232 0 0 0 0
+	CREATE_SESSION: 1 1 0 216 124 0 0 0 0
+	DESTROY_SESSION: 0 0 0 0 0 0 0 0 0
+	    SEQUENCE: 0 0 0 0 0 0 0 0 0
+	GET_LEASE_TIME: 0 0 0 0 0 0 0 0 0
+	RECLAIM_COMPLETE: 1 1 0 136 88 0 7 7 0
+	   LAYOUTGET: 0 0 0 0 0 0 0 0 0
+	GETDEVICEINFO: 0 0 0 0 0 0 0 0 0
+	LAYOUTCOMMIT: 0 0 0 0 0 0 0 0 0
+	LAYOUTRETURN: 0 0 0 0 0 0 0 0 0
+	SECINFO_NO_NAME: 0 0 0 0 0 0 0 0 0
+	TEST_STATEID: 0 0 0 0 0 0 0 0 0
+	FREE_STATEID: 0 0 0 0 0 0 0 0 0
+	GETDEVICELIST: 0 0 0 0 0 0 0 0 0
+	BIND_CONN_TO_SESSION: 0 0 0 0 0 0 0 0 0
+	DESTROY_CLIENTID: 0 0 0 0 0 0 0 0 0
+	        SEEK: 0 0 0 0 0 0 0 0 0
+	    ALLOCATE: 0 0 0 0 0 0 0 0 0
+	  DEALLOCATE: 0 0 0 0 0 0 0 0 0
+	 LAYOUTSTATS: 0 0 0 0 0 0 0 0 0
+	       CLONE: 0 0 0 0 0 0 0 0 0
+	        COPY: 0 0 0 0 0 0 0 0 0
+	OFFLOAD_CANCEL: 0 0 0 0 0 0 0 0 0
+	     LOOKUPP: 0 0 0 0 0 0 0 0 0
+	 LAYOUTERROR: 0 0 0 0 0 0 0 0 0
+	 COPY_NOTIFY: 0 0 0 0 0 0 0 0 0
+
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+  NFS mount options: rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=42086,mountproto=udp,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+  NFS security flavor: 1  pseudoflavor: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+RPC statistics:
+  143 RPC requests sent, 143 RPC replies received (0 XIDs not found)
+  average backlog queue length: 0
+
+READ:
+	65 ops (45%) 
+	avg bytes sent per op: 136	avg bytes received per op: 64655
+	backlog wait: 0.000000 	RTT: 0.015385 	total execute time: 0.015385 (milliseconds)
+WRITE:
+	20 ops (13%) 
+	avg bytes sent per op: 213136	avg bytes received per op: 136
+	backlog wait: 0.000000 	RTT: 1.300000 	total execute time: 1.350000 (milliseconds)
+LOOKUP:
+	8 ops (5%) 	8 errors (100%)
+	avg bytes sent per op: 131	avg bytes received per op: 116
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+GETATTR:
+	7 ops (4%) 
+	avg bytes sent per op: 121	avg bytes received per op: 112
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+CREATE:
+	7 ops (4%) 
+	avg bytes sent per op: 162	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.142857 	total execute time: 1.142857 (milliseconds)
+SETATTR:
+	6 ops (4%) 
+	avg bytes sent per op: 153	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.833333 	total execute time: 0.833333 (milliseconds)
+REMOVE:
+	6 ops (4%) 
+	avg bytes sent per op: 131	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.666667 	total execute time: 0.833333 (milliseconds)
+ACCESS:
+	3 ops (2%) 
+	avg bytes sent per op: 125	avg bytes received per op: 120
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+READDIRPLUS:
+	2 ops (1%) 
+	avg bytes sent per op: 148	avg bytes received per op: 1244
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSINFO:
+	2 ops (1%) 
+	avg bytes sent per op: 116	avg bytes received per op: 80
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+NULL:
+	1 ops (0%) 
+	avg bytes sent per op: 44	avg bytes received per op: 24
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+MKDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 156	avg bytes received per op: 276
+	backlog wait: 0.000000 	RTT: 1.000000 	total execute time: 1.000000 (milliseconds)
+RMDIR:
+	1 ops (0%) 
+	avg bytes sent per op: 128	avg bytes received per op: 144
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+RENAME:
+	1 ops (0%) 
+	avg bytes sent per op: 180	avg bytes received per op: 260
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+FSSTAT:
+	1 ops (0%) 
+	avg bytes sent per op: 124	avg bytes received per op: 84
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+PATHCONF:
+	1 ops (0%) 
+	avg bytes sent per op: 116	avg bytes received per op: 56
+	backlog wait: 0.000000 	RTT: 0.000000 	total execute time: 0.000000 (milliseconds)
+COMMIT:
+	1 ops (0%) 
+	avg bytes sent per op: 136	avg bytes received per op: 128
+	backlog wait: 0.000000 	RTT: 4.000000 	total execute time: 4.000000 (milliseconds)
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -n /mnt/v42
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v42:
+
+  NFS mount options: rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+  NFS mount age: 0:00:00
+  NFS server capabilities: caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+  NFSv4 capability flags: bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=notconfigured,lease_time=90,lease_expired=0
+  NFS security flavor: 1  pseudoflavor: 0
+
+Cache events:
+  data cache invalidated 1 times
+  attribute cache invalidated 4 times
+
+VFS calls:
+  VFS requested 7 inode revalidations
+  VFS requested 44 dentry revalidations
+
+  VFS called nfs_readdir() 5 times
+  VFS called nfs_lookup() 3 times
+  VFS called nfs_permission() 90 times
+  VFS called nfs_file_open() 3 times
+  VFS called nfs_file_flush() 17 times
+  VFS called nfs_lock() 0 times
+  VFS called nfs_fsync() 1 times
+  VFS called nfs_file_release() 9 times
+
+VM calls:
+  VFS called nfs_readpage() 0 times
+  VFS called nfs_readpages() 0 times
+  VFS called nfs_writepage() 0 times
+  VFS called nfs_writepages() 2 times
+
+Generic NFS counters:
+  File size changing operations:
+    truncating SETATTRs: 1  extending WRITEs: 1024
+  0 silly renames
+  short reads: 0  short writes: 0
+  NFSERR_DELAYs from server: 0
+  pNFS READs: 0
+  pNFS WRITEs: 0
+
+NFS byte counts:
+  applications read 0 bytes via read(2)
+  applications wrote 4194304 bytes via write(2)
+  applications read 4259840 bytes via O_DIRECT read(2)
+  applications wrote 65536 bytes via O_DIRECT write(2)
+  client read 4194304 bytes via NFS READ
+  client wrote 4259840 bytes via NFS WRITE
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS -x /mnt/v3
+--- rc 0
+--- stdout
+Stats for 127.0.0.1:/srv/clifrnfs mounted on /mnt/v3:
+
+	Transport protocol: tcp
+	Source port: 743
+	Bind count: 1
+	Connect count: 2
+	Connect time: 0 seconds
+	Idle time: 0 seconds
+	RPC requests: 143
+	RPC replies: 143
+	XIDs not found: 0
+	Max slots: 2
+	Avg backlog length: 0
+	Avg send queue length: 0
+	Avg pending queue length: 0
+
+--- stderr
+=== INPUT ubuntu2204.txt | OPTS /mnt/none
+--- rc 1
+--- stdout
+No NFS mount points were found
+--- stderr

@@ -393,8 +393,10 @@ wait for the user's go-ahead.
   asked only while nf_conntrack_netlink is loaded: the request would load it), "rpc/nfs" and
   "rpc/nfsd" (/proc/net/rpc), "mountstats" (the NFS sections of /proc/self/mountstats):
   `conntrack -S` (`ConntrackOld`: conntrack-tools before 1.4.7 stop at search_restart), `nfsstat`
-  (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a port of mountstats.py;
-  `Mountstats233`: RHEL 8's 2.3.3).
+  (nfs-utils' C code, the same in 2.3-2.6) and `mountstats [-n|-r|-x|-R]` (a clean-room
+  reimplementation, 2026-11-21: mountstats.py is GPL-2.0-only, so the first port was replaced by code written
+  from the real tool's output only, `query/testdata/mountstats/SPEC.md`, its golden cases from nfs-utils
+  2.3.3 and 2.5.4/2.6.1; never read mountstats.py or the old port when changing it; `Mountstats233`: RHEL 8's 2.3.3).
 - Logins (2026-11-20, `recorder/sessions.go`, `query/who.go`, `w.go`, `last.go`): `snapshots` sources
   "utmp" (every /run/utmp record as text, keyed "#slot"), "logind" (/run/systemd/sessions/ID, "ID=..."
   then `logindKeys` only: no DEVICES, CONTROLLER, fds) and "ttyatime" (each session terminal: atime,

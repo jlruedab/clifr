@@ -1,0 +1,142 @@
+device proc mounted on /proc with fstype proc
+device sysfs mounted on /sys with fstype sysfs
+device devtmpfs mounted on /dev with fstype devtmpfs
+device securityfs mounted on /sys/kernel/security with fstype securityfs
+device tmpfs mounted on /dev/shm with fstype tmpfs
+device devpts mounted on /dev/pts with fstype devpts
+device tmpfs mounted on /run with fstype tmpfs
+device cgroup2 mounted on /sys/fs/cgroup with fstype cgroup2
+device pstore mounted on /sys/fs/pstore with fstype pstore
+device bpf mounted on /sys/fs/bpf with fstype bpf
+device configfs mounted on /sys/kernel/config with fstype configfs
+device /dev/vda4 mounted on / with fstype xfs
+device selinuxfs mounted on /sys/fs/selinux with fstype selinuxfs
+device systemd-1 mounted on /proc/sys/fs/binfmt_misc with fstype autofs
+device debugfs mounted on /sys/kernel/debug with fstype debugfs
+device mqueue mounted on /dev/mqueue with fstype mqueue
+device hugetlbfs mounted on /dev/hugepages with fstype hugetlbfs
+device tracefs mounted on /sys/kernel/tracing with fstype tracefs
+device fusectl mounted on /sys/fs/fuse/connections with fstype fusectl
+device none mounted on /run/credentials/systemd-tmpfiles-setup-dev.service with fstype ramfs
+device none mounted on /run/credentials/systemd-sysctl.service with fstype ramfs
+device /dev/vda3 mounted on /boot with fstype xfs
+device /dev/vda2 mounted on /boot/efi with fstype vfat
+device none mounted on /run/credentials/systemd-tmpfiles-setup.service with fstype ramfs
+device sunrpc mounted on /var/lib/nfs/rpc_pipefs with fstype rpc_pipefs
+device tmpfs mounted on /run/user/1000 with fstype tmpfs
+device nfsd mounted on /proc/fs/nfsd with fstype nfsd
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	86461
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=1
+	events:	5000015 75000225 1000003 1000003 12000036 10000030 123000369 1024003072 0 0 0 2000006 5000015 6000018 17000051 1000003 0 9000027 0 1000003 1024003072 0 0 0 0 0 0 
+	bytes:	0 4194316582912 4259852779520 65536196608 4194316582912 4259852779520 0 1024003072 
+	RPC iostats version: 1.1  p/v: 100003/3 (nfs)
+	xprt:	tcp 938 1 2 0 0 143 143 0 144 0 2 0 1
+	per-op statistics
+	        NULL: 1000003 1000003 0 44000132 24000072 0 0 0 0
+	     GETATTR: 7000021 7000021 0 844002532 784002352 0 1000003 1000003 0
+	     SETATTR: 6000018 6000018 0 920002760 864002592 0 4000012 4000012 0
+	      LOOKUP: 8000024 8000024 0 1040003120 928002784 0 0 0 8000024
+	      ACCESS: 3000009 3000009 0 372001116 360001080 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	        READ: 65000195 65000195 0 8840026520 4202636607872 0 1000003 1000003 0
+	       WRITE: 20000060 20000060 0 4262732788160 2720008160 0 26000078 26000078 0
+	      CREATE: 7000021 7000021 0 1132003396 1960005880 0 7000021 7000021 0
+	       MKDIR: 1000003 1000003 0 152000456 280000840 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	       MKNOD: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 6000018 6000018 0 784002352 864002592 0 5000015 5000015 0
+	       RMDIR: 1000003 1000003 0 124000372 144000432 0 0 0 0
+	      RENAME: 1000003 1000003 0 184000552 260000780 0 1000003 1000003 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 0 0 0 0 0 0 0 0 0
+	 READDIRPLUS: 2000006 2000006 0 296000888 2536007608 0 0 0 0
+	      FSSTAT: 1000003 1000003 0 124000372 84000252 0 0 0 0
+	      FSINFO: 2000006 2000006 0 224000672 160000480 0 0 0 0
+	    PATHCONF: 1000003 1000003 0 112000336 56000168 0 0 0 0
+	      COMMIT: 1000003 1000003 0 136000408 128000384 0 4000012 4000012 0
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	86461
+	impl_id:	name='',domain='',date='0,0'
+	caps:	caps=0xfffbc0bf,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	nfsv4:	bm0=0xfdffbfff,bm1=0x40fdbe3e,bm2=0x60803,acl=0x3,sessions,pnfs=not configured,lease_time=90,lease_expired=0
+	sec:	flavor=1,pseudoflavor=1
+	events:	8000024 82000246 2000006 7000021 3000009 4000012 135000405 1024003072 0 0 0 2000006 5000015 7000021 17000051 1000003 0 9000027 0 1000003 1024003072 0 0 0 0 0 0 
+	bytes:	0 4194316582912 4259852779520 65536196608 4194316582912 4259852779520 0 1024003072 
+	RPC iostats version: 1.1  p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 169 0 2 0 1
+	per-op statistics
+	        NULL: 1000003 1000003 0 44000132 24000072 0 0 0 0
+	        READ: 65000195 65000195 0 13520040560 4201076603192 0 1000003 2000006 0
+	       WRITE: 20000060 20000060 0 4264156792432 2528007584 0 22000066 22000066 0
+	      COMMIT: 1000003 1000003 0 192000576 104000312 0 6000018 6000018 0
+	        OPEN: 7000021 7000021 0 2128006384 2720008160 0 5000015 5000015 0
+	OPEN_CONFIRM: 0 0 0 0 0 0 0 0 0
+	 OPEN_NOATTR: 2000006 2000006 0 520001560 660001980 0 0 0 0
+	OPEN_DOWNGRADE: 0 0 0 0 0 0 0 0 0
+	       CLOSE: 9000027 9000027 0 1944005832 1604004812 0 0 0 0
+	     SETATTR: 6000018 6000018 0 1420004260 1632004896 0 3000009 3000009 0
+	      FSINFO: 1000003 1000003 0 184000552 168000504 0 0 0 0
+	       RENEW: 0 0 0 0 0 0 0 0 0
+	 SETCLIENTID: 0 0 0 0 0 0 0 0 0
+	SETCLIENTID_CONFIRM: 0 0 0 0 0 0 0 0 0
+	        LOCK: 0 0 0 0 0 0 0 0 0
+	       LOCKT: 0 0 0 0 0 0 0 0 0
+	       LOCKU: 0 0 0 0 0 0 0 0 0
+	      ACCESS: 6000018 6000018 0 1164003492 1008003024 0 0 0 0
+	     GETATTR: 9000027 9000027 0 1704005112 2268006804 0 0 0 0
+	      LOOKUP: 2000006 2000006 0 404001212 396001188 0 0 0 1000003
+	 LOOKUP_ROOT: 0 0 0 0 0 0 0 0 0
+	      REMOVE: 7000021 7000021 0 1300003900 812002436 0 4000012 4000012 0
+	      RENAME: 1000003 1000003 0 248000744 152000456 0 0 0 0
+	        LINK: 0 0 0 0 0 0 0 0 0
+	     SYMLINK: 0 0 0 0 0 0 0 0 0
+	      CREATE: 1000003 1000003 0 232000696 348001044 0 0 0 0
+	    PATHCONF: 1000003 1000003 0 176000528 116000348 0 0 0 0
+	      STATFS: 1000003 1000003 0 192000576 160000480 0 0 0 0
+	    READLINK: 0 0 0 0 0 0 0 0 0
+	     READDIR: 3000009 3000009 0 648001944 3696011088 0 0 0 0
+	 SERVER_CAPS: 2000006 2000006 0 368001104 344001032 0 0 0 0
+	 DELEGRETURN: 0 0 0 0 0 0 0 0 0
+	      GETACL: 7000021 7000021 0 1304003912 1316003948 0 0 0 0
+	      SETACL: 0 0 0 0 0 0 0 0 0
+	FS_LOCATIONS: 0 0 0 0 0 0 0 0 0
+	RELEASE_LOCKOWNER: 0 0 0 0 0 0 0 0 0
+	     SECINFO: 0 0 0 0 0 0 0 0 0
+	FSID_PRESENT: 0 0 0 0 0 0 0 0 0
+	 EXCHANGE_ID: 2000006 2000006 0 536001608 216000648 0 0 0 0
+	CREATE_SESSION: 1000003 1000003 0 208000624 124000372 0 0 0 0
+	DESTROY_SESSION: 0 0 0 0 0 0 0 0 0
+	    SEQUENCE: 0 0 0 0 0 0 0 0 0
+	GET_LEASE_TIME: 0 0 0 0 0 0 0 0 0
+	RECLAIM_COMPLETE: 1000003 1000003 0 132000396 88000264 0 17000051 17000051 0
+	   LAYOUTGET: 0 0 0 0 0 0 0 0 0
+	GETDEVICEINFO: 0 0 0 0 0 0 0 0 0
+	LAYOUTCOMMIT: 0 0 0 0 0 0 0 0 0
+	LAYOUTRETURN: 0 0 0 0 0 0 0 0 0
+	SECINFO_NO_NAME: 0 0 0 0 0 0 0 0 0
+	TEST_STATEID: 0 0 0 0 0 0 0 0 0
+	FREE_STATEID: 0 0 0 0 0 0 0 0 0
+	GETDEVICELIST: 0 0 0 0 0 0 0 0 0
+	BIND_CONN_TO_SESSION: 0 0 0 0 0 0 0 0 0
+	DESTROY_CLIENTID: 0 0 0 0 0 0 0 0 0
+	        SEEK: 0 0 0 0 0 0 0 0 0
+	    ALLOCATE: 0 0 0 0 0 0 0 0 0
+	  DEALLOCATE: 0 0 0 0 0 0 0 0 0
+	 LAYOUTSTATS: 0 0 0 0 0 0 0 0 0
+	       CLONE: 0 0 0 0 0 0 0 0 0
+	        COPY: 0 0 0 0 0 0 0 0 0
+	OFFLOAD_CANCEL: 0 0 0 0 0 0 0 0 0
+	     LOOKUPP: 0 0 0 0 0 0 0 0 0
+	 LAYOUTERROR: 0 0 0 0 0 0 0 0 0
+	 COPY_NOTIFY: 0 0 0 0 0 0 0 0 0
+	    GETXATTR: 0 0 0 0 0 0 0 0 0
+	    SETXATTR: 0 0 0 0 0 0 0 0 0
+	  LISTXATTRS: 0 0 0 0 0 0 0 0 0
+	 REMOVEXATTR: 0 0 0 0 0 0 0 0 0
+	   READ_PLUS: 0 0 0 0 0 0 0 0 0
+

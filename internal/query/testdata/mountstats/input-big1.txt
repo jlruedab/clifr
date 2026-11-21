@@ -1,0 +1,149 @@
+device sysfs mounted on /sys with fstype sysfs
+device proc mounted on /proc with fstype proc
+device devtmpfs mounted on /dev with fstype devtmpfs
+device securityfs mounted on /sys/kernel/security with fstype securityfs
+device tmpfs mounted on /dev/shm with fstype tmpfs
+device devpts mounted on /dev/pts with fstype devpts
+device tmpfs mounted on /run with fstype tmpfs
+device tmpfs mounted on /sys/fs/cgroup with fstype tmpfs
+device cgroup mounted on /sys/fs/cgroup/systemd with fstype cgroup
+device pstore mounted on /sys/fs/pstore with fstype pstore
+device bpf mounted on /sys/fs/bpf with fstype bpf
+device cgroup mounted on /sys/fs/cgroup/memory with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/freezer with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/cpuset with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/net_cls,net_prio with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/cpu,cpuacct with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/pids with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/perf_event with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/hugetlb with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/rdma with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/blkio with fstype cgroup
+device cgroup mounted on /sys/fs/cgroup/devices with fstype cgroup
+device none mounted on /sys/kernel/tracing with fstype tracefs
+device configfs mounted on /sys/kernel/config with fstype configfs
+device /dev/vda5 mounted on / with fstype xfs
+device rpc_pipefs mounted on /var/lib/nfs/rpc_pipefs with fstype rpc_pipefs
+device selinuxfs mounted on /sys/fs/selinux with fstype selinuxfs
+device systemd-1 mounted on /proc/sys/fs/binfmt_misc with fstype autofs
+device hugetlbfs mounted on /dev/hugepages with fstype hugetlbfs
+device mqueue mounted on /dev/mqueue with fstype mqueue
+device debugfs mounted on /sys/kernel/debug with fstype debugfs
+device /dev/vda2 mounted on /boot with fstype xfs
+device /dev/vda1 mounted on /boot/efi with fstype vfat
+device binfmt_misc mounted on /proc/sys/fs/binfmt_misc with fstype binfmt_misc
+device tmpfs mounted on /run/user/1000 with fstype tmpfs
+device nfsd mounted on /proc/fs/nfsd with fstype nfsd
+device 127.0.0.1:/srv/nfs mounted on /mnt/v3 with fstype nfs statvers=1.1
+	opts:	rw,vers=3,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=20048,mountproto=udp,local_lock=none
+	age:	266405
+	caps:	caps=0xf,wtmult=4096,dtsize=1048576,bsize=0,namlen=255
+	sec:	flavor=1,pseudoflavor=1
+	events:	38 528 10 10 87 73 864 7171 3 3 3 17 38 45 122 10 3 66 3 10 7171 3 3 3 3 3 3 
+	bytes:	3 29360131 29818883 458755 29360131 29818883 3 7171 
+	RPC iostats version: 1.1  p/v: 100003/3 (nfs)
+	xprt:	tcp 792 1 2 0 0 143 143 0 149 0 4 0 6
+	per-op statistics
+	        NULL: 10 10 3 311 171 10 3 10 3
+	     GETATTR: 52 52 3 6499 5491 3 3 3 3
+	     SETATTR: 45 45 3 6947 6051 3 24 24 3
+	      LOOKUP: 59 59 3 7955 6499 3 3 3 59
+	      ACCESS: 24 24 3 2859 2523 3 3 3 3
+	    READLINK: 3 3 3 3 3 3 3 3 3
+	        READ: 458 458 3 67343 29418371 3 3 10 3
+	       WRITE: 143 143 3 29840723 19043 10 192 206 3
+	      CREATE: 52 52 3 8515 13723 3 38 38 3
+	       MKDIR: 10 10 3 1151 1963 3 3 3 3
+	     SYMLINK: 3 3 3 3 3 3 3 3 3
+	       MKNOD: 3 3 3 3 3 3 3 3 3
+	      REMOVE: 45 45 3 5995 6051 3 24 24 3
+	       RMDIR: 10 10 3 955 1011 3 3 3 3
+	      RENAME: 10 10 3 1375 1823 3 3 3 3
+	        LINK: 3 3 3 3 3 3 3 3 3
+	     READDIR: 3 3 3 3 3 3 3 3 3
+	 READDIRPLUS: 17 17 3 2243 17755 3 3 3 3
+	      FSSTAT: 10 10 3 955 591 3 3 3 3
+	      FSINFO: 17 17 3 1739 1123 3 3 3 3
+	    PATHCONF: 10 10 3 871 395 3 3 3 3
+	      COMMIT: 10 10 3 1039 899 3 31 31 3
+
+device 127.0.0.1:/srv/nfs mounted on /mnt/v42 with fstype nfs4 statvers=1.1
+	opts:	rw,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,acregmin=3,acregmax=60,acdirmin=30,acdirmax=60,hard,proto=tcp,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none
+	age:	266405
+	impl_id:	name='',domain='',date='0,0'
+	caps:	caps=0xd7fbc03f,wtmult=512,dtsize=1048576,bsize=0,namlen=255
+	nfsv4:	bm0=0xfdffbfff,bm1=0x40f9be3e,bm2=0x60803,acl=0x3,sessions,pnfs=not configured,lease_time=90,lease_expired=0
+	sec:	flavor=1,pseudoflavor=1
+	events:	59 577 17 52 24 31 948 7171 3 3 3 17 38 52 122 10 3 66 3 10 7171 3 3 3 3 3 3 
+	bytes:	3 29360131 29818883 458755 29360131 29818883 3 7171 
+	RPC iostats version: 1.1  p/v: 100003/4 (nfs)
+	xprt:	tcp 0 0 2 0 0 168 168 0 174 0 4 9 0
+	per-op statistics
+	        NULL: 10 10 3 311 171 3 3 3 3
+	        READ: 458 458 3 100103 29407451 3 3 10 3
+	       WRITE: 143 143 3 29850691 17475 10 192 206 3
+	      COMMIT: 10 10 3 1431 731 3 24 24 3
+	        OPEN: 52 52 3 15487 18455 3 38 38 3
+	OPEN_CONFIRM: 3 3 3 3 3 3 3 3 3
+	 OPEN_NOATTR: 17 17 3 3811 4455 3 3 3 3
+	OPEN_DOWNGRADE: 3 3 3 3 3 3 3 3 3
+	       CLOSE: 66 66 3 14367 11287 3 3 3 3
+	     SETATTR: 45 45 3 10447 11091 3 31 31 3
+	      FSINFO: 10 10 3 1375 1179 3 3 3 3
+	       RENEW: 3 3 3 3 3 3 3 3 3
+	 SETCLIENTID: 3 3 3 3 3 3 3 3 3
+	SETCLIENTID_CONFIRM: 3 3 3 3 3 3 3 3 3
+	        LOCK: 3 3 3 3 3 3 3 3 3
+	       LOCKT: 3 3 3 3 3 3 3 3 3
+	       LOCKU: 3 3 3 3 3 3 3 3 3
+	      ACCESS: 45 45 3 8655 7059 3 3 3 3
+	     GETATTR: 66 66 3 12687 15123 3 3 3 3
+	      LOOKUP: 17 17 3 2999 2691 3 3 3 10
+	 LOOKUP_ROOT: 3 3 3 3 3 3 3 3 3
+	      REMOVE: 52 52 3 9691 5687 3 38 38 3
+	      RENAME: 10 10 3 1823 1067 3 10 10 3
+	        LINK: 3 3 3 3 3 3 3 3 3
+	     SYMLINK: 3 3 3 3 3 3 3 3 3
+	      CREATE: 10 10 3 1711 2355 3 3 3 3
+	    PATHCONF: 10 10 3 1319 815 3 3 3 3
+	      STATFS: 10 10 3 1431 1123 3 3 3 3
+	    READLINK: 3 3 3 3 3 3 3 3 3
+	     READDIR: 24 24 3 4791 24615 3 3 3 3
+	 SERVER_CAPS: 17 17 3 2747 2299 3 3 3 3
+	 DELEGRETURN: 3 3 3 3 3 3 3 3 3
+	      GETACL: 52 52 3 9719 9215 3 3 3 3
+	      SETACL: 3 3 3 3 3 3 3 3 3
+	FS_LOCATIONS: 3 3 3 3 3 3 3 3 3
+	RELEASE_LOCKOWNER: 3 3 3 3 3 3 3 3 3
+	     SECINFO: 3 3 3 3 3 3 3 3 3
+	FSID_PRESENT: 3 3 3 3 3 3 3 3 3
+	 EXCHANGE_ID: 17 17 3 3811 1851 3 3 3 3
+	CREATE_SESSION: 10 10 3 1627 871 3 3 3 3
+	DESTROY_SESSION: 3 3 3 3 3 3 3 3 3
+	    SEQUENCE: 3 3 3 3 3 3 3 3 3
+	GET_LEASE_TIME: 3 3 3 3 3 3 3 3 3
+	RECLAIM_COMPLETE: 10 10 3 1011 619 3 31 31 3
+	   LAYOUTGET: 3 3 3 3 3 3 3 3 3
+	GETDEVICEINFO: 3 3 3 3 3 3 3 3 3
+	LAYOUTCOMMIT: 3 3 3 3 3 3 3 3 3
+	LAYOUTRETURN: 3 3 3 3 3 3 3 3 3
+	SECINFO_NO_NAME: 3 3 3 3 3 3 3 3 3
+	TEST_STATEID: 3 3 3 3 3 3 3 3 3
+	FREE_STATEID: 3 3 3 3 3 3 3 3 3
+	GETDEVICELIST: 3 3 3 3 3 3 3 3 3
+	BIND_CONN_TO_SESSION: 3 3 3 3 3 3 3 3 3
+	DESTROY_CLIENTID: 3 3 3 3 3 3 3 3 3
+	        SEEK: 3 3 3 3 3 3 3 3 3
+	    ALLOCATE: 3 3 3 3 3 3 3 3 3
+	  DEALLOCATE: 3 3 3 3 3 3 3 3 3
+	 LAYOUTSTATS: 3 3 3 3 3 3 3 3 3
+	       CLONE: 3 3 3 3 3 3 3 3 3
+	        COPY: 3 3 3 3 3 3 3 3 3
+	OFFLOAD_CANCEL: 3 3 3 3 3 3 3 3 3
+	     LOOKUPP: 3 3 3 3 3 3 3 3 3
+	 LAYOUTERROR: 3 3 3 3 3 3 3 3 3
+	    GETXATTR: 3 3 3 3 3 3 3 3 3
+	    SETXATTR: 3 3 3 3 3 3 3 3 3
+	  LISTXATTRS: 3 3 3 3 3 3 3 3 3
+	 REMOVEXATTR: 3 3 3 3 3 3 3 3 3
+

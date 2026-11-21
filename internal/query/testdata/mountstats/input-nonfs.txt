@@ -1,0 +1,3 @@
+device sysfs mounted on /sys with fstype sysfs
+device proc mounted on /proc with fstype proc
+device devtmpfs mounted on /dev with fstype devtmpfs
