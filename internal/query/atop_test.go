@@ -125,10 +125,14 @@ func TestAtopScreen(t *testing.T) {
 		v271     bool
 		interval bool
 		views    []string
-	}{{"atop-2.12.1", false, false, []string{""}}, {"atop-2.7.1", true, false, []string{""}},
-		{"atop-2.12.1-interval", false, true, []string{""}},
-		{"atop-2.12.1-views", false, false, []string{"m", "d", "s", "v", "c"}},
-		{"atop-2.7.1-s", true, false, []string{"s"}}, {"atop-2.12.1-interval-m", false, true, []string{"m"}}} {
+		v210     bool
+		host     string // a host name long enough for negative header widths
+	}{{"atop-2.12.1", false, false, []string{""}, false, ""}, {"atop-2.7.1", true, false, []string{""}, false, ""},
+		{"atop-2.12.1-interval", false, true, []string{""}, false, ""},
+		{"atop-2.12.1-views", false, false, []string{"m", "d", "s", "v", "c"}, false, ""},
+		{"atop-2.7.1-s", true, false, []string{"s"}, false, ""}, {"atop-2.12.1-interval-m", false, true, []string{"m"}, false, ""},
+		{"atop-2.10.0-longhost", false, false, []string{""}, true, "clifr-ubuntu2404"},
+		{"atop-2.12.1-longhost", false, false, []string{""}, false, "clifr-ubuntu2404"}} {
 		a, err := AtopSysAt(db, base+1500)
 		if v.interval {
 			a, err = AtopIntervalAt(db, base+1500, base+11_500)
@@ -136,7 +140,10 @@ func TestAtopScreen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a.V271 = v.v271
+		a.V271, a.V210 = v.v271, v.v210
+		if v.host != "" {
+			a.Host = v.host
+		}
 		if _, err := LoadUsers(db, base); err != nil {
 			t.Fatal(err)
 		}

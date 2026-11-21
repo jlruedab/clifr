@@ -53,6 +53,7 @@ type AtopSys struct {
 	List           []atopProc // in PID order
 	PIDMax         int64      // kernel.pid_max: atop's PID column is as wide as it
 	V271           bool       // atop 2.7.1's screen (ToolStyle.Atop271)
+	V210           bool       // atop 2.10.0's header (ToolStyle.Atop210)
 	View           string     // process view: "" generic, m, d, s, v, c (atop's -m -d -s -v -c)
 }
 
@@ -88,6 +89,10 @@ type atopProc struct {
 	exited                                     bool
 	excode                                     int // atop's: exit code << 8, or the signal
 }
+
+// SetStyle takes atop's version from a tool style (StyleAt): 2.7.1's or
+// 2.10.0's screen, else 2.12.1's.
+func (a *AtopSys) SetStyle(st ToolStyle) { a.V271, a.V210 = st.Atop271, st.Atop210 }
 
 // atopProcOf is a recorded process as atop reads it. Without schema 12's
 // sums over the threads, the main thread's values and the process's state.
@@ -527,11 +532,7 @@ var atopFields = map[string]atopField{
 		return atopBox("zswout", 7, atopVal(a.Sys.ZswpOut, 5, false, 0)), a.Sys.ZswapEnabled
 	},
 	"OOMKILLS": func(a *AtopSys, _ *atopExtra) (string, bool) {
-		v := "    "
-		if a.Sys.OOMKill != 0 {
-			v = atopVal(a.Sys.OOMKill, 4, false, 0)
-		}
-		return atopBox("oomkill", 8, v), a.OOMKnown
+		return atopBox("oomkill", 8, atopVal(a.Sys.OOMKill, 4, false, 0)), a.OOMKnown
 	},
 	// PSI: the share of the time since boot that tasks stalled
 	"PSICPUSTOT": psiField("cpusome", func(s *store.SysSample) int64 { return s.PSICPUSome }),
@@ -818,14 +819,16 @@ func PrintAtopSys(w io.Writer, a *AtopSys) {
 	lenAvail := atopWidth - 60 - len(elapsed) - len(a.Host)
 	len1 := max(lenAvail/3, 1)
 	len2 := lenAvail - len1 - len1
-	if a.V271 {
+	// A negative width pads on the left in C's printf and Go's fmt alike: a
+	// long host name still gets its spaces.
+	if a.V271 || a.V210 {
 		lenAvail = atopWidth - 52 - len(elapsed) - len(a.Host)
 		len1, len2 = lenAvail/3, lenAvail-lenAvail/3*2
-		fmt.Fprintf(w, "\n\nATOP - %s%*s%s  %s%*s%s%*s%s elapsed\n", a.Host, max(len1, 0), "", t.Format("2006/01/02"),
-			t.Format("15:04:05"), max(len1, 0), "", "-----------------", max(len2, 0), "", elapsed)
+		fmt.Fprintf(w, "\n\nATOP - %s%*s%s  %s%*s%s%*s%s elapsed\n", a.Host, len1, "", t.Format("2006/01/02"),
+			t.Format("15:04:05"), len1, "", "-----------------", len2, "", elapsed)
 	} else {
 		fmt.Fprintf(w, "\n\nATOP - %s%*s%s %s %s %*s%s%*s%s elapsed\n", a.Host, len1, "", t.Format("2006/01/02"), t.Format("15:04:05"),
-			"      ", len1, "", "-----------------7", max(len2, 0), "", elapsed)
+			"      ", len1, "", "-----------------7", len2, "", elapsed)
 	}
 	fmt.Fprintln(w, atopLine("PRC", "PRC", a, x))
 
@@ -978,9 +981,9 @@ func atopColumns(a *AtopSys, pidWidth, sortWidth int) map[string]atopCol {
 		return func(p *atopProc, _ float64) string { return f(p) }
 	}
 	// uid2str, gid2str: a name longer than 8 characters as the number
-	// (2.12.1) or cut to 8 (2.7.1).
+	// (2.12.1) or cut to 8 (2.7.1 and 2.10.0).
 	id := func(n int, name string) string {
-		if name != "" && (len(name) <= 8 || a.V271) {
+		if name != "" && (len(name) <= 8 || a.V271 || a.V210) {
 			return fmt.Sprintf("%-8.8s", name)
 		}
 		return fmt.Sprintf("%-8d", n)

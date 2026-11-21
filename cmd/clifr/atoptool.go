@@ -19,11 +19,11 @@ func atopTool() *tool {
 			{short: 'v', help: "various view: parent, real user and group, start date and time"},
 			{short: 'c', help: "command-line view: the full command line (255 bytes, as atop reads it)"},
 		},
-		about:  "the system and its processes since boot, as atop prints its first screen into a pipe",
+		about:  "the system and its processes as atop prints them into a pipe: since boot, or per interval",
 		window: true,
 		notes: []string{
 			"atop's screen since boot as root (atop 1 1), as the recorded host's atop prints it (2.7.1 on",
-			"RHEL 8 and 9 and Ubuntu 22.04, 2.12.1 otherwise): its system lines (processes, CPUs, load,",
+			"RHEL 8 and 9 and Ubuntu 22.04, 2.10.0 on Ubuntu 24.04, 2.12.1 otherwise): its system lines (processes, CPUs, load,",
 			"memory, swap, paging, pressure, disks, network) from the system sample at or before T, then every",
 			"process with its totals since it started, the most CPU time first. The values are those of",
 			"clifrd's samples (every 10 s for the system, every --interval for processes). An interface's busy",
@@ -37,6 +37,8 @@ func atopTool() *tool {
 			"The process views -m -d -s -v -c are atop's, each with its columns fitted to 80 characters by",
 			"atop's priorities; PSIZE (proportional size) is 0B as in atop without -R. Thread sums (BDELAY,",
 			"NVCSW, NIVCSW, TSLPI...), segment sizes and group names are recorded since schema 12.",
+			"atop adds a CID column when a process has its own UTS namespace and host name (it takes it for",
+			"a container), which can push RDELAY and BDELAY out: clifr cannot know those host names.",
 		},
 		examples: []string{`clifr --at "02:45" atop`, `clifr --since "02:40" --until "02:50" "atop 60"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
@@ -69,7 +71,8 @@ func atopTool() *tool {
 					if err != nil {
 						return err
 					}
-					a.V271, a.View = query.StyleAt(c.db, c.w.At).Atop271, view
+					a.SetStyle(query.StyleAt(c.db, c.w.At))
+					a.View = view
 					return c.emit([]*query.AtopSys{a}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 						func(w io.Writer) {
 							query.PrintAtopSys(w, a)
@@ -86,20 +89,22 @@ func atopTool() *tool {
 				count = nums[1]
 			}
 			return func() error {
-				v271 := query.StyleAt(c.db, c.w.From).Atop271
+				style := query.StyleAt(c.db, c.w.From)
 				var screens []*query.AtopSys
 				first, err := query.AtopSysAt(c.db, c.w.From)
 				if err != nil {
 					return err
 				}
-				first.V271, first.View = v271, view
+				first.SetStyle(style)
+				first.View = view
 				screens = append(screens, first)
 				for t := c.w.From + step; t <= c.w.To && (count < 0 || int64(len(screens)) < count); t += step {
 					a, err := query.AtopIntervalAt(c.db, t-step, t)
 					if err != nil {
 						return err
 					}
-					a.V271, a.View = v271, view
+					a.SetStyle(style)
+					a.View = view
 					screens = append(screens, a)
 				}
 				return c.emit(screens, func(i int) rowMeta { return rowMeta{TS: screens[i].T} },

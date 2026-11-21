@@ -23,7 +23,7 @@ func compareAtop(db *store.DB, snap snapshot) (Result, error) {
 		res.example("%s: %v", snap.cmd, err)
 		return res, nil
 	}
-	a.V271 = query.StyleAt(db, snap.ts).Atop271
+	a.SetStyle(query.StyleAt(db, snap.ts))
 	text := render(func(sb *strings.Builder) {
 		query.PrintAtopSys(sb, a)
 		query.PrintAtopProcs(sb, a)

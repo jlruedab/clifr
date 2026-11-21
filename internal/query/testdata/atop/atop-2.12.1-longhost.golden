@@ -1,0 +1,25 @@
+
+
+ATOP - clifr-ubuntu2404 2026/09/21 14:13:21         -----------------7    3h1m3s elapsed
+PRC | sys   31m00s | user   2h54m | #proc      4 | #tidle     2 | #exit      0 |
+CPU | sys       7% | user     10% | irq       0% | idle    181% | wait      1% |
+cpu | sys       5% | user      8% | irq       0% | idle     86% | cpu000 w  1% |
+cpu | sys       2% | user      2% | irq       0% | idle     95% | cpu001 w  0% |
+CPL | numcpu     2 | avg1    1.52 | avg5    0.98 | csw 123457e4 | intr 98765e3 |
+MEM | tot    15.5G | free    8.7G | avail  12.4G | cache   3.3G | slab  585.9M |
+MEM | numnode    1 | shmem 439.5M | shswp   0.0M | pgtab  43.9M | anthp 200.0M |
+SWP | tot     4.0G | free    3.9G | swcac   1.0M | vmcom   6.7G | vmlim  11.8G |
+PAG | migrate    0 | pgin  308641 | pgout 1914e3 | swout    345 | oomkill    1 |
+PSI | cpusome  27% | memsome   0% | memfull   0% | iosome    8% | iofull    4% |
+LVM | stem-lv_root | busy      8% | read  100000 | write 600000 | avio 2.43 ms |
+DSK |          sda | busy      9% | read  123456 | write 654321 | avio 2.31 ms |
+NET | transport    | tcpi 9876543 | tcpo 8765432 | udpi    4321 | udpo    1234 |
+NET | network      | ipi  9990000 | ipo  8880000 | ipfrw      0 | deliv 9980e3 |
+NET | enp1s0    0% | pcki 9000000 | pcko 7000000 | si 8837 Kbps | so 2209 Kbps |
+NET | lo      ---- | pcki    5000 | pcko    5000 | si    0 Kbps | so    0 Kbps |
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID SYSCPU USRCPU BDELAY  VGROW  RGROW  RDDSK  WRDSK  CPU CMD            
+    812 28m20s 73m20s 55.00s   8.6G   1.9G   4.7G   6.5G  29% postgres       
+   2045  1m40s  1h40m  0.00s   3.9M 900.0K     0B     0B  29% a-very-long-co 
+      1 60.00s 35.00s  0.00s 167.0M  12.5M 286.1M  76.3M   0% systemd        
+     15  0.07s  0.00s  0.00s     0B     0B     0B     0B   0% kworker/1:0-ev 

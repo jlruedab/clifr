@@ -1,8 +1,8 @@
 atop: parts of clifr's atop
 
-clifr's atop prints atop's screens as atop 2.7.1 and 2.12.1 do into a pipe
-(https://github.com/Atoptool/atop, tags v2.7.1 and v2.12.1). Parts of its Go
-code follow atop's C code, written anew in Go:
+clifr's atop prints atop's screens as atop 2.7.1, 2.10.0 and 2.12.1 do into a
+pipe (https://github.com/Atoptool/atop, tags v2.7.1, v2.10.0 and v2.12.1).
+Parts of its Go code follow atop's C code, written anew in Go:
 
 - internal/query/atopfmt.go: the value formats (val2valstr, val2elapstr,
   val2cpustr, val2memstr, various.c), the layout of a system line

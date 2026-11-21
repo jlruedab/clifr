@@ -52,7 +52,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 |---|---|
 | `ps` | processes with their CPU, memory, state and command line |
 | `top` | the system summary and the busiest processes |
-| `atop` | atop's screen since boot: system lines and every process with its totals |
+| `atop` | atop's screen since boot or per interval; process views `-m -d -s -v -c` |
 | `pstree` | the process tree |
 | `pidstat` | CPU, memory, disk and context switches per process |
 | `systemd-cgls` | processes grouped by service (cgroups) |
@@ -712,11 +712,17 @@ chooses one; a line on stderr says when a style other than current is used.
   that also match. PIDs are the host's; processes only seen through
   exec/exit events have no cgroup and are left out. Needs `--at`,
   `--samples` or `--changes`.
-- `atop [1 1]`: atop's first screen into a pipe as root (since boot): its system
+- `atop [-m|-d|-s|-v|-c] [INTERVAL [COUNT]]`: atop's screens into a pipe as root.
+  At `--at`, its first screen (since boot, `atop 1 1`): its system
   lines (PRC, CPU and per CPU, CPL, MEM, SWP, PAG, PSI, LVM/MDD/DSK, NET) and every
   process with its totals since it started, the most CPU time first, in the
   default columns. The recorded host's atop decides the layout: 2.7.1 (EPEL on
-  RHEL 8 and 9, Ubuntu 22.04) or 2.12.1. It follows atop's own code (formats,
+  RHEL 8 and 9, Ubuntu 22.04), 2.10.0 (Ubuntu 24.04) or 2.12.1. When a process
+  runs in its own UTS namespace under another host name, atop takes it for a
+  container and adds a CID column, which can push RDELAY and BDELAY out of the
+  80 columns (Ubuntu 24.04 cloud images: systemd-udevd and -timesyncd keep the
+  image's name "ubuntu"); clifrd cannot read another namespace's host name
+  (setns needs CAP_SYS_ADMIN), so clifr keeps the columns. It follows atop's own code (formats,
   priorities, which boxes fit 80 columns; packaging/notices/atop.txt). Values are
   those of clifrd's samples; a wireless interface's busy % shows `----` (atop asks
   the driver for its rate). Needs a recording of schema 12 for every line

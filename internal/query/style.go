@@ -73,6 +73,9 @@ type ToolStyle struct {
 	// Atop271: atop 2.7.1 (EPEL on RHEL 8 and 9, Ubuntu 22.04): one MEM line,
 	// no #tidle, numcpu or BDELAY, its own header and banner.
 	Atop271 bool
+	// Atop210: atop 2.10.0 (Ubuntu 24.04): 2.12.1's lines and views with
+	// 2.7.1's header (no cgroup depth digit, 52 columns of fixed text).
+	Atop210 bool
 	// UnameUnknown: uutils coreutils (Ubuntu 25.10 and later): uname -p and -i
 	// print "unknown" and -a leaves them out. RHEL's and Debian's coreutils
 	// print the machine for both. Set by StyleAt from the distribution, not
@@ -102,6 +105,9 @@ var Styles = map[string]ToolStyle{
 	"ubuntu-22.04": {Name: "ubuntu-22.04", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
 		NumastatOld: true, ConntrackOld: true, Procps3: true},
+	// Ubuntu 24.04.5 (2026-11-21): the current tools' style and atop 2.10.0
+	// (checked against its root captures of every view in a VM).
+	"ubuntu-24.04": {Name: "ubuntu-24.04", DmesgCaller: true, Atop210: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

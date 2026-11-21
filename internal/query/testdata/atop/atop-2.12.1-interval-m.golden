@@ -8,7 +8,7 @@ CPL | numcpu     2 | avg1    1.60 | avg5    0.99 | csw   100000 | intr   10000 |
 MEM | tot    15.5G | free    8.6G | avail  12.3G | cache   3.3G | slab  585.9M |
 MEM | numnode    1 | shmem 439.5M | shswp   0.0M | pgtab  44.0M | anthp 200.0M |
 SWP | tot     4.0G | free    3.9G | swcac   1.0M | vmcom   6.8G | vmlim  11.8G |
-PAG | migrate    0 | pgin      25 | pgout    250 | swout      0 | oomkill      |
+PAG | migrate    0 | pgin      25 | pgout    250 | swout      0 | oomkill    0 |
 PSI | cpusome  20% | memsome   0% | memfull   0% | iosome    1% | iofull    0% |
 LVM | stem-lv_root | busy      4% | read       0 | write    190 | avio 2.00 ms |
 DSK |          sda | busy      4% | read       0 | write    200 | avio 2.00 ms |

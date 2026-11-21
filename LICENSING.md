@@ -74,7 +74,7 @@ clifr rebuilds the output of the real tools. Where matching them needed their ex
 | `systemctl list-units`, `systemd-cgls` (command lines) | systemd | LGPL-2.1-or-later | GPLv3 |
 | `ip link`/`address`/`route`, `nstat` | iproute2 | GPL-2.0-or-later | GPLv3 |
 | `conntrack -S` (counter names) | conntrack-tools | GPL-2.0-or-later | GPLv3 |
-| `atop` (value formats, line layout) | atop 2.7.1 / 2.12.1 | GPL-2.0-or-later | GPLv3 |
+| `atop` (value formats, line layout) | atop 2.7.1 / 2.10.0 / 2.12.1 | GPL-2.0-or-later | GPLv3 |
 | `netstat -s` (sentences; section above) | net-tools 2.10 | GPL, no version named | GPLv3 |
 
 Section 13 of the GPLv3 and of the AGPLv3 allows such code to be combined with AGPL-3.0 code; the LGPL-2.1's section 3 allows its code to be used under the GPL. The copyright notices and what was taken from each file are in `packaging/notices/` and in `/usr/share/doc/clifr*/THIRD_PARTY_NOTICES`; each Go file with such code says so at its top.

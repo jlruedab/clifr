@@ -304,10 +304,21 @@ wait for the user's go-ahead.
   (`psi_*_avg*`, hundredths: atop shows PSI only when one is not 0), `zswap_enabled`,
   `pgscan_direct_throttle` (atop counts it as a scan); `links.speed`/`duplex` (sysfs, -1 unknown);
   `proc_samples.run_delay_ns`: all threads' schedstat run delay (atop's RDELAY; `wait_ns` stays the
-  main thread's, pidstat's), read for multi-threaded processes by the I/O rule (~3 µs a thread).
-  `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): the
-  screen since boot as root, atop 2.12.1's, or 2.7.1's with `ToolStyle.Atop271` (rhel-8/9,
-  ubuntu-22.04); captures in bench/results/atop-captures-20261121.
+  main thread's, pidstat's). Also over all threads (2026-11-21, `procfs.ReadThreads`: each thread's
+  schedstat, stat, status, ~20 µs a thread, for multi-threaded processes by the I/O rule; a
+  single-threaded one takes its own values): `blkio_all_ticks`, `vol_ctx_all`, `nonvol_ctx_all`,
+  `thr_run|sleep_i|sleep_u|idle` (atop's BDELAY, NVCSW/NIVCSW, TRUN/TSLPI/TSLPU/TIDLE, PRC #tidle);
+  status's `vm_stk|swap|data|exe|lib|lck_kb` (atop -m); `processes.rgid` (-1: event-only).
+  `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): as
+  root into a pipe; at `--at` the screen since boot, over a range `atop INTERVAL [COUNT]` (the
+  increase between the samples at or before each bound; active processes, exited ones as <name>);
+  the process views from atop's own column lists (`atopViews`, one catalog `atopColumns`, fitted
+  to 80 columns by priority, `-m -d -s -v -c`). Versions by style (`AtopSys.SetStyle`): 2.12.1;
+  2.7.1 (`Atop271`: rhel-8/9, ubuntu-22.04); 2.10.0 (`Atop210`, ubuntu-24.04: 2.12.1's lines and
+  views, 2.7.1's header). Known limit: atop adds a CID column when a process has its own UTS
+  namespace and host name (Ubuntu cloud images' udevd/timesyncd keep "ubuntu"), dropping
+  RDELAY/BDELAY; clifrd cannot read those host names (setns needs CAP_SYS_ADMIN). Captures, all
+  views as root on the desktop and four VMs: bench/results/atop-captures-20261121.
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
@@ -437,6 +448,8 @@ wait for the user's go-ahead.
   bundle) names users as the host did: `query.LoadUsers` at the queried moment, then
   `query.UserName`. Older recordings: this machine's names (a header says so when the machine-id
   differs). Never use `user.LookupId` for a recorded uid when the recording has names.
+  Source "group" (schema 12, for atop -v): "gid name" pairs only (never members), `query.GroupName`;
+  without it this machine's names only for a recording from this machine or one without names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
   retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 12 since
   2026-11-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
