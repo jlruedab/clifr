@@ -105,13 +105,13 @@ type tcpTracker struct {
 	// lostAtKeyframe: lostEvents() at the last keyframe; more since then
 	// brings the next one forward (keyframeAfterLoss).
 	lostAtKeyframe int64
-	finTimeout   int64 // ms, the FIN_WAIT2 time-wait length
-	twInferred   int64 // time-wait starts inferred from the close (cumulative)
-	pendingDump  []sockdiag.Socket
-	pendingInode map[uint64]bool
-	dumpStart    int64
-	netnsRead    int64 // other network namespaces read at keyframes (cumulative)
-	netnsEmpty   int64 // of those, without TCP sockets (sockstat): no table walk
+	finTimeout     int64 // ms, the FIN_WAIT2 time-wait length
+	twInferred     int64 // time-wait starts inferred from the close (cumulative)
+	pendingDump    []sockdiag.Socket
+	pendingInode   map[uint64]bool
+	dumpStart      int64
+	netnsRead      int64 // other network namespaces read at keyframes (cumulative)
+	netnsEmpty     int64 // of those, without TCP sockets (sockstat): no table walk
 	// pendingNS: the namespaces the pending dump lists (0: the host's); a
 	// connection elsewhere is not judged by that keyframe.
 	pendingNS map[uint32]bool
