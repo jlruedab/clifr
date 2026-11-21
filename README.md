@@ -719,8 +719,14 @@ chooses one; a line on stderr says when a style other than current is used.
   RHEL 8 and 9, Ubuntu 22.04) or 2.12.1. It follows atop's own code (formats,
   priorities, which boxes fit 80 columns; packaging/notices/atop.txt). Values are
   those of clifrd's samples; a wireless interface's busy % shows `----` (atop asks
-  the driver for its rate). Needs `--at` and a recording of schema 12 for every
-  line (committed memory, page tables, OOM kills, pressure, RDELAY of all threads).
+  the driver for its rate). Needs a recording of schema 12 for every line
+  (committed memory, page tables, OOM kills, pressure, RDELAY of all threads).
+  Over a range, `atop INTERVAL [COUNT]` as atop prints it: the screen since boot
+  at `--since`, then one per INTERVAL seconds, each the increase between the
+  samples at or before its bounds, with the processes active in it and those
+  that exited in it (`<name>`, their CPU time up to their last sample); a
+  process whose only change was a context switch or page fault without a CPU
+  tick is not seen as active.
   `clifr verify` compares it with real `atop 1 1` captures (`--verify-every`).
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it

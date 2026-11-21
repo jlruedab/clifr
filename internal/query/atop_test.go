@@ -66,12 +66,46 @@ func TestAtopScreen(t *testing.T) {
 				{ProcID: 2, TS: base, State: "S", Threads: 8, CPUTicks: tk(6100), STimeTicks: tk(1700), RSSKB: 2_100_000, RSSStatKB: 2_000_000,
 					VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_000_000_000, BlkioTicks: tk(42), WaitNS: 1_000_000_000, RunDelayNS: 9_870_000_000},
 				{ProcID: 3, TS: base, State: "R", Threads: 1, CPUTicks: tk(6100), STimeTicks: tk(100), RSSStatKB: 900, VSZKB: 4000, CPU: 1},
-				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7}}})
+				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7}}},
+		// 10 s later: postgres busy and growing, the long command gone.
+		&store.Batch{Sample: store.Sample{TS: base + 10_000},
+			Sys: []store.SysSample{{TS: base + 10_000, UptimeMS: base + 10_000 - boot, Load1: 160, Load5: 99, Load15: 61,
+				Intr: 98_775_432, Ctxt: 1_234_667_890, MemTotal: 16_303_604, MemFree: 9_000_000, MemAvailable: 12_900_000,
+				Buffers: 210_000, Cached: 3_500_100, SwapTotal: 4_194_300, SwapFree: 4_100_000, SwapCached: 1024, Dirty: 500,
+				Shmem: 450_000, Slab: 600_000, SReclaimable: 400_000, PgpgIn: 1_234_667, PgpgOut: 7_655_321, PswpIn: 12,
+				PswpOut: 345, CommittedAS: 7_100_000, CommitLimit: 12_345_678, PageTables: 45_100, AnonHugePages: 204_800,
+				OOMKill: 1, PSI: true, PSICPUSome: 3_002_000_000, PSIMemSome: 10_000_000, PSIIOSome: 900_100_000,
+				PSIIOFull: 500_050_000, PSICPUAvg: [3]int64{150, 90, 41}}},
+			CPUs: []store.CPUSample{
+				{TS: base + 10_000, CPU: -1, T: [10]int64{tk(2006), tk(100), tk(1504), tk(38009), tk(301), tk(40), tk(60), 0, tk(500), 0}},
+				{TS: base + 10_000, CPU: 0, T: [10]int64{tk(1506), tk(80), tk(1004), tk(17000), tk(201), tk(30), tk(40), 0, tk(500), 0}},
+				{TS: base + 10_000, CPU: 1, T: [10]int64{tk(500), tk(20), tk(500), tk(21009), tk(100), tk(10), tk(20), 0, 0, 0}}},
+			Disks: []store.DiskSample{
+				{TS: base + 10_000, Major: 8, Minor: 0, Name: "sda", V: [17]int64{0: 123_456, 4: 654_521, 13: 1_800_400}},
+				{TS: base + 10_000, Major: 253, Minor: 0, Name: "dm-0", V: [17]int64{0: 100_000, 4: 600_190, 13: 1_700_380}}},
+			NetCounters: []store.NetCounter{
+				{TS: base + 10_000, Name: "TcpInSegs", Value: 9_877_543}, {TS: base + 10_000, Name: "TcpOutSegs", Value: 8_766_032},
+				{TS: base + 10_000, Name: "IpInReceives", Value: 9_991_000}, {TS: base + 10_000, Name: "IpOutRequests", Value: 8_880_600},
+				{TS: base + 10_000, Name: "IpInDelivers", Value: 9_981_000}},
+			Links: []store.LinkRow{
+				{TS: base + 10_000, Index: 1, Name: "lo", HasStats: true, Speed: -1, Duplex: -1, Stats: [25]int64{0: 5000, 1: 5000, 2: 900_000, 3: 900_000}},
+				{TS: base + 10_000, Index: 2, Name: "enp1s0", HasStats: true, Speed: 1000, Duplex: 1,
+					Stats: [25]int64{0: 9_001_000, 1: 7_000_600, 2: 12_100_000_000, 3: 3_001_000_000}},
+				{TS: base + 10_000, Index: 3, Name: "docker0", HasStats: true, Speed: -1, Duplex: -1}},
+			ProcCloses: []store.Close{{ID: 3, LastSeen: base + 5000, Ended: &[]int64{base + 5000}[0]}},
+			ProcSamples: []store.ProcSample{
+				{ProcID: 2, TS: base + 10_000, State: "R", Threads: 8, CPUTicks: tk(6112), STimeTicks: tk(1703), RSSKB: 2_110_000,
+					RSSStatKB: 2_010_240, VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_010_000_000, BlkioTicks: tk(42),
+					WaitNS: 1_000_000_000, RunDelayNS: 9_920_000_000}}})
 	for _, v := range []struct {
-		name string
-		v271 bool
-	}{{"atop-2.12.1", false}, {"atop-2.7.1", true}} {
+		name     string
+		v271     bool
+		interval bool
+	}{{"atop-2.12.1", false, false}, {"atop-2.7.1", true, false}, {"atop-2.12.1-interval", false, true}} {
 		a, err := AtopSysAt(db, base+1500)
+		if v.interval {
+			a, err = AtopIntervalAt(db, base+1500, base+11_500)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"clifr/internal/query"
 )
 
 func atopTool() *tool {
 	return &tool{
-		name: "atop", synopsis: "[1 1]",
+		name: "atop", synopsis: "[INTERVAL [COUNT]]",
 		about:  "the system and its processes since boot, as atop prints its first screen into a pipe",
 		window: true,
 		notes: []string{
@@ -21,25 +22,73 @@ func atopTool() *tool {
 			"clifrd's samples (every 10 s for the system, every --interval for processes). An interface's busy",
 			"% needs its speed: wireless interfaces show ---- (atop asks the driver). Recorded since schema 12",
 			"(older recordings: no committed memory, page tables, OOM kills or pressure).",
+			"Over a range (atop INTERVAL [COUNT]): the screen since boot at --since, then one per INTERVAL",
+			"seconds up to --until (or COUNT screens): each the increase between the samples at or before its",
+			"bounds, and only the processes active in it (a process whose only change was a context switch or",
+			"page fault, without a CPU tick, is not seen as active) and those that exited in it (<name>, their",
+			"CPU time up to their last sample). Choose INTERVAL as a multiple of the recorded intervals.",
 		},
-		examples: []string{`clifr --at "02:45" atop`},
+		examples: []string{`clifr --at "02:45" atop`, `clifr --since "02:40" --until "02:50" "atop 60"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
-			if n := len(p.pos); n != 0 && (n != 2 || p.pos[0] != "1" || p.pos[1] != "1") {
-				return nil, fmt.Errorf("atop: only the screen since boot is supported (atop or atop 1 1), not %q", p.pos)
+			var nums []int64
+			for _, a := range p.pos {
+				v, err := strconv.ParseInt(a, 10, 64)
+				if err != nil || v < 1 {
+					return nil, fmt.Errorf("atop: %q: INTERVAL and COUNT are positive numbers (atop [INTERVAL [COUNT]])", a)
+				}
+				nums = append(nums, v)
 			}
-			if c.w.IsRange() {
-				return nil, errors.New("atop: needs --at")
+			if len(nums) > 2 {
+				return nil, errors.New("atop: atop [INTERVAL [COUNT]]")
+			}
+			if !c.w.IsRange() {
+				if len(nums) > 0 && (len(nums) != 2 || nums[1] != 1) {
+					return nil, errors.New("atop: with --at, only the screen since boot (atop or atop 1 1); for intervals use --since and --until")
+				}
+				return func() error {
+					a, err := query.AtopSysAt(c.db, c.w.At)
+					if err != nil {
+						return err
+					}
+					a.V271 = query.StyleAt(c.db, c.w.At).Atop271
+					return c.emit([]*query.AtopSys{a}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+						func(w io.Writer) {
+							query.PrintAtopSys(w, a)
+							query.PrintAtopProcs(w, a)
+						})
+				}, nil
+			}
+			if len(nums) == 0 {
+				return nil, errors.New("atop: over a range give the interval: atop INTERVAL [COUNT] (seconds)")
+			}
+			step := nums[0] * 1000
+			count := int64(-1)
+			if len(nums) == 2 {
+				count = nums[1]
 			}
 			return func() error {
-				a, err := query.AtopSysAt(c.db, c.w.At)
+				v271 := query.StyleAt(c.db, c.w.From).Atop271
+				var screens []*query.AtopSys
+				first, err := query.AtopSysAt(c.db, c.w.From)
 				if err != nil {
 					return err
 				}
-				a.V271 = query.StyleAt(c.db, c.w.At).Atop271
-				return c.emit([]*query.AtopSys{a}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+				first.V271 = v271
+				screens = append(screens, first)
+				for t := c.w.From + step; t <= c.w.To && (count < 0 || int64(len(screens)) < count); t += step {
+					a, err := query.AtopIntervalAt(c.db, t-step, t)
+					if err != nil {
+						return err
+					}
+					a.V271 = v271
+					screens = append(screens, a)
+				}
+				return c.emit(screens, func(i int) rowMeta { return rowMeta{TS: screens[i].T} },
 					func(w io.Writer) {
-						query.PrintAtopSys(w, a)
-						query.PrintAtopProcs(w, a)
+						for _, a := range screens {
+							query.PrintAtopSys(w, a)
+							query.PrintAtopProcs(w, a)
+						}
 					})
 			}, nil
 		},

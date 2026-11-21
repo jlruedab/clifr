@@ -27,8 +27,14 @@ const atopWidth = 80
 
 // AtopSys is what atop's system lines show at a moment, since boot.
 type AtopSys struct {
-	Host           string
-	T, BootMS      int64
+	Host      string
+	T, BootMS int64
+	// NSecs: the interval of an interval screen (AtopIntervalAt); 0: the
+	// screen since boot.
+	NSecs int64
+	// Interval: an interval screen (no banner; only the processes active in
+	// it, their increases).
+	Interval       bool
 	Sys            store.SysSample
 	OOMKnown       bool // vmstat has oom_kill (Linux 4.13+); atop leaves OOMKILLS out otherwise
 	CPU            cpuTimes
@@ -55,6 +61,9 @@ type atopProc struct {
 	rbytes, wbytes, cancel int64
 	comm                   string
 	startMS                int64
+	id, sampleTS           int64
+	exited                 bool
+	excode                 int // atop's: exit code << 8, or the signal
 }
 
 // StartedAfter reports whether process pid started after ts (atop may show
@@ -91,6 +100,7 @@ type atopIntf struct {
 type AtopProcSum struct {
 	Stime, Utime           int64
 	NProc, NTIdle, NZombie int
+	NExit                  int // exited in the interval
 }
 
 // AtopSysAt loads the system values of the sample at or before t.
@@ -193,7 +203,8 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 				a.List = append(a.List, atopProc{pid: p.pid, uid: p.uid, threads: int(max(p.threads.Int64, 1)), cpu: int(p.psr.Int64),
 					state: p.state.String, stime: p.stime.Int64, utime: p.cpuTicks.Int64 - p.stime.Int64,
 					blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64, rssKB: cmp.Or(p.rssStat.Int64, p.rssKB.Int64), startMS: p.startMS,
-					rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm})
+					rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm,
+					id: p.id, sampleTS: p.sampleTS.Int64})
 			}
 		}
 	}
@@ -330,9 +341,11 @@ var atopFields = map[string]atopField{
 	"PRCNZOMBIE": func(a *AtopSys, _ *atopExtra) (string, bool) {
 		return atopBox("#zombie", 8, atopVal(int64(a.Procs.NZombie), 4, false, 0)), true
 	},
-	// As root, with process accounting active: no process exited before
-	// the first sample.
-	"PRCNNEXIT": func(*AtopSys, *atopExtra) (string, bool) { return atopBox("#exit", 6, atopVal(0, 6, false, 0)), true },
+	// As root, with process accounting active: the processes that exited in
+	// the interval (none before the first sample).
+	"PRCNNEXIT": func(a *AtopSys, _ *atopExtra) (string, bool) {
+		return atopBox("#exit", 6, atopVal(int64(a.Procs.NExit), 6, false, 0)), true
+	},
 	// CPU and cpu
 	"CPUSYS": func(a *AtopSys, x *atopExtra) (string, bool) { return cpuBox("sys", a.CPU[cSystem], x.percputot), true },
 	"CPUUSER": func(a *AtopSys, x *atopExtra) (string, bool) {
@@ -724,6 +737,9 @@ func atopLine(label, line string, a *AtopSys, x *atopExtra) string {
 func PrintAtopSys(w io.Writer, a *AtopSys) {
 	// atop's boot time is /proc/stat's btime: whole seconds.
 	nsecs := max(a.T/1000-a.BootMS/1000, 1)
+	if a.NSecs > 0 {
+		nsecs = a.NSecs
+	}
 	x := &atopExtra{nsecs: nsecs}
 	t := time.UnixMilli(a.T)
 	elapsed := atopElapsed(nsecs)
@@ -852,27 +868,54 @@ type atopCol struct {
 func atopProcCols(pidWidth, sortWidth int) []atopCol {
 	cpu := func(ticks int64) string { return atopCPU(ticks * 1000 / procfs.ClockTicks) }
 	mem := func(b int64) string { return atopMem(b, atopB, false, 0) }
+	// exited: atop's exit variant of a column (procprt_*_e) for a process
+	// that exited in the interval, else the value.
+	exited := func(e string, f func(p *atopProc) string) func(p *atopProc, _ float64) string {
+		return func(p *atopProc, _ float64) string {
+			if p.exited {
+				return e
+			}
+			return f(p)
+		}
+	}
 	return []atopCol{
 		{"PID", pidWidth, 10, func(p *atopProc, _ float64) string { return fmt.Sprintf("%*d", pidWidth, p.pid) }},
 		{"SYSCPU", 6, 9, func(p *atopProc, _ float64) string { return cpu(p.stime) }},
 		{"USRCPU", 6, 9, func(p *atopProc, _ float64) string { return cpu(p.utime) }},
-		{"RDELAY", 6, 4, func(p *atopProc, _ float64) string { return atopCPU(p.runNS / 1000000) }},
-		{"BDELAY", 6, 4, func(p *atopProc, _ float64) string { return cpu(p.blkTicks) }},
-		{" VGROW", 6, 8, func(p *atopProc, _ float64) string { return mem(p.vszKB * 1024) }},
-		{" RGROW", 6, 8, func(p *atopProc, _ float64) string { return mem(p.rssKB * 1024) }},
-		{" RDDSK", 6, 7, func(p *atopProc, _ float64) string { return mem(p.rbytes / 512 * 512) }},
-		{" WRDSK", 6, 7, func(p *atopProc, _ float64) string {
+		{"RDELAY", 6, 4, exited("     -", func(p *atopProc) string { return atopCPU(p.runNS / 1000000) })},
+		{"BDELAY", 6, 4, exited("     -", func(p *atopProc) string { return cpu(p.blkTicks) })},
+		{" VGROW", 6, 8, exited("    0K", func(p *atopProc) string { return mem(p.vszKB * 1024) })},
+		{" RGROW", 6, 8, exited("    0K", func(p *atopProc) string { return mem(p.rssKB * 1024) })},
+		{" RDDSK", 6, 7, exited("     -", func(p *atopProc) string { return mem(p.rbytes / 512 * 512) })},
+		{" WRDSK", 6, 7, exited("     -", func(p *atopProc) string {
 			return mem(max(p.wbytes/512-p.cancel/512, 0) * 512)
-		}},
+		})},
 		{"RUID ", 8, 2, func(p *atopProc, _ float64) string { return fmt.Sprintf("%-8.8s", UserName(p.uid, false)) }},
 		{"EUID ", 8, 1, func(p *atopProc, _ float64) string { return fmt.Sprintf("%-8.8s", UserName(p.uid, false)) }},
 		{"ST", 2, 3, func(*atopProc, float64) string { return "N-" }},
-		{"EXC", 3, 3, func(*atopProc, float64) string { return "  -" }},
-		{" THR", 4, 3, func(p *atopProc, _ float64) string { return fmt.Sprintf("%4d", p.threads) }},
+		{"EXC", 3, 3, func(p *atopProc, _ float64) string {
+			if !p.exited {
+				return "  -"
+			}
+			if p.excode&0xff != 0 {
+				return fmt.Sprintf("%3d", p.excode&0x7f)
+			}
+			return fmt.Sprintf("%3d", p.excode>>8&0xff)
+		}},
+		{" THR", 4, 3, exited("   0", func(p *atopProc) string { return fmt.Sprintf("%4d", p.threads) })},
 		{"S", 1, 3, func(p *atopProc, _ float64) string { return cmp.Or(p.state, "E") }},
-		{"CPUNR", 5, 3, func(p *atopProc, _ float64) string { return fmt.Sprintf("%5d", p.cpu) }},
+		{"CPUNR", 5, 3, exited("    -", func(p *atopProc) string { return fmt.Sprintf("%5d", p.cpu) })},
 		{"CPU", sortWidth, 10, func(_ *atopProc, perc float64) string { return fmt.Sprintf("%*.0f%%", sortWidth-1, perc) }},
-		{"CMD ", 14, 10, func(p *atopProc, _ float64) string { return fmt.Sprintf("%-14.14s", p.comm) }},
+		{"CMD ", 14, 10, func(p *atopProc, _ float64) string {
+			if p.exited {
+				name := p.comm
+				if len(name) > 12 {
+					name = name[:12]
+				}
+				return fmt.Sprintf("%-14.14s", "<"+name+">")
+			}
+			return fmt.Sprintf("%-14.14s", p.comm)
+		}},
 	}
 }
 
@@ -901,9 +944,12 @@ func atopFit(cols []atopCol, width int) []atopCol {
 // process, the most CPU time first (equal ones in PID order).
 func PrintAtopProcs(w io.Writer, a *AtopSys) {
 	const initMsg, viewMsg = "*** System and Process Activity since Boot ***", "Unrestricted view (privileged)"
-	if a.V271 {
+	switch {
+	case a.Interval: // no banner after the first screen
+		fmt.Fprintln(w)
+	case a.V271:
 		fmt.Fprintf(w, "        %s     %s\n", initMsg, viewMsg)
-	} else {
+	default:
 		fmt.Fprintf(w, "%s%*s%s\n", initMsg, atopWidth-len(initMsg)-len(viewMsg), " ", viewMsg)
 	}
 	ncpu := int64(max(len(a.CPUs), 1))
@@ -940,4 +986,155 @@ func PrintAtopProcs(w io.Writer, a *AtopSys) {
 		}
 		fmt.Fprintln(w, b.String())
 	}
+}
+
+// AtopIntervalAt is atop's screen for the interval between the samples at
+// or before from and to: counters as their increase, gauges (memory sizes,
+// load, the averages of PSI) at the end.
+func AtopIntervalAt(db *store.DB, from, to int64) (*AtopSys, error) {
+	a0, err := AtopSysAt(db, from)
+	if err != nil {
+		return nil, err
+	}
+	a, err := AtopSysAt(db, to)
+	if err != nil {
+		return nil, err
+	}
+	a.NSecs = max((a.Sys.TS-a0.Sys.TS+500)/1000, 1)
+	s, p := &a.Sys, &a0.Sys
+	for _, c := range []struct{ now, prev *int64 }{
+		{&s.Intr, &p.Intr}, {&s.Ctxt, &p.Ctxt}, {&s.PgpgIn, &p.PgpgIn}, {&s.PgpgOut, &p.PgpgOut},
+		{&s.PswpIn, &p.PswpIn}, {&s.PswpOut, &p.PswpOut}, {&s.PgscanKswapd, &p.PgscanKswapd},
+		{&s.PgscanDirect, &p.PgscanDirect}, {&s.PgscanKhugepaged, &p.PgscanKhugepaged},
+		{&s.PgscanDirectThrottle, &p.PgscanDirectThrottle}, {&s.PgstealKswapd, &p.PgstealKswapd},
+		{&s.PgstealDirect, &p.PgstealDirect}, {&s.PgstealKhugepaged, &p.PgstealKhugepaged},
+		{&s.AllocStall, &p.AllocStall}, {&s.CompactStall, &p.CompactStall}, {&s.PgmigrateSuccess, &p.PgmigrateSuccess},
+		{&s.NumaPagesMigrated, &p.NumaPagesMigrated}, {&s.OOMKill, &p.OOMKill}, {&s.ZswpIn, &p.ZswpIn},
+		{&s.ZswpOut, &p.ZswpOut}, {&s.PSICPUSome, &p.PSICPUSome}, {&s.PSIMemSome, &p.PSIMemSome},
+		{&s.PSIMemFull, &p.PSIMemFull}, {&s.PSIIOSome, &p.PSIIOSome}, {&s.PSIIOFull, &p.PSIIOFull},
+	} {
+		*c.now -= *c.prev
+	}
+	for i := range a.CPU {
+		a.CPU[i] -= a0.CPU[i]
+	}
+	prevCPU := map[int]cpuTimes{}
+	for _, c := range a0.CPUs {
+		prevCPU[c.nr] = c.t
+	}
+	for i := range a.CPUs {
+		pt := prevCPU[a.CPUs[i].nr]
+		for j := range a.CPUs[i].t {
+			a.CPUs[i].t[j] -= pt[j]
+		}
+	}
+	prevDisk := map[string]atopDisk{}
+	for _, d := range a0.Disks {
+		prevDisk[d.name] = d
+	}
+	disks := a.Disks[:0]
+	for _, d := range a.Disks {
+		pd := prevDisk[d.name]
+		d.nread, d.nwrite, d.ioMS = d.nread-pd.nread, d.nwrite-pd.nwrite, d.ioMS-pd.ioMS
+		if d.nread+d.nwrite != 0 {
+			disks = append(disks, d) // atop: a disk without transfers is left out
+		}
+	}
+	a.Disks = disks
+	for k, v := range a0.Net {
+		a.Net[k] -= v
+	}
+	prevIntf := map[string]atopIntf{}
+	for _, i := range a0.Intfs {
+		prevIntf[i.name] = i
+	}
+	for i := range a.Intfs {
+		pi := prevIntf[a.Intfs[i].name]
+		a.Intfs[i].rpack -= pi.rpack
+		a.Intfs[i].spack -= pi.spack
+		a.Intfs[i].rbyte -= pi.rbyte
+		a.Intfs[i].sbyte -= pi.sbyte
+	}
+	a.Interval = true
+	a.List, a.Procs = atopIntervalProcs(db, a0, a)
+	return a, nil
+}
+
+// atopIntervalProcs are the processes atop shows for an interval: those
+// active in it (a sample row written in it: clifrd writes one when anything
+// changed; or started in it) with their increases, and those that exited
+// in it. The summary (PRC) counts all.
+func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
+	prev := map[int64]atopProc{}
+	for _, p := range a0.List {
+		prev[p.id] = p
+	}
+	sum := AtopProcSum{NProc: len(a.List)}
+	var out []atopProc
+	for _, p := range a.List {
+		switch p.state {
+		case "I":
+			sum.NTIdle++
+		case "Z":
+			sum.NZombie++
+		}
+		q, known := prev[p.id]
+		if known && p.sampleTS <= q.sampleTS {
+			continue // not active
+		}
+		p.stime -= q.stime
+		p.utime -= q.utime
+		p.blkTicks -= q.blkTicks
+		p.runNS -= q.runNS
+		p.vszKB -= q.vszKB
+		p.rssKB -= q.rssKB
+		p.rbytes -= q.rbytes
+		p.wbytes -= q.wbytes
+		p.cancel -= q.cancel
+		sum.Stime += p.stime
+		sum.Utime += p.utime
+		out = append(out, p)
+	}
+	// Exited in the interval: their CPU time up to their last sample.
+	rows, err := db.Query(`
+		SELECT p.id, p.pid, p.comm, p.start_time, p.exit_code, p.signal,
+		       (SELECT arg_max(x.cpu_ticks, x.ts) FROM proc_samples x WHERE x.proc_id = p.id AND x.ts <= ?2),
+		       (SELECT arg_max(x.stime_ticks, x.ts) FROM proc_samples x WHERE x.proc_id = p.id AND x.ts <= ?2)
+		FROM processes p
+		WHERE COALESCE(p.ended, p.last_seen) > ?1 AND COALESCE(p.ended, p.last_seen) <= ?2 AND p.first_seen <= ?2
+		ORDER BY p.pid`, a0.Sys.TS, a.Sys.TS)
+	if err == nil {
+		defer rows.Close()
+		alive := map[int64]bool{}
+		for _, p := range a.List {
+			alive[p.id] = true
+		}
+		for rows.Next() {
+			var e atopProc
+			var code, sig, cpu, st sql.NullInt64
+			if rows.Scan(&e.id, &e.pid, &e.comm, &e.startMS, &code, &sig, &cpu, &st) != nil {
+				continue
+			}
+			// An open process's row carries the last sample as last_seen:
+			// still alive at the end, it did not exit.
+			if alive[e.id] {
+				continue
+			}
+			q := prev[e.id]
+			e.exited, e.state, e.threads = true, "E", 1
+			e.stime = max(st.Int64-q.stime, 0)
+			e.utime = max(cpu.Int64-st.Int64-q.utime, 0)
+			switch {
+			case sig.Valid && sig.Int64 > 0:
+				e.excode = int(sig.Int64)
+			case code.Valid:
+				e.excode = int(code.Int64) << 8
+			}
+			sum.Stime += e.stime
+			sum.Utime += e.utime
+			sum.NExit++
+			out = append(out, e)
+		}
+	}
+	return out, sum
 }
