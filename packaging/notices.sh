@@ -8,7 +8,8 @@
 # packaging/notices/duckdb-<version>.txt is appended (DuckDB's own license and
 # those of the libraries it bundles, taken from the DuckDB source of that
 # version); a DuckDB version without such a file is an error, so updating
-# duckdb-go-bindings means adding the new version's notices.
+# duckdb-go-bindings means adding the new version's notices. Then the notices
+# of code derived from other projects (packaging/notices/NAME.txt).
 set -euo pipefail
 bin=$1 out=$2
 here=$(dirname "$0")
@@ -44,10 +45,18 @@ duckdb=
 		sep "DuckDB $dv"
 		cat "$f"
 	fi
-	if [ "$(basename "$bin")" = clifr ]; then
-		# The sentences of clifr's netstat -s are net-tools' own.
-		sep "net-tools 2.10 (text of netstat -s)"
-		cat "$here/notices/net-tools.txt"
-	fi
+	# Code that follows other projects' code (LICENSING.md, "Code derived
+	# from other projects"): the first line of each file names what.
+	case $(basename "$bin") in
+	clifr) derived="net-tools util-linux coreutils procps numactl nfs-utils systemd iproute2 conntrack-tools" ;;
+	clifrd) derived="util-linux procps" ;;
+	*) derived= ;;
+	esac
+	for n in $derived; do
+		f=$here/notices/$n.txt
+		[ -f "$f" ] || { echo "notices.sh: missing $f" >&2; exit 1; }
+		sep "$(head -1 "$f")"
+		cat "$f"
+	done
 } >"$out"
 echo "   $(basename "$bin"): $(wc -l <<<"$deps") Go modules${duckdb:+, DuckDB}: $out"

@@ -1,3 +1,6 @@
+// Parts of this file follow GNU coreutils' src/df.c (GPL-3.0-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/coreutils.txt.
+
 package query
 
 import (

@@ -1,0 +1,52 @@
+procps-ng: parts of clifr's w, slabtop and ps, and of clifrd's sysctl reading
+
+From procps-ng (https://gitlab.com/procps-ng/procps, tags v3.3.17 and v4.0.4),
+written anew in Go:
+
+- internal/query/w.go: w's choice of a session's process and its output
+  (find_best_proc, print_logintime, print_time_ival7, print_from,
+  print_host), from w.c (3.3.17) and src/w.c (4.0.4).
+- internal/query/slabtop.go: procps 3.3's slabtop sort and its USE figure,
+  from slabtop.c and proc/slab.c (3.3.17).
+- internal/query/ps.go: ps's STIME and %CPU (pr_stime, and %CPU over
+  elapsed_seconds), from src/ps/output.c (4.0.4).
+- internal/recorder/sysctl.go (clifrd): sysctl -a's skipped names
+  (DEPRECATED) and slashdot, from src/sysctl.c (4.0.4).
+
+Their notices:
+
+  w.c (3.3.17): Almost entirely rewritten from scratch by Charles Blake circa
+    June 1996; originally by Larry Greenfield (1993), with fixes by Michael K.
+    Johnson; changes by Albert Cahalan, 2002.
+  src/w.c (4.0.4):
+    Copyright © 2009-2023 Craig Small <csmall@dropbear.xyz>
+    Copyright © 2011-2023 Jim Warner <james.warner@comcast.net>
+    Copyright © 2011-2012 Sami Kerola <kerolasa@iki.fi>
+    Copyright © 2002-2006 Albert Cahalan
+    Copyright © 1996      Charles Blake
+    Copyright © 1993      Larry Greenfield
+  slabtop.c (3.3.17): Copyright (C) 2003 Chris Rivera
+  proc/slab.c (3.3.17): Copyright (C) 2003 Chris Rivera, Copyright 2004, Albert Cahalan
+  src/ps/output.c (4.0.4):
+    Copyright © 2015-2023 Jim Warner <james.warner@comcast.net
+    Copyright © 2004-2023 Craig Small <csmall@dropbear.xyz>
+    Copyright © 2011      Lukas Nykryn <lnykryn@redhat.com>
+    Copyright © 1999-2004 Albert Cahalan
+  These files: GNU Lesser General Public License, version 2.1 or (at your
+  option) any later version.
+  src/sysctl.c (4.0.4):
+    Copyright © 2009-2023 Craig Small <csmall@dropbear.xyz>
+    Copyright © 2012-2023 Jim Warner <james.warner@comcast.net>
+    Copyright © 2017-2018 Werner Fink <werner@suse.de>
+    Copyright © 2014      Jaromir Capik <jcapik@redhat.com>
+    Copyright © 2011-2012 Sami Kerola <kerolasa@iki.fi>
+    Copyright © 2002-2007 Albert Cahalan
+    Copyright © 1999      George Staikos
+    GNU General Public License, version 2 or (at your option) any later version.
+
+clifr uses these parts under the GNU General Public License version 3 (the
+LGPL-2.1 allows its code to be used under the GPL, section 3), which section
+13 of both the GPLv3 and the GNU Affero General Public License version 3
+allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

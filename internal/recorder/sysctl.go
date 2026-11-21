@@ -1,3 +1,6 @@
+// Parts of this file follow procps-ng's src/sysctl.c (GPL-2.0-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/procps.txt.
+
 package recorder
 
 import (

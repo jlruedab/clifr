@@ -1,0 +1,20 @@
+numactl: parts of clifr's numastat
+
+internal/query/numastat.go prints numastat's tables as numactl 2.0.19's
+numastat.c does (https://github.com/numactl/numactl, tag v2.0.19): the table
+layout, its column widths and the compatibility output, written anew in Go.
+
+numastat.c says:
+
+    Copyright (C) 2012 Bill Gray (bgray@redhat.com), Red Hat Inc
+    numastat is free software; you can redistribute it and/or modify it under
+    the terms of the GNU Lesser General Public License as published by the
+    Free Software Foundation; version 2.1.
+
+Section 3 of the LGPL version 2.1 allows its code to be used under the GNU
+General Public License version 2 or, as that section allows, a later
+version. clifr uses it under the GPL version 3, which section 13 of both the
+GPLv3 and the GNU Affero General Public License version 3 allows to be
+combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

@@ -1,0 +1,17 @@
+conntrack-tools: the counter names of clifr's conntrack -S
+
+internal/query/conntrack.go prints the per-CPU counters with conntrack -S's
+names, from conntrack-tools' src/conntrack.c
+(https://git.netfilter.org/conntrack-tools).
+
+conntrack.c says:
+
+    (C) 2005-2012 by Pablo Neira Ayuso <pablo@netfilter.org>
+    (C) 2012 by Intra2net AG <http://www.intra2net.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+
+clifr uses them under the GPL version 3, which section 13 of both the GPLv3
+and the GNU Affero General Public License version 3 allows to be combined
+with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

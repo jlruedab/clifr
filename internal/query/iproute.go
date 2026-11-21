@@ -1,3 +1,6 @@
+// Parts of this file follow iproute2's ip/iproute.c (GPL-2.0-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/iproute2.txt.
+
 package query
 
 import (

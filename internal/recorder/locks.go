@@ -1,3 +1,6 @@
+// Parts of this file follow util-linux's misc-utils/lslocks.c (GPL-2.0-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/util-linux.txt.
+
 package recorder
 
 import (

@@ -1,3 +1,6 @@
+// Parts of this file follow systemd's src/systemctl/systemctl-list-units.c (LGPL-2.1-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/systemd.txt.
+
 package query
 
 import (

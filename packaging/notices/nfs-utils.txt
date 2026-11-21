@@ -1,0 +1,22 @@
+nfs-utils: parts of clifr's nfsstat
+
+internal/query/nfsstat.go prints nfsstat's tables as nfs-utils 2.3 to 2.6
+print them (utils/nfsstat/nfsstat.c, git://git.linux-nfs.org/projects/steved/nfs-utils.git):
+the names of the NFS procedures and operations, the table headings and the
+layout, written anew in Go.
+
+nfsstat.c says:
+
+    Copyright (C) 1995-2005 Olaf Kirch <okir@suse.de>
+
+and names no license; nfs-utils is distributed under the GNU General Public
+License, "version 2 or later" (as Debian's packaging records it). clifr uses
+this part under the GPL version 3, which section 13 of both the GPLv3 and the
+GNU Affero General Public License version 3 allows to be combined with
+clifr's AGPL-3.0 code.
+
+clifr's mountstats is not derived from nfs-utils' mountstats.py (GPL version 2
+only): it was written clean-room from the real tool's output
+(internal/query/testdata/mountstats/SPEC.md).
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

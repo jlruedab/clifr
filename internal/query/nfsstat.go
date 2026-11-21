@@ -1,3 +1,6 @@
+// Parts of this file follow nfs-utils' utils/nfsstat/nfsstat.c (GPL-2.0-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/nfs-utils.txt.
+
 package query
 
 import (

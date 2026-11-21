@@ -1,0 +1,20 @@
+systemd: parts of clifr's systemctl and systemd-cgls
+
+From systemd (https://github.com/systemd/systemd, tags v239 to v252), written
+anew in Go:
+
+- internal/query/systemctl.go: systemctl list-units' rows, order and
+  columns (output_show_unit, output_units_list, unit_info_compare), from
+  src/systemctl/systemctl-list-units.c.
+- internal/query/cgls.go: systemd-cgls's command lines
+  (get_process_cmdline, src/basic/process-util.c).
+
+These files are licensed "SPDX-License-Identifier: LGPL-2.1-or-later",
+copyright the systemd authors.
+
+clifr uses these parts under the GNU General Public License version 3 (the
+LGPL-2.1 allows its code to be used under the GPL, section 3), which section
+13 of both the GPLv3 and the GNU Affero General Public License version 3
+allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

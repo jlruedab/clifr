@@ -1,3 +1,8 @@
+// Parts of this file follow systemd's src/basic/process-util.c (LGPL-2.1-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/systemd.txt.
+// kernfsHash reimplements the kernel's kernfs_name_hash formula for
+// interoperability (LICENSING.md).
+
 package query
 
 import (

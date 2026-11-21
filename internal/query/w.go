@@ -1,3 +1,6 @@
+// Parts of this file follow procps-ng's w.c (LGPL-2.1-or-later), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/procps.txt.
+
 package query
 
 import (

@@ -48,6 +48,11 @@ wait for the user's go-ahead.
   A new dependency must be AGPL-compatible; updating duckdb-go-bindings to another DuckDB
   version needs `packaging/notices/duckdb-<version>.txt` (`packaging/notices.sh` stops
   the build without it).
+  Code that follows another tool's code (to match its output) is derived from it: only from code
+  under a license combinable with the AGPL-3.0 (GPL-2.0-or-later, GPL-3.0+, LGPL-2.1, permissive;
+  never GPL-2.0-only, as nfs-utils' mountstats.py: clean-room then), with a top-of-file comment,
+  a row in LICENSING.md's "Code derived from other projects" and `packaging/notices/NAME.txt`
+  (listed in `packaging/notices.sh`; audit 2026-11-21).
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
 - Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,

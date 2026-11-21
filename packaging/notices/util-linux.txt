@@ -1,0 +1,55 @@
+util-linux: parts of clifr's last, dmesg, swapon, lsblk and lslocks, and of clifrd's lock reading
+
+clifr rebuilds the output of util-linux's tools. Some of its Go code follows
+util-linux's C code closely (https://github.com/util-linux/util-linux, tags
+v2.37.4 and v2.41); that code was written anew in Go:
+
+- internal/query/last.go: last's pass over the login records
+  (process_wtmp_file, list) and its output (fputc_careful), from
+  login-utils/last.c (util-linux 2.32 to 2.37).
+- internal/query/dmesg.go: dmesg's escaping of a record (safe_fwrite), from
+  sys-utils/dmesg.c.
+- internal/query/swaps.go, lsblk.go, lslocks.go, escape.go: the table layout
+  of libsmartcols (column widths with and without width hints, and its
+  mbs_safe_encode escaping, lib/mbsalign.c) and size_to_human_string
+  (lib/strutils.c), as lsblk, lslocks and swapon print into a pipe.
+- internal/recorder/locks.go (clifrd): lslocks' get_filename_sz, from
+  misc-utils/lslocks.c (2.41).
+
+Their notices:
+
+  login-utils/last.c:
+    Copyright (C) 1991-2004 Miquel van Smoorenburg.
+    Copyright (C) 2013      Ondrej Oprala <ooprala@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/dmesg.c:
+    Copyright (C) 1993 Theodore Ts'o <tytso@athena.mit.edu>
+    Copyright (C) 2011 Karel Zak <kzak@redhat.com>
+    No license in the file: util-linux's default, GPL version 2 or any later
+    version (README.licensing, COPYING).
+  misc-utils/lsblk.c:
+    Copyright (C) 2010-2018 Red Hat, Inc. All rights reserved.
+    Written by Milan Broz <mbroz@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  misc-utils/lslocks.c:
+    Copyright (C) 2012 Davidlohr Bueso <dave@gnu.org>
+    GNU General Public License, version 2 or (at your option) any later version.
+  libsmartcols (src/print.c):
+    Copyright (C) 2010-2014 Karel Zak <kzak@redhat.com>
+    Copyright (C) 2016 Igor Gnatenko <i.gnatenko.brain@gmail.com>
+    GNU Lesser General Public License (version 2.1 or any later version).
+  lib/mbsalign.c:
+    Copyright (C) 2009-2010 Free Software Foundation, Inc.
+    GNU Lesser General Public License, version 2.1 or (at your option) any
+    later version.
+  lib/strutils.c:
+    Copyright (C) 2010 Karel Zak <kzak@redhat.com>
+    Copyright (C) 2010 Davidlohr Bueso <dave@gnu.org>
+    "No copyright is claimed. This code is in the public domain."
+
+clifr uses these parts under the GNU General Public License version 3 (the
+LGPL-2.1 allows its code to be used under the GPL, section 3), which section
+13 of both the GPLv3 and the GNU Affero General Public License version 3
+allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

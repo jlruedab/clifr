@@ -1,0 +1,22 @@
+iproute2: parts of clifr's ip and nstat
+
+From iproute2 (https://git.kernel.org/pub/scm/network/iproute2/iproute2.git),
+written anew in Go:
+
+- internal/query/iplink.go: the link type names (lib/ll_types.c) and the
+  statistics layout (print_stats64, ip/ipaddress.c).
+- internal/query/ipaddr.go: the address lines (print_addrinfo, ip/ipaddress.c).
+- internal/query/iproute.go: the route selection and flags (filter_nlmsg,
+  print_rt_flags, ip/iproute.c).
+- internal/query/nstat.go: nstat's leaving out of some counters
+  (useless_numbers, misc/nstat.c).
+
+These files are licensed "SPDX-License-Identifier: GPL-2.0-or-later";
+Authors: Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>, and the iproute2
+contributors.
+
+clifr uses these parts under the GNU General Public License version 3, which
+section 13 of both the GPLv3 and the GNU Affero General Public License
+version 3 allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

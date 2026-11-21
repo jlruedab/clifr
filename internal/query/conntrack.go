@@ -1,3 +1,6 @@
+// Parts of this file follow conntrack-tools' src/conntrack.c (GPL-2.0-or-later): its counter names, used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/conntrack-tools.txt.
+
 package query
 
 import (

@@ -1,3 +1,6 @@
+// Parts of this file follow numactl's numastat.c (LGPL-2.1), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/numactl.txt.
+
 package query
 
 import (

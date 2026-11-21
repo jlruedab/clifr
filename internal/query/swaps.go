@@ -1,3 +1,6 @@
+// Parts of this file follow util-linux's libsmartcols (LGPL-2.1-or-later) and lib/strutils.c (public domain), used under the
+// GPL-3.0: see LICENSING.md and packaging/notices/util-linux.txt.
+
 package query
 
 import (

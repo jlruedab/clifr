@@ -60,6 +60,28 @@ The binaries include third-party Go modules under their own permissive licenses 
 
 `clifr netstat -s` prints each counter in the same sentence as net-tools' `netstat -s` (for example "%d incoming packets delivered"), so that its output matches the real tool word for word. Those 188 sentences and the section headings are taken from net-tools 2.10's `statistics.c` ("Copyright 1997,1999,2000 Andi Kleen. Subject to the GPL."); the code that prints them, `internal/query/netstat_stats.go`, is clifr's own. As `statistics.c` names no GPL version, section 9 of the GPL lets any version be chosen: clifr uses the sentences under the GPLv3, which may be combined with AGPL-3.0 code (section 13 of both licenses). The attribution is in `/usr/share/doc/clifr/THIRD_PARTY_NOTICES` and `packaging/notices/net-tools.txt`.
 
+## Code derived from other projects
+
+clifr rebuilds the output of the real tools. Where matching them needed their exact rules, parts of clifr's Go code follow those tools' own code closely: written anew in Go, but derived from it. Each part is used under a license that may be combined with the AGPL-3.0:
+
+| clifr code | Follows | Its license | Used under |
+|---|---|---|---|
+| `last`, `dmesg`, `swapon`, `lsblk`, `lslocks` (libsmartcols' table layout); clifrd's lock file lookup | util-linux 2.37 / 2.41 | GPL-2.0-or-later; libsmartcols and `mbsalign.c` LGPL-2.1-or-later; `strutils.c` public domain | GPLv3 |
+| `who`, `df` (column widths) | GNU coreutils 8.32 | GPL-3.0-or-later | GPLv3 |
+| `w`, `slabtop` (3.3), `ps` (STIME, %CPU); clifrd's sysctl walk | procps-ng 3.3.17 / 4.0.4 | LGPL-2.1-or-later; `sysctl.c` GPL-2.0-or-later | GPLv3 |
+| `numastat` | numactl 2.0.19 `numastat.c` | LGPL-2.1 (section 3 allows the GPL) | GPLv3 |
+| `nfsstat` | nfs-utils `nfsstat.c` | GPL-2.0-or-later | GPLv3 |
+| `systemctl list-units`, `systemd-cgls` (command lines) | systemd | LGPL-2.1-or-later | GPLv3 |
+| `ip link`/`address`/`route`, `nstat` | iproute2 | GPL-2.0-or-later | GPLv3 |
+| `conntrack -S` (counter names) | conntrack-tools | GPL-2.0-or-later | GPLv3 |
+| `netstat -s` (sentences; section above) | net-tools 2.10 | GPL, no version named | GPLv3 |
+
+Section 13 of the GPLv3 and of the AGPLv3 allows such code to be combined with AGPL-3.0 code; the LGPL-2.1's section 3 allows its code to be used under the GPL. The copyright notices and what was taken from each file are in `packaging/notices/` and in `/usr/share/doc/clifr*/THIRD_PARTY_NOTICES`; each Go file with such code says so at its top.
+
+`clifr mountstats` is not derived from nfs-utils' `mountstats.py`, which is licensed GPL-2.0-only: an earlier port of it was replaced on 2026-11-21 by code written clean-room, from a specification of the real tool's observable behaviour and its output on known input only (`internal/query/testdata/mountstats/SPEC.md`). Its output sentences are the real tool's, as they must be to match it.
+
+`kernfsHash` (`internal/query/cgls.go`, also used by `lsmod`) computes the Linux kernel's `kernfs_name_hash` (GPL-2.0), so that cgroups and module users are listed in the kernel's order: a short arithmetic formula, reimplemented for interoperability, with no other way to express it.
+
 ## Contributions
 
 Contributions are welcome under the licenses above, each file under its own, with a Developer Certificate of Origin sign-off on every commit (`Signed-off-by:`, `git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md).

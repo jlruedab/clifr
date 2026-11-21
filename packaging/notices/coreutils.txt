@@ -1,0 +1,18 @@
+GNU coreutils: parts of clifr's who and df
+
+- internal/query/who.go: who's settings and output (print_line,
+  idle_string), from GNU coreutils 8.32's src/who.c
+  (https://github.com/coreutils/coreutils, tag v8.32), written anew in Go.
+- internal/query/df.go: df's minimum column widths (field_data), from
+  src/df.c.
+
+Their notices:
+
+  src/who.c: Copyright (C) 1992-2020 Free Software Foundation, Inc.
+  src/df.c:  Copyright (C) 1991-2020 Free Software Foundation, Inc.
+  GNU General Public License, version 3 or (at your option) any later version.
+
+Section 13 of both the GPLv3 and the GNU Affero General Public License
+version 3 allows this code to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt
