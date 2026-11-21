@@ -70,6 +70,9 @@ type ToolStyle struct {
 	// Mountstats233: nfs-utils 2.3.3's mountstats (RHEL 8): no mount age;
 	// -R knows the NFSv4 operations only up to CLONE.
 	Mountstats233 bool
+	// Atop271: atop 2.7.1 (EPEL on RHEL 8 and 9, Ubuntu 22.04): one MEM line,
+	// no #tidle, numcpu or BDELAY, its own header and banner.
+	Atop271 bool
 	// UnameUnknown: uutils coreutils (Ubuntu 25.10 and later): uname -p and -i
 	// print "unknown" and -a leaves them out. RHEL's and Debian's coreutils
 	// print the machine for both. Set by StyleAt from the distribution, not
@@ -91,12 +94,12 @@ var Styles = map[string]ToolStyle{
 	// (procps-ng 3.3.15, coreutils 8.30, lsof 4.93.2, sysstat 11.7.3), AlmaLinux
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
-	"rhel-8": {Name: "rhel-8", OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
+	"rhel-8": {Name: "rhel-8", Atop271: true, OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
 		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true, Procps3: true},
-	"rhel-9": {Name: "rhel-9", DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
+	"rhel-9": {Name: "rhel-9", Atop271: true, DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
 		Procps3: true, WNoFrom: true},
-	"ubuntu-22.04": {Name: "ubuntu-22.04", OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
+	"ubuntu-22.04": {Name: "ubuntu-22.04", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
 		NumastatOld: true, ConntrackOld: true, Procps3: true},
 }

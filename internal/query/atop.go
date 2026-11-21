@@ -41,6 +41,7 @@ type AtopSys struct {
 	Procs          AtopProcSum
 	List           []atopProc // in PID order
 	PIDMax         int64      // kernel.pid_max: atop's PID column is as wide as it
+	V271           bool       // atop 2.7.1's screen (ToolStyle.Atop271)
 }
 
 // atopProc is one process as atop's process list shows it since boot: its
@@ -76,8 +77,8 @@ type atopIntf struct {
 // AtopProcSum is atop's process summary (PRC): the live processes' CPU
 // time (clock ticks), their number and their idle threads.
 type AtopProcSum struct {
-	Stime, Utime  int64
-	NProc, NTIdle int
+	Stime, Utime           int64
+	NProc, NTIdle, NZombie int
 }
 
 // AtopSysAt loads the system values of the sample at or before t.
@@ -87,6 +88,8 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 		return nil, fmt.Errorf("atop: no system sample at or before %s", FormatMS(t))
 	}
 	a := &AtopSys{Host: HostnameAt(db, t), T: t, BootMS: BootAt(db, t)}
+	// atop shows the node name up to its first dot.
+	a.Host, _, _ = strings.Cut(a.Host, ".")
 	s := &a.Sys
 	var psi, zsw, oom sql.NullInt64
 	var ext [37]sql.NullInt64
@@ -167,14 +170,17 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 		if procs, err := processesAt(db, snap, t); err == nil {
 			for _, p := range procs {
 				a.Procs.NProc++
-				if p.state.String == "I" {
+				switch p.state.String {
+				case "I":
 					a.Procs.NTIdle++
+				case "Z":
+					a.Procs.NZombie++
 				}
 				a.Procs.Stime += p.stime.Int64
 				a.Procs.Utime += p.cpuTicks.Int64 - p.stime.Int64
 				a.List = append(a.List, atopProc{pid: p.pid, uid: p.uid, threads: int(max(p.threads.Int64, 1)), cpu: int(p.psr.Int64),
 					state: p.state.String, stime: p.stime.Int64, utime: p.cpuTicks.Int64 - p.stime.Int64,
-					blkTicks: p.blkio.Int64, runNS: p.waitNS.Int64, vszKB: p.vszKB.Int64, rssKB: p.rssKB.Int64,
+					blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64, rssKB: p.rssKB.Int64,
 					rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm})
 			}
 		}
@@ -308,6 +314,9 @@ var atopFields = map[string]atopField{
 	},
 	"PRCNIDLE": func(a *AtopSys, _ *atopExtra) (string, bool) {
 		return atopBox("#tidle", 8, atopVal(int64(a.Procs.NTIdle), 4, false, 0)), true
+	},
+	"PRCNZOMBIE": func(a *AtopSys, _ *atopExtra) (string, bool) {
+		return atopBox("#zombie", 8, atopVal(int64(a.Procs.NZombie), 4, false, 0)), true
 	},
 	// As root, with process accounting active: no process exited before
 	// the first sample.
@@ -540,6 +549,18 @@ func atopLoad(h int) string {
 	return fmt.Sprintf("%7.2f", l)
 }
 
+// atopLoad6 is CPLAVG15's 6 positions.
+func atopLoad6(h int) string {
+	l := float64(h) / 100
+	switch {
+	case l > 99999:
+		return ">99999"
+	case l > 999:
+		return fmt.Sprintf("%6.0f", l)
+	}
+	return fmt.Sprintf("%6.2f", l)
+}
+
 // atopAvio is the average service time of a disk's transfers.
 func atopAvio(d *atopDisk) string {
 	var ms float64
@@ -607,6 +628,23 @@ var atopLines = map[string]string{
 		"NETCOLLIS:2 NETMULTICASTIN:2 NETRCVERR:4 NETSNDERR:4 NETRCVDROP:3 NETSNDDROP:3",
 }
 
+// atop 2.7.1's built-in lines where they differ from 2.12.1's.
+var atopLines271 = map[string]string{
+	"PRC": "PRCSYS:8 PRCUSER:8 BLANKBOX:0 PRCNPROC:7 PRCNRUNNING:5 PRCNSLEEPING:5 PRCNDSLEEPING:5 PRCNZOMBIE:5 " +
+		"PRCCLONES:4 BLANKBOX:0 PRCNNEXIT:6",
+	"CPL": "CPLAVG1:4 CPLAVG5:3 CPLAVG15:2 BLANKBOX:0 CPLCSW:6 CPLINTR:5 BLANKBOX:0 CPLNUMCPU:1",
+	"MEM1": "MEMTOT:8 MEMFREE:9 MEMCACHE:7 MEMDIRTY:5 MEMBUFFER:7 MEMSLAB:7 RECSLAB:4 BLANKBOX:0 SHMEM:4 SHMRSS:4 " +
+		"SHMSWP:3 BLANKBOX:0 VMWBAL:5 BLANKBOX:0 ZFSARC:6 BLANKBOX:0 HUPTOT:6 HUPUSE:3 NUMNUMA:7",
+	"SWP": "SWPTOT:5 SWPFREE:6 SWPCACHE:4 BLANKBOX:0 ZSWPOOL:3 ZSWSTORED:3 BLANKBOX:0 KSMSHARED:2 KSMSHARING:2 BLANKBOX:0 " +
+		"SWPCOMMITTED:7 SWPCOMMITLIM:8",
+	"PAG": "PAGSCAN:3 PAGSTEAL:2 PAGSTALL:1 PAGCOMPACT:5 NUMAMIGRATE:5PGMIGRATE:6BLANKBOX:0 BLANKBOX:0 BLANKBOX:0 " +
+		"PAGSWIN:5 PAGSWOUT:7 OOMKILLS:8",
+	"DSK": "DSKNAME:9 DSKBUSY:8 DSKNREAD:7 DSKNWRITE:7 DSKNDISC:6 DSKKBPERRD:5 DSKKBPERWR:5 DSKKBPERDS:4 DSKMBPERSECRD:6 " +
+		"DSKMBPERSECWR:6 DSKAVQUEUE:1 DSKAVIO:6",
+	"NETT": "NETTRANSPORT:9 NETTCPI:8 NETTCPO:8 NETUDPI:8 NETUDPO:8 NETTCPACTOPEN:6 NETTCPPASVOPEN:5 NETTCPRETRANS:4 " +
+		"NETTCPINERR:3 NETTCPORESET:2 NETUDPNOPORT:1 NETUDPINERR:3",
+}
+
 // atopValid are atop's validate functions (make_sys_prints, at the first
 // sample): a field they reject is not in the line at all, so the next one
 // takes its place. Fields clifr does not build yet are valid but never in
@@ -636,7 +674,11 @@ func atopValid(name string, a *AtopSys) bool {
 // atopLine builds one system line: atop's fields of line in its order,
 // the invalid ones left out, as many as fit.
 func atopLine(label, line string, a *AtopSys, x *atopExtra) string {
-	names, prios := atopDefs(atopLines[line])
+	def := atopLines[line]
+	if d, ok := atopLines271[line]; ok && a.V271 {
+		def = d
+	}
+	names, prios := atopDefs(def)
 	var items []atopItem
 	for i, n := range names {
 		if !atopValid(n, a) {
@@ -676,8 +718,15 @@ func PrintAtopSys(w io.Writer, a *AtopSys) {
 	lenAvail := atopWidth - 60 - len(elapsed) - len(a.Host)
 	len1 := max(lenAvail/3, 1)
 	len2 := lenAvail - len1 - len1
-	fmt.Fprintf(w, "\n\nATOP - %s%*s%s %s %s %*s%s%*s%s elapsed\n", a.Host, len1, "", t.Format("2006/01/02"), t.Format("15:04:05"),
-		"      ", len1, "", "-----------------7", max(len2, 0), "", elapsed)
+	if a.V271 {
+		lenAvail = atopWidth - 52 - len(elapsed) - len(a.Host)
+		len1, len2 = lenAvail/3, lenAvail-lenAvail/3*2
+		fmt.Fprintf(w, "\n\nATOP - %s%*s%s  %s%*s%s%*s%s elapsed\n", a.Host, max(len1, 0), "", t.Format("2006/01/02"),
+			t.Format("15:04:05"), max(len1, 0), "", "-----------------", max(len2, 0), "", elapsed)
+	} else {
+		fmt.Fprintf(w, "\n\nATOP - %s%*s%s %s %s %*s%s%*s%s elapsed\n", a.Host, len1, "", t.Format("2006/01/02"), t.Format("15:04:05"),
+			"      ", len1, "", "-----------------7", max(len2, 0), "", elapsed)
+	}
 	fmt.Fprintln(w, atopLine("PRC", "PRC", a, x))
 
 	c := a.CPU
@@ -703,12 +752,14 @@ func PrintAtopSys(w io.Writer, a *AtopSys) {
 	x.percputot = max(x.cputot/int64(max(len(a.CPUs), 1)), 1)
 	fmt.Fprintln(w, atopLine("CPL", "CPL", a, x))
 	fmt.Fprintln(w, atopLine("MEM", "MEM1", a, x))
-	fmt.Fprintln(w, atopLine("MEM", "MEM2", a, x))
+	if !a.V271 {
+		fmt.Fprintln(w, atopLine("MEM", "MEM2", a, x))
+	}
 	fmt.Fprintln(w, atopLine("SWP", "SWP", a, x))
 	s := &a.Sys
 	if s.PgscanKswapd+s.PgscanDirect+s.PgscanDirectThrottle+s.PgscanKhugepaged != 0 ||
 		s.PgstealKswapd+s.PgstealDirect+s.PgstealKhugepaged != 0 || s.AllocStall != 0 || s.CompactStall != 0 ||
-		s.PgpgIn != 0 || s.PgpgOut != 0 || s.TCPMem != 0 || s.UDPMem != 0 || s.PswpIn != 0 || s.PswpOut != 0 ||
+		!a.V271 && (s.PgpgIn != 0 || s.PgpgOut != 0 || s.TCPMem != 0 || s.UDPMem != 0) || s.PswpIn != 0 || s.PswpOut != 0 ||
 		s.OOMKill > 0 || s.PgmigrateSuccess != 0 || s.NumaPagesMigrated != 0 {
 		fmt.Fprintln(w, atopLine("PAG", "PAG", a, x))
 	}
@@ -838,9 +889,17 @@ func atopFit(cols []atopCol, width int) []atopCol {
 // process, the most CPU time first (equal ones in PID order).
 func PrintAtopProcs(w io.Writer, a *AtopSys) {
 	const initMsg, viewMsg = "*** System and Process Activity since Boot ***", "Unrestricted view (privileged)"
-	fmt.Fprintf(w, "%s%*s%s\n", initMsg, atopWidth-len(initMsg)-len(viewMsg), " ", viewMsg)
+	if a.V271 {
+		fmt.Fprintf(w, "        %s     %s\n", initMsg, viewMsg)
+	} else {
+		fmt.Fprintf(w, "%s%*s%s\n", initMsg, atopWidth-len(initMsg)-len(viewMsg), " ", viewMsg)
+	}
 	ncpu := int64(max(len(a.CPUs), 1))
-	cols := atopFit(atopProcCols(len(fmt.Sprint(a.PIDMax)), len(fmt.Sprint(ncpu*100))+1), atopWidth)
+	all := atopProcCols(len(fmt.Sprint(a.PIDMax)), len(fmt.Sprint(ncpu*100))+1)
+	if a.V271 { // no BDELAY column
+		all = slices.DeleteFunc(all, func(c atopCol) bool { return c.head == "BDELAY" })
+	}
+	cols := atopFit(all, atopWidth)
 	var b strings.Builder
 	for _, c := range cols {
 		// atop right-aligns PID (init_proc_prints) and the sort column.

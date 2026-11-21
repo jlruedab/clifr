@@ -300,7 +300,14 @@ wait for the user's go-ahead.
   pgsteal_* (kswapd, direct, khugepaged, proactive; per-zone lines of old kernels summed; not _anon/_file
   or pgscan_direct_throttle), allocstall (summed), compact_stall, pgmigrate_success,
   numa_pages_migrated, oom_kill, zswpin, zswpout; and PSI totals (µs: psi_cpu|mem|io_some|full;
-  `psi` = 1 where /proc/pressure exists, NULL before schema 12).
+  `psi` = 1 where /proc/pressure exists, NULL before schema 12), the PSI some lines' avg10/60/300
+  (`psi_*_avg*`, hundredths: atop shows PSI only when one is not 0), `zswap_enabled`,
+  `pgscan_direct_throttle` (atop counts it as a scan); `links.speed`/`duplex` (sysfs, -1 unknown);
+  `proc_samples.run_delay_ns`: all threads' schedstat run delay (atop's RDELAY; `wait_ns` stays the
+  main thread's, pidstat's), read for multi-threaded processes by the I/O rule (~3 µs a thread).
+  `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): the
+  screen since boot as root, atop 2.12.1's, or 2.7.1's with `ToolStyle.Atop271` (rhel-8/9,
+  ubuntu-22.04); captures in bench/results/atop-captures-20261121.
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
