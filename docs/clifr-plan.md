@@ -236,7 +236,7 @@ turned on; no phone-home or telemetry.
   needed if route A (a minimal `sos report` uploaded through sos-vault's
   existing API, `docs/sos-vault-integration.md`) is enough. Open (the user).
 
-### Phase 8 — Command coverage (`docs/sosv_derivable_commands.csv`)
+### Phase 8 — Command coverage
 Agreed with the user on 2026-10-21; one step at a time, report and wait.
 - **Step 1, from data already recorded** (no recorder or format change, ~1
   week): `top -b -n 1` (done 2026-10-21) (summary lines; PID USER PR NI VIRT RES S %CPU %MEM
