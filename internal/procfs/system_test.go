@@ -119,3 +119,23 @@ func TestReadPressure(t *testing.T) {
 		t.Errorf("a resource without a file: %v", err)
 	}
 }
+
+// TestReadThreadsRunDelay: the run-queue wait of every thread added up.
+func TestReadThreadsRunDelay(t *testing.T) {
+	dir := t.TempDir()
+	for tid, line := range map[string]string{"40": "100 2000 3\n", "41": "50 500 1\n"} {
+		os.MkdirAll(filepath.Join(dir, "40", "task", tid), 0o755)
+		os.WriteFile(filepath.Join(dir, "40", "task", tid, "schedstat"), []byte(line), 0o644)
+	}
+	os.WriteFile(filepath.Join(dir, "40", "schedstat"), []byte("100 2000 3\n"), 0o644)
+	f := FS{Root: dir}
+	if ns, err := f.ReadThreadsRunDelay(40); err != nil || ns != 2500 {
+		t.Errorf("threads: %d %v, want 2500", ns, err)
+	}
+	if ns, err := f.ReadRunDelay(40); err != nil || ns != 2000 {
+		t.Errorf("main thread: %d %v, want 2000", ns, err)
+	}
+	if _, err := f.ReadThreadsRunDelay(41); err == nil {
+		t.Error("no such process: no error")
+	}
+}

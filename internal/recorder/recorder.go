@@ -911,7 +911,7 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, status procfs.Status, haveStatus bool) {
 	p := e.sample
 	if !fresh {
-		s.VolCtx, s.NonVolCtx, s.Wchan, s.WaitNS = p.VolCtx, p.NonVolCtx, p.Wchan, p.WaitNS
+		s.VolCtx, s.NonVolCtx, s.Wchan, s.WaitNS, s.RunDelayNS = p.VolCtx, p.NonVolCtx, p.Wchan, p.WaitNS, p.RunDelayNS
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
 		return
 	}
@@ -922,7 +922,14 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 		s.Wchan = w
 	}
 	if ns, err := r.fs.ReadRunDelay(e.key.pid); err == nil {
-		s.WaitNS = ns
+		s.WaitNS, s.RunDelayNS = ns, ns
+	}
+	// A multi-threaded process: its threads' waits added up (atop's
+	// RDELAY); the process's own schedstat is its main thread's.
+	if s.Threads > 1 {
+		if ns, err := r.fs.ReadThreadsRunDelay(e.key.pid); err == nil {
+			s.RunDelayNS = ns
+		}
 	}
 	if !r.cfg.ProcIO {
 		return

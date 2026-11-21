@@ -468,6 +468,42 @@ func (f FS) ReadRunDelay(pid int) (ns int64, err error) {
 	return
 }
 
+// ReadThreadsRunDelay returns the run-queue wait of all the process's live
+// threads (/proc/<pid>/task/*/schedstat, the second number of each), as
+// atop shows it: the process's own schedstat is its main thread's.
+func (f FS) ReadThreadsRunDelay(pid int) (ns int64, err error) {
+	d, err := os.Open(f.path(strconv.Itoa(pid), "task"))
+	if err != nil {
+		return 0, err
+	}
+	names, err := d.Readdirnames(-1)
+	d.Close()
+	if err != nil {
+		return 0, err
+	}
+	read := 0
+	for _, n := range names {
+		if n == "" || n[0] < '0' || n[0] > '9' {
+			continue
+		}
+		err := f.readPID(pid, "task/"+n+"/schedstat", func(b []byte) error {
+			fs := strings.Fields(string(b))
+			if len(fs) < 2 {
+				return errShort
+			}
+			ns += int64(atou(fs[1]))
+			return nil
+		})
+		if err == nil {
+			read++
+		}
+	}
+	if read == 0 {
+		return 0, errShort
+	}
+	return ns, nil
+}
+
 // ReadWchan returns /proc/<pid>/wchan: the kernel function the process
 // waits in, or "0" while it runs (Linux 5.16+: also for a process the
 // kernel cannot unwind).

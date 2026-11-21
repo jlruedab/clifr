@@ -307,6 +307,7 @@ type ProcSample struct {
 	VolCtx, NonVolCtx int64
 	Wchan             string
 	WaitNS            int64 // run-queue wait (schedstat; pidstat's %wait)
+	RunDelayNS        int64 // run-queue wait of all threads (atop's RDELAY; schema 12)
 }
 
 // NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named
