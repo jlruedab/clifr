@@ -1,0 +1,25 @@
+atop: parts of clifr's atop
+
+clifr's atop prints atop's screens as atop 2.7.1 and 2.12.1 do into a pipe
+(https://github.com/Atoptool/atop, tags v2.7.1 and v2.12.1). Parts of its Go
+code follow atop's C code, written anew in Go:
+
+- internal/query/atopfmt.go: the value formats (val2valstr, val2elapstr,
+  val2cpustr, val2memstr, various.c), the layout of a system line
+  (showsysline, showsys.c) and the parsing of line definitions (makeargv,
+  showlinux.c).
+
+Their notices:
+
+  various.c:    Author: Gerlof Langeveld; Copyright (C) 2000-2022 Gerlof Langeveld
+  showsys.c:    Author: JC van Winkel - AT Computing, Nijmegen, Holland;
+                Copyright (C) 2009 JC van Winkel
+  showlinux.c:  Authors: Gerlof Langeveld, JC van Winkel - AT Computing;
+                Copyright (C) 2009-2010 JC van Winkel
+  GNU General Public License, version 2 or (at your option) any later version.
+
+clifr uses these parts under the GNU General Public License version 3, which
+section 13 of both the GPLv3 and the GNU Affero General Public License
+version 3 allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt
