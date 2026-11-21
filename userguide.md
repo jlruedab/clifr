@@ -667,7 +667,31 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
    clifr --since "2026-11-05 13:00" --until "2026-11-05 14:00" --samples -e 10m "top -b -n 1"
    ```
 
-5. New network activity. The connection summary per process, and the change in listening ports:
+5. The whole picture per interval, as atop shows it. `atop INTERVAL` over a range prints the screen since boot at `--since`, then one screen per interval: the system's CPU, load, memory, disk and network over that interval, then the processes that were active in it (and those that exited, as `<name>`), the busiest first. This run is from another test with the same kind of load (pgbench with 8 clients for two minutes), trimmed to the lines that matter:
+
+   ```console
+   $ clifr --since "2026-11-21 21:05:40" --until "2026-11-21 21:06:40" "atop 60"
+   …
+   ATOP - Deimos   2026/11/21 21:06:40           -----------------7    1m0s elapsed
+   PRC | sys    2m18s | user   5m52s | #proc    521 | #tidle   162 | #exit      4 |
+   CPU | sys     227% | user    597% | irq       0% | idle   1356% | wait     20% |
+   CPL | numcpu    22 | avg1    5.53 | avg5    2.26 | csw 46747660 | intr 4973950 |
+   MEM | tot    61.0G | free   32.4G | avail  53.1G | cache  20.0G | slab    2.5G |
+   …
+   DSK |      nvme0n1 | busy     18% | read   27493 | write 454703 | avio 21.3 µs |
+   …
+       PID SYSCPU USRCPU BDELAY  VGROW  RGROW  RDDSK  WRDSK   CPU CMD
+    427004 58.81s 22.77s  0.00s     0B     0B     0B     0B  142% pgbench
+    427012  8.68s 39.42s  0.00s     0B 116.4M  31.1M 833.9M   84% postgres
+    427010  8.78s 39.12s  0.00s     0B 115.5M  31.1M 856.4M   83% postgres
+    …
+   ```
+
+   pgbench used 1.4 CPUs and each of its eight postgres backends most of one, out of 22 (`CPU` adds up all CPUs: 2200% here); the load average was rising (`avg1` 5.5 against `avg5` 2.3), and each backend wrote about 840 MB in the minute while the disk stayed 18% busy. The same screen in another view: `atop -d` sorts by disk transfer, `atop -m` by memory (sizes, growth, swap), `atop -s` shows scheduling (thread states, run-queue delay, context switches), `atop -v` parent, users and start times, `atop -c` the full command lines. At one moment, `clifr --at T atop` prints atop's first screen, the totals since boot.
+
+   Each interval is the difference between two recorded samples, so choose INTERVAL as a multiple of the sample intervals (30 s for processes, 10 s for the system by default). A process that only woke up briefly, without using a full CPU tick, is not listed as active.
+
+6. New network activity. The connection summary per process, and the change in listening ports:
 
    ```sh
    clifr --since "2026-11-05 13:00" --until "2026-11-05 14:00" "ss -tanp"
@@ -675,7 +699,7 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
    clifr --since "2026-11-05 13:00" --until "2026-11-05 14:00" nstat
    ```
 
-6. Anything the kernel complained about, and what started or stopped:
+7. Anything the kernel complained about, and what started or stopped:
 
    ```sh
    clifr --since "2026-11-05 13:00" --until "2026-11-05 14:00" "dmesg -T"
