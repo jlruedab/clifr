@@ -5,12 +5,14 @@
 package query
 
 import (
+	"bytes"
 	"cmp"
 	"database/sql"
 	"fmt"
 	"io"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +31,9 @@ const atopWidth = 80
 type AtopSys struct {
 	Host      string
 	T, BootMS int64
+	// BTime is /proc/stat's btime (whole seconds), atop's boot time: the
+	// run's meta boot_time, else BootMS cut to seconds.
+	BTime int64
 	// NSecs: the interval of an interval screen (AtopIntervalAt); 0: the
 	// screen since boot.
 	NSecs int64
@@ -48,6 +53,7 @@ type AtopSys struct {
 	List           []atopProc // in PID order
 	PIDMax         int64      // kernel.pid_max: atop's PID column is as wide as it
 	V271           bool       // atop 2.7.1's screen (ToolStyle.Atop271)
+	View           string     // process view: "" generic, m, d, s, v, c (atop's -m -d -s -v -c)
 }
 
 // atopProc is one process as atop's process list shows it since boot: its
@@ -66,6 +72,15 @@ type atopProc struct {
 	vmStk, vmSwap, vmData, vmExe, vmLib, vmLck int64
 	rgid                                       int
 	vszKB, rssKB                               int64 // rssKB: /proc/PID/stat's rss, as atop reads it
+	vgrowKB, rgrowKB                           int64 // the sizes since boot, their growth in an interval
+	minflt, majflt                             int64
+	ppid, ruid                                 int
+	nice, prio, policy                         int // prio as atop shows it: stat's priority + 100
+	rtprio                                     int
+	wchan                                      string
+	cmdline                                    string // as recorded (arguments joined by spaces)
+	cmdlinePad                                 int    // NUL bytes after it
+	isNew                                      bool   // started in the interval (atop's ST "N")
 	rbytes, wbytes, cancel                     int64
 	comm                                       string
 	startMS                                    int64
@@ -84,7 +99,14 @@ func atopProcOf(p procAt) atopProc {
 		rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm,
 		id: p.id, sampleTS: p.sampleTS.Int64, nvcsw: p.volCtx.Int64, nivcsw: p.nonVolCtx.Int64,
 		vmStk: p.vmStk.Int64, vmSwap: p.vmSwap.Int64, vmData: p.vmData.Int64, vmExe: p.vmExe.Int64,
-		vmLib: p.vmLib.Int64, vmLck: p.vmLck.Int64, rgid: -1}
+		vmLib: p.vmLib.Int64, vmLck: p.vmLck.Int64, rgid: -1,
+		minflt: p.minFlt.Int64, majflt: p.majFlt.Int64, ppid: p.ppid, ruid: p.uid,
+		nice: int(p.nice.Int64), prio: int(p.prio.Int64) + 100, policy: int(p.policy.Int64), rtprio: int(p.rtPrio.Int64),
+		wchan: p.wchan.String, cmdline: p.cmdline, cmdlinePad: int(cmp.Or(p.cmdlinePad.Int64, 1)), isNew: true}
+	if p.ruid.Valid {
+		x.ruid = int(p.ruid.Int64)
+	}
+	x.vgrowKB, x.rgrowKB = x.vszKB, x.rssKB
 	if p.rgid.Valid {
 		x.rgid = int(p.rgid.Int64)
 	}
@@ -165,6 +187,10 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 		return nil, fmt.Errorf("atop: no system sample at or before %s", FormatMS(t))
 	}
 	a := &AtopSys{Host: HostnameAt(db, t), T: t, BootMS: BootAt(db, t)}
+	a.BTime = a.BootMS / 1000
+	if bt, err := strconv.ParseInt(MetaAt(db, "boot_time", t), 10, 64); err == nil && bt > 0 {
+		a.BTime = bt
+	}
 	// atop shows the node name up to its first dot.
 	a.Host, _, _ = strings.Cut(a.Host, ".")
 	s := &a.Sys
@@ -782,7 +808,7 @@ func atopLine(label, line string, a *AtopSys, x *atopExtra) string {
 // PrintAtopSys prints atop's header and system lines.
 func PrintAtopSys(w io.Writer, a *AtopSys) {
 	// atop's boot time is /proc/stat's btime: whole seconds.
-	nsecs := max(a.T/1000-a.BootMS/1000, 1)
+	nsecs := max(a.T/1000-a.BTime, 1)
 	if a.NSecs > 0 {
 		nsecs = a.NSecs
 	}
@@ -900,23 +926,47 @@ func atopIntfCompare(a, b atopIntf) int {
 	return 1
 }
 
-// atopCol is one process column: its header, width, priority (atop's
-// default list) and value.
+// atopCol is one process column (showprocs.c's procprt_*): its header,
+// width (0: atop's variable-width command line), priority (from the view's
+// list) and value.
 type atopCol struct {
 	head  string
 	width int
 	prio  int
+	right bool // header right-aligned (PID-like columns and the sort column)
 	val   func(p *atopProc, perc float64) string
 }
 
-// atopProcCols are atop 2.12.1's default process columns as root
-// (make_proc_dynamicgen with IOSTAT; no containers, no netatop).
-func atopProcCols(pidWidth, sortWidth int) []atopCol {
+// atopViews are atop's process views as root (showlinux.c's built-in
+// lists; the generic one as make_proc_dynamicgen builds it with IOSTAT, no
+// containers, no netatop): the columns by priority, the sort column. A
+// version's own list where it differs.
+var atopViews = map[string]struct{ defs, defs271, sort string }{
+	"": {"PID:10 SYSCPU:9 USRCPU:9 RDELAY:4 BDELAY:4 VGROW:8 RGROW:8 RDDSK:7 CWRDSK:7 RUID:2 EUID:1 " +
+		"ST:3 EXC:3 THR:3 S:3 CPUNR:3 SORTITEM:10 CMD:10",
+		"PID:10 SYSCPU:9 USRCPU:9 RDELAY:4 VGROW:8 RGROW:8 RDDSK:7 CWRDSK:7 RUID:2 EUID:1 " +
+			"ST:3 EXC:3 THR:3 S:3 CPUNR:3 SORTITEM:10 CMD:10", "CPU"},
+	"m": {"PID:10 TID:3 MINFLT:2 MAJFLT:2 VSTEXT:4 VSLIBS:4 VDATA:4 VSTACK:4 LOCKSZ:3 VSIZE:6 RSIZE:7 PSIZE:5 " +
+		"VGROW:7 RGROW:8 SWAPSZ:5 RUID:1 EUID:0 SORTITEM:9 CMD:10", "", "MEM"},
+	"d": {"PID:10 TID:4 RDDSK:9 WRDSK:9 WCANCL:8 SORTITEM:10 CMD:10", "", "DSK"},
+	"s": {"PID:10 TID:6 CID:4 VPID:3 CTID:3 TRUN:7 TSLPI:7 TSLPU:7 TIDLE:7 POLI:8 NICE:9 PRI:5 RTPR:9 CPUNR:8 " +
+		"ST:8 EXC:8 S:8 RDELAY:8 BDELAY:7 WCHAN:5 NVCSW:7 NIVCSW:7 SORTITEM:10 CMD:10",
+		"PID:10 TID:6 CID:4 VPID:3 CTID:3 TRUN:7 TSLPI:7 TSLPU:7 POLI:8 NICE:9 PRI:5 RTPR:9 CPUNR:8 ST:8 " +
+			"EXC:8 S:8 RDELAY:8 WCHAN:5 SORTITEM:10 CMD:10", "CPU"},
+	"v": {"PID:10 TID:4 PPID:9 CID:2 VPID:1 CTID:1 RUID:8 RGID:8 EUID:5 EGID:4 SUID:3 SGID:2 FSUID:3 FSGID:2 " +
+		"STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", "", "CPU"},
+	"c": {"PID:10 TID:4 S:8 SORTITEM:10 COMMAND-LINE:10", "", "CPU"},
+}
+
+// atopColumns are the process columns atop's views use, by atop's names,
+// with their exit variants (procprt_*_e) for a process that exited in the
+// interval. Columns of what clifrd does not record (containers, saved and
+// file-system ids) print "?": no view shows them at 80 columns.
+func atopColumns(a *AtopSys, pidWidth, sortWidth int) map[string]atopCol {
 	cpu := func(ticks int64) string { return atopCPU(ticks * 1000 / procfs.ClockTicks) }
-	mem := func(b int64) string { return atopMem(b, atopB, false, 0) }
-	// exited: atop's exit variant of a column (procprt_*_e) for a process
-	// that exited in the interval, else the value.
-	exited := func(e string, f func(p *atopProc) string) func(p *atopProc, _ float64) string {
+	mem := func(kb int64) string { return atopMem(kb*1024, atopB, false, 0) }
+	sect := func(n int64) string { return atopMem(n*512, atopB, false, 0) } // 512-byte sectors
+	ex := func(e string, f func(p *atopProc) string) func(p *atopProc, _ float64) string {
 		return func(p *atopProc, _ float64) string {
 			if p.exited {
 				return e
@@ -924,35 +974,121 @@ func atopProcCols(pidWidth, sortWidth int) []atopCol {
 			return f(p)
 		}
 	}
-	return []atopCol{
-		{"PID", pidWidth, 10, func(p *atopProc, _ float64) string { return fmt.Sprintf("%*d", pidWidth, p.pid) }},
-		{"SYSCPU", 6, 9, func(p *atopProc, _ float64) string { return cpu(p.stime) }},
-		{"USRCPU", 6, 9, func(p *atopProc, _ float64) string { return cpu(p.utime) }},
-		{"RDELAY", 6, 4, exited("     -", func(p *atopProc) string { return atopCPU(p.runNS / 1000000) })},
-		{"BDELAY", 6, 4, exited("     -", func(p *atopProc) string { return cpu(p.blkTicks) })},
-		{" VGROW", 6, 8, exited("    0K", func(p *atopProc) string { return mem(p.vszKB * 1024) })},
-		{" RGROW", 6, 8, exited("    0K", func(p *atopProc) string { return mem(p.rssKB * 1024) })},
-		{" RDDSK", 6, 7, exited("     -", func(p *atopProc) string { return mem(p.rbytes / 512 * 512) })},
-		{" WRDSK", 6, 7, exited("     -", func(p *atopProc) string {
-			return mem(max(p.wbytes/512-p.cancel/512, 0) * 512)
+	ae := func(f func(p *atopProc) string) func(p *atopProc, _ float64) string {
+		return func(p *atopProc, _ float64) string { return f(p) }
+	}
+	id := func(n int, name string) string { // uid2str, gid2str
+		if name != "" && len(name) <= 8 {
+			return fmt.Sprintf("%-8.8s", name)
+		}
+		return fmt.Sprintf("%-8d", n)
+	}
+	uid := func(n int) string { return id(n, UserName(n, false)) }
+	na := func(w int) func(*atopProc, float64) string {
+		return func(*atopProc, float64) string { return fmt.Sprintf("%*s", w, "?") }
+	}
+	// The start in whole seconds as atop has it: (starttime + the boot
+	// time it measures in ticks, getbootlinux) / hertz, the precise start.
+	start := func(p *atopProc) time.Time { return time.Unix(p.startMS/1000, 0).In(time.Local) }
+	dash := fmt.Sprintf("%*s", pidWidth, "-")
+	nettWsz := func(p *atopProc) int64 { return max(p.wbytes/512-p.cancel/512, 0) }
+	cols := map[string]atopCol{
+		"PID": {"PID", pidWidth, 0, true, ae(func(p *atopProc) string { return fmt.Sprintf("%*d", pidWidth, p.pid) })},
+		"TID": {"TID", pidWidth, 0, true, func(*atopProc, float64) string { return dash }},
+		"PPID": {"PPID", pidWidth, 0, true, ae(func(p *atopProc) string {
+			if p.exited && p.ppid == 0 {
+				return dash
+			}
+			return fmt.Sprintf("%*d", pidWidth, p.ppid)
 		})},
-		{"RUID ", 8, 2, func(p *atopProc, _ float64) string { return fmt.Sprintf("%-8.8s", UserName(p.uid, false)) }},
-		{"EUID ", 8, 1, func(p *atopProc, _ float64) string { return fmt.Sprintf("%-8.8s", UserName(p.uid, false)) }},
-		{"ST", 2, 3, func(*atopProc, float64) string { return "N-" }},
-		{"EXC", 3, 3, func(p *atopProc, _ float64) string {
-			if !p.exited {
-				return "  -"
+		"VPID":   {"VPID", pidWidth, 0, true, na(pidWidth)},
+		"CTID":   {" CTID", 5, 0, false, na(5)},
+		"CID":    {"CID/POD        ", 15, 0, false, na(15)},
+		"SYSCPU": {"SYSCPU", 6, 0, false, ae(func(p *atopProc) string { return cpu(p.stime) })},
+		"USRCPU": {"USRCPU", 6, 0, false, ae(func(p *atopProc) string { return cpu(p.utime) })},
+		"RDELAY": {"RDELAY", 6, 0, false, ex("     -", func(p *atopProc) string { return atopCPU(p.runNS / 1000000) })},
+		"BDELAY": {"BDELAY", 6, 0, false, ex("     -", func(p *atopProc) string { return cpu(p.blkTicks) })},
+		"VGROW":  {" VGROW", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vgrowKB) })},
+		"RGROW":  {" RGROW", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.rgrowKB) })},
+		"MINFLT": {"MINFLT", 6, 0, false, ae(func(p *atopProc) string { return atopVal(p.minflt, 6, false, 0) })},
+		"MAJFLT": {"MAJFLT", 6, 0, false, ae(func(p *atopProc) string { return atopVal(p.majflt, 6, false, 0) })},
+		"VSTEXT": {"VSTEXT", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vmExe) })},
+		"VSLIBS": {"VSLIBS", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vmLib) })},
+		"VDATA":  {" VDATA", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vmData) })},
+		"VSTACK": {"VSTACK", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vmStk) })},
+		"LOCKSZ": {"LOCKSZ", 6, 0, false, ex("    0K", func(p *atopProc) string { return atopMem(p.vmLck*1024, atopKB, false, 0) })},
+		"VSIZE":  {" VSIZE", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vszKB) })},
+		"RSIZE":  {" RSIZE", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.rssKB) })},
+		// PSS: only with atop's -R (smaps_rollup per process).
+		"PSIZE":  {" PSIZE", 6, 0, false, ex("    0K", func(*atopProc) string { return mem(0) })},
+		"SWAPSZ": {"SWAPSZ", 6, 0, false, ex("    0K", func(p *atopProc) string { return mem(p.vmSwap) })},
+		"RDDSK":  {" RDDSK", 6, 0, false, ex("     -", func(p *atopProc) string { return sect(p.rbytes / 512) })},
+		"WRDSK":  {" WRDSK", 6, 0, false, ex("     -", func(p *atopProc) string { return sect(p.wbytes / 512) })},
+		"CWRDSK": {" WRDSK", 6, 0, false, ex("     -", func(p *atopProc) string { return sect(nettWsz(p)) })},
+		"WCANCL": {"WCANCL", 6, 0, false, ex("     -", func(p *atopProc) string { return sect(p.cancel / 512) })},
+		"RUID":   {"RUID    ", 8, 0, false, ae(func(p *atopProc) string { return uid(p.ruid) })},
+		"EUID":   {"EUID    ", 8, 0, false, ex("-       ", func(p *atopProc) string { return uid(p.uid) })},
+		"RGID": {"RGID    ", 8, 0, false, ae(func(p *atopProc) string {
+			if p.rgid < 0 {
+				return "?       "
 			}
-			if p.excode&0xff != 0 {
-				return fmt.Sprintf("%3d", p.excode&0x7f)
+			return id(p.rgid, GroupName(p.rgid))
+		})},
+		"EGID":   {"EGID    ", 8, 0, false, na(8)},
+		"SUID":   {"SUID    ", 8, 0, false, na(8)},
+		"SGID":   {"SGID    ", 8, 0, false, na(8)},
+		"FSUID":  {"FSUID   ", 8, 0, false, na(8)},
+		"FSGID":  {"FSGID   ", 8, 0, false, na(8)},
+		"STDATE": {"  STDATE  ", 10, 0, false, ae(func(p *atopProc) string { return start(p).Format("2006/01/02") })},
+		"STTIME": {" STTIME ", 8, 0, false, ae(func(p *atopProc) string { return start(p).Format("15:04:05") })},
+		"ENDATE": {"  ENDATE  ", 10, 0, false, ex("  active  ", func(*atopProc) string { return "  active  " })},
+		"ENTIME": {" ENTIME ", 8, 0, false, ex(" active ", func(*atopProc) string { return " active " })},
+		"THR":    {" THR", 4, 0, false, ex("   0", func(p *atopProc) string { return fmt.Sprintf("%4d", p.threads) })},
+		"TRUN":   {"TRUN", 4, 0, false, ex("   0", func(p *atopProc) string { return fmt.Sprintf("%4d", p.thrRun) })},
+		"TSLPI":  {"TSLPI", 5, 0, false, ex("    0", func(p *atopProc) string { return fmt.Sprintf("%5d", p.thrSlpI) })},
+		"TSLPU":  {"TSLPU", 5, 0, false, ex("    0", func(p *atopProc) string { return fmt.Sprintf("%5d", p.thrSlpU) })},
+		"TIDLE":  {"TIDLE", 5, 0, false, ex("    0", func(p *atopProc) string { return fmt.Sprintf("%5d", p.thrIdle) })},
+		"POLI": {"POLI", 4, 0, false, ex("-   ", func(p *atopProc) string {
+			if p.policy >= 0 && p.policy < 7 {
+				return []string{"norm", "fifo", "rr  ", "btch", "iso ", "idle", "dead"}[p.policy]
 			}
-			return fmt.Sprintf("%3d", p.excode>>8&0xff)
+			return "?   "
+		})},
+		"NICE":  {"NICE", 4, 0, false, ex("   -", func(p *atopProc) string { return fmt.Sprintf("%4d", p.nice) })},
+		"PRI":   {"PRI", 3, 0, false, ex("  -", func(p *atopProc) string { return fmt.Sprintf("%3d", p.prio) })},
+		"RTPR":  {"RTPR", 4, 0, false, ex("   -", func(p *atopProc) string { return fmt.Sprintf("%4d", p.rtprio) })},
+		"CPUNR": {"CPUNR", 5, 0, false, ex("    -", func(p *atopProc) string { return fmt.Sprintf("%5d", p.cpu) })},
+		"ST": {"ST", 2, 0, false, ae(func(p *atopProc) string {
+			st := []byte("--")
+			if p.isNew {
+				st[0] = 'N'
+			}
+			if p.exited {
+				switch {
+				case p.excode&0xff == 0:
+					st[1] = 'E'
+				case p.excode&0x80 != 0:
+					st[1] = 'C'
+				default:
+					st[1] = 'S'
+				}
+			}
+			return string(st)
+		})},
+		"EXC": {"EXC", 3, 0, false, ex("  -", func(*atopProc) string { return "" })},
+		"S":   {"S", 1, 0, false, ae(func(p *atopProc) string { return cmp.Or(p.state, "E") })},
+		"WCHAN": {"WCHAN          ", 15, 0, false, ex(fmt.Sprintf("%-15s", ""), func(p *atopProc) string {
+			if p.state == "R" {
+				return fmt.Sprintf("%-15s", "")
+			}
+			return fmt.Sprintf("%-15.15s", p.wchan)
+		})},
+		"NVCSW":  {" NVCSW", 6, 0, false, ex("     -", func(p *atopProc) string { return atopVal(p.nvcsw, 6, false, 0) })},
+		"NIVCSW": {"NIVCSW", 6, 0, false, ex("     -", func(p *atopProc) string { return atopVal(p.nivcsw, 6, false, 0) })},
+		"SORTITEM": {"", sortWidth, 0, true, func(_ *atopProc, perc float64) string {
+			return fmt.Sprintf("%*.0f%%", sortWidth-1, perc)
 		}},
-		{" THR", 4, 3, exited("   0", func(p *atopProc) string { return fmt.Sprintf("%4d", p.threads) })},
-		{"S", 1, 3, func(p *atopProc, _ float64) string { return cmp.Or(p.state, "E") }},
-		{"CPUNR", 5, 3, exited("    -", func(p *atopProc) string { return fmt.Sprintf("%5d", p.cpu) })},
-		{"CPU", sortWidth, 10, func(_ *atopProc, perc float64) string { return fmt.Sprintf("%*.0f%%", sortWidth-1, perc) }},
-		{"CMD ", 14, 10, func(p *atopProc, _ float64) string {
+		"CMD": {"CMD           ", 14, 0, false, ae(func(p *atopProc) string {
 			if p.exited {
 				name := p.comm
 				if len(name) > 12 {
@@ -961,17 +1097,58 @@ func atopProcCols(pidWidth, sortWidth int) []atopCol {
 				return fmt.Sprintf("%-14.14s", "<"+name+">")
 			}
 			return fmt.Sprintf("%-14.14s", p.comm)
-		}},
+		})},
+		"COMMAND-LINE": {"COMMAND-LINE (horizontal scroll with <- and -> keys)", 0, 0, false, ae(atopCmdline)},
 	}
+	exc := cols["EXC"]
+	exc.val = func(p *atopProc, _ float64) string {
+		if !p.exited {
+			return "  -"
+		}
+		if p.excode&0xff != 0 {
+			return fmt.Sprintf("%3d", p.excode&0x7f)
+		}
+		return fmt.Sprintf("%3d", p.excode>>8&0xff)
+	}
+	cols["EXC"] = exc
+	return cols
+}
+
+// atopCmdline is atop's command line (proccmd): the first 255 bytes of
+// /proc/PID/cmdline with each NUL, newline, CR and tab but the last byte read
+// made a space, up to the first NUL left; the process name without one
+// (stat's, at most 15 characters: clifrd records a kernel thread's full
+// name where the kernel gives it).
+func atopCmdline(p *atopProc) string {
+	const cmdLen = 255
+	if p.cmdline == "" {
+		return p.comm[:min(len(p.comm), 15)]
+	}
+	raw := []byte(p.cmdline + strings.Repeat("\x00", max(p.cmdlinePad, 1)))
+	raw = raw[:min(len(raw), cmdLen)]
+	for i := 0; i < len(raw)-1; i++ {
+		switch raw[i] {
+		case 0, '\n', '\r', '\t':
+			raw[i] = ' '
+		}
+	}
+	if i := bytes.IndexByte(raw, 0); i >= 0 {
+		raw = raw[:i]
+	}
+	return string(raw)
 }
 
 // atopFit leaves out the lowest priority columns (the first of equal ones)
-// while they do not fit in width with a space between them (getspacings).
+// while they do not fit in width with a space between them, and 12 columns
+// for a variable-width one (getspacings).
 func atopFit(cols []atopCol, width int) []atopCol {
 	cols = slices.Clone(cols)
 	sum := 0
 	for _, c := range cols {
 		sum += c.width
+		if c.width == 0 {
+			sum += 12
+		}
 	}
 	for len(cols) > 1 && sum+len(cols)-1 > width {
 		low := 0
@@ -981,13 +1158,18 @@ func atopFit(cols []atopCol, width int) []atopCol {
 			}
 		}
 		sum -= cols[low].width
+		if cols[low].width == 0 {
+			sum -= 12
+		}
 		cols = append(cols[:low], cols[low+1:]...)
 	}
 	return cols
 }
 
-// PrintAtopProcs prints atop's banner and process list since boot: every
-// process, the most CPU time first (equal ones in PID order).
+// PrintAtopProcs prints atop's banner and process list in the view a.View
+// ("" generic, m memory, d disk, s scheduling, v various, c command line),
+// sorted as atop sorts it (CPU, then memory; memory; disk, then CPU), equal
+// ones in PID order.
 func PrintAtopProcs(w io.Writer, a *AtopSys) {
 	const initMsg, viewMsg = "*** System and Process Activity since Boot ***", "Unrestricted view (privileged)"
 	switch {
@@ -999,15 +1181,26 @@ func PrintAtopProcs(w io.Writer, a *AtopSys) {
 		fmt.Fprintf(w, "%s%*s%s\n", initMsg, atopWidth-len(initMsg)-len(viewMsg), " ", viewMsg)
 	}
 	ncpu := int64(max(len(a.CPUs), 1))
-	all := atopProcCols(len(fmt.Sprint(a.PIDMax)), len(fmt.Sprint(ncpu*100))+1)
-	if a.V271 { // no BDELAY column
-		all = slices.DeleteFunc(all, func(c atopCol) bool { return c.head == "BDELAY" })
+	view := atopViews[a.View]
+	defs := view.defs
+	if a.V271 && view.defs271 != "" {
+		defs = view.defs271
+	}
+	catalog := atopColumns(a, len(fmt.Sprint(a.PIDMax)), len(fmt.Sprint(ncpu*100))+1)
+	names, prios := atopDefs(defs)
+	var all []atopCol
+	for i, n := range names {
+		c := catalog[n]
+		c.prio = prios[i]
+		if n == "SORTITEM" {
+			c.head = view.sort
+		}
+		all = append(all, c)
 	}
 	cols := atopFit(all, atopWidth)
 	var b strings.Builder
 	for _, c := range cols {
-		// atop right-aligns PID (init_proc_prints) and the sort column.
-		if c.head == "CPU" || c.head == "PID" {
+		if c.right {
 			fmt.Fprintf(&b, "%*s ", c.width, c.head)
 		} else {
 			fmt.Fprintf(&b, "%-*s ", c.width, c.head)
@@ -1016,14 +1209,40 @@ func PrintAtopProcs(w io.Writer, a *AtopSys) {
 	fmt.Fprintln(w, b.String())
 	c := a.CPU
 	avail := c[cSystem] + c[cUser] + c[cNice] + c[cIdle] + c[cIOWait] + c[cIRQ] + c[cSoftIRQ] + c[cSteal]
+	dsk := func(p *atopProc) int64 { return p.rbytes/512 + max(p.wbytes/512-p.cancel/512, 0) }
+	var availDsk int64
+	for i := range a.List {
+		availDsk += dsk(&a.List[i])
+	}
+	byCPU := func(p, q atopProc) int {
+		return cmp.Or(cmp.Compare(q.stime+q.utime, p.stime+p.utime), cmp.Compare(q.rssKB, p.rssKB))
+	}
 	procs := slices.Clone(a.List)
-	slices.SortStableFunc(procs, func(p, q atopProc) int { return cmp.Compare(q.stime+q.utime, p.stime+p.utime) })
+	switch view.sort {
+	case "MEM":
+		slices.SortStableFunc(procs, func(p, q atopProc) int { return cmp.Compare(q.rssKB, p.rssKB) })
+	case "DSK":
+		slices.SortStableFunc(procs, func(p, q atopProc) int { return cmp.Or(cmp.Compare(dsk(&q), dsk(&p)), byCPU(p, q)) })
+	default:
+		slices.SortStableFunc(procs, byCPU)
+	}
 	for i := range procs {
 		p := &procs[i]
 		var perc float64
-		if avail > 0 {
-			perc = float64(p.stime+p.utime) * 100 / float64(avail/ncpu)
-			perc = min(perc, 100*float64(ncpu), 100*float64(p.threads))
+		switch view.sort {
+		case "MEM":
+			if a.Sys.MemTotal > 0 {
+				perc = min(float64(p.rssKB)*100/float64(a.Sys.MemTotal), 100)
+			}
+		case "DSK":
+			if availDsk > 0 {
+				perc = min(float64(dsk(p))*100/float64(availDsk), 100)
+			}
+		default:
+			if avail > 0 {
+				perc = float64(p.stime+p.utime) * 100 / float64(avail/ncpu)
+				perc = min(perc, 100*float64(ncpu), 100*float64(p.threads))
+			}
 		}
 		b.Reset()
 		for _, col := range cols {
@@ -1129,8 +1348,11 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 		p.runNS -= q.runNS
 		p.nvcsw -= q.nvcsw
 		p.nivcsw -= q.nivcsw
-		p.vszKB -= q.vszKB
-		p.rssKB -= q.rssKB
+		p.vgrowKB = p.vszKB - q.vszKB
+		p.rgrowKB = p.rssKB - q.rssKB
+		p.minflt -= q.minflt
+		p.majflt -= q.majflt
+		p.isNew = !known
 		p.rbytes -= q.rbytes
 		p.wbytes -= q.wbytes
 		p.cancel -= q.cancel
@@ -1140,7 +1362,8 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 	}
 	// Exited in the interval: their CPU time up to their last sample.
 	rows, err := db.Query(`
-		SELECT p.id, p.pid, p.comm, p.start_time, p.exit_code, p.signal,
+		SELECT p.id, p.pid, p.comm, p.start_time, p.exit_code, p.signal, p.ppid, p.uid, COALESCE(p.ruid, p.uid),
+		       COALESCE(p.rgid, -1), COALESCE(p.cmdline, ''), COALESCE(p.cmdline_pad, 1),
 		       (SELECT arg_max(x.cpu_ticks, x.ts) FROM proc_samples x WHERE x.proc_id = p.id AND x.ts <= ?2),
 		       (SELECT arg_max(x.stime_ticks, x.ts) FROM proc_samples x WHERE x.proc_id = p.id AND x.ts <= ?2)
 		FROM processes p
@@ -1155,7 +1378,8 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 		for rows.Next() {
 			var e atopProc
 			var code, sig, cpu, st sql.NullInt64
-			if rows.Scan(&e.id, &e.pid, &e.comm, &e.startMS, &code, &sig, &cpu, &st) != nil {
+			if rows.Scan(&e.id, &e.pid, &e.comm, &e.startMS, &code, &sig, &e.ppid, &e.uid, &e.ruid, &e.rgid,
+				&e.cmdline, &e.cmdlinePad, &cpu, &st) != nil {
 				continue
 			}
 			// An open process's row carries the last sample as last_seen:
@@ -1165,6 +1389,7 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 			}
 			q := prev[e.id]
 			e.exited, e.state, e.threads = true, "E", 1
+			e.isNew = e.startMS > a0.Sys.TS
 			e.stime = max(st.Int64-q.stime, 0)
 			e.utime = max(cpu.Int64-st.Int64-q.utime, 0)
 			switch {

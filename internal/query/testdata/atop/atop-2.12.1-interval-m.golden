@@ -1,0 +1,21 @@
+
+
+ATOP - web01    2026/09/21 14:13:31            -----------------7    10s elapsed
+PRC | sys    3.00s | user   9.00s | #proc      3 | #tidle     2 | #exit      1 |
+CPU | sys      40% | user     60% | irq       0% | idle     90% | wait     10% |
+cpu | sys      36% | user     55% | irq       0% | idle      0% | cpu000 w  9% |
+CPL | numcpu     2 | avg1    1.60 | avg5    0.99 | csw   100000 | intr   10000 |
+MEM | tot    15.5G | free    8.6G | avail  12.3G | cache   3.3G | slab  585.9M |
+MEM | numnode    1 | shmem 439.5M | shswp   0.0M | pgtab  44.0M | anthp 200.0M |
+SWP | tot     4.0G | free    3.9G | swcac   1.0M | vmcom   6.8G | vmlim  11.8G |
+PAG | migrate    0 | pgin      25 | pgout    250 | swout      0 | oomkill      |
+PSI | cpusome  20% | memsome   0% | memfull   0% | iosome    1% | iofull    0% |
+LVM | stem-lv_root | busy      4% | read       0 | write    190 | avio 2.00 ms |
+DSK |          sda | busy      4% | read       0 | write    200 | avio 2.00 ms |
+NET | transport    | tcpi    1000 | tcpo     600 | udpi       0 | udpo       0 |
+NET | network      | ipi     1000 | ipo      600 | ipfrw      0 | deliv   1000 |
+NET | enp1s0    8% | pcki    1000 | pcko     600 | si   80 Mbps | so  800 Kbps |
+
+    PID VSTACK  VSIZE  RSIZE  PSIZE  VGROW  RGROW SWAPSZ  MEM CMD            
+    812 136.0K   8.6G   1.9G     0B     0B  10.0M     0B  12% postgres       
+   2045     0K     0K     0K     0K     0K     0K     0K   0% <a-very-long-> 

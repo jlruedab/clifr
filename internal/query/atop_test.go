@@ -29,7 +29,8 @@ func TestAtopScreen(t *testing.T) {
 	cpu0 := [10]int64{tk(1500), tk(80), tk(1000), tk(17000), tk(200), tk(30), tk(40), 0, tk(500), 0}
 	cpu1 := [10]int64{tk(500), tk(20), tk(500), tk(21000), tk(100), tk(10), tk(20), 0, 0, 0}
 	proc := func(id int64, pid int, comm string, start int64) store.ProcRow {
-		return store.ProcRow{ID: id, PID: pid, StartTime: start, PPID: 1, Comm: comm, Cmdline: "/usr/bin/" + comm, FirstSeen: start, Source: "sample"}
+		return store.ProcRow{ID: id, PID: pid, StartTime: start, PPID: 1, Comm: comm, Cmdline: "/usr/bin/" + comm, FirstSeen: start,
+			Source: "sample", RGID: 0, CmdlinePad: 1}
 	}
 	db := testrec.Open(t, []string{"hostname", "web01.example.com", "boot_ms", itoa(boot), "boot_id", "b1"},
 		&store.Batch{Sample: store.Sample{TS: base},
@@ -57,18 +58,35 @@ func TestAtopScreen(t *testing.T) {
 				{TS: base, Index: 2, Name: "enp1s0", HasStats: true, Speed: 1000, Duplex: 1, Stats: [25]int64{0: 9_000_000, 1: 7_000_000, 2: 12_000_000_000, 3: 3_000_000_000}},
 				{TS: base, Index: 3, Name: "docker0", HasStats: true, Speed: -1, Duplex: -1}},
 			Snapshots: []store.SnapshotRow{{TS: base, Source: "sysctl", Key: "kernel.pid_max", Pos: 0, Full: true, Line: "kernel.pid_max = 4194304"},
-				{TS: base, Source: "hostname", Key: "web01.example.com", Pos: 0, Full: true, Line: "web01.example.com"}},
-			ProcInserts: []store.ProcRow{proc(1, 1, "systemd", boot+500), proc(2, 812, "postgres", boot+20_000),
-				proc(3, 2045, "a-very-long-command-name", boot+60_000), proc(4, 15, "kworker/1:0-events", boot+100)},
+				{TS: base, Source: "hostname", Key: "web01.example.com", Pos: 0, Full: true, Line: "web01.example.com"},
+				{TS: base, Source: "passwd", Key: "0", Pos: 0, Full: true, Line: "0 root"},
+				{TS: base, Source: "passwd", Key: "26", Pos: 1, Full: true, Line: "26 postgres"},
+				{TS: base, Source: "group", Key: "0", Pos: 0, Full: true, Line: "0 root"},
+				{TS: base, Source: "group", Key: "26", Pos: 1, Full: true, Line: "26 pgsqladmins"}},
+			ProcInserts: func() []store.ProcRow {
+				pg := proc(2, 812, "postgres", boot+20_000)
+				pg.UID, pg.RUID, pg.RGID, pg.PPID = 26, 26, 26, 1
+				pg.Cmdline = "/usr/pgsql-16/bin/postgres -D /var/lib/pgsql/16/data\nwith\ta-tab"
+				long := proc(3, 2045, "a-very-long-command-name", boot+60_000)
+				long.PPID, long.Cmdline = 812, "x"+strings.Repeat("y", 300)
+				kw := proc(4, 15, "kworker/1:0-events_power_efficient", boot+100)
+				kw.Cmdline, kw.PPID = "", 2
+				return []store.ProcRow{proc(1, 1, "systemd", boot+500), pg, long, kw}
+			}(),
 			ProcSamples: []store.ProcSample{
 				{ProcID: 1, TS: base, State: "S", Threads: 1, CPUTicks: tk(95), STimeTicks: tk(60), RSSKB: 13_000, RSSStatKB: 12_800,
 					VSZKB: 171_000, ReadBytes: 300_000_000, WriteBytes: 90_000_000, CancelledWrite: 10_000_000, WaitNS: 2_500_000_000, RunDelayNS: 2_500_000_000,
-					ThrSleepI: 1, VolCtx: 900, NonVolCtx: 30, VolCtxAll: 900, NonVolCtxAll: 30},
+					ThrSleepI: 1, VolCtx: 900, NonVolCtx: 30, VolCtxAll: 900, NonVolCtxAll: 30,
+					VmStkKB: 132, VmDataKB: 20_000, VmExeKB: 56, VmLibKB: 9_800, VmSwapKB: 12, MinFlt: 120_000, MajFlt: 900,
+					Wchan: "ep_poll", Priority: 20},
 				{ProcID: 2, TS: base, State: "S", Threads: 8, CPUTicks: tk(6100), STimeTicks: tk(1700), RSSKB: 2_100_000, RSSStatKB: 2_000_000,
 					VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_000_000_000, BlkioTicks: tk(42), WaitNS: 1_000_000_000, RunDelayNS: 9_870_000_000,
-					BlkioAllTicks: tk(55), ThrSleepI: 6, ThrSleepU: 1, ThrIdle: 1, VolCtx: 5000, NonVolCtx: 70, VolCtxAll: 40_000, NonVolCtxAll: 900},
-				{ProcID: 3, TS: base, State: "R", Threads: 1, CPUTicks: tk(6100), STimeTicks: tk(100), RSSStatKB: 900, VSZKB: 4000, CPU: 1, ThrRun: 1},
-				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7, ThrIdle: 1}}},
+					BlkioAllTicks: tk(55), ThrSleepI: 6, ThrSleepU: 1, ThrIdle: 1, VolCtx: 5000, NonVolCtx: 70, VolCtxAll: 40_000, NonVolCtxAll: 900,
+					VmStkKB: 136, VmDataKB: 600_000, VmExeKB: 8_000, VmLibKB: 30_000, VmLckKB: 64, MinFlt: 9_000_000, MajFlt: 12_000,
+					Wchan: "do_epoll_wait", Priority: 30, Nice: 10, Policy: 3, CPU: 1},
+				{ProcID: 3, TS: base, State: "R", Threads: 1, CPUTicks: tk(6100), STimeTicks: tk(100), RSSStatKB: 900, VSZKB: 4000, CPU: 1, ThrRun: 1,
+					Priority: -51, Policy: 1, RTPriority: 50, Wchan: "0"},
+				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7, ThrIdle: 1, Priority: 20, Wchan: "worker_thread"}}},
 		// 10 s later: postgres busy and growing, the long command gone.
 		&store.Batch{Sample: store.Sample{TS: base + 10_000},
 			Sys: []store.SysSample{{TS: base + 10_000, UptimeMS: base + 10_000 - boot, Load1: 160, Load5: 99, Load15: 61,
@@ -99,12 +117,18 @@ func TestAtopScreen(t *testing.T) {
 				{ProcID: 2, TS: base + 10_000, State: "R", Threads: 8, CPUTicks: tk(6112), STimeTicks: tk(1703), RSSKB: 2_110_000,
 					RSSStatKB: 2_010_240, VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_010_000_000, BlkioTicks: tk(42),
 					WaitNS: 1_000_000_000, RunDelayNS: 9_920_000_000,
-					BlkioAllTicks: tk(57), ThrRun: 2, ThrSleepI: 5, ThrIdle: 1, VolCtx: 5100, NonVolCtx: 75, VolCtxAll: 41_500, NonVolCtxAll: 960}}})
+					BlkioAllTicks: tk(57), ThrRun: 2, ThrSleepI: 5, ThrIdle: 1, VolCtx: 5100, NonVolCtx: 75, VolCtxAll: 41_500, NonVolCtxAll: 960,
+					VmStkKB: 136, VmDataKB: 610_240, VmExeKB: 8_000, VmLibKB: 30_000, VmLckKB: 64, MinFlt: 9_004_000, MajFlt: 12_010,
+					Priority: 30, Nice: 10, Policy: 3, CPU: 0}}})
 	for _, v := range []struct {
 		name     string
 		v271     bool
 		interval bool
-	}{{"atop-2.12.1", false, false}, {"atop-2.7.1", true, false}, {"atop-2.12.1-interval", false, true}} {
+		views    []string
+	}{{"atop-2.12.1", false, false, []string{""}}, {"atop-2.7.1", true, false, []string{""}},
+		{"atop-2.12.1-interval", false, true, []string{""}},
+		{"atop-2.12.1-views", false, false, []string{"m", "d", "s", "v", "c"}},
+		{"atop-2.7.1-s", true, false, []string{"s"}}, {"atop-2.12.1-interval-m", false, true, []string{"m"}}} {
 		a, err := AtopSysAt(db, base+1500)
 		if v.interval {
 			a, err = AtopIntervalAt(db, base+1500, base+11_500)
@@ -113,9 +137,17 @@ func TestAtopScreen(t *testing.T) {
 			t.Fatal(err)
 		}
 		a.V271 = v.v271
+		if _, err := LoadUsers(db, base); err != nil {
+			t.Fatal(err)
+		}
 		var b strings.Builder
-		PrintAtopSys(&b, a)
-		PrintAtopProcs(&b, a)
+		if len(v.views) == 1 {
+			PrintAtopSys(&b, a)
+		}
+		for _, view := range v.views {
+			a.View = view
+			PrintAtopProcs(&b, a)
+		}
 		path := "testdata/atop/" + v.name + ".golden"
 		if *updateAtop {
 			os.MkdirAll("testdata/atop", 0o755)

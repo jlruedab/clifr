@@ -1,0 +1,30 @@
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID VSTACK  VSIZE  RSIZE  PSIZE  VGROW  RGROW SWAPSZ  MEM CMD            
+    812 136.0K   8.6G   1.9G     0B   8.6G   1.9G     0B  12% postgres       
+      1 132.0K 167.0M  12.5M     0B 167.0M  12.5M  12.0K   0% systemd        
+   2045     0B   3.9M 900.0K     0B   3.9M 900.0K     0B   0% a-very-long-co 
+     15     0B     0B     0B     0B     0B     0B     0B   0% kworker/1:0-ev 
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID     TID  RDDSK  WRDSK WCANCL  DSK CMD            
+    812       -   4.7G   6.5G     0B  97% postgres       
+      1       - 286.1M  85.8M   9.5M   3% systemd        
+   2045       -     0B     0B     0B   0% a-very-long-co 
+     15       -     0B     0B     0B   0% kworker/1:0-ev 
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID POLI NICE RTPR CPUNR ST EXC S RDELAY  NVCSW NIVCSW  CPU CMD            
+    812 btch   10    0     1 N-   - S  9.87s  40000    900  29% postgres       
+   2045 fifo    0   50     1 N-   - R  0.00s      0      0  29% a-very-long-co 
+      1 norm    0    0     0 N-   - S  2.50s    900     30   0% systemd        
+     15 norm    0    0     0 N-   - I  0.00s      0      0   0% kworker/1:0-ev 
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID    PPID RUID     RGID       STDATE    STTIME  EXC S  CPU CMD            
+    812       1 postgres 26       2026/09/21 11:12:38   - S  29% postgres       
+   2045     812 root     root     2026/09/21 11:13:18   - R  29% a-very-long-co 
+      1       1 root     root     2026/09/21 11:12:19   - S   0% systemd        
+     15       2 root     root     2026/09/21 11:12:18   - I   0% kworker/1:0-ev 
+*** System and Process Activity since Boot ***    Unrestricted view (privileged)
+    PID     TID S  CPU COMMAND-LINE (horizontal scroll with <- and -> keys) 
+    812       - S  29% /usr/pgsql-16/bin/postgres -D /var/lib/pgsql/16/data with a-tab 
+   2045       - R  29% xyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy 
+      1       - S   0% /usr/bin/systemd 
+     15       - I   0% kworker/1:0-eve 

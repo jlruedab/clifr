@@ -93,36 +93,80 @@ var userCache = map[int]string{}
 // it, whose names are then this machine's.
 var recordedUsers map[int]string
 
+// recordedGroups is the recording's gid -> name table (snapshots source
+// "group", schema 12), loaded with the users; nil without it.
+var recordedGroups, groupCache = map[int]string(nil), map[int]string{}
+
+// localGroups: without recorded group names, use this machine's (the
+// recording is from it, or has no recorded names at all, users included).
+var localGroups = true
+
 // LoadUsers takes the recorded user names of the host at t (the copy at or
 // before t, else the first after it: names rarely change). It reports
 // whether the recording has them; without, a recording made on another
 // machine gets a header saying its names are this machine's.
 func LoadUsers(db *store.DB, t int64) (bool, error) {
 	recordedUsers, userCache = nil, map[int]string{}
-	lines, _, ok, err := FileAt(db, "passwd", t)
-	if err == nil && !ok {
-		// Before the run's first read: its first copy after t.
-		var next sql.NullInt64
-		db.QueryRow(`SELECT MIN(ts) FROM snapshots WHERE source = 'passwd' AND whole = 1 AND ts > ?`, t).Scan(&next)
-		if next.Valid {
-			lines, _, ok, err = FileAt(db, "passwd", next.Int64)
-		}
+	recordedGroups, groupCache = nil, map[int]string{}
+	if groups, ok, err := idNamesAt(db, "group", t); err == nil && ok {
+		recordedGroups = groups
 	}
+	m, ok, err := idNamesAt(db, "passwd", t)
+	localGroups = !ok || db.Meta("machine_id") == "" || db.Meta("machine_id") == localMachineID()
 	if err != nil || !ok {
 		if err == nil && db.Meta("machine_id") != "" && db.Meta("machine_id") != localMachineID() {
 			Header("user names: this machine's, not the recorded host's (recorded with names since 2026-11-08)")
 		}
 		return false, err
 	}
+	recordedUsers = m
+	return true, nil
+}
+
+// idNamesAt is the "id name" table of snapshots source passwd or group at t:
+// the copy at or before t, else (before the run's first read) its first
+// copy after t.
+func idNamesAt(db *store.DB, source string, t int64) (map[int]string, bool, error) {
+	lines, _, ok, err := FileAt(db, source, t)
+	if err == nil && !ok {
+		var next sql.NullInt64
+		db.QueryRow(`SELECT MIN(ts) FROM snapshots WHERE source = ? AND whole = 1 AND ts > ?`, source, t).Scan(&next)
+		if next.Valid {
+			lines, _, ok, err = FileAt(db, source, next.Int64)
+		}
+	}
+	if err != nil || !ok {
+		return nil, false, err
+	}
 	m := make(map[int]string, len(lines))
 	for _, l := range lines {
-		uid, name, _ := strings.Cut(l, " ")
-		if n, err := strconv.Atoi(uid); err == nil && name != "" {
+		id, name, _ := strings.Cut(l, " ")
+		if n, err := strconv.Atoi(id); err == nil && name != "" {
 			m[n] = name
 		}
 	}
-	recordedUsers = m
-	return true, nil
+	return m, true, nil
+}
+
+// GroupName is a gid's name: the recording's (LoadUsers) when it has group
+// names (schema 12), else this machine's; a gid without a name stays a
+// number.
+func GroupName(gid int) string {
+	name, ok := groupCache[gid]
+	if !ok {
+		name = strconv.Itoa(gid)
+		if recordedGroups != nil {
+			if n, ok := recordedGroups[gid]; ok {
+				name = n
+			}
+		} else if localGroups {
+			if g, err := user.LookupGroupId(name); err == nil {
+				name = g.Name
+			}
+		}
+		groupCache[gid] = name
+	}
+	return name
 }
 
 func localMachineID() string {

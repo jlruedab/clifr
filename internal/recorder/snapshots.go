@@ -22,7 +22,8 @@ type snapReader struct {
 // machine, not a fixture).
 var machineSnaps = []snapReader{{"netns", readNetns, 0}, {"locks", readLocks, 0}, {"sysctl", readSysctl, sysctlReadMS},
 	{"numa", readNUMA, sysctlReadMS}, {"conntrack", readConntrack, sysctlReadMS},
-	{"mountstats", readMountstats, sysctlReadMS}, {"passwd", readPasswd, sysctlReadMS}}
+	{"mountstats", readMountstats, sysctlReadMS}, {"passwd", readPasswd, sysctlReadMS},
+	{"group", readGroup, sysctlReadMS}}
 
 // readConntrack is ctnetlink's per-CPU counters (conntrack -S): "cpu
 // type=value ..." per CPU, nothing when nf_conntrack_netlink is not loaded.

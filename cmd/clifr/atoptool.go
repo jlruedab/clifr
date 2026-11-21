@@ -11,7 +11,14 @@ import (
 
 func atopTool() *tool {
 	return &tool{
-		name: "atop", synopsis: "[INTERVAL [COUNT]]",
+		name: "atop", synopsis: "[-m|-d|-s|-v|-c] [INTERVAL [COUNT]]",
+		opts: []opt{
+			{short: 'm', help: "memory view: segment sizes, growth, swap, sorted by resident memory"},
+			{short: 'd', help: "disk view: bytes read, written and cancelled, sorted by disk transfer"},
+			{short: 's', help: "scheduling view: threads by state, policy, nice, priority, CPU, run delay"},
+			{short: 'v', help: "various view: parent, real user and group, start date and time"},
+			{short: 'c', help: "command-line view: the full command line (255 bytes, as atop reads it)"},
+		},
 		about:  "the system and its processes since boot, as atop prints its first screen into a pipe",
 		window: true,
 		notes: []string{
@@ -27,6 +34,9 @@ func atopTool() *tool {
 			"bounds, and only the processes active in it (a process whose only change was a context switch or",
 			"page fault, without a CPU tick, is not seen as active) and those that exited in it (<name>, their",
 			"CPU time up to their last sample). Choose INTERVAL as a multiple of the recorded intervals.",
+			"The process views -m -d -s -v -c are atop's, each with its columns fitted to 80 characters by",
+			"atop's priorities; PSIZE (proportional size) is 0B as in atop without -R. Thread sums (BDELAY,",
+			"NVCSW, NIVCSW, TSLPI...), segment sizes and group names are recorded since schema 12.",
 		},
 		examples: []string{`clifr --at "02:45" atop`, `clifr --since "02:40" --until "02:50" "atop 60"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
@@ -41,6 +51,15 @@ func atopTool() *tool {
 			if len(nums) > 2 {
 				return nil, errors.New("atop: atop [INTERVAL [COUNT]]")
 			}
+			view := ""
+			for _, v := range []string{"m", "d", "s", "v", "c"} {
+				if p.has(v) {
+					if view != "" {
+						return nil, fmt.Errorf("atop: -%s and -%s: one process view at a time", view, v)
+					}
+					view = v
+				}
+			}
 			if !c.w.IsRange() {
 				if len(nums) > 0 && (len(nums) != 2 || nums[1] != 1) {
 					return nil, errors.New("atop: with --at, only the screen since boot (atop or atop 1 1); for intervals use --since and --until")
@@ -50,7 +69,7 @@ func atopTool() *tool {
 					if err != nil {
 						return err
 					}
-					a.V271 = query.StyleAt(c.db, c.w.At).Atop271
+					a.V271, a.View = query.StyleAt(c.db, c.w.At).Atop271, view
 					return c.emit([]*query.AtopSys{a}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 						func(w io.Writer) {
 							query.PrintAtopSys(w, a)
@@ -73,14 +92,14 @@ func atopTool() *tool {
 				if err != nil {
 					return err
 				}
-				first.V271 = v271
+				first.V271, first.View = v271, view
 				screens = append(screens, first)
 				for t := c.w.From + step; t <= c.w.To && (count < 0 || int64(len(screens)) < count); t += step {
 					a, err := query.AtopIntervalAt(c.db, t-step, t)
 					if err != nil {
 						return err
 					}
-					a.V271 = v271
+					a.V271, a.View = v271, view
 					screens = append(screens, a)
 				}
 				return c.emit(screens, func(i int) rowMeta { return rowMeta{TS: screens[i].T} },

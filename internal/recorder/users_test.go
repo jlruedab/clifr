@@ -31,3 +31,23 @@ func TestReadPasswd(t *testing.T) {
 		}
 	}
 }
+
+// TestReadGroup: "gid name" only, never the members.
+func TestReadGroup(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "group")
+	os.WriteFile(p, []byte("root:x:0:\nadm:x:4:syslog,alice\nclifr:x:988:alice,bob\n+nis::::\nwheel:x:988:carol\n"), 0o644)
+	old := groupPath
+	groupPath = p
+	defer func() { groupPath = old }()
+	lines, err := readGroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, l := range lines {
+		got = append(got, l.Key+"="+l.Line)
+	}
+	if want := "0=0 root,4=4 adm,988=988 clifr"; strings.Join(got, ",") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}

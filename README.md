@@ -727,6 +727,13 @@ chooses one; a line on stderr says when a style other than current is used.
   that exited in it (`<name>`, their CPU time up to their last sample); a
   process whose only change was a context switch or page fault without a CPU
   tick is not seen as active.
+  The process views `-m` (memory), `-d` (disk), `-s` (scheduling), `-v`
+  (various) and `-c` (command line) are atop's, with its columns, priorities
+  and sort orders (memory, disk transfer, CPU); PSIZE is `0B` as in atop
+  without `-R`. Thread sums (BDELAY, NVCSW, NIVCSW, TSLPI...), segment sizes and
+  group names are recorded since schema 12. Against atop 2.12.1 here, all five
+  views: the same columns and 511 of 511 processes, values within what moved
+  between clifrd's sample and atop's reading.
   `clifr verify` compares it with real `atop 1 1` captures (`--verify-every`).
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
