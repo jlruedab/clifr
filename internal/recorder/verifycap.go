@@ -52,6 +52,14 @@ var verifyCommands = [][]string{
 	{"ps", "alxwww"},
 	{"ps", "auxZww"},
 	{"pidstat", "-h", "-u", "-r", "-d", "-w", "-p", "ALL"}, // sysstat; skipped where it is not installed
+	// atop (EPEL on RHEL; skipped where it is not installed): its screen since
+	// boot (one sample), 80 columns wide into a pipe, in each process view.
+	{"atop", "1", "1"},
+	{"atop", "-m", "1", "1"},
+	{"atop", "-d", "1", "1"},
+	{"atop", "-s", "1", "1"},
+	{"atop", "-v", "1", "1"},
+	{"atop", "-c", "1", "1"},
 	{"systemd-cgls", "--no-pager"},
 	{"systemd-cgls", "--no-pager", "-l"},
 	{"swapon", "--show"},
