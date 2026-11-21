@@ -62,7 +62,7 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 	}
 	q, err := db.Query(`
 		SELECT c.id, c.laddr, c.lport, c.raddr, c.rport, c.inode, c.pid, c.fd, c.owner_until, COALESCE(c.ifname, ''),
-		       c.close_ts, c.linger_state, c.linger_until,
+		       c.open_ts, c.close_ts, c.linger_state, c.linger_until,
 		       COALESCE((SELECT x.new_state FROM tcp_transitions x WHERE x.conn_id = c.id AND x.ts <= ?1
 		                 ORDER BY x.ts DESC, x.seq DESC LIMIT 1), c.first_state),
 		       COALESCE(p.comm, ''), COALESCE(k.recv_q, 0), COALESCE(k.send_q, 0), COALESCE(c.v6only, 1)
@@ -78,6 +78,7 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 	type cand struct {
 		r      SSRow
 		linger bool
+		open   int64
 		close  int64
 	}
 	byTuple := map[string]cand{}
@@ -85,8 +86,9 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 		var r SSRow
 		var la, ra, comm, ifn string
 		var pid, fd, lingerState, state, v6only int
+		var openTS int64
 		var ownerUntil, closeTS, lingerUntil sql.NullInt64
-		if err := q.Scan(&r.id, &la, &r.LPort, &ra, &r.RPort, &r.Inode, &pid, &fd, &ownerUntil, &ifn, &closeTS,
+		if err := q.Scan(&r.id, &la, &r.LPort, &ra, &r.RPort, &r.Inode, &pid, &fd, &ownerUntil, &ifn, &openTS, &closeTS,
 			&lingerState, &lingerUntil, &state, &comm, &r.RecvQ, &r.SendQ, &v6only); err != nil {
 			return nil, kf, err
 		}
@@ -111,10 +113,13 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 			continue
 		}
 		// The same addresses twice: a time-wait leftover and a new
-		// connection that reused them. The live one wins.
+		// connection that reused them, or two live rows when the older
+		// connection's close was missed (it is closed later, when seen
+		// gone). One row per addresses, whatever order DuckDB returns them
+		// in (it has none: the output changed from run to run, 2026-11-21).
 		key := fmt.Sprint(r.laddr, r.LPort, r.raddr, r.RPort)
-		c := cand{r, linger, closeTS.Int64}
-		if old, ok := byTuple[key]; ok && (!old.linger && linger || old.linger && linger && old.close > c.close) {
+		c := cand{r, linger, openTS, closeTS.Int64}
+		if old, ok := byTuple[key]; ok && !tupleWins(c.linger, old.linger, c.open, old.open, c.close, old.close, c.r.id, old.r.id) {
 			continue
 		}
 		byTuple[key] = c
@@ -128,6 +133,22 @@ func ConnsAt(db *store.DB, t int64, proto string, f SockFilter) (rows []SSRow, k
 	addHolders(db, t, rows)
 	sortSS(rows)
 	return rows, kf, nil
+}
+
+// tupleWins reports whether connection a replaces b, both shown at the
+// same addresses: a live one over a time-wait leftover; of two live ones the
+// one opened later (the addresses are reused only after the earlier socket
+// closed); of two leftovers the one closed later; then the higher id.
+func tupleWins(aLinger, bLinger bool, aOpen, bOpen, aClose, bClose, aID, bID int64) bool {
+	switch {
+	case aLinger != bLinger:
+		return !aLinger
+	case !aLinger && aOpen != bOpen:
+		return aOpen > bOpen
+	case aLinger && aClose != bClose:
+		return aClose > bClose
+	}
+	return aID > bID
 }
 
 func udpAt(db *store.DB, kf int64, f SockFilter) ([]SSRow, error) {
