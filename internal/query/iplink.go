@@ -30,7 +30,7 @@ func LinksAt(db *store.DB, t int64) ([]store.LinkRow, int64, error) {
 		rx_packets, tx_packets, rx_bytes, tx_bytes, rx_errors, tx_errors, rx_dropped, tx_dropped, multicast, collisions,
 		rx_length_errors, rx_over_errors, rx_crc_errors, rx_frame_errors, rx_fifo_errors, rx_missed_errors,
 		tx_aborted_errors, tx_carrier_errors, tx_fifo_errors, tx_heartbeat_errors, tx_window_errors, rx_compressed,
-		tx_compressed, rx_nohandler, rx_otherhost_dropped
+		tx_compressed, rx_nohandler, rx_otherhost_dropped, COALESCE(speed, -1), COALESCE(duplex, -1)
 		FROM links WHERE ts <= ? AND ts >= ? ORDER BY ts`, ts.Int64, ts.Int64-store.NetCountersFullMS-60_000)
 	if err != nil {
 		return nil, 0, err
@@ -50,6 +50,7 @@ func LinksAt(db *store.DB, t int64) ([]store.LinkRow, int64, error) {
 		for i := range l.Stats {
 			dst = append(dst, &l.Stats[i])
 		}
+		dst = append(dst, &l.Speed, &l.Duplex) // schema 12; -1 before
 		if err := rows.Scan(dst...); err != nil {
 			return nil, 0, err
 		}

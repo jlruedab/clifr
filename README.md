@@ -52,6 +52,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 |---|---|
 | `ps` | processes with their CPU, memory, state and command line |
 | `top` | the system summary and the busiest processes |
+| `atop` | atop's screen since boot: system lines and every process with its totals |
 | `pstree` | the process tree |
 | `pidstat` | CPU, memory, disk and context switches per process |
 | `systemd-cgls` | processes grouped by service (cgroups) |
@@ -711,6 +712,16 @@ chooses one; a line on stderr says when a style other than current is used.
   that also match. PIDs are the host's; processes only seen through
   exec/exit events have no cgroup and are left out. Needs `--at`,
   `--samples` or `--changes`.
+- `atop [1 1]`: atop's first screen into a pipe as root (since boot): its system
+  lines (PRC, CPU and per CPU, CPL, MEM, SWP, PAG, PSI, LVM/MDD/DSK, NET) and every
+  process with its totals since it started, the most CPU time first, in the
+  default columns. The recorded host's atop decides the layout: 2.7.1 (EPEL on
+  RHEL 8 and 9, Ubuntu 22.04) or 2.12.1. It follows atop's own code (formats,
+  priorities, which boxes fit 80 columns; packaging/notices/atop.txt). Values are
+  those of clifrd's samples; a wireless interface's busy % shows `----` (atop asks
+  the driver for its rate). Needs `--at` and a recording of schema 12 for every
+  line (committed memory, page tables, OOM kills, pressure, RDELAY of all threads).
+  `clifr verify` compares it with real `atop 1 1` captures (`--verify-every`).
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

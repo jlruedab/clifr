@@ -51,9 +51,21 @@ type atopProc struct {
 	state                  string
 	stime, utime, blkTicks int64 // clock ticks
 	runNS                  int64
-	vszKB, rssKB           int64
+	vszKB, rssKB           int64 // rssKB: /proc/PID/stat's rss, as atop reads it
 	rbytes, wbytes, cancel int64
 	comm                   string
+	startMS                int64
+}
+
+// StartedAfter reports whether process pid started after ts (atop may show
+// it, clifrd's sample at ts did not have its values).
+func (a *AtopSys) StartedAfter(pid int, ts int64) bool {
+	for _, p := range a.List {
+		if p.pid == pid {
+			return p.startMS > ts
+		}
+	}
+	return false
 }
 
 type atopCPUStat struct {
@@ -180,7 +192,7 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 				a.Procs.Utime += p.cpuTicks.Int64 - p.stime.Int64
 				a.List = append(a.List, atopProc{pid: p.pid, uid: p.uid, threads: int(max(p.threads.Int64, 1)), cpu: int(p.psr.Int64),
 					state: p.state.String, stime: p.stime.Int64, utime: p.cpuTicks.Int64 - p.stime.Int64,
-					blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64, rssKB: p.rssKB.Int64,
+					blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64, rssKB: cmp.Or(p.rssStat.Int64, p.rssKB.Int64), startMS: p.startMS,
 					rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm})
 			}
 		}

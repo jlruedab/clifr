@@ -175,6 +175,8 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = compareNumbers(db, s)
 		case "ss -s":
 			res, err = compareSSSummary(db, s)
+		case "atop 1 1":
+			res, err = compareAtop(db, s)
 		case "pstree -lpT", "ps auxfwww":
 			res, err = compareTree(db, s)
 		case "netstat -tanp":

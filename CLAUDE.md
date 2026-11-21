@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.

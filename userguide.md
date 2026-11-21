@@ -152,7 +152,7 @@ clifr: ip: option -b is not supported for recorded data (see: clifr help ip)
 
 `clifr help` lists every supported command, and `clifr help COMMAND` its options, notes on how exact each part is, and examples. The man page `man clifr` has the same text.
 
-Supported commands: `ps`, `top`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
+Supported commands: `ps`, `top`, `atop`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
 
 ### Counters at a moment
 
