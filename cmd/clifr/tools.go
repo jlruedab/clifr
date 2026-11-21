@@ -247,6 +247,9 @@ func socketsRange(c *runCtx, name string, udp bool, filter query.SockFilter) err
 		if n := query.BudgetNote(db, w.From, w.To, "tcp"); n != "" {
 			c.header("%s", n)
 		}
+		if n := query.TCPLossNote(db, w.From, w.To); n != "" {
+			c.header("%s", n)
+		}
 	} else {
 		proto := "tcp"
 		if udp {
@@ -293,6 +296,9 @@ func connList(c *runCtx, name string, udp bool, filter query.SockFilter,
 	if n := query.BudgetNote(c.db, c.w.From, c.w.To, "tcp"); n != "" {
 		c.header("%s", n)
 	}
+	if n := query.TCPLossNote(c.db, c.w.From, c.w.To); n != "" {
+		c.header("%s", n)
+	}
 	return c.emit(conns, func(int) rowMeta { return rowMeta{From: c.w.From, To: c.w.To} },
 		func(w io.Writer) { print(w, conns) })
 }
@@ -337,6 +343,9 @@ func socketsAt(c *runCtx, t int64, tcp, udp bool, filter query.SockFilter) ([]qu
 				}
 				c.header("TCP at %s: connections, states and owners exact (events); Recv-Q/Send-Q from the keyframe at %s; %s",
 					query.FormatMS(w.At), query.FormatMS(kf), tw)
+				if n := query.TCPLossNote(db, w.At, w.At); n != "" {
+					c.header("%s", n)
+				}
 			} else {
 				c.header("UDP at %s from the keyframe at %s (UDP is recorded at keyframes only)", query.FormatMS(w.At), query.FormatMS(kf))
 			}

@@ -211,6 +211,13 @@ wait for the user's go-ahead.
   (`resolveDeferred`): an event that fired just before the dump may not be applied yet. A socket
   adopted from a keyframe takes its first event by its addresses, a listener's own close too.
   `tcp_missed_runs` guard events name the programs the kernel skipped.
+  Lost TCP events (ring/perf buffer full, `recorder_stats` dropped; queue overflow `events_lost`; not
+  missed runs or budget shedding) bring the next keyframe forward to the first sample a minute
+  after the previous one (`keyframeAfterLoss`, 2026-11-21): a lost close keeps a connection open
+  until a keyframe or an address reuse finds it gone (11-19 benchmark: four load processes exited
+  at once, 57,000 state changes dropped, 14,000 connections open for four minutes).
+  `query.TCPLossNote`: an "incomplete:" header on ss, netstat and lsof -i from the sample before
+  the losses to the keyframe after them (keyframe times from `reconcile`, loaded whole).
 - Open files (`meta fds`): "held" (v2, `fds_held`): an fd is stored at the second consecutive
   walk of its process that sees it (first_seen = the first), deleted files at once; inet
   socket fds only when they add a holder beyond tcp_conns' owner. A process is not re-read

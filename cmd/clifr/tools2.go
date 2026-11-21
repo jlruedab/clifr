@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -280,6 +281,11 @@ func runLsof(c *runCtx, sel query.LsofSelect) error {
 	if query.TCPFromEvents(db) {
 		c.header("lsof at %s: files from the full fd walk at %s (sampled); TCP sockets exact (events); UDP from the keyframe (%d rows)",
 			query.FormatMS(w.At), query.FormatMS(sfd), len(rows))
+		if slices.ContainsFunc(rows, func(r query.LsofRow) bool { return r.Node == "TCP" }) {
+			if n := query.TCPLossNote(db, w.At, w.At); n != "" {
+				c.header("%s", n)
+			}
+		}
 	} else {
 		c.header("lsof at %s: files from full fd walk at %s, inet sockets from sample at %s (%d rows)",
 			query.FormatMS(w.At), query.FormatMS(sfd), query.FormatMS(s), len(rows))
