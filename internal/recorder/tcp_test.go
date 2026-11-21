@@ -546,3 +546,43 @@ func TestOtherNetNS(t *testing.T) {
 		t.Errorf("unread namespace judged: %+v", g)
 	}
 }
+
+// TestKeyframeAfterLoss: lost TCP events bring the next keyframe forward
+// to the first sample a minute after the previous one; without losses the
+// keyframe interval holds.
+func TestKeyframeAfterLoss(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.cfg.KeyframeInterval = 5 * time.Minute
+	r.tcp = newTCPTracker(nil)
+	r.listSockets = func() ([]sockdiag.Socket, error) { return nil, nil }
+	tr := r.tcp
+	if !r.prepareKeyframe(1000) {
+		t.Fatal("no first keyframe")
+	}
+	tr.keyframes++
+	ago := func(d time.Duration) { tr.lastKeyframe = time.Now().Add(-d) }
+	ago(2 * time.Minute)
+	if r.prepareKeyframe(2000) {
+		t.Error("keyframe after 2 minutes without losses")
+	}
+	tr.mu.Lock()
+	tr.overflow += 10 // events refused by a full queue
+	tr.mu.Unlock()
+	ago(30 * time.Second)
+	if r.prepareKeyframe(3000) {
+		t.Error("keyframe 30 s after the last one")
+	}
+	ago(61 * time.Second)
+	if !r.prepareKeyframe(4000) {
+		t.Error("no keyframe a minute after losses")
+	}
+	ago(2 * time.Minute)
+	if r.prepareKeyframe(5000) {
+		t.Error("keyframe again without new losses")
+	}
+	ago(5 * time.Minute)
+	if !r.prepareKeyframe(6000) {
+		t.Error("no keyframe after the interval")
+	}
+}

@@ -102,6 +102,9 @@ type tcpTracker struct {
 
 	lastKeyframe time.Time
 	keyframes    int
+	// lostAtKeyframe: lostEvents() at the last keyframe; more since then
+	// brings the next one forward (keyframeAfterLoss).
+	lostAtKeyframe int64
 	finTimeout   int64 // ms, the FIN_WAIT2 time-wait length
 	twInferred   int64 // time-wait starts inferred from the close (cumulative)
 	pendingDump  []sockdiag.Socket
@@ -616,12 +619,39 @@ func (t *tcpTracker) adopt(r *Recorder, e bpftcp.Event, ts int64) *tconn {
 	return c
 }
 
+// keyframeAfterLoss: after TCP events were lost, the next keyframe comes
+// at the first sample at least this long after the previous one, not after
+// the keyframe interval. A lost close leaves a connection open until a
+// keyframe (or a reuse of its socket address) finds it gone: on 2026-11-19
+// a benchmark's four load processes exited at once, the ring buffer
+// dropped 57,000 state changes and 14,000 connections stayed open in the
+// recording for four minutes.
+const keyframeAfterLoss = time.Minute
+
+// lostEvents counts the TCP events lost so far: dropped by the kernel (ring
+// or perf buffer full) or by a full queue (tcpQueueCap). Not the ones the
+// event budget sheds on purpose.
+func (t *tcpTracker) lostEvents() int64 {
+	n := t.overflowed()
+	if t.src != nil {
+		for _, d := range t.src.Drops() {
+			n += int64(d)
+		}
+	}
+	return n
+}
+
 // prepareKeyframe dumps all sockets before the fd walk, so the walk knows
 // which socket inodes are inet sockets.
 func (r *Recorder) prepareKeyframe(ts int64) bool {
 	t := r.tcp
-	if t.keyframes > 0 && time.Since(t.lastKeyframe) < r.cfg.KeyframeInterval {
-		return false
+	since := time.Since(t.lastKeyframe)
+	lost := t.lostEvents()
+	if t.keyframes > 0 && since < r.cfg.KeyframeInterval {
+		if lost == t.lostAtKeyframe || since < keyframeAfterLoss {
+			return false
+		}
+		r.log.Printf("keyframe early: %d TCP events lost since the last one", lost-t.lostAtKeyframe)
 	}
 	list, err := r.listSockets()
 	if err != nil {
@@ -629,7 +659,7 @@ func (r *Recorder) prepareKeyframe(ts int64) bool {
 		return false
 	}
 	list, t.pendingNS = r.otherNetNSSockets(list)
-	t.pendingDump, t.dumpStart, t.lastKeyframe = list, ts, time.Now()
+	t.pendingDump, t.dumpStart, t.lastKeyframe, t.lostAtKeyframe = list, ts, time.Now(), lost
 	t.pendingInode = map[uint64]bool{}
 	for _, s := range list {
 		if s.Inode != 0 {
