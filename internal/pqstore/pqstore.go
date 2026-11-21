@@ -1081,7 +1081,7 @@ var compactors = map[string]func(parts []string, out string) error{
 	"samples": merge[sampleRow], "processes": merge[processRow], "proc_samples": merge[procSampleRow],
 	"sockets": merge[socketRow], "sock_samples": merge[sockSampleRow], "sock_owners": merge[ownerRow],
 	"open_files": merge[fileRow], "oom_events": merge[oomRow], "recorder_stats": merge[statRow],
-	"tcp_conns": merge[tcpConnRow], "fds_held": merge[heldRow], "mounts": merge[mountRow], "tcp_transitions": merge[tcpTransRow], "tcp_keyframes": merge[keyframeRow],
+	"tcp_conns": mergeConns, "fds_held": merge[heldRow], "mounts": merge[mountRow], "tcp_transitions": merge[tcpTransRow], "tcp_keyframes": merge[keyframeRow],
 	"reconcile":    merge[reconcileRow],
 	"guard_events": merge[guardRow], "verify_snapshots": merge[verifyRow],
 	"sys_samples": merge[sysRow], "cpu_samples": merge[cpuRow], "disk_samples": merge[diskRow], "fs_samples": merge[fsRow],
@@ -1090,6 +1090,11 @@ var compactors = map[string]func(parts []string, out string) error{
 
 // merge streams the rows of parts into out (atomically replaced).
 func merge[T any](parts []string, out string) error {
+	return mergeKeep[T](parts, out, nil)
+}
+
+// mergeKeep is merge with only the rows keep accepts (nil: all).
+func mergeKeep[T any](parts []string, out string, keep func(*T) bool) error {
 	tmp := out + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -1099,7 +1104,7 @@ func merge[T any](parts []string, out string) error {
 	g := &groupWriter[T]{w: w}
 	buf := make([]T, 4096)
 	for _, p := range parts {
-		if err = copyRows(p, g, buf); err != nil {
+		if err = copyRowsKeep(p, g, buf, keep); err != nil {
 			break
 		}
 	}
@@ -1112,6 +1117,10 @@ func merge[T any](parts []string, out string) error {
 }
 
 func copyRows[T any](path string, w *groupWriter[T], buf []T) error {
+	return copyRowsKeep(path, w, buf, nil)
+}
+
+func copyRowsKeep[T any](path string, w *groupWriter[T], buf []T, keep func(*T) bool) error {
 	if err := CheckFile(path); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
@@ -1125,12 +1134,22 @@ func copyRows[T any](path string, w *groupWriter[T], buf []T) error {
 		return err
 	}
 	defer r.Close()
-	return readSafely(path, func() error { return copyAll(r, w, buf) })
+	return readSafely(path, func() error { return copyAll(r, w, buf, keep) })
 }
 
-func copyAll[T any](r *parquet.GenericReader[T], w *groupWriter[T], buf []T) error {
+func copyAll[T any](r *parquet.GenericReader[T], w *groupWriter[T], buf []T, keep func(*T) bool) error {
 	for {
 		n, err := r.Read(buf)
+		if keep != nil {
+			k := 0
+			for i := range buf[:n] {
+				if keep(&buf[i]) {
+					buf[k] = buf[i]
+					k++
+				}
+			}
+			n = k
+		}
 		if n > 0 {
 			if werr := w.write(buf[:n]); werr != nil {
 				return werr
