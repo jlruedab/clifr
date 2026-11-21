@@ -17,7 +17,9 @@ func TestSystemCounters(t *testing.T) {
 		"meminfo": "MemTotal:       63964024 kB\nMemFree:        34922868 kB\nMemAvailable:   49646160 kB\nBuffers:          721900 kB\n" +
 			"Cached:         12812108 kB\nSwapCached:            0 kB\nSwapTotal:       8388604 kB\nSwapFree:        8388000 kB\n" +
 			"Shmem:           1200424 kB\nSReclaimable:    1474496 kB\nHugePages_Total:       0\n",
-		"vmstat": "nr_free_pages 8730717\npgpgin 9966704\npgpgout 17804165\npswpin 5\npswpout 6\npgfault 734874843\npgmajfault 32135\n",
+		"vmstat": "nr_free_pages 8730717\npgpgin 9966704\npgpgout 17804165\npswpin 5\npswpout 6\npgfault 734874843\npgmajfault 32135\n" +
+			"allocstall_dma 1\nallocstall_normal 2\npgsteal_kswapd 7\npgscan_kswapd 10\npgscan_kswapd_normal 5\npgscan_direct 3\n" +
+			"pgscan_direct_throttle 99\npgscan_anon 50\npgscan_proactive 4\noom_kill 2\ncompact_stall 8\n",
 		"diskstats": "   7       2 loop2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
 			" 259       0 nvme0n1 934 1 5498 15 20 2 300 40 3 13 55 7 8 900 10 11 12\n" +
 			"   8       0 sda 10 0 80 5 0 0 0 0 0 5 5\n",
@@ -61,7 +63,9 @@ func TestSystemCounters(t *testing.T) {
 		m.SwapFree != 8388000 || m.Shmem != 1200424 || m.SReclaimable != 1474496 {
 		t.Errorf("meminfo = %+v %v", m, err)
 	}
-	if v, err := fs.ReadVMStat(); err != nil || v != (VMStat{9966704, 17804165, 5, 6, 734874843, 32135}) {
+	vmWant := VMStat{PgpgIn: 9966704, PgpgOut: 17804165, PswpIn: 5, PswpOut: 6, PgFault: 734874843, PgMajFault: 32135,
+		AllocStall: 3, PgstealKswapd: 7, PgscanKswapd: 15, PgscanDirect: 3, PgscanProactive: 4, OOMKill: 2, CompactStall: 8}
+	if v, err := fs.ReadVMStat(); err != nil || v != vmWant {
 		t.Errorf("vmstat = %+v %v", v, err)
 	}
 	ds, err := fs.ReadDiskStats()

@@ -295,6 +295,12 @@ wait for the user's go-ahead.
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--sys-interval`. `uptime` (and `w`'s, `top`'s first line) at `--at T`: T's
   clock, the uptime extended to T (`UptimeRow.At`), the users at T (`query.UsersAt`), the sample's loads.
+  Schema 12 (2026-11-21, for atop): `sys_samples` also holds meminfo's Committed_AS, CommitLimit,
+  PageTables, HugePages_Total/Free, Hugepagesize, AnonHugePages, Zswap, Zswapped; vmstat's pgscan_*/
+  pgsteal_* (kswapd, direct, khugepaged, proactive; per-zone lines of old kernels summed; not _anon/_file
+  or pgscan_direct_throttle), allocstall (summed), compact_stall, pgmigrate_success,
+  numa_pages_migrated, oom_kill, zswpin, zswpout; and PSI totals (µs: psi_cpu|mem|io_some|full;
+  `psi` = 1 where /proc/pressure exists, NULL before schema 12).
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
@@ -425,8 +431,8 @@ wait for the user's go-ahead.
   `query.UserName`. Older recordings: this machine's names (a header says so when the machine-id
   differs). Never use `user.LookupId` for a recorded uid when the recording has names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
-  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 11 since
-  2026-11-20; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 12 since
+  2026-11-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

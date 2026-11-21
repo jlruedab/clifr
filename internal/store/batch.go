@@ -144,6 +144,24 @@ type SysSample struct {
 	UDPInUse, UDPMem, UDPLiteInUse, RawInUse, FragInUse    int64
 	FragMemory, TCP6InUse, UDP6InUse, UDPLite6InUse        int64
 	Raw6InUse, Frag6InUse, Frag6Memory                     int64
+	// atop's (schema 12). meminfo (kB; huge pages in pages): committed memory
+	// and its limit, page tables, huge pages, transparent huge pages, zswap.
+	CommittedAS, CommitLimit, PageTables        int64
+	HugePagesTotal, HugePagesFree, Hugepagesize int64
+	AnonHugePages, Zswap, Zswapped              int64
+	// vmstat (pages, events): reclaim scans and steals by kswapd, direct
+	// reclaim, khugepaged and proactive reclaim; stalls, migration, OOM kills,
+	// zswap.
+	PgscanKswapd, PgscanDirect, PgscanKhugepaged, PgscanProactive     int64
+	PgstealKswapd, PgstealDirect, PgstealKhugepaged, PgstealProactive int64
+	AllocStall, CompactStall, PgmigrateSuccess, NumaPagesMigrated     int64
+	OOMKill, ZswpIn, ZswpOut                                          int64
+	// PSI (/proc/pressure, µs stalled, cumulative); PSI false: the kernel has
+	// none (CONFIG_PSI off or psi=0). A missing full line (cpu before 5.13)
+	// leaves its value 0.
+	PSI                                bool
+	PSICPUSome, PSICPUFull, PSIMemSome int64
+	PSIMemFull, PSIIOSome, PSIIOFull   int64
 }
 
 // CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).

@@ -14,7 +14,7 @@ import (
 	"clifr/internal/store"
 )
 
-// readPressure reads /proc/pressure for /metrics (PSI is not recorded). A
+// readPressure reads /proc/pressure (recorded since schema 12, and for /metrics). A
 // kernel without PSI, or without one of the files, is not an error.
 func (r *Recorder) readPressure(fail func(string, error) bool) map[string]procfs.Pressure {
 	out := map[string]procfs.Pressure{}
@@ -101,10 +101,24 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.MemTotal, row.MemFree, row.MemAvailable, row.Buffers, row.Cached = int64(m.Total), int64(m.Free), int64(m.Available), int64(m.Buffers), int64(m.Cached)
 		row.SwapCached, row.Active, row.Inactive, row.SwapTotal, row.SwapFree = int64(m.SwapCached), int64(m.Active), int64(m.Inactive), int64(m.SwapTotal), int64(m.SwapFree)
 		row.Dirty, row.Writeback, row.Shmem, row.Slab, row.SReclaimable = int64(m.Dirty), int64(m.Writeback), int64(m.Shmem), int64(m.Slab), int64(m.SReclaimable)
+		row.CommittedAS, row.CommitLimit, row.PageTables = int64(m.CommittedAS), int64(m.CommitLimit), int64(m.PageTables)
+		row.HugePagesTotal, row.HugePagesFree, row.Hugepagesize = int64(m.HugePagesTotal), int64(m.HugePagesFree), int64(m.Hugepagesize)
+		row.AnonHugePages, row.Zswap, row.Zswapped = int64(m.AnonHugePages), int64(m.Zswap), int64(m.Zswapped)
 	}
 	if v, err := r.fs.ReadVMStat(); !fail("vmstat", err) {
 		row.PgpgIn, row.PgpgOut, row.PswpIn, row.PswpOut = int64(v.PgpgIn), int64(v.PgpgOut), int64(v.PswpIn), int64(v.PswpOut)
 		row.PgFault, row.PgMajFault = int64(v.PgFault), int64(v.PgMajFault)
+		row.PgscanKswapd, row.PgscanDirect, row.PgscanKhugepaged, row.PgscanProactive = int64(v.PgscanKswapd), int64(v.PgscanDirect), int64(v.PgscanKhugepaged), int64(v.PgscanProactive)
+		row.PgstealKswapd, row.PgstealDirect, row.PgstealKhugepaged, row.PgstealProactive = int64(v.PgstealKswapd), int64(v.PgstealDirect), int64(v.PgstealKhugepaged), int64(v.PgstealProactive)
+		row.AllocStall, row.CompactStall, row.PgmigrateSuccess, row.NumaPagesMigrated = int64(v.AllocStall), int64(v.CompactStall), int64(v.PgmigrateSuccess), int64(v.NumaPagesMigrated)
+		row.OOMKill, row.ZswpIn, row.ZswpOut = int64(v.OOMKill), int64(v.ZswpIn), int64(v.ZswpOut)
+	}
+	press := r.readPressure(fail)
+	if c, ok := press["cpu"]; ok {
+		row.PSI = true
+		row.PSICPUSome, row.PSICPUFull = int64(c.Some), int64(c.Full)
+		m, i := press["memory"], press["io"]
+		row.PSIMemSome, row.PSIMemFull, row.PSIIOSome, row.PSIIOFull = int64(m.Some), int64(m.Full), int64(i.Some), int64(i.Full)
 	}
 	if k, err := r.fs.ReadSockStat(); !fail("net/sockstat", err) {
 		row.SockUsed, row.TCPInUse, row.TCPOrphan, row.TCPTW, row.TCPAlloc, row.TCPMem = int64(k.Used), int64(k.TCPInUse), int64(k.TCPOrphan), int64(k.TCPTW), int64(k.TCPAlloc), int64(k.TCPMem)
@@ -126,7 +140,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 			for _, l := range s.linkLast {
 				r.live.Links = append(r.live.Links, l)
 			}
-			r.live.Press = r.readPressure(fail)
+			r.live.Press = press
 			r.publishMetrics()
 		}()
 	}

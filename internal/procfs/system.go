@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Pressure is one /proc/pressure file (PSI): the total time, in µs, that
@@ -206,6 +207,11 @@ type MemInfo struct {
 	Total, Free, Available, Buffers, Cached, SwapCached uint64
 	Active, Inactive, SwapTotal, SwapFree               uint64
 	Dirty, Writeback, Shmem, Slab, SReclaimable         uint64
+	// atop's (schema 12): committed memory and its limit, page tables, huge
+	// pages (counts; Hugepagesize in kB), transparent huge pages, zswap.
+	CommittedAS, CommitLimit, PageTables        uint64
+	HugePagesTotal, HugePagesFree, Hugepagesize uint64
+	AnonHugePages, Zswap, Zswapped              uint64
 }
 
 func (f FS) ReadMemInfo() (MemInfo, error) {
@@ -219,6 +225,9 @@ func (f FS) ReadMemInfo() (MemInfo, error) {
 		"Cached:": &m.Cached, "SwapCached:": &m.SwapCached, "Active:": &m.Active, "Inactive:": &m.Inactive,
 		"SwapTotal:": &m.SwapTotal, "SwapFree:": &m.SwapFree, "Dirty:": &m.Dirty, "Writeback:": &m.Writeback,
 		"Shmem:": &m.Shmem, "Slab:": &m.Slab, "SReclaimable:": &m.SReclaimable,
+		"Committed_AS:": &m.CommittedAS, "CommitLimit:": &m.CommitLimit, "PageTables:": &m.PageTables,
+		"HugePages_Total:": &m.HugePagesTotal, "HugePages_Free:": &m.HugePagesFree, "Hugepagesize:": &m.Hugepagesize,
+		"AnonHugePages:": &m.AnonHugePages, "Zswap:": &m.Zswap, "Zswapped:": &m.Zswapped,
 	}
 	var fs [][]byte
 	found := 0
@@ -242,6 +251,16 @@ func (f FS) ReadMemInfo() (MemInfo, error) {
 // kB read from and written to block devices (pgpgin, pgpgout).
 type VMStat struct {
 	PgpgIn, PgpgOut, PswpIn, PswpOut, PgFault, PgMajFault uint64
+	// atop's (schema 12): pages scanned and reclaimed by kswapd, by direct
+	// reclaim, by khugepaged and by proactive reclaim (6.x); direct reclaim stalls (allocstall, summed over
+	// its per-zone lines), compaction stalls, page migration, OOM kills, zswap.
+	// Kernels before 4.8 count scans and steals per zone (pgscan_kswapd_normal):
+	// those lines are summed into the same counters.
+	// pgscan_anon/file and pgsteal_anon/file split the same pages by type.
+	PgscanKswapd, PgscanDirect, PgscanKhugepaged, PgscanProactive     uint64
+	PgstealKswapd, PgstealDirect, PgstealKhugepaged, PgstealProactive uint64
+	AllocStall, CompactStall, PgmigrateSuccess                        uint64
+	NumaPagesMigrated, OOMKill, ZswpIn, ZswpOut                       uint64
 }
 
 func (f FS) ReadVMStat() (VMStat, error) {
@@ -251,20 +270,36 @@ func (f FS) ReadVMStat() (VMStat, error) {
 	}
 	var v VMStat
 	dst := map[string]*uint64{"pgpgin": &v.PgpgIn, "pgpgout": &v.PgpgOut, "pswpin": &v.PswpIn,
-		"pswpout": &v.PswpOut, "pgfault": &v.PgFault, "pgmajfault": &v.PgMajFault}
+		"pswpout": &v.PswpOut, "pgfault": &v.PgFault, "pgmajfault": &v.PgMajFault,
+		"compact_stall": &v.CompactStall, "pgmigrate_success": &v.PgmigrateSuccess,
+		"numa_pages_migrated": &v.NumaPagesMigrated, "oom_kill": &v.OOMKill, "zswpin": &v.ZswpIn, "zswpout": &v.ZswpOut}
+	// Summed: the name alone or with a zone suffix.
+	sums := []struct {
+		prefix string
+		p      *uint64
+	}{{"pgscan_kswapd", &v.PgscanKswapd}, {"pgscan_direct", &v.PgscanDirect}, {"pgscan_khugepaged", &v.PgscanKhugepaged},
+		{"pgscan_proactive", &v.PgscanProactive}, {"pgsteal_proactive", &v.PgstealProactive},
+		{"pgsteal_kswapd", &v.PgstealKswapd}, {"pgsteal_direct", &v.PgstealDirect}, {"pgsteal_khugepaged", &v.PgstealKhugepaged},
+		{"allocstall", &v.AllocStall}}
 	var fs [][]byte
 	found := 0
 	lines(b, func(line []byte) {
-		if len(line) < 2 || line[0] != 'p' { // every wanted key starts with "p"
-			return
-		}
 		fs = fields(line, fs)
 		if len(fs) < 2 {
 			return
 		}
-		if p := dst[string(fs[0])]; p != nil {
+		name := string(fs[0])
+		if p := dst[name]; p != nil {
 			*p = u64(fs[1])
 			found++
+			return
+		}
+		for _, s := range sums {
+			// pgscan_direct_throttle is not a scan count.
+			if name == s.prefix || strings.HasPrefix(name, s.prefix+"_") && name != "pgscan_direct_throttle" {
+				*s.p += u64(fs[1])
+				return
+			}
 		}
 	})
 	if found == 0 {
