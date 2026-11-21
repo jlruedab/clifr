@@ -41,8 +41,8 @@ writes_stop | 1
 201 | 2000 | 8 | 1 | 0
 == sockets: id, inode, proto, family, laddr, lport, raddr, rport, first_seen, last_seen
 201 | 555 | tcp | 4 | 127.0.0.1 | 80 | 127.0.0.2 | 4000 | 1000 | 2000
-== sys_samples: ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory, committed_as, hugepages_total, pgscan_kswapd, allocstall, oom_kill, psi, psi_cpu_some, psi_mem_full, psi_io_some
-1000 | 500 | 149 | 7 | 1099511627776 | 8000000 | 3 | 1417 | 46 | 2 | 13 | 4 | 5 | 34800000 | 0 | 21 | 2 | 1 | 1 | 123456 | 0 | 789
+== sys_samples: ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory, committed_as, hugepages_total, pgscan_kswapd, allocstall, oom_kill, psi, psi_cpu_some, psi_mem_full, psi_io_some, psi_cpu_avg10, psi_cpu_avg300, zswap_enabled
+1000 | 500 | 149 | 7 | 1099511627776 | 8000000 | 3 | 1417 | 46 | 2 | 13 | 4 | 5 | 34800000 | 0 | 21 | 2 | 1 | 1 | 123456 | 0 | 789 | 150 | 10 | 1
 == tcp_conns: id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source, netns
 501 | 10 | 900 | 5 | 2400 | 777 | 127.0.0.1 | 4000 | 127.0.0.2 | 80 | active | 1500 | 2450 | 2 | 5 | 6 | 62450 | 2 | 0 | 0 | ebpf | 0
 502 | 10 | 900 | -1 | <nil> | 0 | 127.0.0.1 | 4001 | 127.0.0.2 | 80 | active | 1600 | 1650 | 0 | 2 | 0 | <nil> | 0 | 0 | 1 | ebpf | 4026532512

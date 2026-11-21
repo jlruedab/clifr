@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -112,6 +113,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.PgstealKswapd, row.PgstealDirect, row.PgstealKhugepaged, row.PgstealProactive = int64(v.PgstealKswapd), int64(v.PgstealDirect), int64(v.PgstealKhugepaged), int64(v.PgstealProactive)
 		row.AllocStall, row.CompactStall, row.PgmigrateSuccess, row.NumaPagesMigrated = int64(v.AllocStall), int64(v.CompactStall), int64(v.PgmigrateSuccess), int64(v.NumaPagesMigrated)
 		row.OOMKill, row.ZswpIn, row.ZswpOut = int64(v.OOMKill), int64(v.ZswpIn), int64(v.ZswpOut)
+		row.PgscanDirectThrottle = int64(v.PgscanDirectThrottle)
 	}
 	press := r.readPressure(fail)
 	if c, ok := press["cpu"]; ok {
@@ -119,7 +121,9 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.PSICPUSome, row.PSICPUFull = int64(c.Some), int64(c.Full)
 		m, i := press["memory"], press["io"]
 		row.PSIMemSome, row.PSIMemFull, row.PSIIOSome, row.PSIIOFull = int64(m.Some), int64(m.Full), int64(i.Some), int64(i.Full)
+		row.PSICPUAvg, row.PSIMemAvg, row.PSIIOAvg = c.SomeAvg, m.SomeAvg, i.SomeAvg
 	}
+	row.ZswapEnabled = zswapEnabled()
 	if k, err := r.fs.ReadSockStat(); !fail("net/sockstat", err) {
 		row.SockUsed, row.TCPInUse, row.TCPOrphan, row.TCPTW, row.TCPAlloc, row.TCPMem = int64(k.Used), int64(k.TCPInUse), int64(k.TCPOrphan), int64(k.TCPTW), int64(k.TCPAlloc), int64(k.TCPMem)
 		row.UDPInUse, row.UDPMem, row.UDPLiteInUse, row.RawInUse, row.FragInUse = int64(k.UDPInUse), int64(k.UDPMem), int64(k.UDPLiteInUse), int64(k.RawInUse), int64(k.FragInUse)
@@ -228,5 +232,37 @@ func linkRow(l *rtnl.Link) store.LinkRow {
 			r.Stats[i] = int64(v)
 		}
 	}
+	r.Speed, r.Duplex = linkSpeed(l.Name)
 	return r
+}
+
+// linkSpeed is an interface's speed (Mb/s) and duplex (1 full, 0 half) as
+// sysfs gives them (ethtool's), -1 where it does not (virtual, down,
+// wireless).
+func linkSpeed(name string) (speed, duplex int64) {
+	speed, duplex = -1, -1
+	if name == "" || strings.ContainsAny(name, "/") {
+		return
+	}
+	if b, err := os.ReadFile("/sys/class/net/" + name + "/speed"); err == nil {
+		if v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil && v > 0 {
+			speed = v
+		}
+	}
+	if b, err := os.ReadFile("/sys/class/net/" + name + "/duplex"); err == nil {
+		switch strings.TrimSpace(string(b)) {
+		case "full":
+			duplex = 1
+		case "half":
+			duplex = 0
+		}
+	}
+	return
+}
+
+// zswapEnabled reports whether zswap is on, as atop decides whether to show
+// its zswap counters.
+func zswapEnabled() bool {
+	b, err := os.ReadFile("/sys/module/zswap/parameters/enabled")
+	return err == nil && len(b) > 0 && b[0] == 'Y'
 }

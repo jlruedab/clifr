@@ -13,6 +13,9 @@ import (
 type Pressure struct {
 	Some, Full uint64
 	HasFull    bool // the file has a full line (cpu has one since Linux 5.13)
+	// SomeAvg: the some line's avg10, avg60 and avg300 in hundredths of a
+	// percent (the file's two decimals).
+	SomeAvg [3]int64
 }
 
 // ReadPressure reads /proc/pressure/<resource> (cpu, memory, io, irq). An
@@ -43,6 +46,17 @@ func (f FS) ReadPressure(resource string) (Pressure, error) {
 		switch string(kind) {
 		case "some":
 			p.Some = v
+			for i, k := range []string{"avg10=", "avg60=", "avg300="} {
+				if _, a, ok := bytes.Cut(rest, []byte(k)); ok {
+					if j := bytes.IndexByte(a, ' '); j >= 0 {
+						a = a[:j]
+					}
+					w, f, _ := bytes.Cut(a, []byte("."))
+					n, _ := strconv.ParseInt(string(w), 10, 64)
+					d, _ := strconv.ParseInt(string(f), 10, 64)
+					p.SomeAvg[i] = n*100 + d
+				}
+			}
 		case "full":
 			p.Full, p.HasFull = v, true
 		}
@@ -261,6 +275,9 @@ type VMStat struct {
 	PgstealKswapd, PgstealDirect, PgstealKhugepaged, PgstealProactive uint64
 	AllocStall, CompactStall, PgmigrateSuccess                        uint64
 	NumaPagesMigrated, OOMKill, ZswpIn, ZswpOut                       uint64
+	// PgscanDirectThrottle: direct reclaim throttled (not a scan count; atop
+	// adds it to its scans: its prefix match takes it).
+	PgscanDirectThrottle uint64
 }
 
 func (f FS) ReadVMStat() (VMStat, error) {
@@ -272,7 +289,8 @@ func (f FS) ReadVMStat() (VMStat, error) {
 	dst := map[string]*uint64{"pgpgin": &v.PgpgIn, "pgpgout": &v.PgpgOut, "pswpin": &v.PswpIn,
 		"pswpout": &v.PswpOut, "pgfault": &v.PgFault, "pgmajfault": &v.PgMajFault,
 		"compact_stall": &v.CompactStall, "pgmigrate_success": &v.PgmigrateSuccess,
-		"numa_pages_migrated": &v.NumaPagesMigrated, "oom_kill": &v.OOMKill, "zswpin": &v.ZswpIn, "zswpout": &v.ZswpOut}
+		"numa_pages_migrated": &v.NumaPagesMigrated, "oom_kill": &v.OOMKill, "zswpin": &v.ZswpIn, "zswpout": &v.ZswpOut,
+		"pgscan_direct_throttle": &v.PgscanDirectThrottle}
 	// Summed: the name alone or with a zone suffix.
 	sums := []struct {
 		prefix string

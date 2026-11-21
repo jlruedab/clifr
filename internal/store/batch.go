@@ -156,12 +156,17 @@ type SysSample struct {
 	PgstealKswapd, PgstealDirect, PgstealKhugepaged, PgstealProactive int64
 	AllocStall, CompactStall, PgmigrateSuccess, NumaPagesMigrated     int64
 	OOMKill, ZswpIn, ZswpOut                                          int64
+	PgscanDirectThrottle                                              int64
 	// PSI (/proc/pressure, µs stalled, cumulative); PSI false: the kernel has
 	// none (CONFIG_PSI off or psi=0). A missing full line (cpu before 5.13)
 	// leaves its value 0.
 	PSI                                bool
 	PSICPUSome, PSICPUFull, PSIMemSome int64
 	PSIMemFull, PSIIOSome, PSIIOFull   int64
+	// The some lines' avg10, avg60 and avg300 (hundredths of a percent).
+	PSICPUAvg, PSIMemAvg, PSIIOAvg [3]int64
+	// ZswapEnabled: /sys/module/zswap/parameters/enabled is Y.
+	ZswapEnabled bool
 }
 
 // CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).
@@ -342,6 +347,9 @@ type LinkRow struct {
 	InfoData, SlaveData                   []byte
 	XDP, HasStats                         bool
 	Stats                                 [25]int64 // rtnl_link_stats64, rx_packets .. rx_otherhost_dropped
+	// Speed (Mb/s) and Duplex (1 full, 0 half) from /sys/class/net/NAME
+	// (schema 12, for atop); -1: not known (virtual, down, wireless).
+	Speed, Duplex int64
 }
 
 // AddrRow is one interface address (rtnl.Addr): Action "present" for the

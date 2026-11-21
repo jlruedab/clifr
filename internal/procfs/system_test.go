@@ -64,7 +64,8 @@ func TestSystemCounters(t *testing.T) {
 		t.Errorf("meminfo = %+v %v", m, err)
 	}
 	vmWant := VMStat{PgpgIn: 9966704, PgpgOut: 17804165, PswpIn: 5, PswpOut: 6, PgFault: 734874843, PgMajFault: 32135,
-		AllocStall: 3, PgstealKswapd: 7, PgscanKswapd: 15, PgscanDirect: 3, PgscanProactive: 4, OOMKill: 2, CompactStall: 8}
+		AllocStall: 3, PgstealKswapd: 7, PgscanKswapd: 15, PgscanDirect: 3, PgscanProactive: 4, OOMKill: 2, CompactStall: 8,
+		PgscanDirectThrottle: 99}
 	if v, err := fs.ReadVMStat(); err != nil || v != vmWant {
 		t.Errorf("vmstat = %+v %v", v, err)
 	}
@@ -111,7 +112,7 @@ func TestReadPressure(t *testing.T) {
 	if p, err := f.ReadPressure("memory"); err != nil || p != (Pressure{Some: 432, Full: 426, HasFull: true}) {
 		t.Errorf("memory: %+v %v", p, err)
 	}
-	if p, err := f.ReadPressure("cpu"); err != nil || p != (Pressure{Some: 354079129}) {
+	if p, err := f.ReadPressure("cpu"); err != nil || p != (Pressure{Some: 354079129, SomeAvg: [3]int64{150, 40, 10}}) {
 		t.Errorf("cpu (no full line, before 5.13): %+v %v", p, err)
 	}
 	if _, err := f.ReadPressure("io"); !os.IsNotExist(err) {

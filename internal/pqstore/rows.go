@@ -467,37 +467,48 @@ type sysRow struct {
 	Frag6InUse    int64 `parquet:"frag6_inuse"`
 	Frag6Memory   int64 `parquet:"frag6_memory"`
 	// atop's meminfo and vmstat values, PSI (schema 12; NULL in older files)
-	CommittedAS       int64 `parquet:"committed_as"`
-	CommitLimit       int64 `parquet:"commit_limit"`
-	PageTables        int64 `parquet:"page_tables"`
-	HugePagesTotal    int64 `parquet:"hugepages_total"`
-	HugePagesFree     int64 `parquet:"hugepages_free"`
-	Hugepagesize      int64 `parquet:"hugepagesize"`
-	AnonHugePages     int64 `parquet:"anon_hugepages"`
-	Zswap             int64 `parquet:"zswap"`
-	Zswapped          int64 `parquet:"zswapped"`
-	PgscanKswapd      int64 `parquet:"pgscan_kswapd"`
-	PgscanDirect      int64 `parquet:"pgscan_direct"`
-	PgscanKhugepaged  int64 `parquet:"pgscan_khugepaged"`
-	PgscanProactive   int64 `parquet:"pgscan_proactive"`
-	PgstealKswapd     int64 `parquet:"pgsteal_kswapd"`
-	PgstealDirect     int64 `parquet:"pgsteal_direct"`
-	PgstealKhugepaged int64 `parquet:"pgsteal_khugepaged"`
-	PgstealProactive  int64 `parquet:"pgsteal_proactive"`
-	AllocStall        int64 `parquet:"allocstall"`
-	CompactStall      int64 `parquet:"compact_stall"`
-	PgmigrateSuccess  int64 `parquet:"pgmigrate_success"`
-	NumaPagesMigrated int64 `parquet:"numa_pages_migrated"`
-	OOMKill           int64 `parquet:"oom_kill"`
-	ZswpIn            int64 `parquet:"zswpin"`
-	ZswpOut           int64 `parquet:"zswpout"`
-	PSICPUSome        int64 `parquet:"psi_cpu_some"`
-	PSICPUFull        int64 `parquet:"psi_cpu_full"`
-	PSIMemSome        int64 `parquet:"psi_mem_some"`
-	PSIMemFull        int64 `parquet:"psi_mem_full"`
-	PSIIOSome         int64 `parquet:"psi_io_some"`
-	PSIIOFull         int64 `parquet:"psi_io_full"`
-	PSI               int32 `parquet:"psi"` // 1: /proc/pressure exists
+	CommittedAS          int64 `parquet:"committed_as"`
+	CommitLimit          int64 `parquet:"commit_limit"`
+	PageTables           int64 `parquet:"page_tables"`
+	HugePagesTotal       int64 `parquet:"hugepages_total"`
+	HugePagesFree        int64 `parquet:"hugepages_free"`
+	Hugepagesize         int64 `parquet:"hugepagesize"`
+	AnonHugePages        int64 `parquet:"anon_hugepages"`
+	Zswap                int64 `parquet:"zswap"`
+	Zswapped             int64 `parquet:"zswapped"`
+	PgscanKswapd         int64 `parquet:"pgscan_kswapd"`
+	PgscanDirect         int64 `parquet:"pgscan_direct"`
+	PgscanKhugepaged     int64 `parquet:"pgscan_khugepaged"`
+	PgscanProactive      int64 `parquet:"pgscan_proactive"`
+	PgstealKswapd        int64 `parquet:"pgsteal_kswapd"`
+	PgstealDirect        int64 `parquet:"pgsteal_direct"`
+	PgstealKhugepaged    int64 `parquet:"pgsteal_khugepaged"`
+	PgstealProactive     int64 `parquet:"pgsteal_proactive"`
+	AllocStall           int64 `parquet:"allocstall"`
+	CompactStall         int64 `parquet:"compact_stall"`
+	PgmigrateSuccess     int64 `parquet:"pgmigrate_success"`
+	NumaPagesMigrated    int64 `parquet:"numa_pages_migrated"`
+	OOMKill              int64 `parquet:"oom_kill"`
+	ZswpIn               int64 `parquet:"zswpin"`
+	ZswpOut              int64 `parquet:"zswpout"`
+	PgscanDirectThrottle int64 `parquet:"pgscan_direct_throttle"`
+	PSICPUSome           int64 `parquet:"psi_cpu_some"`
+	PSICPUFull           int64 `parquet:"psi_cpu_full"`
+	PSIMemSome           int64 `parquet:"psi_mem_some"`
+	PSIMemFull           int64 `parquet:"psi_mem_full"`
+	PSIIOSome            int64 `parquet:"psi_io_some"`
+	PSIIOFull            int64 `parquet:"psi_io_full"`
+	PSI                  int32 `parquet:"psi"` // 1: /proc/pressure exists
+	PSICPUAvg10          int64 `parquet:"psi_cpu_avg10"`
+	PSICPUAvg60          int64 `parquet:"psi_cpu_avg60"`
+	PSICPUAvg300         int64 `parquet:"psi_cpu_avg300"`
+	PSIMemAvg10          int64 `parquet:"psi_mem_avg10"`
+	PSIMemAvg60          int64 `parquet:"psi_mem_avg60"`
+	PSIMemAvg300         int64 `parquet:"psi_mem_avg300"`
+	PSIIOAvg10           int64 `parquet:"psi_io_avg10"`
+	PSIIOAvg60           int64 `parquet:"psi_io_avg60"`
+	PSIIOAvg300          int64 `parquet:"psi_io_avg300"`
+	ZswapEnabled         int32 `parquet:"zswap_enabled"`
 }
 
 func sysOf(s *store.SysSample) sysRow {
@@ -508,7 +519,8 @@ func sysOf(s *store.SysSample) sysRow {
 		UDPInUse: s.UDPInUse, UDPMem: s.UDPMem, UDPLiteInUse: s.UDPLiteInUse, RawInUse: s.RawInUse, FragInUse: s.FragInUse,
 		FragMemory: s.FragMemory, TCP6InUse: s.TCP6InUse, UDP6InUse: s.UDP6InUse, UDPLite6InUse: s.UDPLite6InUse,
 		Raw6InUse: s.Raw6InUse, Frag6InUse: s.Frag6InUse, Frag6Memory: s.Frag6Memory,
-		CommittedAS: s.CommittedAS, CommitLimit: s.CommitLimit, PageTables: s.PageTables, HugePagesTotal: s.HugePagesTotal, HugePagesFree: s.HugePagesFree, Hugepagesize: s.Hugepagesize, AnonHugePages: s.AnonHugePages, Zswap: s.Zswap, Zswapped: s.Zswapped, PgscanKswapd: s.PgscanKswapd, PgscanDirect: s.PgscanDirect, PgscanKhugepaged: s.PgscanKhugepaged, PgscanProactive: s.PgscanProactive, PgstealKswapd: s.PgstealKswapd, PgstealDirect: s.PgstealDirect, PgstealKhugepaged: s.PgstealKhugepaged, PgstealProactive: s.PgstealProactive, AllocStall: s.AllocStall, CompactStall: s.CompactStall, PgmigrateSuccess: s.PgmigrateSuccess, NumaPagesMigrated: s.NumaPagesMigrated, OOMKill: s.OOMKill, ZswpIn: s.ZswpIn, ZswpOut: s.ZswpOut, PSICPUSome: s.PSICPUSome, PSICPUFull: s.PSICPUFull, PSIMemSome: s.PSIMemSome, PSIMemFull: s.PSIMemFull, PSIIOSome: s.PSIIOSome, PSIIOFull: s.PSIIOFull, PSI: b2i(s.PSI)}
+		CommittedAS: s.CommittedAS, CommitLimit: s.CommitLimit, PageTables: s.PageTables, HugePagesTotal: s.HugePagesTotal, HugePagesFree: s.HugePagesFree, Hugepagesize: s.Hugepagesize, AnonHugePages: s.AnonHugePages, Zswap: s.Zswap, Zswapped: s.Zswapped, PgscanKswapd: s.PgscanKswapd, PgscanDirect: s.PgscanDirect, PgscanKhugepaged: s.PgscanKhugepaged, PgscanProactive: s.PgscanProactive, PgstealKswapd: s.PgstealKswapd, PgstealDirect: s.PgstealDirect, PgstealKhugepaged: s.PgstealKhugepaged, PgstealProactive: s.PgstealProactive, AllocStall: s.AllocStall, CompactStall: s.CompactStall, PgmigrateSuccess: s.PgmigrateSuccess, NumaPagesMigrated: s.NumaPagesMigrated, OOMKill: s.OOMKill, ZswpIn: s.ZswpIn, ZswpOut: s.ZswpOut, PSICPUSome: s.PSICPUSome, PSICPUFull: s.PSICPUFull, PSIMemSome: s.PSIMemSome, PSIMemFull: s.PSIMemFull, PSIIOSome: s.PSIIOSome, PSIIOFull: s.PSIIOFull, PSI: b2i(s.PSI),
+		PSICPUAvg10: s.PSICPUAvg[0], PSICPUAvg60: s.PSICPUAvg[1], PSICPUAvg300: s.PSICPUAvg[2], PSIMemAvg10: s.PSIMemAvg[0], PSIMemAvg60: s.PSIMemAvg[1], PSIMemAvg300: s.PSIMemAvg[2], PSIIOAvg10: s.PSIIOAvg[0], PSIIOAvg60: s.PSIIOAvg[1], PSIIOAvg300: s.PSIIOAvg[2], ZswapEnabled: b2i(s.ZswapEnabled), PgscanDirectThrottle: s.PgscanDirectThrottle}
 }
 
 type cpuRow struct {
@@ -577,6 +589,8 @@ type linkRow struct {
 	Flags          int64  `parquet:"flags"`
 	XDP            int32  `parquet:"xdp"`
 	HasStats       int32  `parquet:"has_stats"`
+	Speed          int64  `parquet:"speed"`  // Mb/s, -1 unknown (schema 12)
+	Duplex         int64  `parquet:"duplex"` // 1 full, 0 half, -1 unknown
 	Name           string `parquet:"name,dict"`
 	Qdisc          string `parquet:"qdisc,dict"`
 	Alias          string `parquet:"alias,dict"`
@@ -649,7 +663,7 @@ type linkRow struct {
 var LinkStatCols = []string{"rx_packets", "tx_packets", "rx_bytes", "tx_bytes", "rx_errors", "tx_errors", "rx_dropped", "tx_dropped", "multicast", "collisions", "rx_length_errors", "rx_over_errors", "rx_crc_errors", "rx_frame_errors", "rx_fifo_errors", "rx_missed_errors", "tx_aborted_errors", "tx_carrier_errors", "tx_fifo_errors", "tx_heartbeat_errors", "tx_window_errors", "rx_compressed", "tx_compressed", "rx_nohandler", "rx_otherhost_dropped"}
 
 func linkOf(l *store.LinkRow) linkRow {
-	return linkRow{TS: l.TS, Index: int32(l.Index), Type: int32(l.Type), Gone: b2i(l.Gone), Flags: l.Flags, XDP: b2i(l.XDP), HasStats: b2i(l.HasStats),
+	return linkRow{TS: l.TS, Index: int32(l.Index), Type: int32(l.Type), Gone: b2i(l.Gone), Flags: l.Flags, XDP: b2i(l.XDP), HasStats: b2i(l.HasStats), Speed: l.Speed, Duplex: l.Duplex,
 		Name: l.Name, Qdisc: l.Qdisc, Alias: l.Alias, Kind: l.Kind, SlaveKind: l.SlaveKind, PhysPortName: l.PhysPortName, ParentBus: l.ParentBus, ParentDev: l.ParentDev, AltNames: l.AltNames, MTU: l.MTU, Master: l.Master, Link: l.Link, LinkNetnsID: l.LinkNetnsID, OperState: l.OperState, LinkMode: l.LinkMode, Group: l.Group, TxQLen: l.TxQLen, Promiscuity: l.Promiscuity, Allmulti: l.Allmulti, MinMTU: l.MinMTU, MaxMTU: l.MaxMTU, NetnsImmutable: l.NetnsImmutable, AddrGenMode: l.AddrGenMode, NumTxQueues: l.NumTxQueues, NumRxQueues: l.NumRxQueues, GSOMaxSize: l.GSOMaxSize, GSOMaxSegs: l.GSOMaxSegs, TSOMaxSize: l.TSOMaxSize, TSOMaxSegs: l.TSOMaxSegs, GROMaxSize: l.GROMaxSize, GSOIPv4MaxSize: l.GSOIPv4MaxSize, GROIPv4MaxSize: l.GROIPv4MaxSize, ProtoDown: l.ProtoDown, CarrierChanges: l.CarrierChanges, Address: l.Address, Broadcast: l.Broadcast, PermAddress: l.PermAddress, PhysPortID: l.PhysPortID, PhysSwitchID: l.PhysSwitchID, InfoData: l.InfoData, SlaveData: l.SlaveData,
 		S0: l.Stats[0], S1: l.Stats[1], S2: l.Stats[2], S3: l.Stats[3], S4: l.Stats[4], S5: l.Stats[5], S6: l.Stats[6], S7: l.Stats[7], S8: l.Stats[8], S9: l.Stats[9], S10: l.Stats[10], S11: l.Stats[11], S12: l.Stats[12], S13: l.Stats[13], S14: l.Stats[14], S15: l.Stats[15], S16: l.Stats[16], S17: l.Stats[17], S18: l.Stats[18], S19: l.Stats[19], S20: l.Stats[20], S21: l.Stats[21], S22: l.Stats[22], S23: l.Stats[23], S24: l.Stats[24]}
 }
