@@ -740,7 +740,8 @@ chooses one; a line on stderr says when a style other than current is used.
   group names are recorded since schema 12. Against atop 2.12.1 here, all five
   views: the same columns and 511 of 511 processes, values within what moved
   between clifrd's sample and atop's reading.
-  `clifr verify` compares it with real `atop 1 1` captures (`--verify-every`).
+  `clifr verify` compares it with real `atop [-m|-d|-s|-v|-c] 1 1` captures
+  (`--verify-every`).
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

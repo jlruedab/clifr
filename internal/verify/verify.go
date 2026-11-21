@@ -101,9 +101,18 @@ func Run(db *store.DB) (*Report, error) {
 	rep := &Report{Totals: map[string]Result{}, IgnoredFields: ignoredFields}
 	events := query.TCPFromEvents(db)
 	var prevLsof map[string]lsofLine // the previous checkpoint's real lsof (held mode)
+	usersAt := int64(-1)
 	for _, s := range snaps {
 		var res Result
 		var err error
+		// The host's user and group names at the checkpoint, as the tools
+		// had them (snapshots passwd and group), not this machine's.
+		if s.ts != usersAt {
+			if _, err := query.LoadUsers(db, s.ts); err != nil {
+				return nil, err
+			}
+			usersAt = s.ts
+		}
 		if s.cmd == "lsof -n -P -K i" {
 			s.cmd = "lsof -n -P" // the same rows without the per-thread ones, which were never compared
 		}
@@ -175,7 +184,7 @@ func Run(db *store.DB) (*Report, error) {
 			res, err = compareNumbers(db, s)
 		case "ss -s":
 			res, err = compareSSSummary(db, s)
-		case "atop 1 1":
+		case "atop 1 1", "atop -m 1 1", "atop -d 1 1", "atop -s 1 1", "atop -v 1 1", "atop -c 1 1":
 			res, err = compareAtop(db, s)
 		case "pstree -lpT", "ps auxfwww":
 			res, err = compareTree(db, s)

@@ -10,8 +10,8 @@ import (
 	"clifr/internal/store"
 )
 
-// compareAtop compares atop's screen since boot (atop 1 1) with clifr's at
-// the moment atop ran: system lines by label (and CPU, disk or interface),
+// compareAtop compares atop's screen since boot (atop [-m|-d|-s|-v|-c] 1 1)
+// with clifr's at the moment atop ran, in the same process view: system lines by label (and CPU, disk or interface),
 // processes by PID. Words must be equal; numbers in atop's forms (53.3G,
 // 134423e3, 4m59s, 12%) may differ by 5% or 3 units, as the system moved
 // between clifrd's sample and atop's own reading. A process on one side
@@ -24,6 +24,9 @@ func compareAtop(db *store.DB, snap snapshot) (Result, error) {
 		return res, nil
 	}
 	a.SetStyle(query.StyleAt(db, snap.ts))
+	if f := strings.Fields(snap.cmd); len(f) == 4 {
+		a.View = strings.TrimPrefix(f[1], "-")
+	}
 	text := render(func(sb *strings.Builder) {
 		query.PrintAtopSys(sb, a)
 		query.PrintAtopProcs(sb, a)

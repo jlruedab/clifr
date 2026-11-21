@@ -157,3 +157,33 @@ func TestParseNewTools(t *testing.T) {
 		t.Errorf("netstat ignored pid: %+v", x)
 	}
 }
+
+// TestRunRecordedNames: verify compares with the recorded host's user names
+// (snapshots passwd), not those of the machine it runs on. uid 1000 is
+// "vmuser" in the recording: on any machine running the test, it is someone
+// else or nobody.
+func TestRunRecordedNames(t *testing.T) {
+	base := int64(1_790_000_000_000)
+	db := testrec.Open(t, []string{"boot_ms", "1789990000000", "boot_id", "b1", "hostname", "vm1"},
+		&store.Batch{Sample: store.Sample{TS: base},
+			Snapshots: []store.SnapshotRow{
+				{TS: base, Source: "passwd", Key: "0", Pos: 0, Full: true, Line: "0 root"},
+				{TS: base, Source: "passwd", Key: "1000", Pos: 1, Full: true, Line: "1000 vmuser"}},
+			ProcInserts: []store.ProcRow{{ID: 1, PID: 4242, StartTime: base - 5000, PPID: 1, UID: 1000, RUID: 1000,
+				Comm: "sleep", Cmdline: "sleep 600", FirstSeen: base - 5000, Source: "sample"}},
+			ProcSamples: []store.ProcSample{{ProcID: 1, TS: base, State: "S", Threads: 1, RSSKB: 1000, VSZKB: 5000}},
+			Verify: []store.VerifySnap{{TS: base + 100, EndTS: base + 150, SampleTS: base, Cmd: "ps -ef",
+				Output: "UID          PID    PPID  C STIME TTY          TIME CMD\n" +
+					"vmuser      4242       1  0 10:00 ?        00:00:00 sleep 600\n"}}})
+	rep, err := Run(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := rep.Totals["ps -ef"]
+	if !ok || r.Matched != 1 {
+		t.Fatalf("ps -ef not compared: %+v", rep.Totals)
+	}
+	if n := r.FieldDiffs["UID"]; n != 0 {
+		t.Errorf("UID differs (this machine's names used): %v", r.Examples)
+	}
+}
