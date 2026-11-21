@@ -977,8 +977,10 @@ func atopColumns(a *AtopSys, pidWidth, sortWidth int) map[string]atopCol {
 	ae := func(f func(p *atopProc) string) func(p *atopProc, _ float64) string {
 		return func(p *atopProc, _ float64) string { return f(p) }
 	}
-	id := func(n int, name string) string { // uid2str, gid2str
-		if name != "" && len(name) <= 8 {
+	// uid2str, gid2str: a name longer than 8 characters as the number
+	// (2.12.1) or cut to 8 (2.7.1).
+	id := func(n int, name string) string {
+		if name != "" && (len(name) <= 8 || a.V271) {
 			return fmt.Sprintf("%-8.8s", name)
 		}
 		return fmt.Sprintf("%-8d", n)
@@ -1076,7 +1078,8 @@ func atopColumns(a *AtopSys, pidWidth, sortWidth int) map[string]atopCol {
 			return string(st)
 		})},
 		"EXC": {"EXC", 3, 0, false, ex("  -", func(*atopProc) string { return "" })},
-		"S":   {"S", 1, 0, false, ae(func(p *atopProc) string { return cmp.Or(p.state, "E") })},
+		// "-": a process known from its fork or exec only (no sample yet), as ps.
+		"S": {"S", 1, 0, false, ae(func(p *atopProc) string { return cmp.Or(p.state, "-") })},
 		"WCHAN": {"WCHAN          ", 15, 0, false, ex(fmt.Sprintf("%-15s", ""), func(p *atopProc) string {
 			if p.state == "R" {
 				return fmt.Sprintf("%-15s", "")
