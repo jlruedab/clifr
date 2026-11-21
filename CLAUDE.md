@@ -295,6 +295,13 @@ wait for the user's go-ahead.
   `clifr verify` compares, with a tolerance), a range = one report per sample interval. No rates
   are stored; resolution = `--sys-interval`. `uptime` (and `w`'s, `top`'s first line) at `--at T`: T's
   clock, the uptime extended to T (`UptimeRow.At`), the users at T (`query.UsersAt`), the sample's loads.
+  Clock steps (2026-11-21, HANDOFF 0k): `uptime_ms` comes from CLOCK_BOOTTIME and `boot_ms` (schema 12) is
+  the boot time on the clock at each system sample (now - CLOCK_BOOTTIME, read together); the run's
+  boot time, measured once at start, stays in process start times and keys (joins). A move above 100
+  ms is a `clock_step` guard event. Readers: `query.StartShiftAt` puts starts in moment views on the
+  clock at T (`processesAt`, atop's exited processes and btime), `query.startShift` in history views
+  (life, containers over a range) adds the steps between the run's start and the process's; ps's
+  btime is cut from `BootClockAt`.
   Schema 12 (2026-11-21, for atop): `sys_samples` also holds meminfo's Committed_AS, CommitLimit,
   PageTables, HugePages_Total/Free, Hugepagesize, AnonHugePages, Zswap, Zswapped; vmstat's pgscan_*/
   pgsteal_* (kswapd, direct, khugepaged, proactive; per-zone lines of old kernels summed; not _anon/_file

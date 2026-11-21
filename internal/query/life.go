@@ -32,6 +32,7 @@ type lifeProc struct {
 
 // processesInRange returns processes that existed at some point in [from, to].
 func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
+	steps := clockSteps(db) // before the rows: one connection
 	rows, err := db.Query(`
 		SELECT id, pid, ppid, start_time, first_seen, last_seen, ended, comm, cmdline, source,
 		       exit_code, signal, COALESCE(oom_killed, 0), killer_pid, killer_uid, killer_comm
@@ -52,6 +53,7 @@ func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 			return nil, err
 		}
 		p.oom = oom != 0
+		p.start += startShift(steps, p.id, p.start)
 		p.command = commandOf(cmdline, comm, "")
 		out = append(out, p)
 	}

@@ -1042,3 +1042,26 @@ func TestHourlyMountsWithUsage(t *testing.T) {
 		t.Errorf("next hour: snapshot at %d, usage at %d; want both at the sample, %d", snap, usage, hour)
 	}
 }
+
+// TestClockStep: a boot time that moves by more than 100 ms between system
+// samples (the clock stepped) is a clock_step guard event; smaller moves
+// (the two clocks read a few ms apart) are not.
+func TestClockStep(t *testing.T) {
+	fp := newFakeProc(t)
+	r, _ := newTestRecorder(t, fp.root)
+	r.boot = 1_790_000_000_000
+	var b store.Batch
+	r.noteClockStep(1_790_000_100_000, r.boot+3, &b)
+	r.noteClockStep(1_790_000_110_000, r.boot-40, &b)
+	if len(b.Guard) != 0 {
+		t.Fatalf("small moves reported: %+v", b.Guard)
+	}
+	r.noteClockStep(1_790_000_120_000, r.boot+950, &b)
+	if len(b.Guard) != 1 || b.Guard[0].Kind != "clock_step" || !strings.Contains(b.Guard[0].Detail, "+0.990 s") {
+		t.Fatalf("step: %+v", b.Guard)
+	}
+	r.noteClockStep(1_790_000_130_000, r.boot+960, &b) // the new boot time is the reference
+	if len(b.Guard) != 1 {
+		t.Fatalf("after the step: %+v", b.Guard)
+	}
+}

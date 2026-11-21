@@ -131,8 +131,13 @@ type FSSample struct {
 // behind uptime, vmstat, mpstat and iostat. Counters are cumulative since
 // boot; loads are in hundredths, memory in kB.
 type SysSample struct {
-	TS                                                    int64
-	UptimeMS                                              int64 // since boot
+	TS       int64
+	UptimeMS int64 // since boot (CLOCK_BOOTTIME)
+	// BootMS: the boot time as the clock had it at this sample (now -
+	// CLOCK_BOOTTIME, schema 12). It moves when the clock is stepped (the
+	// first NTP sync after clifrd started); the tools that print start
+	// times use the boot time of the moment they run.
+	BootMS                                                int64
 	Load1, Load5, Load15                                  int
 	Runnable, Threads                                     int // /proc/loadavg: scheduling entities
 	ProcsRunning, ProcsBlocked                            int

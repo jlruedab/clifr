@@ -193,7 +193,9 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 	}
 	a := &AtopSys{Host: HostnameAt(db, t), T: t, BootMS: BootAt(db, t)}
 	a.BTime = a.BootMS / 1000
-	if bt, err := strconv.ParseInt(MetaAt(db, "boot_time", t), 10, 64); err == nil && bt > 0 {
+	if clock, _, ok := BootClockAt(db, t); ok { // btime at t: after a clock step, the new one
+		a.BTime = clock / 1000
+	} else if bt, err := strconv.ParseInt(MetaAt(db, "boot_time", t), 10, 64); err == nil && bt > 0 {
 		a.BTime = bt
 	}
 	// atop shows the node name up to its first dot.
@@ -1367,6 +1369,7 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 		out = append(out, p)
 	}
 	// Exited in the interval: their CPU time up to their last sample.
+	shift := StartShiftAt(db, a.Sys.TS) // before the rows: one connection
 	rows, err := db.Query(`
 		SELECT p.id, p.pid, p.comm, p.start_time, p.exit_code, p.signal, p.ppid, p.uid, COALESCE(p.ruid, p.uid),
 		       COALESCE(p.rgid, -1), COALESCE(p.cmdline, ''), COALESCE(p.cmdline_pad, 1),
@@ -1394,6 +1397,7 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 				continue
 			}
 			q := prev[e.id]
+			e.startMS += shift
 			e.exited, e.state, e.threads = true, "E", 1
 			e.isNew = e.startMS > a0.Sys.TS
 			e.stime = max(st.Int64-q.stime, 0)

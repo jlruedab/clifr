@@ -4,6 +4,7 @@
 package query
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -522,6 +523,71 @@ func PIDsAliveAt(db *store.DB, t int64, pids []int) (map[int]bool, error) {
 		out[p] = true
 	}
 	return out, rows.Err()
+}
+
+// BootClockAt is the boot time on the clock at the system sample at or
+// before t (sys_samples.boot_ms: now - CLOCK_BOOTTIME, schema 12) and the
+// run's boot time, by which clifrd recorded process start times (measured
+// once, when it started). They differ when the clock was stepped after
+// clifrd started (the first NTP sync at boot). ok: the recording has it.
+func BootClockAt(db *store.DB, t int64) (clock, run int64, ok bool) {
+	var c sql.NullInt64
+	db.QueryRow(`SELECT arg_max(boot_ms, ts) FROM sys_samples WHERE ts <= ?`, t).Scan(&c)
+	run = BootAt(db, t)
+	if !c.Valid || c.Int64 <= 0 || run <= 0 {
+		return 0, run, false
+	}
+	return c.Int64, run, true
+}
+
+// StartShiftAt is what to add to a recorded start time to have it on the
+// clock of t, as a tool run at t computes it (its boot time then plus the
+// process's ticks): 0 without a clock step, or in older recordings.
+func StartShiftAt(db *store.DB, t int64) int64 {
+	if clock, run, ok := BootClockAt(db, t); ok {
+		return clock - run
+	}
+	return 0
+}
+
+// clockStep is a step of the clock while clifrd ran: the boot time on the
+// clock moved by d ms between two system samples, the later at ts.
+type clockStep struct{ ts, d int64 }
+
+// clockSteps are the recording's clock steps (moves of sys_samples.boot_ms
+// above 100 ms between consecutive samples of one boot; schema 12).
+func clockSteps(db *store.DB) []clockStep {
+	rows, err := db.Query(`SELECT ts, d FROM (
+		SELECT ts, boot_ms - lag(boot_ms) OVER (ORDER BY ts) AS d FROM sys_samples WHERE boot_ms > 0)
+		WHERE abs(d) > 100 AND abs(d) < 86400000 ORDER BY ts`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []clockStep
+	for rows.Next() {
+		var s clockStep
+		if rows.Scan(&s.ts, &s.d) == nil {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// startShift is what to add to a recorded start time to have it on the
+// clock in force when the process started: the steps after its run began
+// (process ids carry the run's start, in seconds, times 1e9) and before it
+// started. A history view (life) puts starts beside event times, which were
+// recorded on the clock of their moment.
+func startShift(steps []clockStep, id, start int64) int64 {
+	runStart := id / 1_000_000_000 * 1000
+	var shift int64
+	for _, s := range steps {
+		if s.ts > runStart && s.ts <= start+shift+s.d {
+			shift += s.d
+		}
+	}
+	return shift
 }
 
 // BootAt is the boot time of the boot covering t (0: unknown).

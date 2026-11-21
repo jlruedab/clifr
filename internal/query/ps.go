@@ -99,6 +99,7 @@ type procAt struct {
 // their values at s), plus processes that events show started between s and
 // t. Processes with an exit event at or before t are left out.
 func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
+	shift := StartShiftAt(db, t) // read before the rows: one connection
 	rows, err := db.Query(`
 		SELECT p.id, p.pid, p.ppid, p.uid, p.start_time, p.tty, p.sid, p.pgrp, p.locked, p.comm,
 		       p.cmdline, p.source, x.state, x.nice, x.tpgid, x.threads, x.cpu_ticks, x.rss_kb, x.vsz_kb,
@@ -134,6 +135,7 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 			return nil, err
 		}
 		p.locked = locked == 1
+		p.startMS += shift
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -153,7 +155,9 @@ func PSAt(db *store.DB, t int64) ([]PSRow, int64, error) {
 	// ps derives START from /proc/stat btime, which is truncated to whole
 	// seconds; clifr stores precise start times. Shift back for display.
 	skew := int64(0)
-	if bms := metaInt(db, "boot_ms"); bms > 0 {
+	if clock, _, ok := BootClockAt(db, t); ok {
+		skew = clock - clock/1000*1000 // btime at T: the boot time on the clock, cut
+	} else if bms := metaInt(db, "boot_ms"); bms > 0 {
 		skew = bms - metaInt(db, "boot_time")*1000
 	}
 	out := make([]PSRow, 0, len(procs))

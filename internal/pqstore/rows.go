@@ -433,6 +433,7 @@ func fileOf(f store.FileRow) fileRow {
 type sysRow struct {
 	TS           int64 `parquet:"ts"`
 	UptimeMS     int64 `parquet:"uptime_ms"`
+	BootMS       int64 `parquet:"boot_ms"` // schema 12: the boot time on the clock at this sample
 	Load1        int32 `parquet:"load1"`
 	Load5        int32 `parquet:"load5"`
 	Load15       int32 `parquet:"load15"`
@@ -530,7 +531,7 @@ type sysRow struct {
 }
 
 func sysOf(s *store.SysSample) sysRow {
-	return sysRow{TS: s.TS, UptimeMS: s.UptimeMS,
+	return sysRow{TS: s.TS, UptimeMS: s.UptimeMS, BootMS: s.BootMS,
 		Load1: int32(s.Load1), Load5: int32(s.Load5), Load15: int32(s.Load15), Runnable: int32(s.Runnable), Threads: int32(s.Threads), ProcsRunning: int32(s.ProcsRunning), ProcsBlocked: int32(s.ProcsBlocked),
 		Intr: s.Intr, Ctxt: s.Ctxt, Forks: s.Forks, SoftIRQ: s.SoftIRQ, MemTotal: s.MemTotal, MemFree: s.MemFree, MemAvailable: s.MemAvailable, Buffers: s.Buffers, Cached: s.Cached, SwapCached: s.SwapCached, Active: s.Active, Inactive: s.Inactive, SwapTotal: s.SwapTotal, SwapFree: s.SwapFree, Dirty: s.Dirty, Writeback: s.Writeback, Shmem: s.Shmem, Slab: s.Slab, SReclaimable: s.SReclaimable, PgpgIn: s.PgpgIn, PgpgOut: s.PgpgOut, PswpIn: s.PswpIn, PswpOut: s.PswpOut, PgFault: s.PgFault, PgMajFault: s.PgMajFault,
 		SockUsed: s.SockUsed, TCPInUse: s.TCPInUse, TCPOrphan: s.TCPOrphan, TCPTW: s.TCPTW, TCPAlloc: s.TCPAlloc, TCPMem: s.TCPMem,

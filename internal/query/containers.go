@@ -114,7 +114,8 @@ func ContainersAt(db *store.DB, t int64) ([]Container, int64, error) {
 
 // ContainersBetween lists the containers with processes seen in [from, to].
 func ContainersBetween(db *store.DB, from, to int64) ([]Container, error) {
-	rows, err := db.Query(`SELECT pid, ppid, start_time, COALESCE(ended, last_seen, ?3), cgroup, cmdline, comm, COALESCE(netns, 0)
+	steps := clockSteps(db) // before the rows: one connection
+	rows, err := db.Query(`SELECT id, pid, ppid, start_time, COALESCE(ended, last_seen, ?3), cgroup, cmdline, comm, COALESCE(netns, 0)
 		FROM processes WHERE cgroup IS NOT NULL AND cgroup != '' AND first_seen <= ?2
 		  AND COALESCE(ended, last_seen, ?3) >= ?1`, from, to, openEnd)
 	if err != nil {
@@ -125,9 +126,11 @@ func ContainersBetween(db *store.DB, from, to int64) ([]Container, error) {
 	for rows.Next() {
 		var p containerProc
 		var cmdline, comm string
-		if err := rows.Scan(&p.pid, &p.ppid, &p.startMS, &p.endMS, &p.cgroup, &cmdline, &comm, &p.netns); err != nil {
+		var id int64
+		if err := rows.Scan(&id, &p.pid, &p.ppid, &p.startMS, &p.endMS, &p.cgroup, &cmdline, &comm, &p.netns); err != nil {
 			return nil, err
 		}
+		p.startMS += startShift(steps, id, p.startMS)
 		p.command = commandOf(cmdline, comm, "")
 		cps = append(cps, p)
 	}

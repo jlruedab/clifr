@@ -1,18 +1,23 @@
 package recorder
 
 import (
+	"cmp"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"clifr/internal/metrics"
 	"clifr/internal/procfs"
 	"clifr/internal/rtnl"
 	"clifr/internal/store"
+
+	"golang.org/x/sys/unix"
 )
 
 // readPressure reads /proc/pressure (recorded since schema 12, and for /metrics). A
@@ -27,6 +32,39 @@ func (r *Recorder) readPressure(fail func(string, error) bool) map[string]procfs
 		out[res] = p
 	}
 	return out
+}
+
+// clockBoot is the uptime at ts and the boot time on the clock: ts -
+// CLOCK_BOOTTIME. r.boot, measured when clifrd started, stays the run's
+// (process start times are keyed by it); when the clock is stepped later
+// (the first NTP sync at boot, a VM's clock corrected), the boot time moves
+// by the step: a clock_step guard event above 100 ms. With --proc-root
+// fixtures the run's boot time.
+func (r *Recorder) clockBoot(ts int64) (uptime, boot int64) {
+	if r.fs.Root != "/proc" {
+		return ts - r.boot, r.boot
+	}
+	// Both clocks now (ts is when the sample began, some ms earlier).
+	var bt unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &bt); err != nil {
+		return ts - r.boot, r.boot
+	}
+	boot = time.Now().UnixMilli() - bt.Nano()/1e6
+	return ts - boot, boot
+}
+
+// noteClockStep records a clock_step guard event when the boot time on the
+// clock moved by more than 100 ms since the last system sample: the sample
+// times before it are on the old clock.
+func (r *Recorder) noteClockStep(ts, boot int64, b *store.Batch) {
+	prev := cmp.Or(r.sys.bootMS, r.boot)
+	r.sys.bootMS = boot
+	if d := boot - prev; d > 100 || d < -100 {
+		detail := fmt.Sprintf("the clock moved %+.3f s (boot time %s -> %s)", float64(d)/1000,
+			time.UnixMilli(prev).UTC().Format("15:04:05.000"), time.UnixMilli(boot).UTC().Format("15:04:05.000"))
+		b.Guard = append(b.Guard, store.GuardEvent{TS: ts, Kind: "clock_step", Detail: detail})
+		r.log.Printf("clock step: %s", detail)
+	}
 }
 
 // sysSampler reads the system-wide counters behind uptime, vmstat, mpstat and
@@ -48,6 +86,7 @@ type sysSampler struct {
 	blockRead  int64       // when they were last read
 	blockDirty atomic.Bool // a uevent reported a change (startUevents)
 	neighs     *neighState
+	bootMS     int64 // the boot time at the last sample (clock steps)
 }
 
 func newSysSampler(procRoot string) *sysSampler {
@@ -85,7 +124,9 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	if fail("stat", err) {
 		return
 	}
-	row := &store.SysSample{TS: ts, UptimeMS: ts - r.boot, ProcsRunning: st.ProcsRunning, ProcsBlocked: st.ProcsBlocked,
+	uptime, boot := r.clockBoot(ts)
+	r.noteClockStep(ts, boot, b)
+	row := &store.SysSample{TS: ts, UptimeMS: uptime, BootMS: boot, ProcsRunning: st.ProcsRunning, ProcsBlocked: st.ProcsBlocked,
 		Intr: int64(st.Intr), Ctxt: int64(st.Ctxt), Forks: int64(st.Forks), SoftIRQ: int64(st.SoftIRQ)}
 	firstCPU := len(b.CPUs)
 	for _, c := range st.CPUs {

@@ -255,6 +255,12 @@ Filter it with `--name REGEX` (matched against the command line) and `--type sta
 
 A hung NFS server shows up there too: when statfs of a mount does not answer within a second, clifrd records a `statfs_stuck` guard event and stops asking until the call returns (`statfs_ok`). Meanwhile `clifr df` prints that file system's last usage with a line such as `# /mnt/nfs: statfs not answering since 2026-11-10 22:30:20 (hung server?); usage as of 2026-11-10 22:30:00`, where the real `df` would hang.
 
+A clock corrected while clifrd runs shows up as a `clock_step` guard event, typically the first time synchronization after a boot, when clifrd has already started. The recorded times before it are on the old clock; clifr prints process start times as a tool run at the moment asked for would print them (on the corrected clock after the step), and in `life` on the clock of the moment each process started:
+
+```
+2026-11-21 10:58:50.906  guard          - clock_step: the clock moved +1.493 s (boot time 10:58:08.926 -> 10:58:10.419)
+```
+
 A flood of processes or connections shows up as `events_shed` guard events: above clifrd's [event budget](#clifrd-the-configuration-file), process events are recorded with less detail or only counted, and each event says how many, and from which users and commands. The lists that cover that time say so in a header line:
 
 ```console
