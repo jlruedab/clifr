@@ -779,7 +779,7 @@ func (r *Recorder) flushEvProcs(ts int64, b *store.Batch, exitedOnly bool) {
 			continue
 		}
 		row := store.ProcRow{ID: r.nextID("processes"), PID: key.pid, StartTime: key.start,
-			PPID: ev.attrs.PPID, UID: ev.attrs.UID, RUID: ev.attrs.UID, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline, Argv0Len: ev.attrs.Argv0Len,
+			PPID: ev.attrs.PPID, UID: ev.attrs.UID, RUID: ev.attrs.UID, RGID: -1, Comm: ev.attrs.Comm, Cmdline: ev.attrs.Cmdline, Argv0Len: ev.attrs.Argv0Len,
 			TTY: ev.tty, SID: ev.sid, PGRP: ev.pgrp, FirstSeen: key.start, Source: ev.attrs.Source,
 			Exe: ev.attrs.Exe, ExitCode: ep.exitCode, Signal: ep.signal, Killer: ep.killer, OOMKilled: ep.oom}
 		if ev.attrs.ExecTS != 0 {

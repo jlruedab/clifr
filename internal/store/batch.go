@@ -28,6 +28,7 @@ type ProcRow struct {
 	// fd walks (schema 8); empty for event-only processes.
 	Label string // /proc/<pid>/attr/current (ps -Z)
 	RUID  int    // real uid (pidstat); the effective one (UID) when not read from /proc
+	RGID  int    // real gid (atop -v; schema 12); -1: not read from /proc
 	// NUL bytes after the command line in /proc/<pid>/cmdline (normally 1;
 	// 0: unknown, an event-only process).
 	CmdlinePad int
@@ -48,6 +49,7 @@ type ProcUpdate struct {
 	ExecTS        int64 // 0: no exec seen
 	Label, Cgroup string
 	RUID          int
+	RGID          int
 	CmdlinePad    int
 	NetNS         uint32
 }
@@ -308,6 +310,14 @@ type ProcSample struct {
 	Wchan             string
 	WaitNS            int64 // run-queue wait (schedstat; pidstat's %wait)
 	RunDelayNS        int64 // run-queue wait of all threads (atop's RDELAY; schema 12)
+	// Schema 12, for atop, by the same rule as VolCtx: the memory segments
+	// from status (kB: stack, swapped out, data, text, libraries, locked)
+	// and, over all threads, block-I/O delay (ticks), context switches and
+	// the number of threads running, sleeping, in uninterruptible sleep and
+	// idle (a single-threaded process: its own values).
+	VmStkKB, VmSwapKB, VmDataKB, VmExeKB, VmLibKB, VmLckKB int64
+	BlkioAllTicks, VolCtxAll, NonVolCtxAll                 int64
+	ThrRun, ThrSleepI, ThrSleepU, ThrIdle                  int
 }
 
 // NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named

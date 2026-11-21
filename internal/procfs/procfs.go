@@ -250,8 +250,12 @@ func ParseStatm(b []byte) (size, resident, shared int64, err error) {
 type Status struct {
 	UID    int // effective uid, what `ps aux` shows as USER
 	RUID   int // real uid (pidstat's UID)
+	RGID   int // real gid (atop's RGID)
 	Tgid   int // process id; differs from the pid for threads
 	VmLckK int64
+	// Memory segments in kB (atop -m): stack, swapped out, data, text,
+	// shared libraries.
+	VmStkK, VmSwapK, VmDataK, VmExeK, VmLibK int64
 	// Context switches of the main thread (status reports the task's own,
 	// not the other threads'): voluntary (waits) and involuntary
 	// (preemptions), what pidstat -w shows.
@@ -276,6 +280,20 @@ func ParseStatus(b []byte) (Status, error) {
 				s.RUID, s.UID = atoi(fs[0]), atoi(fs[1])
 				found = true
 			}
+		case strings.HasPrefix(line, "Gid:"):
+			if fs := strings.Fields(line[4:]); len(fs) >= 1 {
+				s.RGID = atoi(fs[0])
+			}
+		case strings.HasPrefix(line, "VmStk:"):
+			s.VmStkK = statusKB(line[6:])
+		case strings.HasPrefix(line, "VmSwap:"):
+			s.VmSwapK = statusKB(line[7:])
+		case strings.HasPrefix(line, "VmData:"):
+			s.VmDataK = statusKB(line[7:])
+		case strings.HasPrefix(line, "VmExe:"):
+			s.VmExeK = statusKB(line[6:])
+		case strings.HasPrefix(line, "VmLib:"):
+			s.VmLibK = statusKB(line[6:])
 		case strings.HasPrefix(line, "Tgid:"):
 			s.Tgid = atoi(strings.TrimSpace(line[5:]))
 		case strings.HasPrefix(line, "VmLck:"):
@@ -293,6 +311,14 @@ func ParseStatus(b []byte) (Status, error) {
 		return s, errShort
 	}
 	return s, nil
+}
+
+// statusKB is a status line's "N kB" value.
+func statusKB(v string) int64 {
+	if fs := strings.Fields(v); len(fs) >= 1 {
+		return int64(atoi(fs[0]))
+	}
+	return 0
 }
 
 // ReadCmdline returns argv joined by spaces, or "" for kernel threads and
@@ -468,40 +494,68 @@ func (f FS) ReadRunDelay(pid int) (ns int64, err error) {
 	return
 }
 
-// ReadThreadsRunDelay returns the run-queue wait of all the process's live
-// threads (/proc/<pid>/task/*/schedstat, the second number of each), as
-// atop shows it: the process's own schedstat is its main thread's.
-func (f FS) ReadThreadsRunDelay(pid int) (ns int64, err error) {
+// Threads is what atop adds up over a process's live threads: their
+// run-queue wait (schedstat), block-I/O delay (stat, clock ticks) and
+// context switches (status), and how many are in each state (stat).
+type Threads struct {
+	RunDelayNS, BlkioTicks    int64
+	VolCtx, NonVolCtx         int64
+	Run, SleepI, SleepU, Idle int // R, S, D, I
+}
+
+// ReadThreads reads /proc/<pid>/task/*/{schedstat,stat,status}. A thread
+// gone between the listing and its files is left out.
+func (f FS) ReadThreads(pid int) (t Threads, err error) {
 	d, err := os.Open(f.path(strconv.Itoa(pid), "task"))
 	if err != nil {
-		return 0, err
+		return t, err
 	}
 	names, err := d.Readdirnames(-1)
 	d.Close()
 	if err != nil {
-		return 0, err
+		return t, err
 	}
 	read := 0
 	for _, n := range names {
 		if n == "" || n[0] < '0' || n[0] > '9' {
 			continue
 		}
-		err := f.readPID(pid, "task/"+n+"/schedstat", func(b []byte) error {
-			fs := strings.Fields(string(b))
-			if len(fs) < 2 {
-				return errShort
+		dir := "task/" + n + "/"
+		var st Stat
+		err := f.readPID(pid, dir+"stat", func(b []byte) (err error) { st, err = ParseStat(b); return })
+		if err != nil {
+			continue
+		}
+		read++
+		switch st.State {
+		case 'R':
+			t.Run++
+		case 'S':
+			t.SleepI++
+		case 'D':
+			t.SleepU++
+		case 'I':
+			t.Idle++
+		}
+		t.BlkioTicks += int64(st.BlkioTicks)
+		f.readPID(pid, dir+"schedstat", func(b []byte) error {
+			if fs := strings.Fields(string(b)); len(fs) >= 2 {
+				t.RunDelayNS += int64(atou(fs[1]))
 			}
-			ns += int64(atou(fs[1]))
 			return nil
 		})
-		if err == nil {
-			read++
-		}
+		f.readPID(pid, dir+"status", func(b []byte) error {
+			if s, err := ParseStatus(b); err == nil {
+				t.VolCtx += s.VolCtx
+				t.NonVolCtx += s.NonVolCtx
+			}
+			return nil
+		})
 	}
 	if read == 0 {
-		return 0, errShort
+		return t, errShort
 	}
-	return ns, nil
+	return t, nil
 }
 
 // ReadWchan returns /proc/<pid>/wchan: the kernel function the process

@@ -62,11 +62,13 @@ func TestAtopScreen(t *testing.T) {
 				proc(3, 2045, "a-very-long-command-name", boot+60_000), proc(4, 15, "kworker/1:0-events", boot+100)},
 			ProcSamples: []store.ProcSample{
 				{ProcID: 1, TS: base, State: "S", Threads: 1, CPUTicks: tk(95), STimeTicks: tk(60), RSSKB: 13_000, RSSStatKB: 12_800,
-					VSZKB: 171_000, ReadBytes: 300_000_000, WriteBytes: 90_000_000, CancelledWrite: 10_000_000, WaitNS: 2_500_000_000, RunDelayNS: 2_500_000_000},
+					VSZKB: 171_000, ReadBytes: 300_000_000, WriteBytes: 90_000_000, CancelledWrite: 10_000_000, WaitNS: 2_500_000_000, RunDelayNS: 2_500_000_000,
+					ThrSleepI: 1, VolCtx: 900, NonVolCtx: 30, VolCtxAll: 900, NonVolCtxAll: 30},
 				{ProcID: 2, TS: base, State: "S", Threads: 8, CPUTicks: tk(6100), STimeTicks: tk(1700), RSSKB: 2_100_000, RSSStatKB: 2_000_000,
-					VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_000_000_000, BlkioTicks: tk(42), WaitNS: 1_000_000_000, RunDelayNS: 9_870_000_000},
-				{ProcID: 3, TS: base, State: "R", Threads: 1, CPUTicks: tk(6100), STimeTicks: tk(100), RSSStatKB: 900, VSZKB: 4000, CPU: 1},
-				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7}}},
+					VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_000_000_000, BlkioTicks: tk(42), WaitNS: 1_000_000_000, RunDelayNS: 9_870_000_000,
+					BlkioAllTicks: tk(55), ThrSleepI: 6, ThrSleepU: 1, ThrIdle: 1, VolCtx: 5000, NonVolCtx: 70, VolCtxAll: 40_000, NonVolCtxAll: 900},
+				{ProcID: 3, TS: base, State: "R", Threads: 1, CPUTicks: tk(6100), STimeTicks: tk(100), RSSStatKB: 900, VSZKB: 4000, CPU: 1, ThrRun: 1},
+				{ProcID: 4, TS: base, State: "I", Threads: 1, CPUTicks: 7, STimeTicks: 7, ThrIdle: 1}}},
 		// 10 s later: postgres busy and growing, the long command gone.
 		&store.Batch{Sample: store.Sample{TS: base + 10_000},
 			Sys: []store.SysSample{{TS: base + 10_000, UptimeMS: base + 10_000 - boot, Load1: 160, Load5: 99, Load15: 61,
@@ -96,7 +98,8 @@ func TestAtopScreen(t *testing.T) {
 			ProcSamples: []store.ProcSample{
 				{ProcID: 2, TS: base + 10_000, State: "R", Threads: 8, CPUTicks: tk(6112), STimeTicks: tk(1703), RSSKB: 2_110_000,
 					RSSStatKB: 2_010_240, VSZKB: 9_000_000, ReadBytes: 5_000_000_000, WriteBytes: 7_010_000_000, BlkioTicks: tk(42),
-					WaitNS: 1_000_000_000, RunDelayNS: 9_920_000_000}}})
+					WaitNS: 1_000_000_000, RunDelayNS: 9_920_000_000,
+					BlkioAllTicks: tk(57), ThrRun: 2, ThrSleepI: 5, ThrIdle: 1, VolCtx: 5100, NonVolCtx: 75, VolCtxAll: 41_500, NonVolCtxAll: 960}}})
 	for _, v := range []struct {
 		name     string
 		v271     bool

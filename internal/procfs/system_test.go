@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -120,22 +122,45 @@ func TestReadPressure(t *testing.T) {
 	}
 }
 
-// TestReadThreadsRunDelay: the run-queue wait of every thread added up.
-func TestReadThreadsRunDelay(t *testing.T) {
+// TestReadThreads: what atop adds up over the threads.
+func TestReadThreads(t *testing.T) {
 	dir := t.TempDir()
-	for tid, line := range map[string]string{"40": "100 2000 3\n", "41": "50 500 1\n"} {
-		os.MkdirAll(filepath.Join(dir, "40", "task", tid), 0o755)
-		os.WriteFile(filepath.Join(dir, "40", "task", tid, "schedstat"), []byte(line), 0o644)
+	stat := func(state byte, blkio int) string {
+		// pid (comm) state, then fields 4..41 and 42 (delayacct_blkio_ticks).
+		f := make([]string, 49)
+		for i := range f {
+			f[i] = "0"
+		}
+		f[38] = strconv.Itoa(blkio)
+		return "40 (worker) " + string(state) + " " + strings.Join(f, " ") + "\n"
 	}
-	os.WriteFile(filepath.Join(dir, "40", "schedstat"), []byte("100 2000 3\n"), 0o644)
+	for tid, v := range map[string][3]string{
+		"40": {"100 2000 3\n", stat('S', 5), "voluntary_ctxt_switches:\t10\nnonvoluntary_ctxt_switches:\t2\n"},
+		"41": {"50 500 1\n", stat('D', 7), "voluntary_ctxt_switches:\t4\nnonvoluntary_ctxt_switches:\t1\n"},
+		"42": {"1 1 1\n", stat('I', 0), "voluntary_ctxt_switches:\t1\nnonvoluntary_ctxt_switches:\t0\n"},
+	} {
+		d := filepath.Join(dir, "40", "task", tid)
+		os.MkdirAll(d, 0o755)
+		os.WriteFile(filepath.Join(d, "schedstat"), []byte(v[0]), 0o644)
+		os.WriteFile(filepath.Join(d, "stat"), []byte(v[1]), 0o644)
+		os.WriteFile(filepath.Join(d, "status"), []byte("Uid:\t0\t0\t0\t0\n"+v[2]), 0o644)
+	}
 	f := FS{Root: dir}
-	if ns, err := f.ReadThreadsRunDelay(40); err != nil || ns != 2500 {
-		t.Errorf("threads: %d %v, want 2500", ns, err)
+	got, err := f.ReadThreads(40)
+	want := Threads{RunDelayNS: 2501, BlkioTicks: 12, VolCtx: 15, NonVolCtx: 3, SleepI: 1, SleepU: 1, Idle: 1}
+	if err != nil || got != want {
+		t.Errorf("threads: %+v %v, want %+v", got, err, want)
 	}
-	if ns, err := f.ReadRunDelay(40); err != nil || ns != 2000 {
-		t.Errorf("main thread: %d %v, want 2000", ns, err)
-	}
-	if _, err := f.ReadThreadsRunDelay(41); err == nil {
+	if _, err := f.ReadThreads(41); err == nil {
 		t.Error("no such process: no error")
+	}
+}
+
+// TestParseStatusSegments: atop -m's segment sizes and the real gid.
+func TestParseStatusSegments(t *testing.T) {
+	s, err := ParseStatus([]byte("Uid:\t1000\t1000\t1000\t1000\nGid:\t100\t101\t101\t101\nVmData:\t  4096 kB\n" +
+		"VmStk:\t   132 kB\nVmExe:\t    24 kB\nVmLib:\t  2048 kB\nVmSwap:\t     8 kB\n"))
+	if err != nil || s.RGID != 100 || s.VmDataK != 4096 || s.VmStkK != 132 || s.VmExeK != 24 || s.VmLibK != 2048 || s.VmSwapK != 8 {
+		t.Errorf("%+v %v", s, err)
 	}
 }

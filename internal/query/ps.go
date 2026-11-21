@@ -84,9 +84,15 @@ type procAt struct {
 	stime, guest, blkio, rssStat   sql.NullInt64
 	waitNS, cancelled, ruid        sql.NullInt64
 	runDelay                       sql.NullInt64 // all threads (schema 12)
-	sampleTS                       sql.NullInt64 // the proc_samples row used
-	netns                          sql.NullInt64 // schema 10; 0: the host's
-	cmdlinePad                     sql.NullInt64
+	// Schema 12, for atop: all threads' block-I/O delay, context switches and
+	// states; memory segments (kB); the real gid.
+	blkioAll, volCtxAll, nonVolCtxAll          sql.NullInt64
+	thrRun, thrSleepI, thrSleepU, thrIdle      sql.NullInt64
+	vmStk, vmSwap, vmData, vmExe, vmLib, vmLck sql.NullInt64
+	rgid                                       sql.NullInt64
+	sampleTS                                   sql.NullInt64 // the proc_samples row used
+	netns                                      sql.NullInt64 // schema 10; 0: the host's
+	cmdlinePad                                 sql.NullInt64
 }
 
 // processesAt returns processes alive at t: those alive at sample s (with
@@ -99,7 +105,9 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 		       x.rchar, x.wchar, x.read_bytes, x.write_bytes,
 		       x.min_flt, x.maj_flt, x.shr_kb, x.ps_flags, x.priority, x.policy, x.rt_priority, x.processor,
 		       x.vol_ctx, x.nonvol_ctx, x.wchan, p.label, p.cgroup,
-		       x.stime_ticks, x.guest_ticks, x.blkio_ticks, x.rss_stat_kb, x.wait_ns, x.cancelled_write_bytes, p.ruid, p.cmdline_pad, p.netns, x.run_delay_ns, x.ts
+		       x.stime_ticks, x.guest_ticks, x.blkio_ticks, x.rss_stat_kb, x.wait_ns, x.cancelled_write_bytes, p.ruid, p.cmdline_pad, p.netns, x.run_delay_ns, x.ts,
+		       x.blkio_all_ticks, x.vol_ctx_all, x.nonvol_ctx_all, x.thr_run, x.thr_sleep_i, x.thr_sleep_u, x.thr_idle,
+		       x.vm_stk_kb, x.vm_swap_kb, x.vm_data_kb, x.vm_exe_kb, x.vm_lib_kb, x.vm_lck_kb, p.rgid
 		FROM processes p
 		LEFT JOIN proc_samples x ON x.proc_id = p.id
 		     AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
@@ -120,7 +128,9 @@ func processesAt(db *store.DB, s, t int64) ([]procAt, error) {
 			&p.rssKB, &p.vszKB, &p.rchar, &p.wchar, &p.rbytes, &p.wbytes,
 			&p.minFlt, &p.majFlt, &p.shrKB, &p.psFlags, &p.prio, &p.policy, &p.rtPrio, &p.psr,
 			&p.volCtx, &p.nonVolCtx, &p.wchan, &p.label, &p.cgroup,
-			&p.stime, &p.guest, &p.blkio, &p.rssStat, &p.waitNS, &p.cancelled, &p.ruid, &p.cmdlinePad, &p.netns, &p.runDelay, &p.sampleTS); err != nil {
+			&p.stime, &p.guest, &p.blkio, &p.rssStat, &p.waitNS, &p.cancelled, &p.ruid, &p.cmdlinePad, &p.netns, &p.runDelay, &p.sampleTS,
+			&p.blkioAll, &p.volCtxAll, &p.nonVolCtxAll, &p.thrRun, &p.thrSleepI, &p.thrSleepU, &p.thrIdle,
+			&p.vmStk, &p.vmSwap, &p.vmData, &p.vmExe, &p.vmLib, &p.vmLck, &p.rgid); err != nil {
 			return nil, err
 		}
 		p.locked = locked == 1

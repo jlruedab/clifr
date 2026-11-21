@@ -52,6 +52,7 @@ type processRow struct {
 	Cgroup     string `parquet:"cgroup,dict"`
 	NetNS      int64  `parquet:"netns"`
 	RUID       int32  `parquet:"ruid"`
+	RGID       int32  `parquet:"rgid"` // -1 unknown (schema 12)
 	CmdlinePad int32  `parquet:"cmdline_pad"`
 	// Schema 11: the sender of Signal (killer_pid 0: the kernel; NULL: unknown).
 	KillerPID  *int32 `parquet:"killer_pid,optional"`
@@ -76,23 +77,36 @@ type procSampleRow struct {
 	WriteBytes     int64 `parquet:"write_bytes"`
 	CancelledWrite int64 `parquet:"cancelled_write_bytes"`
 	// schema 8
-	MinFlt     int64  `parquet:"min_flt"`
-	MajFlt     int64  `parquet:"maj_flt"`
-	ShrKB      int64  `parquet:"shr_kb"`
-	Priority   int32  `parquet:"priority"`
-	Policy     int32  `parquet:"policy"`
-	RTPriority int32  `parquet:"rt_priority"`
-	CPU        int32  `parquet:"processor"`
-	PSFlags    int32  `parquet:"ps_flags"`
-	STime      int64  `parquet:"stime_ticks"`
-	Guest      int64  `parquet:"guest_ticks"`
-	Blkio      int64  `parquet:"blkio_ticks"`
-	RSSStatKB  int64  `parquet:"rss_stat_kb"`
-	WaitNS     int64  `parquet:"wait_ns"`
-	RunDelayNS int64  `parquet:"run_delay_ns"` // all threads (schema 12)
-	VolCtx     int64  `parquet:"vol_ctx"`
-	NonVolCtx  int64  `parquet:"nonvol_ctx"`
-	Wchan      string `parquet:"wchan,dict"`
+	MinFlt        int64  `parquet:"min_flt"`
+	MajFlt        int64  `parquet:"maj_flt"`
+	ShrKB         int64  `parquet:"shr_kb"`
+	Priority      int32  `parquet:"priority"`
+	Policy        int32  `parquet:"policy"`
+	RTPriority    int32  `parquet:"rt_priority"`
+	CPU           int32  `parquet:"processor"`
+	PSFlags       int32  `parquet:"ps_flags"`
+	STime         int64  `parquet:"stime_ticks"`
+	Guest         int64  `parquet:"guest_ticks"`
+	Blkio         int64  `parquet:"blkio_ticks"`
+	RSSStatKB     int64  `parquet:"rss_stat_kb"`
+	WaitNS        int64  `parquet:"wait_ns"`
+	RunDelayNS    int64  `parquet:"run_delay_ns"` // all threads (schema 12)
+	VmStkKB       int64  `parquet:"vm_stk_kb"`
+	VmSwapKB      int64  `parquet:"vm_swap_kb"`
+	VmDataKB      int64  `parquet:"vm_data_kb"`
+	VmExeKB       int64  `parquet:"vm_exe_kb"`
+	VmLibKB       int64  `parquet:"vm_lib_kb"`
+	VmLckKB       int64  `parquet:"vm_lck_kb"`
+	BlkioAllTicks int64  `parquet:"blkio_all_ticks"`
+	VolCtxAll     int64  `parquet:"vol_ctx_all"`
+	NonVolCtxAll  int64  `parquet:"nonvol_ctx_all"`
+	ThrRun        int32  `parquet:"thr_run"`
+	ThrSleepI     int32  `parquet:"thr_sleep_i"`
+	ThrSleepU     int32  `parquet:"thr_sleep_u"`
+	ThrIdle       int32  `parquet:"thr_idle"`
+	VolCtx        int64  `parquet:"vol_ctx"`
+	NonVolCtx     int64  `parquet:"nonvol_ctx"`
+	Wchan         string `parquet:"wchan,dict"`
 }
 
 type socketRow struct {
@@ -370,7 +384,7 @@ func processOf(p store.ProcRow) processRow {
 		Comm: p.Comm, Cmdline: p.Cmdline, Argv0Len: int32(p.Argv0Len), TTY: int32(p.TTY), SID: int32(p.SID), PGRP: int32(p.PGRP),
 		Locked: b2i(p.Locked), FirstSeen: p.FirstSeen, LastSeen: val(p.LastSeen), Ended: val(p.Ended), Source: p.Source,
 		Exe: p.Exe, ExecTS: val(p.ExecTS), ExitTS: val(p.ExitTS), ExitCode: i32p(p.ExitCode), Signal: i32p(p.Signal),
-		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), CmdlinePad: int32(p.CmdlinePad),
+		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), RGID: int32(p.RGID), CmdlinePad: int32(p.CmdlinePad),
 		NetNS: int64(p.NetNS)}
 	setKiller(&r, p.Killer)
 	return r
@@ -394,7 +408,10 @@ func procSampleOf(p store.ProcSample) procSampleRow {
 		CPUTicks: p.CPUTicks, RSSKB: p.RSSKB, VSZKB: p.VSZKB, Threads: int32(p.Threads),
 		RChar: p.RChar, WChar: p.WChar, ReadBytes: p.ReadBytes, WriteBytes: p.WriteBytes, CancelledWrite: p.CancelledWrite,
 		MinFlt: p.MinFlt, MajFlt: p.MajFlt, ShrKB: p.ShrKB, Priority: int32(p.Priority), Policy: int32(p.Policy),
-		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), PSFlags: int32(p.PSFlags), STime: p.STimeTicks, Guest: p.GuestTicks, Blkio: p.BlkioTicks, RSSStatKB: p.RSSStatKB, WaitNS: p.WaitNS, RunDelayNS: p.RunDelayNS, VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
+		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), PSFlags: int32(p.PSFlags), STime: p.STimeTicks, Guest: p.GuestTicks, Blkio: p.BlkioTicks, RSSStatKB: p.RSSStatKB, WaitNS: p.WaitNS, RunDelayNS: p.RunDelayNS,
+		VmStkKB: p.VmStkKB, VmSwapKB: p.VmSwapKB, VmDataKB: p.VmDataKB, VmExeKB: p.VmExeKB, VmLibKB: p.VmLibKB, VmLckKB: p.VmLckKB,
+		BlkioAllTicks: p.BlkioAllTicks, VolCtxAll: p.VolCtxAll, NonVolCtxAll: p.NonVolCtxAll,
+		ThrRun: int32(p.ThrRun), ThrSleepI: int32(p.ThrSleepI), ThrSleepU: int32(p.ThrSleepU), ThrIdle: int32(p.ThrIdle), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
 }
 
 func socketOf(s store.SockRow) socketRow {

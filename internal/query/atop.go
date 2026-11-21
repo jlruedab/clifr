@@ -55,15 +55,69 @@ type AtopSys struct {
 type atopProc struct {
 	pid, threads, cpu, uid int
 	state                  string
-	stime, utime, blkTicks int64 // clock ticks
+	stime, utime, blkTicks int64 // clock ticks; blkTicks over all threads
 	runNS                  int64
-	vszKB, rssKB           int64 // rssKB: /proc/PID/stat's rss, as atop reads it
-	rbytes, wbytes, cancel int64
-	comm                   string
-	startMS                int64
-	id, sampleTS           int64
-	exited                 bool
-	excode                 int // atop's: exit code << 8, or the signal
+	nvcsw, nivcsw          int64 // all threads' context switches
+	// Threads running, sleeping, in uninterruptible sleep, idle (schema 12;
+	// before it the process's own state counts once).
+	thrRun, thrSlpI, thrSlpU, thrIdle int
+	// Memory segments in kB (atop -m; 0 before schema 12) and the real gid
+	// (-1: unknown).
+	vmStk, vmSwap, vmData, vmExe, vmLib, vmLck int64
+	rgid                                       int
+	vszKB, rssKB                               int64 // rssKB: /proc/PID/stat's rss, as atop reads it
+	rbytes, wbytes, cancel                     int64
+	comm                                       string
+	startMS                                    int64
+	id, sampleTS                               int64
+	exited                                     bool
+	excode                                     int // atop's: exit code << 8, or the signal
+}
+
+// atopProcOf is a recorded process as atop reads it. Without schema 12's
+// sums over the threads, the main thread's values and the process's state.
+func atopProcOf(p procAt) atopProc {
+	x := atopProc{pid: p.pid, uid: p.uid, threads: int(max(p.threads.Int64, 1)), cpu: int(p.psr.Int64),
+		state: p.state.String, stime: p.stime.Int64, utime: p.cpuTicks.Int64 - p.stime.Int64,
+		blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64,
+		rssKB: cmp.Or(p.rssStat.Int64, p.rssKB.Int64), startMS: p.startMS,
+		rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm,
+		id: p.id, sampleTS: p.sampleTS.Int64, nvcsw: p.volCtx.Int64, nivcsw: p.nonVolCtx.Int64,
+		vmStk: p.vmStk.Int64, vmSwap: p.vmSwap.Int64, vmData: p.vmData.Int64, vmExe: p.vmExe.Int64,
+		vmLib: p.vmLib.Int64, vmLck: p.vmLck.Int64, rgid: -1}
+	if p.rgid.Valid {
+		x.rgid = int(p.rgid.Int64)
+	}
+	if p.thrRun.Valid { // schema 12: over all threads
+		x.blkTicks, x.nvcsw, x.nivcsw = p.blkioAll.Int64, p.volCtxAll.Int64, p.nonVolCtxAll.Int64
+		x.thrRun, x.thrSlpI, x.thrSlpU, x.thrIdle = int(p.thrRun.Int64), int(p.thrSleepI.Int64), int(p.thrSleepU.Int64), int(p.thrIdle.Int64)
+		return x
+	}
+	switch x.state {
+	case "R":
+		x.thrRun = 1
+	case "S":
+		x.thrSlpI = 1
+	case "D":
+		x.thrSlpU = 1
+	case "I":
+		x.thrIdle = 1
+	}
+	return x
+}
+
+// add counts a live process as atop's deviate does: a zombie, else its
+// threads by state.
+func (s *AtopProcSum) add(p *atopProc) {
+	s.NProc++
+	if p.state == "Z" {
+		s.NZombie++
+		return
+	}
+	s.NTRun += p.thrRun
+	s.NTSlpI += p.thrSlpI
+	s.NTSlpU += p.thrSlpU
+	s.NTIdle += p.thrIdle
 }
 
 // StartedAfter reports whether process pid started after ts (atop may show
@@ -100,6 +154,7 @@ type atopIntf struct {
 type AtopProcSum struct {
 	Stime, Utime           int64
 	NProc, NTIdle, NZombie int
+	NTRun, NTSlpI, NTSlpU  int // threads running, sleeping, in uninterruptible sleep
 	NExit                  int // exited in the interval
 }
 
@@ -191,20 +246,11 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 	if snap, err := SnapshotAt(db, t, false); err == nil {
 		if procs, err := processesAt(db, snap, t); err == nil {
 			for _, p := range procs {
-				a.Procs.NProc++
-				switch p.state.String {
-				case "I":
-					a.Procs.NTIdle++
-				case "Z":
-					a.Procs.NZombie++
-				}
-				a.Procs.Stime += p.stime.Int64
-				a.Procs.Utime += p.cpuTicks.Int64 - p.stime.Int64
-				a.List = append(a.List, atopProc{pid: p.pid, uid: p.uid, threads: int(max(p.threads.Int64, 1)), cpu: int(p.psr.Int64),
-					state: p.state.String, stime: p.stime.Int64, utime: p.cpuTicks.Int64 - p.stime.Int64,
-					blkTicks: p.blkio.Int64, runNS: cmp.Or(p.runDelay.Int64, p.waitNS.Int64), vszKB: p.vszKB.Int64, rssKB: cmp.Or(p.rssStat.Int64, p.rssKB.Int64), startMS: p.startMS,
-					rbytes: p.rbytes.Int64, wbytes: p.wbytes.Int64, cancel: p.cancelled.Int64, comm: p.comm,
-					id: p.id, sampleTS: p.sampleTS.Int64})
+				x := atopProcOf(p)
+				a.Procs.add(&x)
+				a.Procs.Stime += x.stime
+				a.Procs.Utime += x.utime
+				a.List = append(a.List, x)
 			}
 		}
 	}
@@ -1069,15 +1115,10 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 	for _, p := range a0.List {
 		prev[p.id] = p
 	}
-	sum := AtopProcSum{NProc: len(a.List)}
+	var sum AtopProcSum
 	var out []atopProc
 	for _, p := range a.List {
-		switch p.state {
-		case "I":
-			sum.NTIdle++
-		case "Z":
-			sum.NZombie++
-		}
+		sum.add(&p)
 		q, known := prev[p.id]
 		if known && p.sampleTS <= q.sampleTS {
 			continue // not active
@@ -1086,6 +1127,8 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 		p.utime -= q.utime
 		p.blkTicks -= q.blkTicks
 		p.runNS -= q.runNS
+		p.nvcsw -= q.nvcsw
+		p.nivcsw -= q.nivcsw
 		p.vszKB -= q.vszKB
 		p.rssKB -= q.rssKB
 		p.rbytes -= q.rbytes

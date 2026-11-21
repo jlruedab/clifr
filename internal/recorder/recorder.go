@@ -845,13 +845,13 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 	label, cgroup, netns := r.readLabel(key.pid, ""), r.readCgroup(key.pid, ""), r.readNetNS(key.pid, 0)
 	r.noteCgroup(cgroup, ts, b)
 	e := &procEntry{id: r.nextID("processes"), key: key, first: ts,
-		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, CmdlinePad: pad, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
+		upd: store.ProcUpdate{UID: status.UID, RUID: status.RUID, RGID: status.RGID, CmdlinePad: pad, PPID: st.PPID, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, Source: "sample",
 			Label: label, Cgroup: cgroup, NetNS: netns}}
 	e.upd.ID = e.id
 	// Adopt a process first seen through a fork/exec event: it existed
 	// since its start time, not just since this sample.
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
-		PPID: st.PPID, UID: status.UID, RUID: status.RUID, CmdlinePad: pad, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
+		PPID: st.PPID, UID: status.UID, RUID: status.RUID, RGID: status.RGID, CmdlinePad: pad, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup, NetNS: netns}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
@@ -887,7 +887,7 @@ func (r *Recorder) refreshProc(e *procEntry, st procfs.Stat, status procfs.Statu
 	u := e.upd
 	u.PPID, u.Comm = st.PPID, st.Comm
 	if haveStatus {
-		u.UID, u.RUID = status.UID, status.RUID
+		u.UID, u.RUID, u.RGID = status.UID, status.RUID, status.RGID
 	}
 	// (The network namespace is read when first sampled and at an exec only:
 	// a readlink per process per fd walk was 20-50 ms of every walk with
@@ -912,11 +912,16 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	p := e.sample
 	if !fresh {
 		s.VolCtx, s.NonVolCtx, s.Wchan, s.WaitNS, s.RunDelayNS = p.VolCtx, p.NonVolCtx, p.Wchan, p.WaitNS, p.RunDelayNS
+		s.VmStkKB, s.VmSwapKB, s.VmDataKB, s.VmExeKB, s.VmLibKB, s.VmLckKB = p.VmStkKB, p.VmSwapKB, p.VmDataKB, p.VmExeKB, p.VmLibKB, p.VmLckKB
+		s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = p.BlkioAllTicks, p.VolCtxAll, p.NonVolCtxAll
+		s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = p.ThrRun, p.ThrSleepI, p.ThrSleepU, p.ThrIdle
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
 		return
 	}
 	if haveStatus {
 		s.VolCtx, s.NonVolCtx = status.VolCtx, status.NonVolCtx
+		s.VmStkKB, s.VmSwapKB, s.VmDataKB, s.VmExeKB, s.VmLibKB, s.VmLckKB =
+			status.VmStkK, status.VmSwapK, status.VmDataK, status.VmExeK, status.VmLibK, status.VmLckK
 	}
 	if w, err := r.fs.ReadWchan(e.key.pid); err == nil {
 		s.Wchan = w
@@ -924,11 +929,25 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	if ns, err := r.fs.ReadRunDelay(e.key.pid); err == nil {
 		s.WaitNS, s.RunDelayNS = ns, ns
 	}
-	// A multi-threaded process: its threads' waits added up (atop's
-	// RDELAY); the process's own schedstat is its main thread's.
+	// atop's sums over all threads: a single-threaded process's own values;
+	// a multi-threaded one's from each thread (the process's own schedstat,
+	// stat delay and status switches are its main thread's).
+	s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = s.BlkioTicks, s.VolCtx, s.NonVolCtx
+	s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = 0, 0, 0, 0
+	switch s.State {
+	case "R":
+		s.ThrRun = 1
+	case "S":
+		s.ThrSleepI = 1
+	case "D":
+		s.ThrSleepU = 1
+	case "I":
+		s.ThrIdle = 1
+	}
 	if s.Threads > 1 {
-		if ns, err := r.fs.ReadThreadsRunDelay(e.key.pid); err == nil {
-			s.RunDelayNS = ns
+		if th, err := r.fs.ReadThreads(e.key.pid); err == nil {
+			s.RunDelayNS, s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = th.RunDelayNS, th.BlkioTicks, th.VolCtx, th.NonVolCtx
+			s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = th.Run, th.SleepI, th.SleepU, th.Idle
 		}
 	}
 	if !r.cfg.ProcIO {

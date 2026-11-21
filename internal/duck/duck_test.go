@@ -27,9 +27,10 @@ func batches() []*store.Batch {
 	return []*store.Batch{
 		{
 			Sample:      store.Sample{TS: 1000, FDWalk: true, NProc: 1, Rows: 5, CPUUS: 10},
-			ProcInserts: []store.ProcRow{{ID: 101, PID: 10, StartTime: 900, PPID: 1, Comm: "srv", Cmdline: "srv -x", FirstSeen: 1000, Source: "sample"}},
+			ProcInserts: []store.ProcRow{{ID: 101, PID: 10, StartTime: 900, PPID: 1, Comm: "srv", Cmdline: "srv -x", FirstSeen: 1000, Source: "sample", RGID: 100}},
 			ProcSamples: []store.ProcSample{{ProcID: 101, TS: 1000, State: "S", CPUTicks: 5, RSSKB: 100, VSZKB: 200, Threads: 2, RChar: 7, ReadBytes: 4096, WriteBytes: 8192,
-				MinFlt: 11, MajFlt: 2, ShrKB: 40, Priority: -51, Policy: 1, RTPriority: 50, CPU: 3, PSFlags: 5, STimeTicks: 2, GuestTicks: 1, BlkioTicks: 6, RSSStatKB: 96, WaitNS: 12345, VolCtx: 9, NonVolCtx: 4, Wchan: "do_epoll_wait"}},
+				MinFlt: 11, MajFlt: 2, ShrKB: 40, Priority: -51, Policy: 1, RTPriority: 50, CPU: 3, PSFlags: 5, STimeTicks: 2, GuestTicks: 1, BlkioTicks: 6, RSSStatKB: 96, WaitNS: 12345, VolCtx: 9, NonVolCtx: 4, Wchan: "do_epoll_wait",
+				RunDelayNS: 23456, VmStkKB: 132, VmSwapKB: 8, BlkioAllTicks: 7, VolCtxAll: 15, NonVolCtxAll: 5, ThrSleepI: 2}},
 			SockInserts: []store.SockRow{{ID: 201, Inode: 555, Proto: "tcp", Family: 4, LAddr: "127.0.0.1", LPort: 80, RAddr: "127.0.0.2", RPort: 4000, FirstSeen: 1000}},
 			SockSamples: []store.SockSample{{SockID: 201, TS: 1000, State: 1}},
 			OwnInserts:  []store.OwnerRow{{ID: 301, SockID: 201, ProcID: 101, FD: 3, FirstSeen: 1000}},
@@ -119,7 +120,7 @@ func dump(t *testing.T, db *sql.DB, table, cols string) string {
 
 var compare = map[string]string{
 	"samples":          "ts, fd_walk, skipped, nproc, rows, cpu_us",
-	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, netns, killer_pid, killer_uid, killer_comm",
+	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, rgid, netns, killer_pid, killer_uid, killer_comm",
 	"oom_events":       "ts, pid, start_time, comm, rss_kb, snapshot",
 	"recorder_stats":   "ts, source, events, dropped",
 	"tcp_conns":        "id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source, netns",
@@ -128,7 +129,7 @@ var compare = map[string]string{
 	"tcp_transitions":  "conn_id, ts, seq, old_state, new_state",
 	"tcp_keyframes":    "ts, proto, laddr, lport, inode, state, recv_q, conn_id, pid, fd, netns",
 	"reconcile":        "ts, kind, dump_rows, missing_from_events, extra_in_events",
-	"proc_samples":     "proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan",
+	"proc_samples":     "proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan, run_delay_ns, vm_stk_kb, vm_swap_kb, blkio_all_ticks, vol_ctx_all, nonvol_ctx_all, thr_sleep_i",
 	"sockets":          "id, inode, proto, family, laddr, lport, raddr, rport, first_seen, last_seen",
 	"sock_samples":     "sock_id, ts, state, rxq, txq",
 	"sock_owners":      "id, sock_id, proc_id, fd, first_seen, last_seen",
