@@ -36,3 +36,23 @@ func TestParseSystemOutput(t *testing.T) {
 		}
 	}
 }
+
+// TestBetween: a real value between clifr's at the checkpoint's sample and
+// at the next one changed during the gap (either direction); outside both,
+// it does not.
+func TestBetween(t *testing.T) {
+	for _, c := range []struct {
+		v, a, b string
+		want    bool
+	}{
+		{"751", "739", "748", true},  // within 1 of the next sample
+		{"339", "335", "339", true},  // the next sample's value
+		{"340", "345", "335", true},  // between, decreasing
+		{"360", "335", "339", false}, // above both
+		{"x", "335", "339", false},
+	} {
+		if got := between(c.v, c.a, c.b, 0.01, 1); got != c.want {
+			t.Errorf("between(%s, %s, %s) = %v", c.v, c.a, c.b, got)
+		}
+	}
+}

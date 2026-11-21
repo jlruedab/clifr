@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"database/sql"
 	"math"
 	"regexp"
 	"strconv"
@@ -97,6 +98,17 @@ func parseUptime(out string) sysTable {
 	return sysTable{"": row}
 }
 
+// between: v lies between a and b (either order), or near one of them.
+func between(v, a, b string, rel, abs float64) bool {
+	if near(v, a, rel, abs) || near(v, b, rel, abs) {
+		return true
+	}
+	x, err1 := strconv.ParseFloat(v, 64)
+	y, err2 := strconv.ParseFloat(a, 64)
+	z, err3 := strconv.ParseFloat(b, 64)
+	return err1 == nil && err2 == nil && err3 == nil && min(y, z) <= x && x <= max(y, z)
+}
+
 func render(print func(*strings.Builder)) string {
 	var sb strings.Builder
 	print(&sb)
@@ -105,52 +117,82 @@ func render(print func(*strings.Builder)) string {
 
 func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
-	spans, err := query.SysSpans(db, query.Window{At: snap.sampleTS}, 0)
-	if err != nil || spans[0].To != snap.sampleTS {
+	rel, abs := map[string]float64{}, map[string]float64{}
+	skip := map[string]bool{}
+	// reconAt is clifr's output at the system sample ts, parsed.
+	reconAt := func(ts int64) (sysTable, error) {
+		spans, err := query.SysSpans(db, query.Window{At: ts}, 0)
+		if err != nil || spans[0].To != ts {
+			return nil, err
+		}
+		switch snap.cmd {
+		case "uptime":
+			rows, err := query.Uptime(db, spans)
+			if err != nil {
+				return nil, err
+			}
+			rows[0].Users = query.UsersAt(db, ts, query.Procps3(db, ts))
+			return parseUptime(render(func(sb *strings.Builder) { query.PrintUptime(sb, rows) })), nil
+		case "vmstat":
+			rows, err := query.VMStat(db, spans)
+			if err != nil {
+				return nil, err
+			}
+			return parseColumns(render(func(sb *strings.Builder) { query.PrintVMStat(sb, rows) }), " r  b", "", 0), nil
+		case "mpstat -P ALL":
+			rows, err := query.MPStat(db, spans, "ALL")
+			if err != nil {
+				return nil, err
+			}
+			return parseColumns(render(func(sb *strings.Builder) { query.PrintMPStat(sb, rows) }), "%usr", "CPU", 1), nil
+		case "iostat -dx":
+			reps, err := query.IOStat(db, spans, false)
+			if err != nil {
+				return nil, err
+			}
+			return parseColumns(render(func(sb *strings.Builder) { query.PrintIOStat(sb, reps, true, true) }), "Device", "Device", 0), nil
+		}
+		return nil, nil
+	}
+	recon, err := reconAt(snap.sampleTS)
+	if err != nil {
+		return res, err
+	}
+	if recon == nil {
 		res.example("no system counters at the checkpoint sample")
 		return res, nil
 	}
-	var real, recon sysTable
-	rel, abs := map[string]float64{}, map[string]float64{}
-	skip := map[string]bool{}
-	switch snap.cmd {
-	case "uptime":
-		rows, err := query.Uptime(db, spans)
-		if err != nil {
+	// The same at the next system sample: the real tool read the counters
+	// between the two, so a value between them changed during the gap (a
+	// since-boot average moves fast on a young system: a VM writing 1 MB in
+	// the 100 ms gap, minutes after boot, moved vmstat's bo by 1.6%).
+	var next sysTable
+	var nextTS sql.NullInt64
+	db.QueryRow(`SELECT MIN(ts) FROM sys_samples WHERE ts > ?`, snap.sampleTS).Scan(&nextTS)
+	if nextTS.Valid {
+		if next, err = reconAt(nextTS.Int64); err != nil {
 			return res, err
 		}
-		rows[0].Users = query.UsersAt(db, snap.sampleTS, query.Procps3(db, snap.sampleTS))
-		real, recon = parseUptime(snap.output), parseUptime(render(func(sb *strings.Builder) { query.PrintUptime(sb, rows) }))
+	}
+	var real sysTable
+	switch snap.cmd {
+	case "uptime":
+		real = parseUptime(snap.output)
 		abs["up_min"], abs["load1"], abs["load5"], abs["load15"] = 1, 0.05, 0.05, 0.05
 		if recon[""]["users"] == "" { // logins not recorded
 			skip["users"] = true
 		}
 	case "vmstat":
-		rows, err := query.VMStat(db, spans)
-		if err != nil {
-			return res, err
-		}
 		real = parseColumns(snap.output, " r  b", "", 0)
-		recon = parseColumns(render(func(sb *strings.Builder) { query.PrintVMStat(sb, rows) }), " r  b", "", 0)
 		skip["r"], skip["b"], skip["cs"] = true, true, true
 		rel["free"], rel["buff"], rel["cache"] = 0.02, 0.02, 0.02
 		for _, c := range []string{"us", "sy", "id", "wa", "st", "gu", "si", "so", "bi", "bo", "in"} {
 			abs[c] = 1 // whole numbers: a rounding step
 		}
 	case "mpstat -P ALL":
-		rows, err := query.MPStat(db, spans, "ALL")
-		if err != nil {
-			return res, err
-		}
 		real = parseColumns(snap.output, "%usr", "CPU", 1)
-		recon = parseColumns(render(func(sb *strings.Builder) { query.PrintMPStat(sb, rows) }), "%usr", "CPU", 1)
 	case "iostat -dx":
-		reps, err := query.IOStat(db, spans, false)
-		if err != nil {
-			return res, err
-		}
 		real = parseColumns(snap.output, "Device", "Device", 0)
-		recon = parseColumns(render(func(sb *strings.Builder) { query.PrintIOStat(sb, reps, true, true) }), "Device", "Device", 0)
 	}
 	res.Real, res.Recon = len(real), len(recon)
 	for key, rr := range real {
@@ -161,7 +203,7 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 			continue
 		}
 		res.Matched++
-		exact := true
+		exact, changed := true, false
 		for col, rv := range rr {
 			if skip[col] {
 				continue
@@ -174,6 +216,10 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 				a = 0.02
 			}
 			if !near(rv, sr[col], r, a) {
+				if nr, ok := next[key]; ok && between(rv, sr[col], nr[col], r, a) {
+					changed = true
+					continue
+				}
 				exact = false
 				res.FieldDiffs[col]++
 				if res.FieldDiffs[col] <= 3 {
@@ -181,7 +227,10 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 				}
 			}
 		}
-		if exact {
+		switch {
+		case exact && changed:
+			res.ChurnChanged++
+		case exact:
 			res.Exact++
 		}
 	}
