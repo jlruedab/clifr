@@ -8,3 +8,7 @@ bench/results/
 bench/bin/
 /dist/
 /HANDOFF.md
+# Plan documents stay local (the user, 2026-11-22)
+/docs/clifr-plan.md
+/docs/sos-vault-integration.md
+/docs/sos-vault-integration-draft2.md
