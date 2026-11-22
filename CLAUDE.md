@@ -316,6 +316,16 @@ wait for the user's go-ahead.
   single-threaded one takes its own values): `blkio_all_ticks`, `vol_ctx_all`, `nonvol_ctx_all`,
   `thr_run|sleep_i|sleep_u|idle` (atop's BDELAY, NVCSW/NIVCSW, TRUN/TSLPI/TSLPU/TIDLE, PRC #tidle);
   status's `vm_stk|swap|data|exe|lib|lck_kb` (atop -m); `processes.rgid` (-1: event-only).
+  Schema 13 (2026-11-22, for iotop, `recorder/ioprio.go`): `proc_samples.ioprio`, the main thread's I/O
+  priority as both iotops show it (class << 13 | data: the one set with ioprio_set, else derived
+  from the policy and nice: FIFO/RR rt/((nice+20)/5), IDLE idle, else be/((nice+20)/5); the policy
+  from sched_getscheduler for FIFO/RR/IDLE only, as SCHED_RESET_ON_FORK, absent from stat, makes
+  iotop say be: rtkit's canary thread), -1 unknown (system calls: none with `--proc-root`
+  fixtures), at every sample; `ioprio_dif` = 1 when the threads' names ("rt/N", "be/N", "idle")
+  differ (iotop -P: "?dif"), from the per-thread walk (`procfs.Threads.Prio`: each thread's nice and
+  policy). Checked against iotop 0.6 on the desktop: 521 of 521 processes the same, 7 "?dif".
+  About 0.3 us per process per sample. iotop captures (Python 0.6-18/-24/-30/-42, iotop-c
+  1.21/1.26/1.31/1.33; desktop and four VMs): bench/results/iotop-captures-20261122.
   `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): as
   root into a pipe; at `--at` the screen since boot, over a range `atop INTERVAL [COUNT]` (the
   increase between the samples at or before each bound; active processes, exited ones as <name>);
@@ -458,8 +468,8 @@ wait for the user's go-ahead.
   Source "group" (schema 12, for atop -v): "gid name" pairs only (never members), `query.GroupName`;
   without it this machine's names only for a recording from this machine or one without names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
-  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 12 since
-  2026-11-21; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 13 since
+  2026-11-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

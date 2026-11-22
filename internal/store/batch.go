@@ -323,6 +323,11 @@ type ProcSample struct {
 	VmStkKB, VmSwapKB, VmDataKB, VmExeKB, VmLibKB, VmLckKB int64
 	BlkioAllTicks, VolCtxAll, NonVolCtxAll                 int64
 	ThrRun, ThrSleepI, ThrSleepU, ThrIdle                  int
+	// Schema 13, for iotop: the main thread's I/O priority as iotop shows it
+	// (class << 13 | data: the one set, else derived from the policy and nice
+	// value; -1 unknown) at every sample, and, by the rule of VolCtx, 1 when
+	// the threads' priorities as iotop shows them differ (iotop -P: "?dif").
+	IOPrio, IOPrioDif int
 }
 
 // NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named

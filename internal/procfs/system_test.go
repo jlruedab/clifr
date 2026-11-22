@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -125,19 +127,20 @@ func TestReadPressure(t *testing.T) {
 // TestReadThreads: what atop adds up over the threads.
 func TestReadThreads(t *testing.T) {
 	dir := t.TempDir()
-	stat := func(state byte, blkio int) string {
+	stat := func(state byte, blkio int, nice, policy int) string {
 		// pid (comm) state, then fields 4..41 and 42 (delayacct_blkio_ticks).
 		f := make([]string, 49)
 		for i := range f {
 			f[i] = "0"
 		}
 		f[38] = strconv.Itoa(blkio)
+		f[15], f[37] = strconv.Itoa(nice), strconv.Itoa(policy) // fields 19 and 41
 		return "40 (worker) " + string(state) + " " + strings.Join(f, " ") + "\n"
 	}
 	for tid, v := range map[string][3]string{
-		"40": {"100 2000 3\n", stat('S', 5), "voluntary_ctxt_switches:\t10\nnonvoluntary_ctxt_switches:\t2\n"},
-		"41": {"50 500 1\n", stat('D', 7), "voluntary_ctxt_switches:\t4\nnonvoluntary_ctxt_switches:\t1\n"},
-		"42": {"1 1 1\n", stat('I', 0), "voluntary_ctxt_switches:\t1\nnonvoluntary_ctxt_switches:\t0\n"},
+		"40": {"100 2000 3\n", stat('S', 5, 0, 0), "voluntary_ctxt_switches:\t10\nnonvoluntary_ctxt_switches:\t2\n"},
+		"41": {"50 500 1\n", stat('D', 7, -5, 0), "voluntary_ctxt_switches:\t4\nnonvoluntary_ctxt_switches:\t1\n"},
+		"42": {"1 1 1\n", stat('I', 0, 0, 2), "voluntary_ctxt_switches:\t1\nnonvoluntary_ctxt_switches:\t0\n"},
 	} {
 		d := filepath.Join(dir, "40", "task", tid)
 		os.MkdirAll(d, 0o755)
@@ -148,8 +151,14 @@ func TestReadThreads(t *testing.T) {
 	f := FS{Root: dir}
 	got, err := f.ReadThreads(40)
 	want := Threads{RunDelayNS: 2501, BlkioTicks: 12, VolCtx: 15, NonVolCtx: 3, SleepI: 1, SleepU: 1, Idle: 1}
-	if err != nil || got != want {
+	prio := got.Prio
+	sort.Slice(prio, func(i, j int) bool { return prio[i].TID < prio[j].TID })
+	got.Prio = nil
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("threads: %+v %v, want %+v", got, err, want)
+	}
+	if fmt.Sprint(prio) != "[{40 0 0} {41 -5 0} {42 0 2}]" {
+		t.Errorf("thread priorities: %v", prio)
 	}
 	if _, err := f.ReadThreads(41); err == nil {
 		t.Error("no such process: no error")

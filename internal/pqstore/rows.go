@@ -104,6 +104,8 @@ type procSampleRow struct {
 	ThrSleepI     int32  `parquet:"thr_sleep_i"`
 	ThrSleepU     int32  `parquet:"thr_sleep_u"`
 	ThrIdle       int32  `parquet:"thr_idle"`
+	IOPrio        int32  `parquet:"ioprio"`     // schema 13
+	IOPrioDif     int32  `parquet:"ioprio_dif"` // schema 13
 	VolCtx        int64  `parquet:"vol_ctx"`
 	NonVolCtx     int64  `parquet:"nonvol_ctx"`
 	Wchan         string `parquet:"wchan,dict"`
@@ -411,7 +413,7 @@ func procSampleOf(p store.ProcSample) procSampleRow {
 		RTPriority: int32(p.RTPriority), CPU: int32(p.CPU), PSFlags: int32(p.PSFlags), STime: p.STimeTicks, Guest: p.GuestTicks, Blkio: p.BlkioTicks, RSSStatKB: p.RSSStatKB, WaitNS: p.WaitNS, RunDelayNS: p.RunDelayNS,
 		VmStkKB: p.VmStkKB, VmSwapKB: p.VmSwapKB, VmDataKB: p.VmDataKB, VmExeKB: p.VmExeKB, VmLibKB: p.VmLibKB, VmLckKB: p.VmLckKB,
 		BlkioAllTicks: p.BlkioAllTicks, VolCtxAll: p.VolCtxAll, NonVolCtxAll: p.NonVolCtxAll,
-		ThrRun: int32(p.ThrRun), ThrSleepI: int32(p.ThrSleepI), ThrSleepU: int32(p.ThrSleepU), ThrIdle: int32(p.ThrIdle), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
+		ThrRun: int32(p.ThrRun), ThrSleepI: int32(p.ThrSleepI), ThrSleepU: int32(p.ThrSleepU), ThrIdle: int32(p.ThrIdle), IOPrio: int32(p.IOPrio), IOPrioDif: int32(p.IOPrioDif), VolCtx: p.VolCtx, NonVolCtx: p.NonVolCtx, Wchan: p.Wchan}
 }
 
 func socketOf(s store.SockRow) socketRow {

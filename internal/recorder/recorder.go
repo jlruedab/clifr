@@ -89,15 +89,18 @@ type procEntry struct {
 }
 
 type Recorder struct {
-	cfg   Config
-	fs    procfs.FS
-	db    store.Backend
-	log   *Logger
-	boot  int64 // boot time, unix ms
-	sys   *sysSampler
-	gen   uint64
-	procs map[procKey]*procEntry
-	ids   map[string]int64 // next id per table
+	cfg Config
+	fs  procfs.FS
+	// ioprioGet and schedGet read a task's I/O priority and scheduling
+	// policy (system calls: nil with --proc-root fixtures).
+	ioprioGet, schedGet func(tid int) (int, error)
+	db                  store.Backend
+	log                 *Logger
+	boot                int64 // boot time, unix ms
+	sys                 *sysSampler
+	gen                 uint64
+	procs               map[procKey]*procEntry
+	ids                 map[string]int64 // next id per table
 
 	verifySkipped map[string]bool // verify commands already reported skipped (verifycap.go)
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
@@ -286,6 +289,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		r.pending.Guard = append(r.pending.Guard, g)
 	}
 	if cfg.ProcRoot == "/proc" || cfg.ProcRoot == "" { // not with fixtures
+		r.ioprioGet, r.schedGet = sysIOPrioGet, sysSchedGet
 		if rows, g, ok := r.pstoreAtStart(db, bootID, defaultPstore); ok {
 			logger.Warnf("%s", g.Detail)
 			r.pending.Kmsg = append(r.pending.Kmsg, rows...)
@@ -801,7 +805,7 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 			MinFlt: int64(st.MinFlt), MajFlt: int64(st.MajFlt), ShrKB: shr * int64(pageKB),
 			Priority: st.Priority, Policy: st.Policy, RTPriority: st.RTPriority, CPU: st.Processor,
 			PSFlags: int(st.Flags>>6) & 7, STimeTicks: int64(st.Stime), GuestTicks: int64(st.GuestTime),
-			BlkioTicks: int64(st.BlkioTicks), RSSStatKB: st.RSS * int64(pageKB)}
+			BlkioTicks: int64(st.BlkioTicks), RSSStatKB: st.RSS * int64(pageKB), IOPrio: r.ioprioOf(pid, st.Nice, st.Policy)}
 		r.sampleRun(e, &s, fresh, status, haveStatus)
 		// Unchanged values are written again in every UTC hour: retention
 		// would otherwise delete an idle process's only row.
@@ -915,6 +919,7 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 		s.VmStkKB, s.VmSwapKB, s.VmDataKB, s.VmExeKB, s.VmLibKB, s.VmLckKB = p.VmStkKB, p.VmSwapKB, p.VmDataKB, p.VmExeKB, p.VmLibKB, p.VmLckKB
 		s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = p.BlkioAllTicks, p.VolCtxAll, p.NonVolCtxAll
 		s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = p.ThrRun, p.ThrSleepI, p.ThrSleepU, p.ThrIdle
+		s.IOPrioDif = p.IOPrioDif
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
 		return
 	}
@@ -934,6 +939,7 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	// stat delay and status switches are its main thread's).
 	s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = s.BlkioTicks, s.VolCtx, s.NonVolCtx
 	s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = 0, 0, 0, 0
+	s.IOPrioDif = 0
 	switch s.State {
 	case "R":
 		s.ThrRun = 1
@@ -948,6 +954,7 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 		if th, err := r.fs.ReadThreads(e.key.pid); err == nil {
 			s.RunDelayNS, s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = th.RunDelayNS, th.BlkioTicks, th.VolCtx, th.NonVolCtx
 			s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = th.Run, th.SleepI, th.SleepU, th.Idle
+			s.IOPrioDif = r.ioprioDif(th.Prio)
 		}
 	}
 	if !r.cfg.ProcIO {

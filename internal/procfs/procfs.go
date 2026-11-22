@@ -501,7 +501,13 @@ type Threads struct {
 	RunDelayNS, BlkioTicks    int64
 	VolCtx, NonVolCtx         int64
 	Run, SleepI, SleepU, Idle int // R, S, D, I
+	// Each thread's id, nice value and scheduling policy (iotop derives a
+	// thread's I/O priority from them when none was set).
+	Prio []ThreadPrio
 }
+
+// ThreadPrio is one thread's id, nice value and policy, from its stat.
+type ThreadPrio struct{ TID, Nice, Policy int }
 
 // ReadThreads reads /proc/<pid>/task/*/{schedstat,stat,status}. A thread
 // gone between the listing and its files is left out.
@@ -527,6 +533,9 @@ func (f FS) ReadThreads(pid int) (t Threads, err error) {
 			continue
 		}
 		read++
+		if tid, err := strconv.Atoi(n); err == nil {
+			t.Prio = append(t.Prio, ThreadPrio{TID: tid, Nice: st.Nice, Policy: st.Policy})
+		}
 		switch st.State {
 		case 'R':
 			t.Run++
