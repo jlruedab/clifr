@@ -603,7 +603,10 @@ v2:
    reads), other samples about 2 ms. Rerun after phase 8 step 4 (2026-10-24, busy-, scaling-,
    report-20261023-2100): 1.90% of one core, 287 / 335 MiB, all 15 scaling points within budget,
    pgbench within noise; the once-a-minute reads (~15 ms: block devices, sysctl, slabinfo) make
-   every other 30 s sample that much longer (71 against 57.5 ms p50 without an fd walk).
+   every other 30 s sample that much longer (71 against 57.5 ms p50 without an fd walk). Rerun after
+   iotop/htop/sar/atop (2026-11-22, busy-, scaling-, report-20261122-2240, commit 0daec32): 2.17% of
+   one core (2.03 on 11-19), 288 / 333 MiB, all 15 scaling points within budget, pgbench p99 +2 µs
+   (1.4%); the process phase 76 against 53 ms p50 (main-thread schedstat, per-thread walk, ioprio).
 8. [x] System-wide counters: /proc/stat, loadavg, meminfo, vmstat, diskstats per sample
    (raw cumulative counters; system, per-CPU and per-disk tables); `clifr uptime|vmstat|
    mpstat|iostat`; `clifr verify` compares them (`uptime`'s user count since 2026-11-20). About 0.2 ms of

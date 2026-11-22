@@ -175,7 +175,7 @@ clifrd also keeps an eye on itself: above 2% of one core over 5 minutes it walks
 
 | | Desktop | Busy server (benchmark) |
 |---|---|---|
-| CPU | 0.35% of one core | 2.0% of one core |
+| CPU | 0.35% of one core | 2.2% of one core |
 | Memory | 88 MiB | about 290 MiB on average, 333 MiB at most |
 | Disk | 20 MiB a day | capped at 2 GB |
 | Effect on the application | | about 1 µs (1–2%) added PostgreSQL latency |
@@ -1345,24 +1345,29 @@ before, which also took the recorder to 947 MiB).
 
 ### Cost at the busy load
 
-Three runs of 15 minutes each (2026-11-19, `busy-20261119-2017`, commit
-`d12d425`, browsers closed). The 2026-10-23 batch (`report-20261023-2100`,
-commit `a1657bd`, after step 4 of phase 8) is in brackets.
+Three runs of 15 minutes each (2026-11-22, `report-20261122-2240`, commit
+`0daec32`, browsers closed). The 2026-11-19 batch (`busy-20261119-2017`,
+commit `d12d425`) is in brackets.
 
 | Metric | clifr, default (B) | atop 30 s |
 |---|---:|---:|
-| CPU, % of one core | 2.03 ± 0.02 (1.90) | 0.57 ± 0.04 |
-| CPU, % of the machine | 0.09 (0.09) | 0.03 |
-| Memory (anonymous), average | 290 MiB (287) | 26 MiB |
-| Memory (anonymous), max | 333 MiB (335) | 33 MiB |
-| Data kept per day | 4.07 GiB (4.06) | 0.32 GiB |
+| CPU, % of one core | 2.17 ± 0.05 (2.03) | 0.54 ± 0.02 |
+| CPU, % of the machine | 0.10 (0.09) | 0.02 |
+| Memory (anonymous), average | 288 MiB (290) | 25 MiB |
+| Memory (anonymous), max | 333 MiB (333) | 31 MiB |
+| Data kept per day | 4.08 GiB (4.07) | 0.31 GiB |
 | Written to disk per day | 11.5 GiB (11.5) | 0.74 GiB |
 
-The aggressive configuration (10 s / 60 s) used 2.59% (2.94), the
-conservative one (60 s / 300 s) 1.82% (1.69). The guard rail recorded two
-`budget_exceeded` events in each default run and kept the fd interval at 2
-minutes. The default configuration costs about 0.1 point more than on
-2026-10-23: what came since (network namespaces, container names, the event
+The aggressive configuration (10 s / 60 s) used 2.88% (2.59), the
+conservative one (60 s / 300 s) 1.89% (1.82). The guard rail kept the fd
+interval at 2 minutes in each default run. The 0.14 point since 2026-11-19
+is what iotop, atop and htop need, read at every sample: each process's
+main-thread run time (the I/O rule), the per-thread walk of multi-threaded
+processes and the I/O priority. The process phase of a sample takes 76
+against 53 ms (median); memory, disk and the other phases are unchanged.
+The 10 s configuration samples three times as often and rose most (+0.29).
+On 2026-11-19 the default configuration cost about 0.1 point more than on
+2026-10-23 (1.90%): what came between (network namespaces, container names, the event
 budget, the integrity log, pstore, mounts and users read on another machine)
 adds small amounts that a profile cannot separate from noise. The TCP event
 budget's filter was made cheaper before this batch (one decision per batch
@@ -1388,17 +1393,17 @@ against no recorder:
 
 | Metric | No recorder | Difference | 95% interval |
 |---|---:|---:|---|
-| Transactions per second | 80,006 | −7 | −23 to +9, within noise |
-| Latency average | 0.072 ms | +0.000 ms | −0.001 to +0.002, within noise |
-| Latency p99 | 0.120 ms | +0.001 ms | −0.003 to +0.004, within noise |
-| Latency p99.9 | 0.183 ms | −0.009 ms | −0.033 to +0.015, within noise |
+| Transactions per second | 79,996 | +11 | −18 to +40, within noise |
+| Latency average | 0.071 ms | +0.000 ms | −0.001 to +0.002, within noise |
+| Latency p99 | 0.117 ms | +0.002 ms | +0.000 to +0.003, measurable (1.4%) |
+| Latency p99.9 | 0.162 ms | +0.015 ms | −0.017 to +0.046, within noise |
 
 The clifr configurations added up to about 1 µs to the average latency
-and to p99 (under 1%), all within noise in this batch;
-p99 was measurable for the default configuration on 2026-10-22 (+3 µs,
-2.8%) and for all three on 2026-10-21 (+2 µs); atop added nothing
-measurable. The machine's CPU use rose by 0.2–0.4 points (0.3–0.6 on 2026-10-23), about
-4–9% of one core, more than the recorder's own 2.0%: most likely the eBPF programs, whose time is
+(within noise) and 1–3 µs to p99 (1–2%, measurable for the default and the
+10 s configurations in this batch; within noise on 2026-11-19, +3 µs on
+2026-10-22, +2 µs for all three on 2026-10-21); atop added nothing
+measurable. The machine's CPU use rose by 0.4–0.5 points (0.2–0.4 on 2026-11-19), about
+9–11% of one core, more than the recorder's own 2.2%: most likely the eBPF programs, whose time is
 charged to the processes they observe (not measured separately in these
 runs). The 2026-10-19 and 2026-10-17 batches showed no measurable change,
 but their no-recorder runs varied far more (average latency ±0.008 ms
@@ -1412,25 +1417,25 @@ and p99.9 by 0.121 ms, both measurable.
 One dimension varied at a time, no workload, guard rail off, 7 minutes per
 point. The budget is 2% of one core.
 
-2026-10-23 (`scaling-20261023-2100`); the 2026-10-22 batch
-(`scaling-20261022-1900`) is in brackets.
+2026-11-22 (`scaling-20261122-2240`); the 2026-11-09 batch
+(`scaling-20261109-0857`) is in brackets.
 
 | Point | Recorder CPU | eBPF programs | Memory max |
 |---|---:|---:|---:|
-| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.56–0.57% (0.51–0.53%) | 0.04% | 198–213 MiB (174–208) |
-| 10,000 processes | 1.09% (1.07%) | 0.04% | 249 MiB (262) |
-| 200,000 open files | 0.86% (0.81%) | 0.04% | 276 MiB (272) |
-| 100,000 connections | 0.95% (0.97%) | 0.07% | 366 MiB (360) |
-| 10 spawns/s | 0.53% (0.49%) | 0.03% | 233 MiB (222) |
-| 200 spawns/s | 0.70% (0.64%) | 0.14% | 222 MiB (241) |
-| 100 new connections/s | 1.12% (1.06%) | 0.22% | 255 MiB (259) |
-| 500 new connections/s | 1.64% (1.58%) | 0.94% | 318 MiB (327) |
+| Baseline (2,000 processes, 50,000 fds, 20,000 connections, 50 spawns/s) | 0.68–0.73% (0.66–0.68%) | 0.04% | 208–235 MiB (189–229) |
+| 10,000 processes | 1.29% (1.20%) | 0.04% | 271 MiB (250) |
+| 200,000 open files | 0.98% (0.97%) | 0.04% | 284 MiB (273) |
+| 100,000 connections | 1.14% (1.09%) | 0.07% | 370 MiB (397) |
+| 10 spawns/s | 0.65% (0.62%) | 0.04% | 266 MiB (237) |
+| 200 spawns/s | 0.78% (0.80%) | 0.14% | 237 MiB (228) |
+| 100 new connections/s | 1.23% (1.19%) | 0.23% | 255 MiB (255) |
+| 500 new connections/s | 1.83% (1.81%) | 0.95% | 315 MiB (312) |
 
 All 15 points fit the 2% budget, as in every batch since 2026-10-17 (1 of
-15 on 2026-10-12). CPU is 0.00–0.06 points higher than on 2026-10-22 (step
-4's reads); the samples without an fd walk are 15–17 ms longer at every
-point (the once-a-minute reads); memory is the same within noise, and peak
-memory 20–35% lower than on 2026-10-17.
+15 on 2026-10-12). CPU is up to 0.09 points higher than on 2026-11-09, most
+with 10,000 processes (the per-process reads for iotop, atop and htop); the
+samples without an fd walk are 4–25 ms longer (median); memory is the same
+within noise, and peak memory 20–35% lower than on 2026-10-17.
 The eBPF programs run inside the observed processes' own kernel paths, so
 their time is charged to those processes and is not part of the recorder's
 CPU figure.
@@ -1520,15 +1525,15 @@ continuous eBPF tracer, not a metrics exporter.
   missed too, `ss` shows a time-wait socket that did not exist for up to
   60 s.
 
-- **CPU is at the 2% budget at the busy load**: 2.03% of one core on
-  average (2026-11-19; 1.84–1.94% in the batches of 2026-10-19 to 11-09),
-  with two `budget_exceeded` events a run; an hourly
+- **CPU is slightly above the 2% budget at the busy load**: 2.17% of one core
+  on average (2026-11-22; 2.03% on 11-19, before the per-process reads for
+  iotop, atop and htop; 1.84–1.94% in the batches of 2026-10-19 to 11-09); an hourly
   compaction adds a burst of a few seconds. Every scaling point is within
   it. The guard rail lengthens the fd interval only when the fd walks are
   at least a quarter of the recorder's CPU (9–14% at the busy load), so it
   kept the interval at 2 minutes in every default run.
-- **Memory**: 285 MiB on average (332 at most) at the
-  busy load and up to 377 MiB with 100,000 connections (2026-10-19), down
+- **Memory**: 288 MiB on average (333 at most) at the
+  busy load and up to 370 MiB with 100,000 connections (2026-11-22), down
   from 429 / 488 and 561 MiB: rows held in memory are pointer-free
   (fixed-size addresses, enums and interned names instead of strings and
   pointers), so the garbage collector does not scan them, and the heap
