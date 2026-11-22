@@ -204,10 +204,14 @@ func Run(db *store.DB) (*Report, error) {
 			}
 			res, err = compareNetstat(db, s)
 		default:
-			if !strings.HasPrefix(s.cmd, "iotop -b -P -n 2 -d ") {
+			switch {
+			case strings.HasPrefix(s.cmd, "iotop -b -P -n 2 -d "):
+				res, err = compareIotop(db, s)
+			case strings.HasPrefix(s.cmd, "sar "):
+				res, err = compareSar(db, s)
+			default:
 				continue
 			}
-			res, err = compareIotop(db, s)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%s at %s: %w", s.cmd, query.FormatMS(s.sampleTS), err)

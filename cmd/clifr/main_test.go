@@ -65,7 +65,8 @@ func TestRunErrors(t *testing.T) {
 	}{
 		{[]string{}, "no command given"},
 		{[]string{"--at", "now", "ps -efx"}, "option -x is not supported"},
-		{[]string{"--at", "now", "sar"}, `"sar" is not a supported command`},
+		{[]string{"--at", "now", "btop"}, `"btop" is not a supported command`},
+		{[]string{"--at", "now", "sar"}, "use --since and --until"},
 		{[]string{"ps", "aux", "--at", "now"}, "go before the command"},
 		{[]string{"--at", "now", "ps aux", "extra"}, "unexpected \"extra\""},
 		{[]string{"ps aux"}, "--at or --since is required"},

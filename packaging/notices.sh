@@ -48,7 +48,7 @@ duckdb=
 	# Code that follows other projects' code (LICENSING.md, "Code derived
 	# from other projects"): the first line of each file names what.
 	case $(basename "$bin") in
-	clifr) derived="net-tools util-linux coreutils procps numactl nfs-utils systemd iproute2 conntrack-tools atop iotop htop" ;;
+	clifr) derived="net-tools util-linux coreutils procps numactl nfs-utils systemd iproute2 conntrack-tools atop iotop htop sysstat" ;;
 	clifrd) derived="util-linux procps iotop" ;;
 	*) derived= ;;
 	esac

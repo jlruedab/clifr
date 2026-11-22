@@ -57,6 +57,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 | `htop` | htop's screen at a moment as text: CPU bars, memory, tasks, load, every process (`-t` tree) |
 | `pstree` | the process tree |
 | `pidstat` | CPU, memory, disk and context switches per process |
+| `sar` | sar's reports over a period, as `sar -f` prints a day's file: CPU, memory, swap, load, network |
 | `systemd-cgls` | processes grouped by service (cgroups) |
 | `systemctl list-units` | systemd's services and their state |
 
@@ -836,6 +837,32 @@ chooses one; a line on stderr says when a style other than current is used.
   FSTYPE OPTIONS. The parent mount is not recorded: the tree uses the mount
   on the longest prefix of each path, which differs from findmnt only for a
   mount made under a path that was later mounted over.
+- `sar [-A] [-u [ALL]] [-P ALL|CPUS] [-w] [-W] [-r] [-S] [-H] [-v] [-q [CPU|ALL]] [-I SUM]
+  [-n KEYWORD[,...]] [-F [MOUNT]] [-i SEC]` (`--since`/`--until` only): sar's reports as
+  `sar -f` prints them from a day's file, in the recorded host's sysstat (C locale): 12.7.7,
+  12.6.1 (Ubuntu 24.04), 12.5.x (RHEL 9, Ubuntu 22.04), 11.7.3 (RHEL 8). The records are
+  the system samples at each multiple of `-i SEC` (default 600 s, the clock's, as sa1's timer
+  writes them); each report in turn with its `Average:`, `LINUX RESTART` at a reboot (its
+  first record the next multiple, as after `sa1 --boot`), the header repeated as sar repeats
+  it into a file. Reports: CPU (`-u`, `-u ALL`, `-P`), task creation and context switches
+  (`-w`), swapping (`-W`), memory (`-r`), swap space (`-S`), huge pages (`-H`, sysstat 11),
+  dentries/files/inodes/ptys (`-v`, from a read every minute), run queue and load (`-q`;
+  CPU pressure `-q CPU`), interrupts (`-I SUM`, sysstat 11 and 12.5), every `-n` report but
+  SOFT and FC (DEV, EDEV, NFS, NFSD, SOCK, IP, EIP, ICMP, EICMP, TCP, ETCP, UDP and their
+  v6), file systems (`-F`). Not recorded yet, so refused: `-B`, `-b`, `-d`, `-r ALL`, `-H`
+  (sysstat 12), `-I ALL` (and `-I SUM` of 12.6+, from `/proc/interrupts`), `-n SOFT`, `-q
+  IO`/`MEM`, `-m`; `-y` and `-n FC` are not recorded. `-A` prints those clifr makes. The
+  run-queue size reads one higher than sar's at times (clifrd's own threads run while it
+  reads `/proc/loadavg`). It follows sysstat's code (packaging/notices/sysstat.txt).
+  Checked (2026-11-22) against `sar -f` of the same minutes: sysstat's own collector
+  (`sadc -S ALL 60`) beside a 5 s recording (`bench/sarcheck.sh`, `bench/sarcompare.sh`,
+  `bench/sarcheck`) in Rocky 8 (11.7.3), Alma 9 (12.5.4), Ubuntu 22.04 (12.5.2) and 24.04
+  (12.6.1): every report, row and item the same; of 14,600 values 88% exact, 10% within
+  5%, the rest instantaneous values (dirty memory, run queue) and bursts at a record's
+  boundary, as the records are seconds apart. Also against this desktop's own daily file
+  (12.7.7, a day with reboots) and RHEL 8 and 9 VMs' (their boots and restarts in place).
+  `clifr verify` compares the `sar REPORTS INTERVAL 1` clifrd runs in the background at each
+  checkpoint (`--verify-every`): every row matched on the desktop and in the four VMs.
 - `pidstat [-u] [-r] [-d] [-w] [-h] [-l] [-p PIDS|ALL] [-C REGEX]
   [INTERVAL [COUNT]]`: sysstat 12's reports (without its first line, as
   mpstat). At T: since boot, over the uptime, as pidstat prints without an

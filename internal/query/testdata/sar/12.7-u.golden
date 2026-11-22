@@ -1,0 +1,11 @@
+Linux 5.14.0-687.el9.x86_64 (web01) 	09/21/26 	_x86_64_	(2 CPU)
+
+14:20:01        CPU     %user     %nice   %system   %iowait    %steal     %idle
+14:25:01        all     12.41      0.99      3.23      0.50      0.00     82.88
+Average:        all     12.41      0.99      3.23      0.50      0.00     82.88
+
+14:28:01     LINUX RESTART	(2 CPU)
+
+14:30:01        CPU     %user     %nice   %system   %iowait    %steal     %idle
+14:35:01        all     12.41      0.99      3.23      0.50      0.00     82.88
+Average:        all     12.41      0.99      3.23      0.50      0.00     82.88

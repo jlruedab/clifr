@@ -123,7 +123,7 @@ func lookSystem(name string) (string, error) {
 // 2 where NFS is not in use: "No Client Stats"), is skipped: nothing is
 // compared for it. That is said once per run, not at every checkpoint.
 func (r *Recorder) captureVerify(sampleTS int64) {
-	r.startIotop(sampleTS)
+	r.startBackground(sampleTS)
 	_, otherNS := hostMountNS()
 	for _, argv := range verifyCommands {
 		cmdline := strings.Join(argv, " ")
@@ -163,7 +163,7 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		}
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
 			TS: start.UnixMilli(), EndTS: end.UnixMilli(), SampleTS: sampleTS,
-			Cmd: cmdline, IgnorePIDs: fmt.Sprintf("%d,%s%s", os.Getpid(), strconv.Itoa(pid), r.iotopIgnore()),
+			Cmd: cmdline, IgnorePIDs: fmt.Sprintf("%d,%s%s", os.Getpid(), strconv.Itoa(pid), r.bgIgnore()),
 			Output: output,
 		})
 	}
@@ -196,12 +196,12 @@ func firstLine(s string) string {
 	return strings.TrimSpace(l)
 }
 
-// iotopCapture is a real iotop measuring one interval in the background: it
+// bgCapture is a real tool measuring one interval in the background: it
 // starts at a checkpoint, before the other tools, and is collected at a
-// later sample (iotop -b -P -n 2 -d INTERVAL: its second screen is the
-// interval clifr compares with, from the checkpoint sample to the one at
-// its end).
-type iotopCapture struct {
+// later sample: iotop -b -P -n 2 -d INTERVAL (its second screen is the
+// interval clifr compares with, from the checkpoint sample to the one at its
+// end) and sar's reports over INTERVAL.
+type bgCapture struct {
 	cmdline  string
 	sampleTS int64
 	start    time.Time
@@ -213,27 +213,38 @@ type iotopCapture struct {
 	cmd      *exec.Cmd
 }
 
-// startIotop starts iotop at a checkpoint (Python iotop or iotop-c: skipped
-// where it is not installed, and without per-process I/O counters).
-func (r *Recorder) startIotop(sampleTS int64) {
-	if r.iotopRun != nil || !r.cfg.ProcIO {
+// sarReports: the reports clifrd's sar capture asks for, valid in sysstat
+// 11.7 to 12.7 (clifr verify compares those clifr makes).
+const sarReports = "-u ALL -P ALL -w -W -r -S -v -q -n DEV,EDEV,NFS,NFSD,SOCK,IP,EIP,ICMP,EICMP,TCP,ETCP,UDP,SOCK6,IP6,EIP6,ICMP6,EICMP6,UDP6 -F"
+
+// startBackground starts iotop (Python iotop or iotop-c: skipped without
+// per-process I/O counters) and sar at a checkpoint, each unless one of the
+// same is still running.
+func (r *Recorder) startBackground(sampleTS int64) {
+	d := max(int((r.cfg.Interval+time.Second/2)/time.Second), 1)
+	if r.cfg.ProcIO {
+		r.startBG("iotop", []string{"-b", "-P", "-n", "2", "-d", strconv.Itoa(d)}, sampleTS)
+	}
+	r.startBG("sar", append(strings.Fields(sarReports), strconv.Itoa(d), "1"), sampleTS)
+}
+
+func (r *Recorder) startBG(name string, argv []string, sampleTS int64) {
+	if r.bgRuns[name] != nil {
 		return
 	}
-	d := max(int((r.cfg.Interval+time.Second/2)/time.Second), 1)
-	argv := []string{"-b", "-P", "-n", "2", "-d", strconv.Itoa(d)}
-	cmdline := "iotop " + strings.Join(argv, " ")
-	path, err := lookSystem("iotop")
+	cmdline := name + " " + strings.Join(argv, " ")
+	path, err := lookSystem(name)
 	if err != nil {
 		r.verifySkip(cmdline, "not found")
 		return
 	}
-	c := &iotopCapture{cmdline: cmdline, sampleTS: sampleTS, done: make(chan error, 1)}
+	c := &bgCapture{cmdline: cmdline, sampleTS: sampleTS, done: make(chan error, 1)}
 	cmd := exec.Command(path, argv...)
-	cmd.Env = []string{"LC_ALL=C", "PATH=" + verifyPath, "COLUMNS=512"}
+	cmd.Env = []string{"LC_ALL=C", "PATH=" + verifyPath, "COLUMNS=512", "S_TIME_FORMAT="}
 	cmd.Stdout, cmd.Stderr = &c.out, &c.stderr
 	c.start = time.Now()
 	if err := cmd.Start(); err != nil {
-		r.log.Errorf("verify: iotop: %v", err)
+		r.log.Errorf("verify: %s: %v", name, err)
 		return
 	}
 	c.pid = cmd.Process.Pid
@@ -243,49 +254,51 @@ func (r *Recorder) startIotop(sampleTS int64) {
 		c.done <- err
 	}()
 	c.cmd = cmd
-	r.iotopRun = c
+	if r.bgRuns == nil {
+		r.bgRuns = map[string]*bgCapture{}
+	}
+	r.bgRuns[name] = c
 }
 
-// iotopIgnore is ",PID" of the iotop running in the background (the other
-// tools see it), else "".
-func (r *Recorder) iotopIgnore() string {
-	if r.iotopRun == nil {
-		return ""
+// bgIgnore is ",PID" of each tool running in the background (the other
+// tools see them), else "".
+func (r *Recorder) bgIgnore() string {
+	var b strings.Builder
+	for _, c := range r.bgRuns {
+		b.WriteString("," + strconv.Itoa(c.pid))
 	}
-	return "," + strconv.Itoa(r.iotopRun.pid)
+	return b.String()
 }
 
-// collectIotop queues iotop's output once it has finished; stop: kill it
-// (shutdown).
-func (r *Recorder) collectIotop(stop bool) {
-	c := r.iotopRun
-	if c == nil {
-		return
-	}
-	var err error
-	select {
-	case err = <-c.done:
-	default:
-		if !stop {
-			return
+// collectBackground queues each background tool's output once it has
+// finished; stop: kill them (shutdown).
+func (r *Recorder) collectBackground(stop bool) {
+	for name, c := range r.bgRuns {
+		var err error
+		select {
+		case err = <-c.done:
+		default:
+			if !stop {
+				continue
+			}
+			c.cmd.Process.Kill()
+			<-c.done
+			delete(r.bgRuns, name)
+			continue
 		}
-		c.cmd.Process.Kill()
-		<-c.done
-		r.iotopRun = nil
-		return
-	}
-	r.iotopRun = nil
-	if err != nil && c.out.Len() == 0 {
-		why := err.Error()
-		if l := firstLine(c.stderr.String()); l != "" {
-			why += ": " + l
+		delete(r.bgRuns, name)
+		if err != nil && c.out.Len() == 0 {
+			why := err.Error()
+			if l := firstLine(c.stderr.String()); l != "" {
+				why += ": " + l
+			}
+			r.verifySkip(c.cmdline, why)
+			continue
 		}
-		r.verifySkip(c.cmdline, why)
-		return
+		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
+			TS: c.start.UnixMilli(), EndTS: c.end.UnixMilli(), SampleTS: c.sampleTS,
+			Cmd: c.cmdline, IgnorePIDs: fmt.Sprintf("%d,%d%s", os.Getpid(), c.pid, r.bgIgnore()),
+			Output: r.redact.Text(c.out.String()),
+		})
 	}
-	r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
-		TS: c.start.UnixMilli(), EndTS: c.end.UnixMilli(), SampleTS: c.sampleTS,
-		Cmd: c.cmdline, IgnorePIDs: fmt.Sprintf("%d,%d", os.Getpid(), c.pid),
-		Output: r.redact.Text(c.out.String()),
-	})
 }

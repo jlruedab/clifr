@@ -103,8 +103,8 @@ type Recorder struct {
 	procs               map[procKey]*procEntry
 	ids                 map[string]int64 // next id per table
 
-	verifySkipped map[string]bool // verify commands already reported skipped (verifycap.go)
-	iotopRun      *iotopCapture   // a real iotop measuring an interval (verifycap.go)
+	verifySkipped map[string]bool       // verify commands already reported skipped (verifycap.go)
+	bgRuns        map[string]*bgCapture // real iotop and sar measuring an interval (verifycap.go)
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
 	cgroups map[string]cgroupSeen
 	// ctrSeen: the containers seen in processes' cgroups; ctrNew: one was
@@ -547,7 +547,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 		if err := r.sample(now, fdWalk); err != nil {
 			return fmt.Errorf("sample: %w", err)
 		}
-		r.collectIotop(false)
+		r.collectBackground(false)
 		nextSys = now.Add(sysEvery)
 		if verify {
 			r.captureVerify(now.UnixMilli())
@@ -583,7 +583,7 @@ func (r *Recorder) shutdown() error {
 	if r.lastTS == 0 {
 		return nil
 	}
-	r.collectIotop(true)
+	r.collectBackground(true)
 	b := &r.pending // skips, guard events and verify output not yet written
 	r.applyEvents(r.lastTS, b)
 	r.flushEventProcs(openRowsFlushAll, b)

@@ -76,6 +76,7 @@ clifr rebuilds the output of the real tools. Where matching them needed their ex
 | `conntrack -S` (counter names) | conntrack-tools | GPL-2.0-or-later | GPLv3 |
 | `atop` (value formats, line layout) | atop 2.7.1 / 2.10.0 / 2.12.1 | GPL-2.0-or-later | GPLv3 |
 | `iotop` (sizes, layout, sort, command); clifrd's I/O priorities | iotop 0.6 (Python) | GPL-2.0-or-later | GPLv3 |
+| `sar` (report layouts, values, averages, header repeats) | sysstat 11.7.3 / 12.5 / 12.6.1 / 12.7.7 | GPL-2.0-or-later | GPLv3 |
 | `htop` (meters, layout, column formats, sort, tree); 3.0.5's screen is from its output only (GPL-2.0-only) | htop 3.2.1 / 3.3.0 / 3.4.1 | GPL-2.0-or-later | GPLv3 |
 | `netstat -s` (sentences; section above) | net-tools 2.10 | GPL, no version named | GPLv3 |
 

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -15,6 +16,9 @@ type opt struct {
 	// optional: the argument is given only as "--long=value" (getopt's
 	// optional_argument); without it the value is "".
 	optional bool
+	// words: an optional argument may also be the next word when it is one
+	// of these (sar's "-u ALL", "-q CPU").
+	words []string
 }
 
 func (o opt) key() string {
@@ -76,6 +80,11 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 					return p, unsupported("-" + string(a[j]))
 				}
 				if o.arg == "" || o.optional {
+					if j == len(a)-1 && i+1 < len(args) && slices.Contains(o.words, args[i+1]) {
+						i++
+						p.add(o.key(), args[i])
+						continue
+					}
 					p.add(o.key(), "")
 					continue
 				}

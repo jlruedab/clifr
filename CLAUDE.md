@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `sar`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -348,6 +348,24 @@ wait for the user's go-ahead.
   per checkpoint (`query.HostZone`: meta timezone, else tz_offset_s; 2026-11-22): the tools printed in it. iotop captures (Python
   0.6-18/-24/-30/-42, iotop-c 1.21/1.26/1.31/1.33; desktop and four VMs):
   bench/results/iotop-captures-20261122.
+  `clifr sar` (query/sar.go, following sysstat's code, GPL-2.0-or-later, packaging/notices/sysstat.txt;
+  2026-11-22): sar -f's output over --since/--until (no --at), by `ToolStyle.Sar` ("" 12.7.7, "12.6"
+  ubuntu-24.04, "12.5" rhel-9/ubuntu-22.04, "11.7" rhel-8): records = the first system sample at or
+  after each multiple of -i SEC (default 600, local clock, as sa1's timer); a boot in the window is a
+  LINUX RESTART and its segment's first record the next multiple (sa1 --boot writes only the mark);
+  per segment each report in sysstat's activity order with its Average (rates over the segment, levels
+  averaged; sysstat's integer divisions kept), the header again when 86400 lines are counted (-P ALL
+  counts the 8200 bits of its CPU bitmap: every 11 records). Reports now: -u [ALL] -P -w -W -r -S -H
+  (11.7 only) -v (sysctl snapshot, minute) -q [CPU|ALL] -I SUM (11.7, 12.5: /proc/stat intr) -n DEV EDEV
+  NFS NFSD SOCK IP EIP ICMP EICMP TCP ETCP UDP SOCK6 IP6 EIP6 ICMP6 EICMP6 UDP6 -F [MOUNT]; refused until
+  recorded (schema 14): -B (pgfree, pgsteal_anon/_file), -b/-d (every diskstats line and its position,
+  virtual devices), -r ALL, -H (12.x), -I ALL / 12.6+'s -I SUM (/proc/interrupts), -n SOFT, -q IO/MEM
+  (full avgs), -m CPU. Interfaces by name (check_net_dev_reg: a counter going down = re-registered, from
+  zero). Known: runq-sz reads high by clifrd's own running threads; interface values are read every
+  --sys-interval, process samples' values up to that old. Checked: bench/sarcheck.sh (sadc -S ALL 60
+  beside a 5 s clifrd), bench/sarcompare.sh, bench/sarcheck (internal/verify.ParseSar); clifr verify
+  compares the sar REPORTS INTERVAL 1 clifrd runs in the background at checkpoints (recorder.sarReports,
+  `bgCapture`, shared with iotop). bench/results/sar-captures-20261122.
   `clifr htop` (query/htop.go, following htop 3.2.1/3.3.0/3.4.1's C code, GPL-2.0-or-later,
   packaging/notices/htop.txt; 2026-11-22): htop's default screen as text at `--at` only, by
   `ToolStyle.Htop` ("" 3.4.1, "3.3" rhel-9/ubuntu-24.04, "3.2" rhel-8, "3.0" ubuntu-22.04); user
