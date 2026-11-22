@@ -119,7 +119,8 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 
 - `clifr info`: what the recording covers;
 - `clifr diff --at A --at B "COMMAND"`: what changed between two moments (`ps`, `ss`, `netstat`, `lsof`, `df`, `mount` and `findmnt`);
-- `clifr verify`: compares the reconstruction with real tool output saved during recording;
+- `clifr verify`: compares the reconstruction with real tool output saved during recording
+  (reconstructed in the recorded host's time zone, as the tools printed, wherever clifr runs);
 - `clifr export TABLE`: the raw data as CSV;
 - `clifr help`: the general help, or one command's with `clifr help COMMAND`.
 

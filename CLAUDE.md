@@ -344,7 +344,8 @@ wait for the user's go-ahead.
   `iotop -b -P -n 2 -d INTERVAL` in the background at a checkpoint (`startIotop`, collected at a
   later sample; its PID is ignored in the other captures meanwhile), compared with clifr's interval
   from the checkpoint sample to the one nearest iotop's end (`compareIotop`; iotop-c not compared).
-  Desktop and four VMs: every process matched, 99.4-100% exact. iotop captures (Python
+  Desktop and four VMs: every process matched, 99.4-100% exact. `verify.Run` sets time.Local to the host's zone
+  per checkpoint (`query.HostZone`: meta timezone, else tz_offset_s; 2026-11-22): the tools printed in it. iotop captures (Python
   0.6-18/-24/-30/-42, iotop-c 1.21/1.26/1.31/1.33; desktop and four VMs):
   bench/results/iotop-captures-20261122.
   `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): as

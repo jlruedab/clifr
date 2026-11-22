@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"clifr/internal/query"
 	"clifr/internal/store"
@@ -102,6 +103,11 @@ func Run(db *store.DB) (*Report, error) {
 	events := query.TCPFromEvents(db)
 	var prevLsof map[string]lsofLine // the previous checkpoint's real lsof (held mode)
 	usersAt := int64(-1)
+	// The tools printed times in the host's time zone: the reconstructions
+	// are made in it too (ps START, last, w...), whatever this machine's
+	// is; the report's own times stay in time.Local.
+	local := time.Local
+	defer func() { time.Local = local }()
 	for _, s := range snaps {
 		var res Result
 		var err error
@@ -112,6 +118,10 @@ func Run(db *store.DB) (*Report, error) {
 				return nil, err
 			}
 			usersAt = s.ts
+			time.Local = local
+			if loc := query.HostZone(db, s.ts); loc != nil {
+				time.Local = loc
+			}
 		}
 		if s.cmd == "lsof -n -P -K i" {
 			s.cmd = "lsof -n -P" // the same rows without the per-thread ones, which were never compared

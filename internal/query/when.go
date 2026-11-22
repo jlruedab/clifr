@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"clifr/internal/store"
 )
 
 // ParseWhen parses a CLI time relative to now, in time.Local:
@@ -115,4 +117,24 @@ func ZoneLabel(t time.Time) string {
 		l = n + ", " + l
 	}
 	return l
+}
+
+// HostZone is the recorded host's time zone at t: the run's meta timezone
+// (an IANA name), else a fixed zone from tz_offset_s; nil when neither is
+// recorded or the name is unknown here and no offset was recorded.
+func HostZone(db *store.DB, t int64) *time.Location {
+	if name := MetaAt(db, "timezone", t); name != "" {
+		if loc, err := time.LoadLocation(name); err == nil {
+			return loc
+		}
+	}
+	if off, err := strconv.Atoi(MetaAt(db, "tz_offset_s", t)); err == nil {
+		m := off / 60
+		sign := '+'
+		if m < 0 {
+			sign, m = '-', -m
+		}
+		return time.FixedZone(fmt.Sprintf("UTC%c%02d:%02d", sign, m/60, m%60), off)
+	}
+	return nil
 }
