@@ -39,10 +39,15 @@ func TestSarScreens(t *testing.T) {
 			ProcsBlocked: m % 2, Intr: up * 250, Ctxt: up * 900, Forks: up * 3, MemTotal: 8126784, MemFree: 7000000 - int64(m)*1000,
 			MemAvailable: 7300000, Buffers: 4184, Cached: 400000 + int64(m)*500, SwapCached: 100, Active: 290000, Inactive: 260000,
 			SwapTotal: 2097148, SwapFree: 2090000, Dirty: int64(m * 8), Slab: 90000, PswpIn: up / 50, PswpOut: up / 40,
-			SockUsed: 180, TCPInUse: 5, TCPTW: int64(m % 3), UDPInUse: 4, RawInUse: 0, TCP6InUse: 2, UDP6InUse: 3}}
+			SockUsed: 180, TCPInUse: 5, TCPTW: int64(m % 3), UDPInUse: 4, RawInUse: 0, TCP6InUse: 2, UDP6InUse: 3,
+			PgpgIn: up * 4, PgpgOut: up * 30, PgFault: up * 900, PgMajFault: up / 100, PgFree: up * 1500, PgstealKswapd: up / 2,
+			PgstealAnon: up / 4, PgscanKswapd: up, PgscanDirect: up / 3, AnonPages: 600000, KernelStack: 34000, VmallocUsed: 22000,
+			PageTables: 110000, HugePagesTotal: 8, HugePagesFree: 6, Hugepagesize: 2048, HugePagesRsvd: 1, HugePagesSurp: 0,
+			PSI: true, PSIIOSome: up * 1000, PSIIOFull: up * 800, PSIIOAvg: [3]int64{12, 8, 3}, PSIIOFullAvg: [3]int64{10, 6, 2}}}
 		for c := 0; c < 2; c++ {
 			u := up * int64(10+c*5)
-			b.CPUs = append(b.CPUs, store.CPUSample{TS: ts, CPU: c, T: [10]int64{u, up, up * 3, up*100 - u - up*4, up / 2, 0, up / 4, 0, 0, 0}})
+			b.CPUs = append(b.CPUs, store.CPUSample{TS: ts, CPU: c, T: [10]int64{u, up, up * 3, up*100 - u - up*4, up / 2, 0, up / 4, 0, 0, 0},
+				MHz: int64(80000 + c*10000 + m*1000), Softnet: [6]int64{up * int64(7+c), 0, up / 60, 0, 0, int64(c)}, HasSoftnet: true})
 		}
 		b.CPUs = append(b.CPUs, store.CPUSample{TS: ts, CPU: -1, T: [10]int64{up * 25, up * 2, up * 6, up*200 - up*33, up, 0, up / 2, 0, 0, 0}})
 		for i, n := range []string{"IpInReceives", "IpInDelivers", "IpOutRequests", "TcpActiveOpens", "TcpPassiveOpens", "TcpInSegs",
@@ -61,6 +66,18 @@ func TestSarScreens(t *testing.T) {
 			vnet.Stats[0], vnet.Stats[1] = up*8, up*4
 		}
 		b.Links = []store.LinkRow{lo, eth, vnet}
+		disk := store.DiskSample{TS: ts, Major: 259, Minor: 0, Name: "nvme0n1", Pos: 1}
+		disk.V[0], disk.V[2], disk.V[3], disk.V[4], disk.V[6], disk.V[7], disk.V[13], disk.V[14] = up*2, up*40, up*3, up*9, up*700, up*20, up*15, up*25
+		part := store.DiskSample{TS: ts, Major: 259, Minor: 1, Name: "nvme0n1p1", Part: true, Pos: 2}
+		part.V[0], part.V[4] = up*2, up*9
+		loop := store.DiskSample{TS: ts, Major: 7, Minor: 0, Name: "loop0", Pos: 0, Virtual: true}
+		loop.V[0], loop.V[2] = up/5, up*8
+		b.Disks = []store.DiskSample{loop, disk, part}
+		b.Snapshots = append(b.Snapshots,
+			store.SnapshotRow{TS: ts, Source: "interrupts", Key: "", Pos: 0, Full: true, Line: "            CPU0       CPU1"},
+			store.SnapshotRow{TS: ts, Source: "interrupts", Key: "9", Pos: 1, Full: true, Line: "   9:          " + itoa(up/10) + "          0  IR-IO-APIC    9-fasteoi   acpi"},
+			store.SnapshotRow{TS: ts, Source: "interrupts", Key: "LOC", Pos: 2, Full: true, Line: " LOC:   " + itoa(up*200) + "   " + itoa(up*150) + "   Local timer interrupts"},
+			store.SnapshotRow{TS: ts, Source: "interrupts", Key: "ERR", Pos: 3, Full: true, Line: " ERR:          0"})
 		if m%5 == 0 || m == 8 {
 			b.Snapshots = append(b.Snapshots,
 				store.SnapshotRow{TS: ts, Source: "sysctl", Key: "fs.dentry-state", Pos: 0, Full: true, Line: "fs.dentry-state = 40000\t" + itoa(int64(17000+m*10)) + "\t45\t0\t1000\t0"},
@@ -77,7 +94,7 @@ func TestSarScreens(t *testing.T) {
 		"uname_machine", "x86_64", "boot_ms", itoa(boot1), "boot_id", "b1"}, batches...)
 	all := []SarAct{{Key: "cpu", All: true, CPUs: []int{SarAllCPU}}}
 	for _, k := range []string{"pcsw", "irq", "swap", "mem", "swapmem", "ktables", "queue", "netdev", "netedev", "nfs", "sock",
-		"ip", "tcp", "etcp", "udp", "sock6", "ip6", "icmp6"} {
+		"ip", "tcp", "etcp", "udp", "sock6", "ip6", "icmp6", "paging", "io", "disk", "huge", "softnet", "cpufreq", "psiio"} {
 		all = append(all, SarAct{Key: k})
 	}
 	for _, c := range []struct {
@@ -88,6 +105,9 @@ func TestSarScreens(t *testing.T) {
 		{"12.7-all-60", SarOpts{Acts: all, StepMS: 60_000}},
 		{"11.7-all-300", SarOpts{Acts: all, StepMS: 300_000, Version: "11.7"}},
 		{"12.7-P1", SarOpts{Acts: []SarAct{{Key: "cpu", CPUs: []int{1}}}, StepMS: 120_000}},
+		{"12.7-new", SarOpts{Acts: []SarAct{{Key: "mem", All: true}, {Key: "disk", Pretty: true}, {Key: "irq", All: true, CPUs: []int{SarAllCPU}},
+			{Key: "softnet", CPUs: []int{SarAllCPU}}, {Key: "cpufreq", CPUs: []int{SarAllCPU}}}, StepMS: 300_000}},
+		{"12.5-new", SarOpts{Acts: []SarAct{{Key: "paging"}, {Key: "io"}, {Key: "disk"}, {Key: "huge"}, {Key: "softnet"}}, StepMS: 300_000, Version: "12.5"}},
 	} {
 		d, err := Sar(rec, base, base+16*60_000+5000, c.o)
 		if err != nil {

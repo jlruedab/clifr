@@ -174,6 +174,14 @@ type SysSample struct {
 	PSICPUAvg, PSIMemAvg, PSIIOAvg [3]int64
 	// ZswapEnabled: /sys/module/zswap/parameters/enabled is Y.
 	ZswapEnabled bool
+	// Schema 14, for sar: vmstat's pgfree, pgsteal_anon/_file,
+	// pgpromote_success and the pgdemote_ lines summed; meminfo's AnonPages,
+	// KernelStack, VmallocUsed (kB), HugePages_Rsvd/_Surp (counts); the full
+	// lines' averages of memory and I/O pressure (hundredths of a percent).
+	PgFree, PgstealAnon, PgstealFile, PgPromote, PgDemote int64
+	AnonPages, KernelStack, VmallocUsed                   int64
+	HugePagesRsvd, HugePagesSurp                          int64
+	PSIMemFullAvg, PSIIOFullAvg                           [3]int64
 }
 
 // CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).
@@ -184,10 +192,17 @@ var (
 )
 
 // CPUSample is one CPU's times in clock ticks; CPU -1 is the total.
+// Schema 14, for sar: the CPU's frequency as sadc reads /proc/cpuinfo
+// (hundredths of a MHz, -1 unknown) and its /proc/net/softnet_stat line
+// (processed, dropped, squeezed, received by RPS, flow limit, backlog;
+// HasSoftnet false: none).
 type CPUSample struct {
-	TS  int64
-	CPU int
-	T   [10]int64
+	TS         int64
+	CPU        int
+	T          [10]int64
+	MHz        int64
+	Softnet    [6]int64
+	HasSoftnet bool
 }
 
 // DiskSample is one /proc/diskstats line (sectors of 512 bytes, times in ms).
@@ -197,6 +212,11 @@ type DiskSample struct {
 	Name         string
 	Part         bool // a partition: iostat lists only whole devices
 	V            [17]int64
+	// Schema 14, for sar: the line's position in /proc/diskstats (sar -d's
+	// order) and Virtual: a whole device without /sys/block/NAME/device
+	// (loop, dm, md, zram...: sar -b leaves them out).
+	Pos     int
+	Virtual bool
 }
 
 // TCPConn is one TCP connection (or listening socket) from eBPF events, or

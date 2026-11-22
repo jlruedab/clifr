@@ -127,8 +127,8 @@ func SarRows(r *SarReport) (map[string][]SarRow, []string) {
 // sarVerifyActs: the reports of clifrd's sar capture (recorder.sarReports)
 // that clifr makes.
 func sarVerifyActs() []query.SarAct {
-	acts := []query.SarAct{{Key: "cpu", All: true, CPUs: []int{query.SarAllCPU}}}
-	for _, k := range []string{"pcsw", "swap", "mem", "swapmem", "ktables", "queue", "netdev", "netedev", "nfs", "nfsd",
+	acts := []query.SarAct{{Key: "cpu", All: true, CPUs: []int{query.SarAllCPU}}, {Key: "mem", All: true}, {Key: "softnet", CPUs: []int{query.SarAllCPU}}}
+	for _, k := range []string{"pcsw", "swap", "paging", "io", "disk", "huge", "swapmem", "ktables", "queue", "netdev", "netedev", "nfs", "nfsd",
 		"sock", "ip", "eip", "icmp", "eicmp", "tcp", "etcp", "udp", "sock6", "ip6", "eip6", "icmp6", "eicmp6", "udp6", "fs"} {
 		acts = append(acts, query.SarAct{Key: k})
 	}

@@ -24,7 +24,7 @@ import (
 // tcp_keyframes (containers' connections: other network namespaces); 11
 // (2026-11-20): killer_pid, killer_uid, killer_comm in processes (who sent the
 // signal that ended a process). Readers refuse versions newer than theirs.
-const SchemaVersion = 13
+const SchemaVersion = 14
 
 type DB struct {
 	*sql.DB

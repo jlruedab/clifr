@@ -215,7 +215,7 @@ type bgCapture struct {
 
 // sarReports: the reports clifrd's sar capture asks for, valid in sysstat
 // 11.7 to 12.7 (clifr verify compares those clifr makes).
-const sarReports = "-u ALL -P ALL -w -W -r -S -v -q -n DEV,EDEV,NFS,NFSD,SOCK,IP,EIP,ICMP,EICMP,TCP,ETCP,UDP,SOCK6,IP6,EIP6,ICMP6,EICMP6,UDP6 -F"
+const sarReports = "-u ALL -P ALL -w -W -B -b -d -H -r ALL -S -v -q -n DEV,EDEV,NFS,NFSD,SOCK,IP,EIP,ICMP,EICMP,TCP,ETCP,UDP,SOCK6,IP6,EIP6,ICMP6,EICMP6,UDP6,SOFT -F"
 
 // startBackground starts iotop (Python iotop or iotop-c: skipped without
 // per-process I/O counters) and sar at a checkpoint, each unless one of the

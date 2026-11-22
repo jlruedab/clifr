@@ -26,6 +26,9 @@ type SarAct struct {
 	All   bool   // -u ALL
 	CPUs  []int  // -P: the CPUs (0-based); nil: only "all"; AllCPU: all and each
 	Mount bool   // -F MOUNT: mount points instead of devices
+	// Pretty: -p (sar -d: the name last, device-mapper devices by their
+	// mapper name; sysstat 11 names devices devMAJ-MIN without it).
+	Pretty bool
 }
 
 // SarAllCPU in SarAct.CPUs: -P ALL.
@@ -35,7 +38,7 @@ const SarAllCPU = -1
 // the reports of one run.
 var SarActOrder = []string{"cpu", "pcsw", "irq", "swap", "paging", "io", "mem", "swapmem", "huge", "ktables", "queue",
 	"disk", "netdev", "netedev", "nfs", "nfsd", "sock", "ip", "eip", "icmp", "eicmp", "tcp", "etcp", "udp",
-	"sock6", "ip6", "eip6", "icmp6", "eicmp6", "udp6", "fs", "psicpu"}
+	"sock6", "ip6", "eip6", "icmp6", "eicmp6", "udp6", "softnet", "cpufreq", "fs", "psicpu", "psiio", "psimem"}
 
 // SarOpts: the reports, the spacing of the records and the release.
 type SarOpts struct {
@@ -58,6 +61,11 @@ type sarRec struct {
 	nfsd     [11]int64
 	fs       []DFRow
 	restart  bool // the first record after a reboot
+	// Schema 14 (sar14.go).
+	x     sarX
+	cpux  map[int]sarCPUX
+	disks []sarDisk
+	irq   *sarIRQ
 }
 
 type sarSys struct {
@@ -72,10 +80,11 @@ type sarSys struct {
 // SarData is the records of a window, split at reboots (segments).
 type SarData struct {
 	Segments [][]sarRec
-	Restarts []int64  // per segment: when its boot was first seen (LINUX RESTART), 0 none
-	Header   string   // sar's first line
-	Notes    []string // what the output cannot show (header lines)
-	ncpu     []int    // CPUs per segment
+	Restarts []int64           // per segment: when its boot was first seen (LINUX RESTART), 0 none
+	Header   string            // sar's first line
+	Notes    []string          // what the output cannot show (header lines)
+	devNames map[[2]int]string // sar -dp: device-mapper names by major and minor
+	ncpu     []int             // CPUs per segment
 }
 
 func (o SarOpts) has(key string) bool {
@@ -311,11 +320,32 @@ func (d *SarData) load(db *store.DB, o SarOpts) error {
 			}
 		}
 	}
-	return nil
+	for _, a := range o.Acts {
+		if a.Key == "disk" && a.Pretty {
+			d.loadDevNames(db, hi)
+		}
+	}
+	return d.load14(db, o, lo, hi)
 }
 
 // loadSeries walks rows (ts, name, value) written when they change and
 // gives each record the newest value of every name at or before it.
+func (d *SarData) loadDevNames(db *store.DB, t int64) {
+	d.devNames = map[[2]int]string{}
+	rows, err := db.Query(`SELECT maj, min, arg_max(dm_name, ts) FROM blockdevs WHERE ts <= ? AND dm_name <> '' GROUP BY maj, min`, t)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var maj, min int
+		var name string
+		if rows.Scan(&maj, &min, &name) == nil {
+			d.devNames[[2]int{maj, min}] = name
+		}
+	}
+}
+
 func (d *SarData) loadSeries(db *store.DB, q string, lo, hi int64, set func(*sarRec, map[string]int64)) error {
 	rows, err := db.Query(q, lo, hi)
 	if err != nil {
@@ -549,10 +579,16 @@ func sarHeader(key string, all bool, v string) (string, int) {
 	case "swap":
 		return "pswpin/s;pswpout/s", 0
 	case "mem":
+		if all {
+			return "kbmemfree;kbavail;kbmemused;%memused;kbbuffers;kbcached;kbcommit;%commit;kbactive;kbinact;kbdirty;kbanonpg;kbslab;kbkstack;kbpgtbl;kbvmused", 0
+		}
 		return "kbmemfree;kbavail;kbmemused;%memused;kbbuffers;kbcached;kbcommit;%commit;kbactive;kbinact;kbdirty", 0
 	case "swapmem":
 		return "kbswpfree;kbswpused;%swpused;kbswpcad;%swpcad", 0
 	case "huge":
+		if v != "11.7" {
+			return "kbhugfree;kbhugused;%hugused;kbhugrsvd;kbhugsurp", 0
+		}
 		return "kbhugfree;kbhugused;%hugused", 0
 	case "ktables":
 		return "dentunusd;file-nr;inode-nr;pty-nr", 0
@@ -654,7 +690,7 @@ func PrintSar(w io.Writer, d *SarData, o SarOpts) {
 		for _, key := range SarActOrder {
 			for _, a := range o.Acts {
 				if a.Key == key {
-					printSarAct(p, seg, a, o)
+					printSarAct(p, seg, a, o, d)
 				}
 			}
 		}
@@ -803,8 +839,16 @@ func printSarCPU(p *sarPr, prev, cur *sarRec, a SarAct, ts string) {
 }
 
 // printSarAct prints one report over a segment.
-func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts) {
+func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts, d *SarData) {
 	v := o.Version
+	if sar14Keys[a.Key] {
+		printSar14(p, seg, a, o, d.devNames, a.Pretty)
+		return
+	}
+	if a.Key == "irq" && v != "11.7" && v != "12.5" {
+		printSarIRQ(p, seg, a, a.All)
+		return
+	}
 	first, last := &seg[0], &seg[len(seg)-1]
 	titles, iw := sarHeader(a.Key, a.All, v)
 	// sar -f prints the header again when the lines counted since the last
@@ -889,9 +933,14 @@ func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts) {
 			p.u(s.Buffers, s.Cached, s.committed)
 			p.f(2, pctOf(s.committed, s.MemTotal+s.SwapTotal))
 			p.u(s.Active, s.Inactive, s.Dirty)
+			x := cur.x
+			if a.All {
+				p.u(x.anon, s.Slab, x.kstack, x.pgtbl, x.vmalloc)
+			}
 			p.nl()
 			add(float64(s.MemFree), float64(s.MemAvailable), float64(raw), float64(s.Buffers), float64(s.Cached),
-				float64(s.committed), float64(s.Active), float64(s.Inactive), float64(s.Dirty))
+				float64(s.committed), float64(s.Active), float64(s.Inactive), float64(s.Dirty),
+				float64(x.anon), float64(s.Slab), float64(x.kstack), float64(x.pgtbl), float64(x.vmalloc))
 		case "swapmem":
 			p.ts(ts)
 			p.u(s.SwapFree, s.SwapTotal-s.SwapFree)
@@ -902,11 +951,15 @@ func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts) {
 			add(float64(s.SwapFree), float64(s.SwapTotal), float64(s.SwapCached))
 		case "huge":
 			tl, fr := s.hugeTotal*s.hugeSize, s.hugeFree*s.hugeSize
+			rs, su := cur.x.hugeRsvd*s.hugeSize, cur.x.hugeSurp*s.hugeSize
 			p.ts(ts)
 			p.u(fr, tl-fr)
 			p.f(2, pctOf(tl-fr, tl))
+			if v != "11.7" {
+				p.u(rs, su)
+			}
 			p.nl()
-			add(float64(fr), float64(tl))
+			add(float64(fr), float64(tl), float64(rs), float64(su))
 		case "ktables":
 			p.ts(ts)
 			p.u(cur.kt[0], cur.kt[1], cur.kt[2], cur.kt[3])
@@ -995,6 +1048,9 @@ func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts) {
 		p.f(0, avg(3), avg(4), avg(5))
 		p.f(2, pctOf64(iavg(5), float64(s.MemTotal+s.SwapTotal)))
 		p.f(0, avg(6), avg(7), avg(8))
+		if a.All {
+			p.f(0, avg(9), avg(10), avg(11), avg(12), avg(13))
+		}
 		p.nl()
 	case "swapmem":
 		p.ts(av)
@@ -1013,6 +1069,9 @@ func printSarAct(p *sarPr, seg []sarRec, a SarAct, o SarOpts) {
 		fr, tl := avg(0), avg(1)
 		p.f(0, fr, tl-fr)
 		p.f(2, pctOf64(tl-fr, tl))
+		if v != "11.7" {
+			p.f(0, avg(2), avg(3))
+		}
 		p.nl()
 	case "ktables":
 		p.ts(av)

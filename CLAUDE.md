@@ -355,12 +355,19 @@ wait for the user's go-ahead.
   LINUX RESTART and its segment's first record the next multiple (sa1 --boot writes only the mark);
   per segment each report in sysstat's activity order with its Average (rates over the segment, levels
   averaged; sysstat's integer divisions kept), the header again when 86400 lines are counted (-P ALL
-  counts the 8200 bits of its CPU bitmap: every 11 records). Reports now: -u [ALL] -P -w -W -r -S -H
-  (11.7 only) -v (sysctl snapshot, minute) -q [CPU|ALL] -I SUM (11.7, 12.5: /proc/stat intr) -n DEV EDEV
-  NFS NFSD SOCK IP EIP ICMP EICMP TCP ETCP UDP SOCK6 IP6 EIP6 ICMP6 EICMP6 UDP6 -F [MOUNT]; refused until
-  recorded (schema 14): -B (pgfree, pgsteal_anon/_file), -b/-d (every diskstats line and its position,
-  virtual devices), -r ALL, -H (12.x), -I ALL / 12.6+'s -I SUM (/proc/interrupts), -n SOFT, -q IO/MEM
-  (full avgs), -m CPU. Interfaces by name (check_net_dev_reg: a counter going down = re-registered, from
+  counts the 8200 bits of its CPU bitmap: every 11 records). Reports: -u [ALL] -P -B -b -d [-p] -w -W
+  -r [ALL] -S -H -v (sysctl snapshot, minute) -q [CPU|IO|MEM|PSI|ALL] -I SUM (11.7, 12.5: /proc/stat intr;
+  12.6+: the "interrupts" snapshot, minute, rates over the reads' own interval) -I ALL (12.6+ only) -m CPU
+  -n DEV EDEV NFS NFSD SOCK IP EIP ICMP EICMP TCP ETCP UDP SOCK6 IP6 EIP6 ICMP6 EICMP6 UDP6 SOFT -F [MOUNT]
+  (sar14.go: paging, io, disk, softnet, cpufreq, psiio/psimem, 12.6+ irq). -d: whole devices only (sa1's
+  default -S DISK), in diskstats order (disk_samples.pos), -p names dm devices from blockdevs.dm_name;
+  11.7 names devMAJ-MIN without -p and has svctm. -b leaves out virtual devices (disk_samples.virtual).
+  Schema 14 (2026-11-22, for sar): sys_samples pgfree, pgsteal_anon/_file (sar's pgsteal = every
+  pgsteal_ line), pgpromote, pgdemote, anon_pages, kernel_stack, vmalloc_used, hugepages_rsvd/_surp,
+  psi_{mem,io}_full_avg{10,60,300}; cpu_samples mhz (sadc's /proc/cpuinfo hundredths, every system
+  sample, 0.23 ms on 22 CPUs) and softnet_* (NULL: none); disk_samples pos and virtual (no
+  /sys/block/NAME/device); snapshots source "interrupts" every minute (0.3 ms a read on 22 CPUs; at
+  every sample its ~2,400 changing counters would multiply the data written). Interfaces by name (check_net_dev_reg: a counter going down = re-registered, from
   zero). Known: runq-sz reads high by clifrd's own running threads; interface values are read every
   --sys-interval, process samples' values up to that old. Checked: bench/sarcheck.sh (sadc -S ALL 60
   beside a 5 s clifrd), bench/sarcompare.sh, bench/sarcheck (internal/verify.ParseSar); clifr verify

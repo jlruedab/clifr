@@ -37,6 +37,19 @@ var SnapSources = []SnapSource{
 	// NFS client and server counters (nfsstat): absent without NFS.
 	{Name: "rpc/nfs", Path: []string{"net", "rpc", "nfs"}, Key: firstField, EveryMS: 60_000},
 	{Name: "rpc/nfsd", Path: []string{"net", "rpc", "nfsd"}, Key: firstField, EveryMS: 60_000},
+	// Interrupts per CPU (sar -I): most lines change all the time, a whole
+	// copy at every sample would be thousands of numbers: once a minute.
+	{Name: "interrupts", Path: []string{"interrupts"}, Key: irqName, EveryMS: 60_000},
+}
+
+// irqName keys /proc/interrupts lines by their interrupt ("0", "LOC"); the
+// header (the CPUs) by position.
+func irqName(line string) string {
+	name, _, ok := strings.Cut(line, ":")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(name)
 }
 
 // slabName keys /proc/slabinfo lines by cache name (the version line and

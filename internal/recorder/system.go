@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -70,9 +71,10 @@ func (r *Recorder) noteClockStep(ts, boot int64, b *store.Batch) {
 // sysSampler reads the system-wide counters behind uptime, vmstat, mpstat and
 // iostat once per sample.
 type sysSampler struct {
-	warned map[string]bool
-	part   map[string]bool // disk name -> is a partition
-	sysfs  bool            // /sys describes the recorded machine
+	virtual map[string]bool // sar -b: whole devices without /sys/block/NAME/device
+	warned  map[string]bool
+	part    map[string]bool // disk name -> is a partition
+	sysfs   bool            // /sys describes the recorded machine
 	// Protocol counters as last written, and when all of them were.
 	netLast map[string]int64
 	netFull int64
@@ -129,10 +131,41 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 	row := &store.SysSample{TS: ts, UptimeMS: uptime, BootMS: boot, ProcsRunning: st.ProcsRunning, ProcsBlocked: st.ProcsBlocked,
 		Intr: int64(st.Intr), Ctxt: int64(st.Ctxt), Forks: int64(st.Forks), SoftIRQ: int64(st.SoftIRQ)}
 	firstCPU := len(b.CPUs)
+	// sar -m CPU and -n SOFT (schema 14): each CPU's frequency and
+	// softnet_stat line; a line without its CPU number is the n-th online CPU.
+	mhz, err := r.fs.ReadCPUFreq()
+	if err != nil {
+		mhz = nil
+	}
+	soft := map[int]procfs.Softnet{}
+	if sn, err := r.fs.ReadSoftnet(); err == nil {
+		var online []int
+		for _, c := range st.CPUs {
+			if c.CPU >= 0 {
+				online = append(online, c.CPU)
+			}
+		}
+		for i, x := range sn {
+			if !x.HasCPU {
+				if i >= len(online) {
+					break
+				}
+				x.CPU = online[i]
+			}
+			soft[x.CPU] = x
+		}
+	}
 	for _, c := range st.CPUs {
-		cs := store.CPUSample{TS: ts, CPU: c.CPU}
+		cs := store.CPUSample{TS: ts, CPU: c.CPU, MHz: -1}
 		for i, v := range c.T {
 			cs.T[i] = int64(v)
+		}
+		if f, ok := mhz[c.CPU]; ok {
+			cs.MHz = f
+		}
+		if x, ok := soft[c.CPU]; ok {
+			cs.Softnet = [6]int64{int64(x.Processed), int64(x.Dropped), int64(x.Squeezed), int64(x.RPS), int64(x.Flow), int64(x.Backlog)}
+			cs.HasSoftnet = true
 		}
 		b.CPUs = append(b.CPUs, cs)
 	}
@@ -146,6 +179,8 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.CommittedAS, row.CommitLimit, row.PageTables = int64(m.CommittedAS), int64(m.CommitLimit), int64(m.PageTables)
 		row.HugePagesTotal, row.HugePagesFree, row.Hugepagesize = int64(m.HugePagesTotal), int64(m.HugePagesFree), int64(m.Hugepagesize)
 		row.AnonHugePages, row.Zswap, row.Zswapped = int64(m.AnonHugePages), int64(m.Zswap), int64(m.Zswapped)
+		row.AnonPages, row.KernelStack, row.VmallocUsed = int64(m.AnonPages), int64(m.KernelStack), int64(m.VmallocUsed)
+		row.HugePagesRsvd, row.HugePagesSurp = int64(m.HugePagesRsvd), int64(m.HugePagesSurp)
 	}
 	if v, err := r.fs.ReadVMStat(); !fail("vmstat", err) {
 		row.PgpgIn, row.PgpgOut, row.PswpIn, row.PswpOut = int64(v.PgpgIn), int64(v.PgpgOut), int64(v.PswpIn), int64(v.PswpOut)
@@ -155,6 +190,8 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.AllocStall, row.CompactStall, row.PgmigrateSuccess, row.NumaPagesMigrated = int64(v.AllocStall), int64(v.CompactStall), int64(v.PgmigrateSuccess), int64(v.NumaPagesMigrated)
 		row.OOMKill, row.ZswpIn, row.ZswpOut = int64(v.OOMKill), int64(v.ZswpIn), int64(v.ZswpOut)
 		row.PgscanDirectThrottle = int64(v.PgscanDirectThrottle)
+		row.PgFree, row.PgstealAnon, row.PgstealFile = int64(v.PgFree), int64(v.PgstealAnon), int64(v.PgstealFile)
+		row.PgPromote, row.PgDemote = int64(v.PgPromoteSuccess), int64(v.PgDemote)
 	}
 	press := r.readPressure(fail)
 	if c, ok := press["cpu"]; ok {
@@ -163,6 +200,7 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		m, i := press["memory"], press["io"]
 		row.PSIMemSome, row.PSIMemFull, row.PSIIOSome, row.PSIIOFull = int64(m.Some), int64(m.Full), int64(i.Some), int64(i.Full)
 		row.PSICPUAvg, row.PSIMemAvg, row.PSIIOAvg = c.SomeAvg, m.SomeAvg, i.SomeAvg
+		row.PSIMemFullAvg, row.PSIIOFullAvg = m.FullAvg, i.FullAvg
 	}
 	row.ZswapEnabled = zswapEnabled()
 	if k, err := r.fs.ReadSockStat(); !fail("net/sockstat", err) {
@@ -224,7 +262,10 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		if !d.Used() {
 			continue
 		}
-		ds := store.DiskSample{TS: ts, Major: d.Major, Minor: d.Minor, Name: d.Name, Part: s.isPart(d.Name)}
+		ds := store.DiskSample{TS: ts, Major: d.Major, Minor: d.Minor, Name: d.Name, Part: s.isPart(d.Name), Pos: d.Pos}
+		if !ds.Part && s.sysfs {
+			ds.Virtual = s.isVirtual(d.Name)
+		}
 		for j := 0; j < 4; j++ {
 			ds.V[j], ds.V[4+j], ds.V[8+j] = int64(d.Rd[j]), int64(d.Wr[j]), int64(d.Dc[j])
 		}
@@ -306,4 +347,20 @@ func linkSpeed(name string) (speed, duplex int64) {
 func zswapEnabled() bool {
 	b, err := os.ReadFile("/sys/module/zswap/parameters/enabled")
 	return err == nil && len(b) > 0 && b[0] == 'Y'
+}
+
+// isVirtual: a whole block device without /sys/block/NAME/device (loop, dm,
+// md, zram...), as sysstat's is_device tells them (sar -b counts only the
+// others); kept per name.
+func (s *sysSampler) isVirtual(name string) bool {
+	if v, ok := s.virtual[name]; ok {
+		return v
+	}
+	_, err := os.Stat(filepath.Join("/sys/block", strings.ReplaceAll(name, "/", "!"), "device"))
+	v := err != nil
+	if s.virtual == nil {
+		s.virtual = map[string]bool{}
+	}
+	s.virtual[name] = v
+	return v
 }

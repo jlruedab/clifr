@@ -533,6 +533,22 @@ type sysRow struct {
 	PSIIOAvg60           int64 `parquet:"psi_io_avg60"`
 	PSIIOAvg300          int64 `parquet:"psi_io_avg300"`
 	ZswapEnabled         int32 `parquet:"zswap_enabled"`
+	PgFree               int64 `parquet:"pgfree"`
+	PgstealAnon          int64 `parquet:"pgsteal_anon"`
+	PgstealFile          int64 `parquet:"pgsteal_file"`
+	PgPromote            int64 `parquet:"pgpromote"`
+	PgDemote             int64 `parquet:"pgdemote"`
+	AnonPages            int64 `parquet:"anon_pages"`
+	KernelStack          int64 `parquet:"kernel_stack"`
+	VmallocUsed          int64 `parquet:"vmalloc_used"`
+	HugePagesRsvd        int64 `parquet:"hugepages_rsvd"`
+	HugePagesSurp        int64 `parquet:"hugepages_surp"`
+	PSIMemFullAvg10      int64 `parquet:"psi_mem_full_avg10"`
+	PSIMemFullAvg60      int64 `parquet:"psi_mem_full_avg60"`
+	PSIMemFullAvg300     int64 `parquet:"psi_mem_full_avg300"`
+	PSIIOFullAvg10       int64 `parquet:"psi_io_full_avg10"`
+	PSIIOFullAvg60       int64 `parquet:"psi_io_full_avg60"`
+	PSIIOFullAvg300      int64 `parquet:"psi_io_full_avg300"`
 }
 
 func sysOf(s *store.SysSample) sysRow {
@@ -544,7 +560,11 @@ func sysOf(s *store.SysSample) sysRow {
 		FragMemory: s.FragMemory, TCP6InUse: s.TCP6InUse, UDP6InUse: s.UDP6InUse, UDPLite6InUse: s.UDPLite6InUse,
 		Raw6InUse: s.Raw6InUse, Frag6InUse: s.Frag6InUse, Frag6Memory: s.Frag6Memory,
 		CommittedAS: s.CommittedAS, CommitLimit: s.CommitLimit, PageTables: s.PageTables, HugePagesTotal: s.HugePagesTotal, HugePagesFree: s.HugePagesFree, Hugepagesize: s.Hugepagesize, AnonHugePages: s.AnonHugePages, Zswap: s.Zswap, Zswapped: s.Zswapped, PgscanKswapd: s.PgscanKswapd, PgscanDirect: s.PgscanDirect, PgscanKhugepaged: s.PgscanKhugepaged, PgscanProactive: s.PgscanProactive, PgstealKswapd: s.PgstealKswapd, PgstealDirect: s.PgstealDirect, PgstealKhugepaged: s.PgstealKhugepaged, PgstealProactive: s.PgstealProactive, AllocStall: s.AllocStall, CompactStall: s.CompactStall, PgmigrateSuccess: s.PgmigrateSuccess, NumaPagesMigrated: s.NumaPagesMigrated, OOMKill: s.OOMKill, ZswpIn: s.ZswpIn, ZswpOut: s.ZswpOut, PSICPUSome: s.PSICPUSome, PSICPUFull: s.PSICPUFull, PSIMemSome: s.PSIMemSome, PSIMemFull: s.PSIMemFull, PSIIOSome: s.PSIIOSome, PSIIOFull: s.PSIIOFull, PSI: b2i(s.PSI),
-		PSICPUAvg10: s.PSICPUAvg[0], PSICPUAvg60: s.PSICPUAvg[1], PSICPUAvg300: s.PSICPUAvg[2], PSIMemAvg10: s.PSIMemAvg[0], PSIMemAvg60: s.PSIMemAvg[1], PSIMemAvg300: s.PSIMemAvg[2], PSIIOAvg10: s.PSIIOAvg[0], PSIIOAvg60: s.PSIIOAvg[1], PSIIOAvg300: s.PSIIOAvg[2], ZswapEnabled: b2i(s.ZswapEnabled), PgscanDirectThrottle: s.PgscanDirectThrottle}
+		PSICPUAvg10: s.PSICPUAvg[0], PSICPUAvg60: s.PSICPUAvg[1], PSICPUAvg300: s.PSICPUAvg[2], PSIMemAvg10: s.PSIMemAvg[0], PSIMemAvg60: s.PSIMemAvg[1], PSIMemAvg300: s.PSIMemAvg[2], PSIIOAvg10: s.PSIIOAvg[0], PSIIOAvg60: s.PSIIOAvg[1], PSIIOAvg300: s.PSIIOAvg[2], ZswapEnabled: b2i(s.ZswapEnabled), PgscanDirectThrottle: s.PgscanDirectThrottle,
+		PgFree: s.PgFree, PgstealAnon: s.PgstealAnon, PgstealFile: s.PgstealFile, PgPromote: s.PgPromote, PgDemote: s.PgDemote,
+		AnonPages: s.AnonPages, KernelStack: s.KernelStack, VmallocUsed: s.VmallocUsed, HugePagesRsvd: s.HugePagesRsvd, HugePagesSurp: s.HugePagesSurp,
+		PSIMemFullAvg10: s.PSIMemFullAvg[0], PSIMemFullAvg60: s.PSIMemFullAvg[1], PSIMemFullAvg300: s.PSIMemFullAvg[2],
+		PSIIOFullAvg10: s.PSIIOFullAvg[0], PSIIOFullAvg60: s.PSIIOFullAvg[1], PSIIOFullAvg300: s.PSIIOFullAvg[2]}
 }
 
 type cpuRow struct {
@@ -560,10 +580,27 @@ type cpuRow struct {
 	Steal     int64 `parquet:"steal"`
 	Guest     int64 `parquet:"guest"`
 	GuestNice int64 `parquet:"guest_nice"`
+	// Schema 14 (NULL: unknown).
+	MHz        *int64 `parquet:"mhz,optional"`
+	SnTotal    *int64 `parquet:"softnet_total,optional"`
+	SnDropped  *int64 `parquet:"softnet_dropped,optional"`
+	SnSqueezed *int64 `parquet:"softnet_squeezed,optional"`
+	SnRPS      *int64 `parquet:"softnet_rps,optional"`
+	SnFlow     *int64 `parquet:"softnet_flow_limit,optional"`
+	SnBacklog  *int64 `parquet:"softnet_backlog,optional"`
 }
 
 func cpuOf(c store.CPUSample) cpuRow {
-	return cpuRow{TS: c.TS, CPU: int32(c.CPU), User: c.T[0], Nice: c.T[1], System: c.T[2], Idle: c.T[3], IOWait: c.T[4], IRQ: c.T[5], SoftIRQ: c.T[6], Steal: c.T[7], Guest: c.T[8], GuestNice: c.T[9]}
+	r := cpuRow{TS: c.TS, CPU: int32(c.CPU), User: c.T[0], Nice: c.T[1], System: c.T[2], Idle: c.T[3], IOWait: c.T[4], IRQ: c.T[5], SoftIRQ: c.T[6], Steal: c.T[7], Guest: c.T[8], GuestNice: c.T[9]}
+	if c.MHz >= 0 {
+		v := c.MHz
+		r.MHz = &v
+	}
+	if c.HasSoftnet {
+		s := c.Softnet
+		r.SnTotal, r.SnDropped, r.SnSqueezed, r.SnRPS, r.SnFlow, r.SnBacklog = &s[0], &s[1], &s[2], &s[3], &s[4], &s[5]
+	}
+	return r
 }
 
 type diskRow struct {
@@ -589,11 +626,13 @@ type diskRow struct {
 	TimeInQueue int64  `parquet:"time_in_queue"`
 	FlIOs       int64  `parquet:"fl_ios"`
 	FlTicks     int64  `parquet:"fl_ticks"`
+	Pos         int32  `parquet:"pos"`
+	Virtual     int32  `parquet:"virtual"`
 }
 
 func diskOf(d store.DiskSample) diskRow {
 	return diskRow{TS: d.TS, Major: int32(d.Major), Minor: int32(d.Minor), Name: d.Name, Part: int32(b2i(d.Part)),
-		RdIOs: d.V[0], RdMerges: d.V[1], RdSectors: d.V[2], RdTicks: d.V[3], WrIOs: d.V[4], WrMerges: d.V[5], WrSectors: d.V[6], WrTicks: d.V[7], DcIOs: d.V[8], DcMerges: d.V[9], DcSectors: d.V[10], DcTicks: d.V[11], InFlight: d.V[12], IOTicks: d.V[13], TimeInQueue: d.V[14], FlIOs: d.V[15], FlTicks: d.V[16]}
+		RdIOs: d.V[0], RdMerges: d.V[1], RdSectors: d.V[2], RdTicks: d.V[3], WrIOs: d.V[4], WrMerges: d.V[5], WrSectors: d.V[6], WrTicks: d.V[7], DcIOs: d.V[8], DcMerges: d.V[9], DcSectors: d.V[10], DcTicks: d.V[11], InFlight: d.V[12], IOTicks: d.V[13], TimeInQueue: d.V[14], FlIOs: d.V[15], FlTicks: d.V[16], Pos: int32(d.Pos), Virtual: int32(b2i(d.Virtual))}
 }
 
 type netCounterRow struct {

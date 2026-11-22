@@ -40,9 +40,12 @@ func batches() []*store.Batch {
 			Sys: []store.SysSample{{TS: 1000, UptimeMS: 500, Load1: 149, Threads: 7, Ctxt: 1 << 40, MemTotal: 8000000, PgMajFault: 3,
 				SockUsed: 1417, TCPAlloc: 46, TCPTW: 2, UDPInUse: 13, TCP6InUse: 4, Frag6Memory: 5,
 				CommittedAS: 34800000, HugePagesTotal: 0, PgscanKswapd: 21, AllocStall: 2, OOMKill: 1,
-				PSI: true, PSICPUSome: 123456, PSIMemFull: 0, PSIIOSome: 789, PSICPUAvg: [3]int64{150, 40, 10}, ZswapEnabled: true}},
-			CPUs:  []store.CPUSample{{TS: 1000, CPU: -1, T: [10]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}}, {TS: 1000, CPU: 0, T: [10]int64{1, 2, 3, 4}}},
-			Disks: []store.DiskSample{{TS: 1000, Major: 259, Minor: 1, Name: "nvme0n1p1", Part: true, V: [17]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}}},
+				PSI: true, PSICPUSome: 123456, PSIMemFull: 0, PSIIOSome: 789, PSICPUAvg: [3]int64{150, 40, 10}, ZswapEnabled: true,
+				PgFree: 9999, PgstealAnon: 77, PgDemote: 5, AnonPages: 345678, VmallocUsed: 4096, HugePagesSurp: 2, PSIIOFullAvg: [3]int64{0, 12, 0}}},
+			CPUs: []store.CPUSample{{TS: 1000, CPU: -1, T: [10]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, MHz: -1},
+				{TS: 1000, CPU: 0, T: [10]int64{1, 2, 3, 4}, MHz: 299520, Softnet: [6]int64{123456, 2, 10, 5, 1, 3}, HasSoftnet: true}},
+			Disks: []store.DiskSample{{TS: 1000, Major: 259, Minor: 1, Name: "nvme0n1p1", Part: true, V: [17]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
+				{TS: 1000, Major: 7, Minor: 0, Name: "loop0", Pos: 3, Virtual: true}},
 		},
 		{
 			Sample: store.Sample{TS: 2000, NProc: 2, Rows: 3, CPUUS: 20},
@@ -137,9 +140,9 @@ var compare = map[string]string{
 	"guard_events":     "ts, kind, detail",
 	"verify_snapshots": "ts, end_ts, cmd, sample_ts, output",
 	"meta":             "key, CASE WHEN key = 'stop_ms' THEN 'NOW' ELSE value END",
-	"sys_samples":      "ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory, committed_as, hugepages_total, pgscan_kswapd, allocstall, oom_kill, psi, psi_cpu_some, psi_mem_full, psi_io_some, psi_cpu_avg10, psi_cpu_avg300, zswap_enabled",
-	"cpu_samples":      "ts, cpu, user, nice, system, idle, guest_nice",
-	"disk_samples":     "ts, major, minor, name, part, rd_ios, time_in_queue, fl_ticks",
+	"sys_samples":      "ts, uptime_ms, load1, threads, ctxt, mem_total, pgmajfault, sock_used, tcp_alloc, tcp_tw, udp_inuse, tcp6_inuse, frag6_memory, committed_as, hugepages_total, pgscan_kswapd, allocstall, oom_kill, psi, psi_cpu_some, psi_mem_full, psi_io_some, psi_cpu_avg10, psi_cpu_avg300, zswap_enabled, pgfree, pgsteal_anon, pgdemote, anon_pages, vmalloc_used, hugepages_surp, psi_io_full_avg60",
+	"cpu_samples":      "ts, cpu, user, nice, system, idle, guest_nice, mhz, softnet_total, softnet_backlog",
+	"disk_samples":     "ts, major, minor, name, part, rd_ios, time_in_queue, fl_ticks, pos, virtual",
 	"fs_samples":       "ts, mount_id, frsize, blocks, bfree, bavail, files, ffree",
 }
 

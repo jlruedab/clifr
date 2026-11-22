@@ -7,7 +7,7 @@ OUT=${2:?outdir}
 [ -n "${3:-}" ] && export TZ=$3
 CHECK=$(mktemp -d)
 (cd "$(dirname "$0")/.." && go build -o "$CHECK/sarcheck" ./bench/sarcheck) || exit 2
-from=$(sed -n 1p "$OUT/window")
+from=$(sed -n 1p "$OUT/window" | cut -c1-16) # the minute: sadc may start a second late
 until=$(date -d "$(sed -n 2p "$OUT/window") 30 seconds" "+%Y-%m-%d %H:%M:%S") # its sample is seconds after the minute
 rc=0
 for a in "$OUT"/sar-*.args; do

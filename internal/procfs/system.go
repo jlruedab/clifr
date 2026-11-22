@@ -14,8 +14,8 @@ type Pressure struct {
 	Some, Full uint64
 	HasFull    bool // the file has a full line (cpu has one since Linux 5.13)
 	// SomeAvg: the some line's avg10, avg60 and avg300 in hundredths of a
-	// percent (the file's two decimals).
-	SomeAvg [3]int64
+	// percent (the file's two decimals); FullAvg the full line's (sar -q).
+	SomeAvg, FullAvg [3]int64
 }
 
 // ReadPressure reads /proc/pressure/<resource> (cpu, memory, io, irq). An
@@ -43,9 +43,7 @@ func (f FS) ReadPressure(resource string) (Pressure, error) {
 		if err != nil {
 			return Pressure{}, fmt.Errorf("pressure/%s: %q: %w", resource, line, err)
 		}
-		switch string(kind) {
-		case "some":
-			p.Some = v
+		avgs := func(dst *[3]int64) {
 			for i, k := range []string{"avg10=", "avg60=", "avg300="} {
 				if _, a, ok := bytes.Cut(rest, []byte(k)); ok {
 					if j := bytes.IndexByte(a, ' '); j >= 0 {
@@ -54,11 +52,17 @@ func (f FS) ReadPressure(resource string) (Pressure, error) {
 					w, f, _ := bytes.Cut(a, []byte("."))
 					n, _ := strconv.ParseInt(string(w), 10, 64)
 					d, _ := strconv.ParseInt(string(f), 10, 64)
-					p.SomeAvg[i] = n*100 + d
+					dst[i] = n*100 + d
 				}
 			}
+		}
+		switch string(kind) {
+		case "some":
+			p.Some = v
+			avgs(&p.SomeAvg)
 		case "full":
 			p.Full, p.HasFull = v, true
+			avgs(&p.FullAvg)
 		}
 	}
 	return p, nil
@@ -226,6 +230,10 @@ type MemInfo struct {
 	CommittedAS, CommitLimit, PageTables        uint64
 	HugePagesTotal, HugePagesFree, Hugepagesize uint64
 	AnonHugePages, Zswap, Zswapped              uint64
+	// sar's (schema 14): sar -r ALL's anonymous pages, kernel stacks and
+	// vmalloc use; sar -H's reserved and surplus huge pages (counts).
+	AnonPages, KernelStack, VmallocUsed uint64
+	HugePagesRsvd, HugePagesSurp        uint64
 }
 
 func (f FS) ReadMemInfo() (MemInfo, error) {
@@ -242,6 +250,8 @@ func (f FS) ReadMemInfo() (MemInfo, error) {
 		"Committed_AS:": &m.CommittedAS, "CommitLimit:": &m.CommitLimit, "PageTables:": &m.PageTables,
 		"HugePages_Total:": &m.HugePagesTotal, "HugePages_Free:": &m.HugePagesFree, "Hugepagesize:": &m.Hugepagesize,
 		"AnonHugePages:": &m.AnonHugePages, "Zswap:": &m.Zswap, "Zswapped:": &m.Zswapped,
+		"AnonPages:": &m.AnonPages, "KernelStack:": &m.KernelStack, "VmallocUsed:": &m.VmallocUsed,
+		"HugePages_Rsvd:": &m.HugePagesRsvd, "HugePages_Surp:": &m.HugePagesSurp,
 	}
 	var fs [][]byte
 	found := 0
@@ -278,6 +288,10 @@ type VMStat struct {
 	// PgscanDirectThrottle: direct reclaim throttled (not a scan count; atop
 	// adds it to its scans: its prefix match takes it).
 	PgscanDirectThrottle uint64
+	// sar -B's (schema 14): pages freed, the anon and file split of the
+	// steals (sar adds every pgsteal_ line), promotions and demotions (every
+	// pgdemote_ line summed).
+	PgFree, PgstealAnon, PgstealFile, PgPromoteSuccess, PgDemote uint64
 }
 
 func (f FS) ReadVMStat() (VMStat, error) {
@@ -290,7 +304,8 @@ func (f FS) ReadVMStat() (VMStat, error) {
 		"pswpout": &v.PswpOut, "pgfault": &v.PgFault, "pgmajfault": &v.PgMajFault,
 		"compact_stall": &v.CompactStall, "pgmigrate_success": &v.PgmigrateSuccess,
 		"numa_pages_migrated": &v.NumaPagesMigrated, "oom_kill": &v.OOMKill, "zswpin": &v.ZswpIn, "zswpout": &v.ZswpOut,
-		"pgscan_direct_throttle": &v.PgscanDirectThrottle}
+		"pgscan_direct_throttle": &v.PgscanDirectThrottle, "pgfree": &v.PgFree, "pgsteal_anon": &v.PgstealAnon,
+		"pgsteal_file": &v.PgstealFile, "pgpromote_success": &v.PgPromoteSuccess}
 	// Summed: the name alone or with a zone suffix.
 	sums := []struct {
 		prefix string
@@ -298,7 +313,7 @@ func (f FS) ReadVMStat() (VMStat, error) {
 	}{{"pgscan_kswapd", &v.PgscanKswapd}, {"pgscan_direct", &v.PgscanDirect}, {"pgscan_khugepaged", &v.PgscanKhugepaged},
 		{"pgscan_proactive", &v.PgscanProactive}, {"pgsteal_proactive", &v.PgstealProactive},
 		{"pgsteal_kswapd", &v.PgstealKswapd}, {"pgsteal_direct", &v.PgstealDirect}, {"pgsteal_khugepaged", &v.PgstealKhugepaged},
-		{"allocstall", &v.AllocStall}}
+		{"allocstall", &v.AllocStall}, {"pgdemote", &v.PgDemote}}
 	var fs [][]byte
 	found := 0
 	lines(b, func(line []byte) {
@@ -328,6 +343,7 @@ func (f FS) ReadVMStat() (VMStat, error) {
 
 // DiskStat is one line of /proc/diskstats. Sectors are 512 bytes, times ms.
 type DiskStat struct {
+	Pos          int // the line's position (sar -d lists devices in this order)
 	Major, Minor int
 	Name         string
 	// reads, writes, discards: completed, merged, sectors, ms spent
@@ -354,7 +370,7 @@ func (f FS) ReadDiskStats() ([]DiskStat, error) {
 		if len(fs) < 14 {
 			return
 		}
-		d := DiskStat{Major: int(u64(fs[0])), Minor: int(u64(fs[1])), Name: string(fs[2])}
+		d := DiskStat{Pos: len(out), Major: int(u64(fs[0])), Minor: int(u64(fs[1])), Name: string(fs[2])}
 		v := func(i int) uint64 {
 			if i < len(fs) {
 				return u64(fs[i])
@@ -472,5 +488,79 @@ func (f FS) ReadNetCounters() ([]NetCounter, error) {
 			}
 		}
 	}
+	return out, nil
+}
+
+// Softnet is one CPU's line of /proc/net/softnet_stat (sar -n SOFT): packets
+// processed, dropped, times net_rx_action ran out of budget, received by
+// RPS from another CPU, dropped by the flow limit, and the backlog length
+// (input and process queues; 0 before Linux 6.0). Hexadecimal in the file.
+type Softnet struct {
+	CPU                                     int
+	Processed, Dropped, Squeezed, RPS, Flow uint64
+	Backlog                                 uint64
+	HasCPU                                  bool // the line names its CPU (Linux 5.10+); else the n-th online CPU
+}
+
+// ReadSoftnet reads /proc/net/softnet_stat.
+func (f FS) ReadSoftnet() ([]Softnet, error) {
+	b, err := os.ReadFile(f.path("net", "softnet_stat"))
+	if err != nil {
+		return nil, err
+	}
+	var out []Softnet
+	var fs [][]byte
+	lines(b, func(line []byte) {
+		fs = fields(line, fs)
+		if len(fs) < 11 {
+			return
+		}
+		x := func(i int) uint64 {
+			if i >= len(fs) {
+				return 0
+			}
+			v, _ := strconv.ParseUint(string(fs[i]), 16, 64)
+			return v
+		}
+		s := Softnet{CPU: len(out), Processed: x(0), Dropped: x(1), Squeezed: x(2), RPS: x(9), Flow: x(10), Backlog: x(11)}
+		if len(fs) >= 13 {
+			s.CPU, s.HasCPU = int(x(12)), true
+		}
+		out = append(out, s)
+	})
+	return out, nil
+}
+
+// ReadCPUFreq reads each CPU's "cpu MHz" (x86) or "clock" (POWER) line of
+// /proc/cpuinfo as sadc does: hundredths of a MHz from the integer part and
+// the first two digits read of the fraction (sar -m CPU).
+func (f FS) ReadCPUFreq() (map[int]int64, error) {
+	b, err := os.ReadFile(f.path("cpuinfo"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[int]int64{}
+	cpu := 0
+	lines(b, func(line []byte) {
+		k, v, ok := bytes.Cut(line, []byte(":"))
+		if !ok {
+			return
+		}
+		key := string(bytes.TrimRight(k, " \t"))
+		switch {
+		case key == "processor":
+			n, _ := strconv.Atoi(string(bytes.TrimSpace(v)))
+			cpu = n
+		case key == "cpu MHz" || key == "clock":
+			w, frac, _ := bytes.Cut(bytes.TrimSpace(v), []byte("."))
+			i, _ := strconv.ParseInt(string(w), 10, 64)
+			end := 0
+			for end < len(frac) && frac[end] >= '0' && frac[end] <= '9' {
+				end++
+			}
+			d, _ := strconv.ParseInt(string(frac[:end]), 10, 64)
+			out[cpu] = i*100 + d/10
+		}
+	})
 	return out, nil
 }

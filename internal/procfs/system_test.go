@@ -77,7 +77,7 @@ func TestSystemCounters(t *testing.T) {
 	if err != nil || len(ds) != 3 {
 		t.Fatalf("diskstats = %+v %v", ds, err)
 	}
-	want := DiskStat{Major: 259, Minor: 0, Name: "nvme0n1", Rd: [4]uint64{934, 1, 5498, 15}, Wr: [4]uint64{20, 2, 300, 40},
+	want := DiskStat{Pos: 1, Major: 259, Minor: 0, Name: "nvme0n1", Rd: [4]uint64{934, 1, 5498, 15}, Wr: [4]uint64{20, 2, 300, 40},
 		InFlight: 3, IOTicks: 13, TimeInQueue: 55, Dc: [4]uint64{7, 8, 900, 10}, FlIOs: 11, FlTicks: 12}
 	if ds[1] != want {
 		t.Errorf("nvme0n1 = %+v", ds[1])
@@ -113,7 +113,7 @@ func TestReadPressure(t *testing.T) {
 		"full avg10=0.12 avg60=0.00 avg300=0.00 total=426\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "pressure", "cpu"), []byte("some avg10=1.50 avg60=0.40 avg300=0.10 total=354079129\n"), 0o644)
 	f := FS{Root: dir}
-	if p, err := f.ReadPressure("memory"); err != nil || p != (Pressure{Some: 432, Full: 426, HasFull: true}) {
+	if p, err := f.ReadPressure("memory"); err != nil || p != (Pressure{Some: 432, Full: 426, HasFull: true, FullAvg: [3]int64{12, 0, 0}}) {
 		t.Errorf("memory: %+v %v", p, err)
 	}
 	if p, err := f.ReadPressure("cpu"); err != nil || p != (Pressure{Some: 354079129, SomeAvg: [3]int64{150, 40, 10}}) {
@@ -178,5 +178,26 @@ func TestParseStatusSegments(t *testing.T) {
 		"VmStk:\t   132 kB\nVmExe:\t    24 kB\nVmLib:\t  2048 kB\nVmSwap:\t     8 kB\n"))
 	if err != nil || s.RGID != 100 || s.VmDataK != 4096 || s.VmStkK != 132 || s.VmExeK != 24 || s.VmLibK != 2048 || s.VmSwapK != 8 {
 		t.Errorf("%+v %v", s, err)
+	}
+}
+
+// TestSarInputs: schema 14's softnet_stat and cpuinfo readers.
+func TestSarInputs(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "net"), 0o755)
+	// 13 fields (Linux 6.x: backlog and the CPU), then an old kernel's 11.
+	os.WriteFile(filepath.Join(dir, "net", "softnet_stat"), []byte(
+		"0001e240 00000002 0000000a 00000000 00000000 00000000 00000000 00000000 00000000 00000005 00000001 00000003 00000004\n"+
+			"000000ff 00000000 00000001 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "cpuinfo"), []byte("processor\t: 0\ncpu MHz\t\t: 2995.200\n\nprocessor\t: 1\ncpu MHz\t\t: 800.057\n"), 0o644)
+	f := FS{Root: dir}
+	sn, err := f.ReadSoftnet()
+	if err != nil || len(sn) != 2 || sn[0] != (Softnet{CPU: 4, Processed: 123456, Dropped: 2, Squeezed: 10, RPS: 5, Flow: 1, Backlog: 3, HasCPU: true}) ||
+		sn[1] != (Softnet{CPU: 1, Processed: 255, Squeezed: 1}) {
+		t.Errorf("softnet: %+v %v", sn, err)
+	}
+	mhz, err := f.ReadCPUFreq()
+	if err != nil || mhz[0] != 299520 || mhz[1] != 80005 { // sadc: whole*100 + the fraction's digits / 10
+		t.Errorf("cpu MHz: %v %v", mhz, err)
 	}
 }
