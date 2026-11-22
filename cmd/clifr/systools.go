@@ -127,6 +127,7 @@ func addSystemTools() {
 	addTool(wTool())
 	addTool(atopTool())
 	addTool(iotopTool())
+	addTool(htopTool())
 	addTool(nstatTool())
 	addTool(ipTool())
 }

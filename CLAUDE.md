@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -348,6 +348,18 @@ wait for the user's go-ahead.
   per checkpoint (`query.HostZone`: meta timezone, else tz_offset_s; 2026-11-22): the tools printed in it. iotop captures (Python
   0.6-18/-24/-30/-42, iotop-c 1.21/1.26/1.31/1.33; desktop and four VMs):
   bench/results/iotop-captures-20261122.
+  `clifr htop` (query/htop.go, following htop 3.2.1/3.3.0/3.4.1's C code, GPL-2.0-or-later,
+  packaging/notices/htop.txt; 2026-11-22): htop's default screen as text at `--at` only, by
+  `ToolStyle.Htop` ("" 3.4.1, "3.3" rhel-9/ubuntu-24.04, "3.2" rhel-8, "3.0" ubuntu-22.04); user
+  threads hidden (not recorded; Tasks counts them from each process's thread count), kernel
+  threads hidden (cmdline empty and pid 2 or ppid 2), every process (no screen height, no
+  function bar), $COLUMNS / the terminal / 80 wide; %CPU over the process-sample interval as
+  htop's period (all CPUs' ticks / CPU count). htop 3.0.5 is GPL-2.0-only (3.1.1 relicensed to
+  GPLv2+): `query/htop30.go` is written from its output only (`testdata/htop/SPEC-3.0.5.md`);
+  never read htop 3.1.0's or older code. Checked with `bench/htopcheck.sh` (captures in tmux
+  with htop's own default htoprc + hide_userland_threads=1, beside a 5 s clifrd recording) and
+  `bench/htopcompare.sh` (bench/htopcheck): desktop and four VMs, 35 screens, every header and
+  process line laid out the same (bench/results/htop-captures-20261122).
   `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): as
   root into a pipe; at `--at` the screen since boot, over a range `atop INTERVAL [COUNT]` (the
   increase between the samples at or before each bound; active processes, exited ones as <name>);

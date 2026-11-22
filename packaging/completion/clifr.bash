@@ -5,7 +5,7 @@ _clifr() {
 	local opts="-a --at -S --since -U --until -T --tz --summary --changes --samples --list
 		-e --every -n --number -j --json -I --interactive --plain -D --data-dir --style
 		-H --host --token --tls-ca --tls-fingerprint --salvage --integrity --seal-key --seal-anchor --verbose -v --version -h --help"
-	local cmds="ps top atop iotop pstree lsof ss netstat vmstat mpstat iostat pidstat free uptime df mount findmnt date hostname uname dmesg systemctl systemd-cgls swapon lsmod lsblk lslocks ipcs sysctl slabtop numastat conntrack nfsstat mountstats containers last who w nstat ip
+	local cmds="ps top atop iotop htop pstree lsof ss netstat vmstat mpstat iostat pidstat free uptime df mount findmnt date hostname uname dmesg systemctl systemd-cgls swapon lsmod lsblk lslocks ipcs sysctl slabtop numastat conntrack nfsstat mountstats containers last who w nstat ip
 		events life oom mounts pstore help info verify export diff"
 	COMPREPLY=()
 	case $prev in

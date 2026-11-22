@@ -1,0 +1,46 @@
+htop: parts of clifr's htop
+
+clifr's htop draws htop's screen as htop (https://htop.dev,
+https://github.com/htop-dev/htop) 3.2.1, 3.3.0 and 3.4.1 draw it for Linux.
+Parts of clifr's Go code follow htop's C code, written anew in Go:
+
+- internal/query/htop.go: the default meters by the number of CPUs
+  (Settings_defaultMeters), the header's columns (Header_draw,
+  Header_calculateHeight), the bar meters and their text (BarMeterMode_draw,
+  TextMeterMode_draw, Meter_humanUnit), the CPU meters' values and columns
+  (CPUMeter_updateValues, CPUMeterCommonDraw, AllCPUsMeter_getRange,
+  Platform_setCPUValues, LinuxMachine_scanCPUTime), the Mem and Swp meters
+  (MemoryMeter_updateValues, SwapMeter_updateValues, Platform_setMemoryValues,
+  Platform_setSwapValues, LinuxMachine_scanMemoryInfo), the Tasks, Load
+  average and Uptime meters, the screen tabs (ScreenManager_drawScreenTabs),
+  the column titles and the sort arrow (Table_printHeader, RowField_alignedTitle),
+  the column formats (Row_printKBytes, Row_printTime, Row_printPercentage,
+  Row_printLeftAlignedField, Process_writeField; htop 3.2.1's
+  Process_printBytes and Process_printTime), %CPU (LinuxProcessTable), the
+  sort (Process_compare, Process_compareByKey_Base), the tree (Table_buildTree,
+  Table_buildTreeBranch, Process_writeField's tree drawing) and the user and
+  PID filters (Process_matchesFilter).
+
+htop 3.0.5 (Ubuntu 22.04) is GPL-2.0-only; nothing of its code was used:
+internal/query/htop30.go is written from its output only
+(internal/query/testdata/htop/SPEC-3.0.5.md).
+
+Their notice:
+
+  Meter.c, Header.c, CPUMeter.c, MemoryMeter.c, SwapMeter.c, TasksMeter.c,
+  UptimeMeter.c, LoadAverageMeter.c, Settings.c, ScreenManager.c, CRT.c:
+    (C) 2004-2011 Hisham H. Muhammad
+  Row.c: (C) 2004-2015 Hisham H. Muhammad, (C) 2020-2023 Red Hat, Inc.
+  Process.c: (C) 2004-2015 Hisham H. Muhammad, (C) 2020 Red Hat, Inc.
+  Table.c: (C) 2004,2005 Hisham H. Muhammad, (C) 2023 htop dev team
+  XUtils.h: (C) 2004-2011 Hisham H. Muhammad, (C) 2020-2023 htop dev team
+  linux/Platform.c, linux/LinuxMachine.c, linux/LinuxProcessTable.c:
+    (C) 2014 Hisham H. Muhammad
+  Released under the GNU GPLv2+ (GNU General Public License, version 2 or,
+  at your option, any later version).
+
+clifr uses these parts under the GNU General Public License version 3, which
+section 13 of both the GPLv3 and the GNU Affero General Public License
+version 3 allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

@@ -54,6 +54,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 | `top` | the system summary and the busiest processes |
 | `atop` | atop's screen since boot or per interval; process views `-m -d -s -v -c` |
 | `iotop` | each process's disk reads and writes per interval, as `iotop -b` prints them |
+| `htop` | htop's screen at a moment as text: CPU bars, memory, tasks, load, every process (`-t` tree) |
 | `pstree` | the process tree |
 | `pidstat` | CPU, memory, disk and context switches per process |
 | `systemd-cgls` | processes grouped by service (cgroups) |
@@ -768,6 +769,27 @@ chooses one; a line on stderr says when a style other than current is used.
   Ubuntu 22.04 and 24.04 VMs (2026-11-22) every process matched and 99.4-100%
   were exact on every field; the rest are journal commits falling on either
   side of windows that start a fraction of a second apart.
+- `htop [-t] [-s COLUMN] [-u USER] [-p PID[,PID...]] [-C]` (`--at` only): htop's
+  default screen as text, as the recorded host's release draws it (as root,
+  no htoprc): 3.4.1, 3.3.0 (RHEL 9's EPEL, Ubuntu 24.04), 3.2.1 (RHEL 8's
+  EPEL) or 3.0.5 (Ubuntu 22.04). The header (CPU bars laid out by the CPU
+  count, Mem, Swp, Tasks, Load average, Uptime), the screen tabs, the column
+  titles with the sort arrow, then every process, not cut at a screen's
+  height and without the function key bar; lines are `$COLUMNS` wide, else
+  the terminal's, else 80. %CPU and the CPU bars cover the interval between
+  the process sample at or before T and the one before it (htop's refresh
+  interval). Threads are not recorded: user threads are hidden, as with
+  htop's `H` key (the Tasks line still counts them); kernel threads are
+  hidden, as by default. It follows htop's code for 3.2.1 and later
+  (packaging/notices/htop.txt); 3.0.5 is GPL-2.0-only, so its screen was
+  written from its output only (`internal/query/testdata/htop/SPEC-3.0.5.md`).
+  Checked against real htop captured in tmux beside a 5 s recording
+  (`bench/htopcheck.sh`, `bench/htopcompare.sh`; 2026-11-22): this desktop
+  (3.4.1, 22 CPUs) and Rocky 8, Alma 9, Ubuntu 22.04 and 24.04 VMs, seven
+  screens each (default, `-t`, `-s PERCENT_MEM`, `-u root`, `-p 1`, `-C`, 80
+  columns): every header line laid out the same, 2,115 process lines with
+  USER, PRI, NI, Command and the tree drawing the same, the other columns
+  within a sample's drift; 3.0.5's header also at 6, 12, 24 and 40 CPUs.
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

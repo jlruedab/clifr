@@ -17,6 +17,9 @@ type ToolStyle struct {
 	// Iotop: the Python iotop build (iotop -b): "" 0.6-42, "0.6-24" (Ubuntu
 	// 22.04), "rhel" (RHEL 8's 0.6-18 and RHEL 9's 0.6-30).
 	Iotop string
+	// Htop: the htop release (htop's screen): "" 3.4.1, "3.3" 3.3.0 (RHEL 9's
+	// EPEL, Ubuntu 24.04), "3.2" 3.2.1 (RHEL 8's EPEL), "3.0" 3.0.5 (Ubuntu 22.04).
+	Htop string
 	// OldUsed: procps-ng 3.3 of RHEL 8 and Ubuntu 22.04 (free, top): used =
 	// total - free - buffers - cache, not total - available (RHEL 9's 3.3.17
 	// already computes the latter).
@@ -100,17 +103,17 @@ var Styles = map[string]ToolStyle{
 	// (procps-ng 3.3.15, coreutils 8.30, lsof 4.93.2, sysstat 11.7.3), AlmaLinux
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
-	"rhel-8": {Name: "rhel-8", Iotop: "rhel", Atop271: true, OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
+	"rhel-8": {Name: "rhel-8", Iotop: "rhel", Htop: "3.2", Atop271: true, OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
 		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true, Procps3: true},
-	"rhel-9": {Name: "rhel-9", Iotop: "rhel", Atop271: true, DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
+	"rhel-9": {Name: "rhel-9", Iotop: "rhel", Htop: "3.3", Atop271: true, DFListAll: true, VmstatTickRates: true, DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
 		Procps3: true, WNoFrom: true},
-	"ubuntu-22.04": {Name: "ubuntu-22.04", Iotop: "0.6-24", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
+	"ubuntu-22.04": {Name: "ubuntu-22.04", Iotop: "0.6-24", Htop: "3.0", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true,
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
 		NumastatOld: true, ConntrackOld: true, Procps3: true},
 	// Ubuntu 24.04.5 (2026-11-21): the current tools' style and atop 2.10.0
 	// (checked against its root captures of every view in a VM).
-	"ubuntu-24.04": {Name: "ubuntu-24.04", DmesgCaller: true, Atop210: true},
+	"ubuntu-24.04": {Name: "ubuntu-24.04", Htop: "3.3", DmesgCaller: true, Atop210: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

@@ -1,0 +1,9 @@
+
+    0[|                           0.7%] Tasks: 31, 36 thr, 151 kthr; 1 running
+    1[                            0.0%] Load average: 0.00 0.00 0.00
+    2[|                           0.7%] Uptime: 00:02:36
+    3[                            0.0%]
+  Mem[|||||                 256M/7.76G]
+  Swp[                           0K/0K]
+
+  [Main] [I/O]
