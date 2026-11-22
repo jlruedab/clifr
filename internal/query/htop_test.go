@@ -199,6 +199,11 @@ func TestHtopScreens(t *testing.T) {
 	} {
 		var b bytes.Buffer
 		PrintHtop(&b, sc, c.o)
+		var pids []int
+		for _, p := range HtopJSONOf(sc, c.o).Procs {
+			pids = append(pids, p.PID)
+		}
+		checkPIDs(t, c.name, b.String(), htopPIDLine, pids)
 		golden := filepath.Join("testdata", "htop", c.name+".golden")
 		if *updateHtop {
 			if err := os.WriteFile(golden, b.Bytes(), 0o644); err != nil {

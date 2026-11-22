@@ -434,6 +434,17 @@ func PrintIotop(w io.Writer, screens []IotopScreen, o IotopOpts, st ToolStyle, d
 	}
 }
 
+// IotopShown: the screens as printed (--json): each screen's processes those
+// shown (-o) in the order shown.
+func IotopShown(screens []IotopScreen, o IotopOpts, st ToolStyle, delayAcct bool) []IotopScreen {
+	out := make([]IotopScreen, len(screens))
+	for i, sc := range screens {
+		sc.Procs = iotopSorted(sc, o, st.Iotop, delayAcct)
+		out[i] = sc
+	}
+	return out
+}
+
 // iotopSorted: the processes shown (-o: those with I/O), by iotop's sort
 // key, highest first, ties in the order iotop first saw them (Python's sort
 // is stable, also reversed). The default key is the IO % one; without delay

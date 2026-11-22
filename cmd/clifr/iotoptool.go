@@ -129,7 +129,8 @@ func iotopTool() *tool {
 				}
 				st := query.StyleAt(c.db, ts[len(ts)-1])
 				width := query.IotopPIDWidth(c.db, ts[len(ts)-1])
-				return c.emit(screens, func(i int) rowMeta { return rowMeta{TS: screens[i].TS, From: screens[i].From, To: screens[i].TS} },
+				shown := query.IotopShown(screens, o, st, delay)
+				return c.emit(shown, func(i int) rowMeta { return rowMeta{TS: screens[i].TS, From: screens[i].From, To: screens[i].TS} },
 					func(w io.Writer) {
 						query.PrintIotop(w, screens, o, st, delay, width, func(ts int64) string { return time.UnixMilli(ts).Format("15:04:05") })
 					})

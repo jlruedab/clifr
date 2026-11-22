@@ -252,6 +252,30 @@ func prepareSar(p parsed, c *runCtx) (func() error, error) {
 		}
 		c.header("sar: sysstat %s's sar -f, one record per %s (the system sample at or after each multiple, local clock)",
 			query.SarVersion(st), fmtStep(step))
+		// Reports whose data this recording lacks (schema 14): -A leaves them
+		// out with a note, an option asking for one is refused.
+		if miss := d.SarMissing(o); len(miss) > 0 {
+			kept := o.Acts[:0]
+			var names []string
+			for _, a := range o.Acts {
+				if !miss[a.Key] {
+					kept = append(kept, a)
+					continue
+				}
+				if a.Key == "mem" && p.has("A") { // -r without ALL's columns
+					a.All = false
+					kept = append(kept, a)
+					names = append(names, "mem ALL")
+					continue
+				}
+				names = append(names, a.Key)
+			}
+			if !p.has("A") || len(kept) == 0 {
+				return fmt.Errorf("sar: not in this recording (recorded since schema 14, 2026-11-22): %s", strings.Join(names, ", "))
+			}
+			c.header("sar: -A without %s: not in this recording (recorded since schema 14, 2026-11-22)", strings.Join(names, ", "))
+			o.Acts = kept
+		}
 		if !d.HasPSI() {
 			kept := o.Acts[:0]
 			for _, a := range o.Acts {
@@ -273,7 +297,11 @@ func prepareSar(p parsed, c *runCtx) (func() error, error) {
 		if len(skipped) > 0 {
 			c.header("sar: without %s (not recorded)", strings.Join(skipped, ", "))
 		}
-		return c.emit([]*query.SarData{d}, func(int) rowMeta { return rowMeta{TS: c.w.From} },
+		var rows []query.SarRow
+		if c.g.json {
+			rows = query.SarRows(d, o)
+		}
+		return c.emit(rows, func(i int) rowMeta { return rowMeta{TS: rows[i].TS} },
 			func(w io.Writer) { query.PrintSar(w, d, o) })
 	}, nil
 }

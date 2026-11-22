@@ -825,14 +825,7 @@ func PrintHtop(w io.Writer, sc HtopScreen, o HtopOpts) {
 	}
 
 	// The process list.
-	key := o.SortKey
-	if key == "" {
-		key = "PERCENT_CPU"
-	}
-	desc := htopSortDesc[key]
-	if o.Tree { // the tree view sorts by PID, ascending
-		key, desc = "PID", false
-	}
+	key, desc := htopSortOf(o)
 	cpuW := 5
 	for _, p := range sc.Procs {
 		if p.CPU >= 99.9 {
@@ -865,35 +858,8 @@ func PrintHtop(w io.Writer, sc HtopScreen, o HtopOpts) {
 	}
 	out.WriteString(htopCutRight(head.String(), width) + "\n")
 
-	pids := map[int]bool{}
-	for _, p := range o.PIDs {
-		pids[p] = true
-	}
-	uids := map[int]bool{}
-	for _, u := range o.UIDs {
-		uids[u] = true
-	}
-	filtered := func(p *HtopProc) bool {
-		return len(uids) > 0 && !uids[p.UID] || len(pids) > 0 && !pids[p.PID]
-	}
-	all := make([]*HtopProc, 0, len(sc.Procs))
-	for i := range sc.Procs {
-		all = append(all, &sc.Procs[i])
-	}
-	var list []htopEntry
-	if !o.Tree {
-		htopSort(all, key, desc)
-		for _, p := range all {
-			list = append(list, htopEntry{p: p})
-		}
-	} else {
-		list = htopTree(all, key, desc)
-	}
-	for _, e := range list {
+	for _, e := range htopVisible(sc, o) {
 		p := e.p
-		if e.hidden || p.Kernel || !p.Sampled || filtered(p) {
-			continue
-		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "%*d ", pidW, p.PID)
 		switch {
@@ -924,23 +890,8 @@ func PrintHtop(w io.Writer, sc HtopScreen, o HtopOpts) {
 		}
 		b.WriteString(htopPercent(p.Mem, 4))
 		b.WriteString(tm(p.TimeCS))
-		if o.Tree && e.indent != 0 {
-			ind := e.indent
-			if ind < 0 {
-				ind = -ind
-			}
-			for ; ind > 1; ind >>= 1 {
-				if ind&1 != 0 {
-					b.WriteString("│  ")
-				} else {
-					b.WriteString("   ")
-				}
-			}
-			if e.last {
-				b.WriteString("└─ ")
-			} else {
-				b.WriteString("├─ ")
-			}
+		if o.Tree {
+			b.WriteString(htopTreePrefix(e))
 		}
 		b.WriteString(strings.ReplaceAll(p.Command, "\n", " "))
 		out.WriteString(htopCutRight(b.String(), width) + "\n")
@@ -1043,4 +994,164 @@ func HtopVersion(st ToolStyle) string {
 		return "3.3.0"
 	}
 	return "3.4.1"
+}
+
+// htopSortOf: the sort key and direction (the tree view sorts by PID, ascending).
+func htopSortOf(o HtopOpts) (string, bool) {
+	key := o.SortKey
+	if key == "" {
+		key = "PERCENT_CPU"
+	}
+	desc := htopSortDesc[key]
+	if o.Tree {
+		key, desc = "PID", false
+	}
+	return key, desc
+}
+
+// htopVisible: the process lines in screen order: sorted or as a tree,
+// without kernel threads, processes without values, those -u and -p leave
+// out, and those below a hidden row.
+func htopVisible(sc HtopScreen, o HtopOpts) []htopEntry {
+	key, desc := htopSortOf(o)
+	pids := map[int]bool{}
+	for _, p := range o.PIDs {
+		pids[p] = true
+	}
+	uids := map[int]bool{}
+	for _, u := range o.UIDs {
+		uids[u] = true
+	}
+	all := make([]*HtopProc, 0, len(sc.Procs))
+	for i := range sc.Procs {
+		all = append(all, &sc.Procs[i])
+	}
+	var list []htopEntry
+	if !o.Tree {
+		htopSort(all, key, desc)
+		for _, p := range all {
+			list = append(list, htopEntry{p: p})
+		}
+	} else {
+		list = htopTree(all, key, desc)
+	}
+	out := list[:0]
+	for _, e := range list {
+		p := e.p
+		if e.hidden || p.Kernel || !p.Sampled || len(uids) > 0 && !uids[p.UID] || len(pids) > 0 && !pids[p.PID] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// htopTreePrefix is the tree view's drawing before a command.
+func htopTreePrefix(e htopEntry) string {
+	if e.indent == 0 {
+		return ""
+	}
+	var b strings.Builder
+	ind := e.indent
+	if ind < 0 {
+		ind = -ind
+	}
+	for ; ind > 1; ind >>= 1 {
+		if ind&1 != 0 {
+			b.WriteString("│  ")
+		} else {
+			b.WriteString("   ")
+		}
+	}
+	if e.last {
+		b.WriteString("└─ ")
+	} else {
+		b.WriteString("├─ ")
+	}
+	return b.String()
+}
+
+// HtopJSON is htop's screen as --json prints it: the header's values and
+// the process lines shown, in screen order.
+type HtopJSON struct {
+	SampleTS int64          `json:"sample_ts_ms"`
+	PrevTS   int64          `json:"prev_ts_ms,omitempty"`
+	CPUs     []HtopCPUJSON  `json:"cpus"`
+	Mem      HtopMemJSON    `json:"mem"`
+	Swap     HtopSwapJSON   `json:"swap"`
+	Tasks    HtopTasksJSON  `json:"tasks"`
+	Load     [3]float64     `json:"load"`
+	UptimeS  int64          `json:"uptime_s"`
+	Procs    []HtopProcJSON `json:"processes"`
+}
+
+type HtopCPUJSON struct {
+	CPU     int     `json:"cpu"`
+	Percent float64 `json:"percent"`
+	Nice    float64 `json:"nice"`
+	Normal  float64 `json:"normal"`
+	Kernel  float64 `json:"kernel"`
+	Virt    float64 `json:"virt"`
+}
+
+type HtopMemJSON struct {
+	TotalKB   int64 `json:"total_kb"`
+	UsedKB    int64 `json:"used_kb"`
+	SharedKB  int64 `json:"shared_kb"`
+	BuffersKB int64 `json:"buffers_kb"`
+	CacheKB   int64 `json:"cache_kb"`
+	AvailKB   int64 `json:"available_kb"`
+}
+
+type HtopSwapJSON struct {
+	TotalKB int64 `json:"total_kb"`
+	UsedKB  int64 `json:"used_kb"`
+	CacheKB int64 `json:"cache_kb"`
+}
+
+type HtopTasksJSON struct {
+	Processes     int `json:"processes"`
+	Threads       int `json:"threads"`
+	KernelThreads int `json:"kernel_threads"`
+	Running       int `json:"running"`
+}
+
+type HtopProcJSON struct {
+	HtopProc
+	Tree string `json:"tree,omitempty"` // -t: the drawing before the command
+}
+
+// HtopJSONOf: the screen's values (htop 3.4's memory partition) and its
+// process lines.
+func HtopJSONOf(sc HtopScreen, o HtopOpts) HtopJSON {
+	j := HtopJSON{SampleTS: sc.SampleTS, PrevTS: sc.PrevTS, Load: sc.Load, UptimeS: sc.UptimeS}
+	for i, c := range sc.CPUs {
+		p, _ := htopCPUText(c)
+		j.CPUs = append(j.CPUs, HtopCPUJSON{CPU: i, Percent: p, Nice: c.Nice, Normal: c.Normal, Kernel: c.Kernel, Virt: c.Virt})
+	}
+	cache := sc.Cached + sc.SReclaimable - sc.Shmem
+	used := sc.MemTotal - sc.MemFree
+	if d := sc.MemFree + sc.Cached + sc.SReclaimable + sc.Buffers; sc.MemTotal >= d {
+		used = sc.MemTotal - d
+	}
+	j.Mem = HtopMemJSON{TotalKB: sc.MemTotal, UsedKB: used, SharedKB: sc.Shmem, BuffersKB: sc.Buffers, CacheKB: cache, AvailKB: sc.MemAvailable}
+	j.Swap = HtopSwapJSON{TotalKB: sc.SwapTotal, UsedKB: sc.SwapTotal - sc.SwapFree - sc.SwapCached, CacheKB: sc.SwapCached}
+	for _, p := range sc.Procs {
+		if p.Kernel {
+			j.Tasks.KernelThreads++
+			continue
+		}
+		j.Tasks.Processes++
+		j.Tasks.Threads += p.Threads - 1
+	}
+	j.Tasks.Running = min(sc.ProcsRunning, len(sc.CPUs))
+	j.Procs = []HtopProcJSON{}
+	for _, e := range htopVisible(sc, o) {
+		r := HtopProcJSON{HtopProc: *e.p}
+		if o.Tree {
+			r.Tree = htopTreePrefix(e)
+		}
+		j.Procs = append(j.Procs, r)
+	}
+	return j
 }

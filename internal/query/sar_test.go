@@ -115,6 +115,7 @@ func TestSarScreens(t *testing.T) {
 		}
 		var b bytes.Buffer
 		PrintSar(&b, d, c.o)
+		checkSarRows(t, c.name, b.String(), SarRows(d, c.o))
 		golden := filepath.Join("testdata", "sar", c.name+".golden")
 		if *updateSar {
 			os.MkdirAll(filepath.Dir(golden), 0o755)

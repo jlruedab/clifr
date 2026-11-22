@@ -155,6 +155,15 @@ func TestIotopScreens(t *testing.T) {
 		}
 		var b bytes.Buffer
 		PrintIotop(&b, screens, c.o, ToolStyle{Iotop: c.style}, c.delay, 7, clk)
+		if c.o.Processes && !c.o.Time {
+			var pids []int
+			for _, sc := range IotopShown(screens, c.o, ToolStyle{Iotop: c.style}, c.delay) {
+				for _, p := range sc.Procs {
+					pids = append(pids, p.PID)
+				}
+			}
+			checkPIDs(t, c.name, b.String(), iotopPIDLine, pids)
+		}
 		golden := filepath.Join("testdata", "iotop", c.name+".golden")
 		if *updateIotop {
 			os.MkdirAll(filepath.Dir(golden), 0o755)

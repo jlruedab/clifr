@@ -18,7 +18,7 @@ It comes in two parts:
   - open files, disks, mounts, network routes, logins, kernel messages and the system-wide counters.
 
   It keeps the data in `/var/lib/clifr`, 72 hours by default. It uses the kernel's eBPF so short-lived events don't slip through, and it is light: about 2% of one CPU core on a busy server in our tests.
-- **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and about 40 in total) **as they would have looked at a past moment**:
+- **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and 47 in total) **as they would have looked at a past moment**:
 
   ```sh
   clifr --at "2026-11-12 02:45" "ps aux"
@@ -44,7 +44,7 @@ It complements those tools: Prometheus tells you *when* something happened, clif
 
 ## What commands can I see with clifr?
 
-clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr's own. `clifr help COMMAND` shows the options each one supports.
+clifr can rebuild **47 commands**: 41 are the usual Linux tools and 6 are clifr's own. `clifr help COMMAND` shows the options each one supports.
 
 **Processes**
 
@@ -1081,7 +1081,10 @@ chooses one; a line on stderr says when a style other than current is used.
   `sampled`, the names of its fields whose values come from a periodic
   sample (fd walk, keyframe, per-process or counter sample); the others are
   exact (events) or fixed for the object's life. `info` and `verify` write
-  one object.
+  one object; `top`, `htop`, `iotop` and `atop` one per screen (its processes
+  inside), `sar` one per value line (`report`, `item`, `values` by sar's
+  column titles). The user guide's "Using clifr from an AI agent" lists
+  each command's form.
 
       {"ts_ms":1792380606000,"sample_ts_ms":1792380585319,"state":"ESTAB","recv_q":0,"send_q":0,
        "local":"192.168.1.12","lport":32800,"peer":"203.0.113.50","rport":443,"proto":"tcp",

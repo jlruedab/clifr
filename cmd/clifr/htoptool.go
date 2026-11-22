@@ -110,7 +110,7 @@ func htopTool() *tool {
 				if events > 0 {
 					c.header("htop: %d processes only seen through exec/exit events (no values) left out", events)
 				}
-				return c.emit([]query.HtopScreen{sc}, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: sc.SampleTS} },
+				return c.emit([]query.HtopJSON{query.HtopJSONOf(sc, o)}, func(int) rowMeta { return rowMeta{TS: c.w.At, SampleTS: sc.SampleTS} },
 					func(w io.Writer) { query.PrintHtop(w, sc, o) })
 			}, nil
 		},

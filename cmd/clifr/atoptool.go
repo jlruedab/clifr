@@ -73,7 +73,7 @@ func atopTool() *tool {
 					}
 					a.SetStyle(query.StyleAt(c.db, c.w.At))
 					a.View = view
-					return c.emit([]*query.AtopSys{a}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
+					return c.emit([]query.AtopJSON{query.AtopJSONOf(a)}, func(int) rowMeta { return rowMeta{TS: c.w.At} },
 						func(w io.Writer) {
 							query.PrintAtopSys(w, a)
 							query.PrintAtopProcs(w, a)
@@ -107,7 +107,13 @@ func atopTool() *tool {
 					a.View = view
 					screens = append(screens, a)
 				}
-				return c.emit(screens, func(i int) rowMeta { return rowMeta{TS: screens[i].T} },
+				var shown []query.AtopJSON
+				if c.g.json {
+					for _, a := range screens {
+						shown = append(shown, query.AtopJSONOf(a))
+					}
+				}
+				return c.emit(shown, func(i int) rowMeta { return rowMeta{TS: shown[i].TS} },
 					func(w io.Writer) {
 						for _, a := range screens {
 							query.PrintAtopSys(w, a)

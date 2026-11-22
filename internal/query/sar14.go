@@ -138,8 +138,7 @@ func (d *SarData) load14(db *store.DB, o SarOpts, lo, hi int64) error {
 				return err
 			}
 			if virt < 0 {
-				rows.Close()
-				return fmt.Errorf("sar -b and -d need each device's position and kind, recorded since schema 14 (2026-11-22)")
+				continue // before schema 14: unavailable (sarMissing)
 			}
 			k.part, k.virtual = part == 1, virt == 1
 			xs[ts] = append(xs[ts], k)
@@ -160,6 +159,11 @@ func (d *SarData) load14(db *store.DB, o SarOpts, lo, hi int64) error {
 		if err != nil {
 			return err
 		}
+		recs(func(r *sarRec) {
+			if r.irq != nil && len(r.irq.names) == 0 {
+				r.irq = nil
+			}
+		})
 	}
 	return nil
 }
@@ -168,11 +172,8 @@ func (d *SarData) load14(db *store.DB, o SarOpts, lo, hi int64) error {
 // every minute): the header's CPUs, then each line's name and counts.
 func sarInterrupts(db *store.DB, t int64) (*sarIRQ, error) {
 	lines, ts, ok, err := FileAt(db, "interrupts", t)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("sar -I: /proc/interrupts is recorded since schema 14 (2026-11-22)")
+	if err != nil || !ok {
+		return nil, err // nil: not recorded then (before schema 14)
 	}
 	q := &sarIRQ{ts: ts}
 	for _, l := range lines {
@@ -610,3 +611,53 @@ func printSarIRQ(p *sarPr, seg []sarRec, a SarAct, all bool) {
 }
 
 var _ = sql.ErrNoRows
+
+// SarMissing: the reports of o whose data the recording does not have in the
+// window (recorded since schema 14), by key.
+func (d *SarData) SarMissing(o SarOpts) map[string]bool {
+	out := map[string]bool{}
+	any := func(f func(r *sarRec) bool) bool {
+		for _, seg := range d.Segments {
+			for i := range seg {
+				if f(&seg[i]) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, a := range o.Acts {
+		ok := true
+		switch {
+		case a.Key == "paging" || a.Key == "mem" && a.All || a.Key == "huge" && o.Version != "11.7" ||
+			a.Key == "psiio" || a.Key == "psimem":
+			ok = any(func(r *sarRec) bool { return r.x.ok })
+		case a.Key == "io" || a.Key == "disk":
+			ok = any(func(r *sarRec) bool { return len(r.disks) > 0 })
+		case a.Key == "softnet":
+			ok = any(func(r *sarRec) bool {
+				for _, x := range r.cpux {
+					if x.snOK {
+						return true
+					}
+				}
+				return false
+			})
+		case a.Key == "cpufreq":
+			ok = any(func(r *sarRec) bool {
+				for _, x := range r.cpux {
+					if x.mhz >= 0 {
+						return true
+					}
+				}
+				return false
+			})
+		case a.Key == "irq" && o.Version != "11.7" && o.Version != "12.5":
+			ok = any(func(r *sarRec) bool { return r.irq != nil })
+		}
+		if !ok {
+			out[a.Key] = true
+		}
+	}
+	return out
+}

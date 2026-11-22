@@ -353,6 +353,9 @@ clifr --json --plain --tz UTC --since "2026-11-04 00:00" "events --type gap"
 | CPU, memory, disk and load over time | `--since A --until B "vmstat 60"`, `"mpstat -P ALL 60"`, `"iostat -x 60"`, `"pidstat -u 300"` |
 | What changed between a good and a bad moment? | `diff --at A --at B "ps aux"` (also ss, netstat, lsof, df, mount, findmnt; `change` is `+`, `-` or `~`) |
 | OOM kills, kernel messages | `--since A "oom"`, `--at T "dmesg"` |
+| Which processes did the disk I/O? | `--at T "iotop -b -P -o"`, `--since A --until B "iotop -b -P -o -d 60"` |
+| Network, TCP errors and memory over a period, sar style | `--since A --until B "sar -n DEV -n TCP,ETCP -r -i 60"` |
+| The whole system and its busiest processes on one screen | `--at T "atop"`, `--since A --until B "atop 60"`, `--at T "htop"` |
 
 Without an interval, `vmstat`, `mpstat`, `iostat`, `pidstat` and `uptime` at `--at` print averages since boot (`"since_boot": true`), as the real tools do. For "what was the load like then", ask for a range.
 
@@ -373,9 +376,22 @@ In JSON every command writes all of its fields: `ps -o pid,rss` selects rows lik
 **8. Commands whose JSON is not the tool's table.** Most commands write one object per printed row. These do not:
 
 - `ip`: one object with the raw interface records (`links`) or the route lines (`lines`); `ipcs`, `numastat` and `nfsstat`: one object each.
+- `sar`: one object per value line sar prints, with `ts_ms` (the record's time), `kind` (`record`, `Average`, `Summary`, or `restart` for a LINUX RESTART, with `cpus`), `report` (named by sar's option: `-u`, `-q`, `-r ALL`, `-n DEV`, `-n ETCP`…), `item` (the CPU, interface, device or file system; absent for whole-system reports) and `values`, keyed by sar's own column titles (`%user`, `rxkB/s`, `retrans/s`…). Headers are left out.
+- `htop`: one object per screen: `cpus` (per CPU: `percent` and its `normal`, `nice`, `kernel`, `virt` parts), `mem` and `swap` (KiB), `tasks`, `load`, `uptime_s`, and `processes` exactly as the screen lists them (`-p`, `-u`, the sort key and `-t` applied; kernel threads left out; in tree view each has a `tree` field with the drawing).
+- `iotop`: one object per screen (over a range the first is iotop's own first screen, all zeros, `from_ms` absent) with the totals per second and `processes` as shown (`-o`, `-p`, `-u` applied, in the screen's order): `read_bytes`, `write_bytes` over `seconds`, `blkio_delay_ns`.
+- `atop`: one object per screen: `interval` (false: the screen since boot), `seconds`, `elapsed`, `view`, `system` (each line's `label`, `PRC`, `CPU`, `cpu`, `MEM`, `DSK`…, with its `fields` by atop's names) and `processes` (the view's columns: `PID`, `CPU`, `RDDSK`, `CMD`…). Values are strings as atop prints them (`"6.0G"`, `"22m12s"`, `"3%"`): convert them yourself.
 - `mountstats`: no JSON output. Use the text output.
 
-When in doubt, run the command once without `--json` and compare.
+When in doubt, run the command once without `--json` and compare. For example:
+
+```sh
+clifr --json --plain --tz UTC --since "2026-11-05 12:00" --until "2026-11-05 13:00" "sar -n DEV -i 60" \
+  | jq -c 'select(.kind=="record" and .item=="eth0") | {ts_ms, rx: .values["rxkB/s"], tx: .values["txkB/s"]}'
+clifr --json --plain --tz UTC --at "2026-11-05 12:20" "iotop -b -P -o" \
+  | jq -c '.processes[:5][] | {pid, command, write_bytes, seconds}'
+clifr --json --plain --tz UTC --at "2026-11-05 12:20" "atop -m" \
+  | jq -c '(.system[] | select(.label=="MEM") | .fields), .processes[:3][]'
+```
 
 **9. Access and privacy.** The recording holds every user's command lines and connections. Give the agent's user membership of the `clifr` group instead of sudo. `sudo` also drops the `CLIFR_*` variables (see [Environment variables](#environment-variables)). Anything clifr prints goes into the agent's context, and from there to its provider. If command lines on the host can contain secrets, set `redact` patterns in clifrd's configuration ([section 6](#6-configuration)), and give the agent a bundle of just the window in question (`clifrd bundle`, read with `--data-dir FILE.tar`; see [Another machine's recording](#another-machines-recording-bundles-and-sosreports)) instead of the whole recording. Use `clifr` itself or `clifr export TABLE` (CSV) to read the data. Do not read the Parquet files directly: their directories have hashed names and keep several versions of each row.
 
@@ -402,7 +418,8 @@ and similar tools showed at a past time, run clifr instead of guessing:
   short ranges), count with `wc -l`, then select fields with jq. Never dump whole outputs.
 - For counters over time use a range with an interval ("vmstat 60"); without one they are
   averages since boot.
-- mountstats writes no JSON: use its text output (no --json).
+- mountstats writes no JSON: use its text output (no --json). sar writes one object per value
+  line (report, item, values by sar's column titles); atop's values are strings as printed.
 ```
 
 ### Raw tables

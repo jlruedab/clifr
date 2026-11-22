@@ -503,6 +503,29 @@ func sarNFSD(db *store.DB, t int64) [11]int64 {
 type sarPr struct {
 	w  io.Writer
 	sb strings.Builder
+	// --json: each printed line as a row (collect), mapped back to its
+	// record by the time printed.
+	collect bool
+	rows    []SarRow
+	report  string
+	titles  []string // the value columns of the report being printed
+	itemCol int      // where the item (CPU, interface, device...) is: 0 none, 1 first, 2 last
+	isHdr   bool
+	seg     []sarRec
+	lastTS  int64
+}
+
+// SarRow is one line of sar's output as --json prints it: a record's line
+// (Kind "record", TS its time), an "Average" or "Summary" line, or a "restart"
+// (LINUX RESTART); Item is the CPU, interface, device or file system; Values
+// are by column title.
+type SarRow struct {
+	TS     int64              `json:"ts_ms,omitempty"`
+	Kind   string             `json:"kind"`
+	Report string             `json:"report,omitempty"`
+	Item   string             `json:"item,omitempty"`
+	Values map[string]float64 `json:"values,omitempty"`
+	CPUs   int                `json:"cpus,omitempty"`
 }
 
 func (p *sarPr) f(wd int, vals ...float64) {
@@ -522,9 +545,55 @@ func (p *sarPr) ts(s string) { fmt.Fprintf(&p.sb, "%-11s", s) }
 func (p *sarPr) s(format string, a ...any) { fmt.Fprintf(&p.sb, format, a...) }
 
 func (p *sarPr) nl() {
+	if p.collect && !p.isHdr {
+		p.collectLine(p.sb.String())
+	}
+	p.isHdr = false
 	p.sb.WriteString("\n")
 	io.WriteString(p.w, p.sb.String())
 	p.sb.Reset()
+}
+
+// collectLine turns a printed line into a SarRow: its time (the first 11
+// columns) mapped to the segment's record printed with it, the words that
+// are not numbers as the item, the numbers by the report's column titles.
+func (p *sarPr) collectLine(line string) {
+	line = strings.TrimLeft(line, "\n")
+	if len(line) < 11 || p.report == "" {
+		return
+	}
+	stamp := strings.TrimSpace(line[:11])
+	r := SarRow{Kind: "record", Report: p.report, Values: map[string]float64{}}
+	switch stamp {
+	case "Average:":
+		r.Kind = "Average"
+	case "Summary:":
+		r.Kind = "Summary"
+	default:
+		for _, x := range p.seg {
+			if x.ts >= p.lastTS && clock(x.ts) == stamp {
+				r.TS, p.lastTS = x.ts, x.ts
+				break
+			}
+		}
+	}
+	f := strings.Fields(line[11:])
+	switch p.itemCol {
+	case 1:
+		if len(f) > 0 {
+			r.Item, f = f[0], f[1:]
+		}
+	case 2:
+		if len(f) > len(p.titles) {
+			r.Item, f = strings.Join(f[len(p.titles):], " "), f[:len(p.titles)]
+		}
+	}
+	for i, x := range f {
+		if v, err := strconv.ParseFloat(x, 64); err == nil && i < len(p.titles) {
+			r.Values[p.titles[i]] = v
+		}
+	}
+	p.rows = append(p.rows, r)
 }
 
 // hdr is print_hdr_line: a blank line, the time, then each column title (the
@@ -534,6 +603,14 @@ func (p *sarPr) hdr(ts string, titles string, iwidth int) {
 	p.sb.WriteString("\n")
 	p.ts(ts)
 	f := strings.Split(titles, ";")
+	p.isHdr = true
+	p.titles, p.itemCol = f, 0
+	switch {
+	case iwidth < 0:
+		p.titles, p.itemCol = f[1:], 2
+	case f[0] == "CPU" || f[0] == "IFACE" || f[0] == "DEV" || f[0] == "INTR" || f[0] == "TTY":
+		p.titles, p.itemCol = f[1:], 1
+	}
 	if iwidth < 0 {
 		for _, t := range f[1:] {
 			p.s(" %9s", t)
@@ -673,8 +750,18 @@ func sarCounter(r *sarRec, name string) int64 { return r.net[name] }
 // PrintSar prints the reports of every segment as sar -f does: per segment
 // each report (its header, a line per record after the first, the Average),
 // then LINUX RESTART before the next segment.
-func PrintSar(w io.Writer, d *SarData, o SarOpts) {
-	p := &sarPr{w: w}
+func PrintSar(w io.Writer, d *SarData, o SarOpts) { printSar(&sarPr{w: w}, d, o) }
+
+// SarRows: sar's output as rows (--json), every line PrintSar prints but the
+// first line and the headers.
+func SarRows(d *SarData, o SarOpts) []SarRow {
+	p := &sarPr{w: io.Discard, collect: true}
+	printSar(p, d, o)
+	return p.rows
+}
+
+func printSar(p *sarPr, d *SarData, o SarOpts) {
+	p.isHdr = true
 	p.s("%s", d.Header)
 	p.nl()
 	for si, seg := range d.Segments {
@@ -682,7 +769,11 @@ func PrintSar(w io.Writer, d *SarData, o SarOpts) {
 			p.sb.WriteString("\n")
 			p.ts(clock(d.Restarts[si]))
 			p.s("  LINUX RESTART\t(%d CPU)", d.ncpu[si])
+			p.isHdr = true
 			p.nl()
+			if p.collect {
+				p.rows = append(p.rows, SarRow{TS: d.Restarts[si], Kind: "restart", CPUs: d.ncpu[si]})
+			}
 		}
 		if len(seg) < 2 {
 			continue
@@ -690,11 +781,26 @@ func PrintSar(w io.Writer, d *SarData, o SarOpts) {
 		for _, key := range SarActOrder {
 			for _, a := range o.Acts {
 				if a.Key == key {
+					p.report, p.seg, p.lastTS = sarReportName(a), seg, 0
 					printSarAct(p, seg, a, o, d)
 				}
 			}
 		}
 	}
+}
+
+// sarReportName names a report in --json by sar's option for it.
+func sarReportName(a SarAct) string {
+	n := map[string]string{"cpu": "-u", "pcsw": "-w", "irq": "-I", "swap": "-W", "paging": "-B", "io": "-b", "mem": "-r",
+		"swapmem": "-S", "huge": "-H", "ktables": "-v", "queue": "-q", "disk": "-d", "netdev": "-n DEV", "netedev": "-n EDEV",
+		"nfs": "-n NFS", "nfsd": "-n NFSD", "sock": "-n SOCK", "ip": "-n IP", "eip": "-n EIP", "icmp": "-n ICMP",
+		"eicmp": "-n EICMP", "tcp": "-n TCP", "etcp": "-n ETCP", "udp": "-n UDP", "sock6": "-n SOCK6", "ip6": "-n IP6",
+		"eip6": "-n EIP6", "icmp6": "-n ICMP6", "eicmp6": "-n EICMP6", "udp6": "-n UDP6", "softnet": "-n SOFT",
+		"cpufreq": "-m CPU", "fs": "-F", "psicpu": "-q CPU", "psiio": "-q IO", "psimem": "-q MEM"}[a.Key]
+	if a.All && (a.Key == "cpu" || a.Key == "mem" || a.Key == "irq") {
+		n += " ALL"
+	}
+	return n
 }
 
 // sarCPUAll is get_global_cpu_statistics: CPU "all" as the sum of the CPUs

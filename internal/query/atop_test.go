@@ -147,6 +147,14 @@ func TestAtopScreen(t *testing.T) {
 		if _, err := LoadUsers(db, base); err != nil {
 			t.Fatal(err)
 		}
+		if len(v.views) == 1 {
+			a.View = v.views[0]
+			j := AtopJSONOf(a)
+			if j.Elapsed == "" || len(j.System) == 0 || j.System[0].Label != "PRC" || j.System[0].Fields["#proc"] == "" ||
+				len(j.Procs) == 0 || j.Procs[0]["PID"] == "" || j.Procs[0]["CMD"] == "" {
+				t.Errorf("%s: --json %+v", v.name, j)
+			}
+		}
 		var b strings.Builder
 		if len(v.views) == 1 {
 			PrintAtopSys(&b, a)

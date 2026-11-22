@@ -1416,3 +1416,69 @@ func atopIntervalProcs(db *store.DB, a0, a *AtopSys) ([]atopProc, AtopProcSum) {
 	}
 	return out, sum
 }
+
+// AtopJSON is one atop screen as --json prints it: the screen as atop shows
+// it, parsed (values as printed: "6.0G", "22m12s").
+type AtopJSON struct {
+	TS       int64               `json:"ts_ms"`
+	Interval bool                `json:"interval"` // an interval screen (else since boot)
+	Seconds  int64               `json:"seconds,omitempty"`
+	Host     string              `json:"host"`
+	Elapsed  string              `json:"elapsed"`
+	View     string              `json:"view,omitempty"`
+	System   []AtopLineJSON      `json:"system"`
+	Procs    []map[string]string `json:"processes"`
+}
+
+// AtopLineJSON is a system line: its label (PRC, CPU, cpu, MEM, DSK...)
+// and its fields by name.
+type AtopLineJSON struct {
+	Label  string            `json:"label"`
+	Fields map[string]string `json:"fields"`
+}
+
+// AtopJSONOf parses the screen PrintAtopSys and PrintAtopProcs print.
+func AtopJSONOf(a *AtopSys) AtopJSON {
+	var b strings.Builder
+	PrintAtopSys(&b, a)
+	PrintAtopProcs(&b, a)
+	j := AtopJSON{TS: a.T, Interval: a.Interval, Seconds: a.NSecs, Host: a.Host, View: a.View,
+		System: []AtopLineJSON{}, Procs: []map[string]string{}}
+	var cols []string
+	for _, l := range strings.Split(b.String(), "\n") {
+		switch {
+		case strings.HasPrefix(l, "ATOP - "):
+			f := strings.Fields(l)
+			if len(f) >= 2 && f[len(f)-1] == "elapsed" {
+				j.Elapsed = f[len(f)-2]
+			}
+		case cols == nil && strings.Contains(l, "|"):
+			cells := strings.Split(l, "|")
+			line := AtopLineJSON{Label: strings.TrimSpace(cells[0]), Fields: map[string]string{}}
+			for _, c := range cells[1:] {
+				f := strings.Fields(c)
+				if len(f) < 2 {
+					continue
+				}
+				line.Fields[strings.Join(f[:len(f)-1], " ")] = f[len(f)-1]
+			}
+			j.System = append(j.System, line)
+		case cols == nil && strings.Contains(l, " PID "):
+			cols = strings.Fields(l)
+		case cols != nil && strings.TrimSpace(l) != "":
+			f := strings.Fields(l)
+			p := map[string]string{}
+			for i, c := range cols {
+				switch {
+				case i >= len(f):
+				case i == len(cols)-1:
+					p[c] = strings.Join(f[i:], " ")
+				default:
+					p[c] = f[i]
+				}
+			}
+			j.Procs = append(j.Procs, p)
+		}
+	}
+	return j
+}
