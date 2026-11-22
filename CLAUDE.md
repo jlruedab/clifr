@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -324,8 +324,29 @@ wait for the user's go-ahead.
   fixtures), at every sample; `ioprio_dif` = 1 when the threads' names ("rt/N", "be/N", "idle")
   differ (iotop -P: "?dif"), from the per-thread walk (`procfs.Threads.Prio`: each thread's nice and
   policy). Checked against iotop 0.6 on the desktop: 521 of 521 processes the same, 7 "?dif".
-  About 0.3 us per process per sample. iotop captures (Python 0.6-18/-24/-30/-42, iotop-c
-  1.21/1.26/1.31/1.33; desktop and four VMs): bench/results/iotop-captures-20261122.
+  About 0.3 us per process per sample. Also `thr_read_bytes|thr_write_bytes|thr_cancelled_write_bytes`:
+  the live threads' own counters summed (`task/*/io`: in the per-thread walk, or `task/PID/io` for a
+  single-threaded one, by the I/O rule), what iotop adds up: /proc/PID/io also holds reaped children's
+  I/O (wait_task_zombie adds it to the parent: a shell running dd shows the copy) and exited threads'.
+  The I/O rule (2026-11-22): a process is also "fresh" when its main thread's run time in
+  /proc/PID/schedstat (ns) changed: CPU time is charged in ticks to whoever runs at the tick, and
+  jbd2 wrote megabytes without one (iotop verify: 8.8 MB/s real, 0 clifr); ~5 us a process whose
+  ticks did not change (2.5 ms a sample for 520 processes). Multi-threaded processes whose workers
+  run briefly while the main thread sleeps can still be late.
+  `clifr iotop` (query/iotop.go, following iotop 0.6's Python code, packaging/notices/iotop.txt):
+  iotop -b's output in the recorded build (`ToolStyle.Iotop`: "" 0.6-42, "0.6-24" ubuntu-22.04,
+  "rhel" rhel-8/9: "Total DISK READ :", "Actual DISK READ:", lines as b'...'); processes only (a
+  header says so without -P); at `--at` the interval between the two process samples at or before
+  T, over a range iotop's first screen (zeros) then one per -d (snapped to samples with 10% slack);
+  processes alive at both ends (new ones with zeros), ties in the order iotop first saw them (PID);
+  sorted by IO % with delay accounting (`IotopDelayAcct`: kernel.task_delayacct = 1 or no such
+  sysctl, RHEL 8) or by 0.6-24, else by DISK WRITE; SWAPIN not recorded ("?"). Verify: clifrd starts
+  `iotop -b -P -n 2 -d INTERVAL` in the background at a checkpoint (`startIotop`, collected at a
+  later sample; its PID is ignored in the other captures meanwhile), compared with clifr's interval
+  from the checkpoint sample to the one nearest iotop's end (`compareIotop`; iotop-c not compared).
+  Desktop and four VMs: every process matched, 99.4-100% exact. iotop captures (Python
+  0.6-18/-24/-30/-42, iotop-c 1.21/1.26/1.31/1.33; desktop and four VMs):
+  bench/results/iotop-captures-20261122.
   `clifr atop` (query/atop.go, atopfmt.go; following atop's code, packaging/notices/atop.txt): as
   root into a pipe; at `--at` the screen since boot, over a range `atop INTERVAL [COUNT]` (the
   increase between the samples at or before each bound; active processes, exited ones as <name>);

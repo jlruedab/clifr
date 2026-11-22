@@ -455,40 +455,51 @@ type IO struct {
 
 // ReadIO reads /proc/<pid>/io (root or the process's owner).
 func (f FS) ReadIO(pid int) (io IO, err error) {
-	err = f.readPID(pid, "io", func(b []byte) error {
-		for _, line := range strings.Split(string(b), "\n") {
-			k, v, ok := strings.Cut(line, ": ")
-			if !ok {
-				continue
-			}
-			n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-			switch k {
-			case "rchar":
-				io.RChar = n
-			case "wchar":
-				io.WChar = n
-			case "read_bytes":
-				io.ReadBytes = n
-			case "write_bytes":
-				io.WriteBytes = n
-			case "cancelled_write_bytes":
-				io.CancelledWrite = n
-			}
-		}
-		return nil
-	})
+	err = f.readPID(pid, "io", func(b []byte) error { io = parseIO(b); return nil })
 	return
 }
 
-// ReadRunDelay returns the time the process has waited on a run queue, in
-// ns (the second number of /proc/<pid>/schedstat: pidstat's %wait).
-func (f FS) ReadRunDelay(pid int) (ns int64, err error) {
+// ReadThreadIO reads /proc/<pid>/task/<pid>/io: the main thread's own
+// counters, without those of exited threads and reaped children that
+// /proc/<pid>/io adds (iotop's view).
+func (f FS) ReadThreadIO(pid int) (io IO, err error) {
+	err = f.readPID(pid, "task/"+strconv.Itoa(pid)+"/io", func(b []byte) error { io = parseIO(b); return nil })
+	return
+}
+
+func parseIO(b []byte) (io IO) {
+	for _, line := range strings.Split(string(b), "\n") {
+		k, v, ok := strings.Cut(line, ": ")
+		if !ok {
+			continue
+		}
+		n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		switch k {
+		case "rchar":
+			io.RChar = n
+		case "wchar":
+			io.WChar = n
+		case "read_bytes":
+			io.ReadBytes = n
+		case "write_bytes":
+			io.WriteBytes = n
+		case "cancelled_write_bytes":
+			io.CancelledWrite = n
+		}
+	}
+	return
+}
+
+// ReadSchedstat returns /proc/<pid>/schedstat's first two numbers: the main
+// thread's time on a CPU and its time waiting on a run queue, in ns (the
+// latter is pidstat's %wait).
+func (f FS) ReadSchedstat(pid int) (runNS, delayNS int64, err error) {
 	err = f.readPID(pid, "schedstat", func(b []byte) error {
 		fs := strings.Fields(string(b))
 		if len(fs) < 2 {
 			return errShort
 		}
-		ns = int64(atou(fs[1]))
+		runNS, delayNS = int64(atou(fs[0])), int64(atou(fs[1]))
 		return nil
 	})
 	return
@@ -504,6 +515,11 @@ type Threads struct {
 	// Each thread's id, nice value and scheduling policy (iotop derives a
 	// thread's I/O priority from them when none was set).
 	Prio []ThreadPrio
+	// The live threads' own I/O counters (task/*/io), summed: what iotop -P
+	// adds up (no exited threads or reaped children). IOThreads: the
+	// threads whose io file was read.
+	IO        IO
+	IOThreads int
 }
 
 // ThreadPrio is one thread's id, nice value and policy, from its stat.
@@ -560,6 +576,17 @@ func (f FS) ReadThreads(pid int) (t Threads, err error) {
 			}
 			return nil
 		})
+		if err := f.readPID(pid, dir+"io", func(b []byte) error {
+			io := parseIO(b)
+			t.IO.RChar += io.RChar
+			t.IO.WChar += io.WChar
+			t.IO.ReadBytes += io.ReadBytes
+			t.IO.WriteBytes += io.WriteBytes
+			t.IO.CancelledWrite += io.CancelledWrite
+			return nil
+		}); err == nil {
+			t.IOThreads++
+		}
 	}
 	if read == 0 {
 		return t, errShort

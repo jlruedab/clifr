@@ -1,0 +1,17 @@
+14:13:20 Total DISK READ:         0.00 K/s | Total DISK WRITE:         0.00 K/s
+14:13:20 Current DISK READ:       0.00 K/s | Current DISK WRITE:       0.00 K/s
+    TIME    PID  PRIO  USER     DISK READ  DISK WRITE  SWAPIN      IO    COMMAND
+14:13:30 Total DISK READ:        51.20 K/s | Total DISK WRITE:      3895.20 K/s
+14:13:30 Current DISK READ:      50.00 K/s | Current DISK WRITE:    2000.00 K/s
+    TIME    PID  PRIO  USER     DISK READ  DISK WRITE  SWAPIN      IO    COMMAND
+14:13:30     650 be/3 root          0.00 K  30720.00 K ?unavailable?  [jbd2/dm-0-8]
+14:13:30    1200 ?dif appuser-    512.00 K   7168.00 K ?unavailable?  app --data /srv/it's
+14:13:30     881 be/4 postgres      0.00 K     40.00 K ?unavailable?  postgres: stats collector process
+14:13:40 Total DISK READ:       204.80 K/s | Total DISK WRITE:        46.00 K/s
+14:13:40 Current DISK READ:       0.00 K/s | Current DISK WRITE:     500.00 K/s
+    TIME    PID  PRIO  USER     DISK READ  DISK WRITE  SWAPIN      IO    COMMAND
+14:13:40     650 be/3 root          0.00 K  30724.00 K ?unavailable?  [jbd2/dm-0-8]
+14:13:40    1200 ?dif appuser-    512.00 K   7168.00 K ?unavailable?  app --data /srv/it's
+14:13:40    2860 idle root          0.00 K    456.00 K ?unavailable?  clifrd --config /etc/clifr/clifrd.yml
+14:13:40     881 be/4 postgres      0.00 K     40.00 K ?unavailable?  postgres: stats collector process
+14:13:40    3000 be/4 appuser-   2048.00 K      0.00 K ?unavailable?  late

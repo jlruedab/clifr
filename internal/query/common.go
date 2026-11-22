@@ -196,6 +196,28 @@ func UserName(uid int, truncate bool) string {
 	return name
 }
 
+// UserID is the uid of a user name: the recording's (LoadUsers) when it has
+// names, else this machine's; a number is taken as a uid.
+func UserID(name string) (int, bool) {
+	if n, err := strconv.Atoi(name); err == nil {
+		return n, true
+	}
+	if recordedUsers != nil {
+		for id, n := range recordedUsers {
+			if n == name {
+				return id, true
+			}
+		}
+		return 0, false
+	}
+	if u, err := user.Lookup(name); err == nil {
+		if n, err := strconv.Atoi(u.Uid); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
 func metaInt(db *store.DB, key string) int64 {
 	n, _ := strconv.ParseInt(db.Meta(key), 10, 64)
 	return n

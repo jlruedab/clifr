@@ -328,6 +328,11 @@ type ProcSample struct {
 	// value; -1 unknown) at every sample, and, by the rule of VolCtx, 1 when
 	// the threads' priorities as iotop shows them differ (iotop -P: "?dif").
 	IOPrio, IOPrioDif int
+	// Schema 13, for iotop, by the rule of the I/O counters: the live
+	// threads' own I/O counters summed (/proc/<pid>/task/*/io), without the
+	// exited threads and reaped children /proc/<pid>/io adds (all 0 when not
+	// read).
+	ThrReadBytes, ThrWriteBytes, ThrCancelledWrite int64
 }
 
 // NetCounter is one protocol counter (/proc/net/snmp, netstat, snmp6), named

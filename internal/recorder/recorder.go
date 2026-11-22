@@ -85,6 +85,7 @@ type procEntry struct {
 	closed  bool   // closed in the current sample
 	sample  store.ProcSample
 	hasSamp bool
+	runNS   int64            // the main thread's CPU time (schedstat) when last read
 	upd     store.ProcUpdate // current slow attributes
 }
 
@@ -103,6 +104,7 @@ type Recorder struct {
 	ids                 map[string]int64 // next id per table
 
 	verifySkipped map[string]bool // verify commands already reported skipped (verifycap.go)
+	iotopRun      *iotopCapture   // a real iotop measuring an interval (verifycap.go)
 	// cgroups: when each systemd cgroup path was last written (cgroups.go).
 	cgroups map[string]cgroupSeen
 	// ctrSeen: the containers seen in processes' cgroups; ctrNew: one was
@@ -545,6 +547,7 @@ func (r *Recorder) Run(ctx context.Context) error {
 		if err := r.sample(now, fdWalk); err != nil {
 			return fmt.Errorf("sample: %w", err)
 		}
+		r.collectIotop(false)
 		nextSys = now.Add(sysEvery)
 		if verify {
 			r.captureVerify(now.UnixMilli())
@@ -580,6 +583,7 @@ func (r *Recorder) shutdown() error {
 	if r.lastTS == 0 {
 		return nil
 	}
+	r.collectIotop(true)
 	b := &r.pending // skips, guard events and verify output not yet written
 	r.applyEvents(r.lastTS, b)
 	r.flushEventProcs(openRowsFlushAll, b)
@@ -763,10 +767,19 @@ func (r *Recorder) sampleProcs(ts int64, refresh bool, b *store.Batch) int {
 		ticks := int64(st.Utime + st.Stime)
 		e := r.procs[key]
 		// What changes only while a process runs is re-read when it used
-		// CPU since its last sample, when it is new and on fd-walk samples;
+		// CPU since its last sample (its CPU ticks, or its main thread's
+		// time on a CPU in ns, changed), when it is new and on fd-walk samples;
 		// otherwise the previous values stand (cumulative counters: a
 		// skipped read only delays an update).
 		fresh := e == nil || refresh || !e.hasSamp || ticks != e.sample.CPUTicks
+		if !fresh {
+			// CPU time is charged in clock ticks, to whoever runs at the
+			// tick: a kernel thread such as jbd2 can write megabytes without
+			// one. The main thread's time in ns tells that it ran.
+			if run, _, err := r.fs.ReadSchedstat(pid); err == nil && run != e.runNS {
+				fresh = true
+			}
+		}
 		var status procfs.Status
 		haveStatus := false
 		if fresh {
@@ -921,6 +934,7 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 		s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = p.ThrRun, p.ThrSleepI, p.ThrSleepU, p.ThrIdle
 		s.IOPrioDif = p.IOPrioDif
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = p.RChar, p.WChar, p.ReadBytes, p.WriteBytes, p.CancelledWrite
+		s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = p.ThrReadBytes, p.ThrWriteBytes, p.ThrCancelledWrite
 		return
 	}
 	if haveStatus {
@@ -931,8 +945,9 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	if w, err := r.fs.ReadWchan(e.key.pid); err == nil {
 		s.Wchan = w
 	}
-	if ns, err := r.fs.ReadRunDelay(e.key.pid); err == nil {
+	if run, ns, err := r.fs.ReadSchedstat(e.key.pid); err == nil {
 		s.WaitNS, s.RunDelayNS = ns, ns
+		e.runNS = run
 	}
 	// atop's sums over all threads: a single-threaded process's own values;
 	// a multi-threaded one's from each thread (the process's own schedstat,
@@ -950,8 +965,14 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	case "I":
 		s.ThrIdle = 1
 	}
+	// iotop's sums of the threads' own I/O counters: the previous ones
+	// unless read now.
+	s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = p.ThrReadBytes, p.ThrWriteBytes, p.ThrCancelledWrite
 	if s.Threads > 1 {
 		if th, err := r.fs.ReadThreads(e.key.pid); err == nil {
+			if r.cfg.ProcIO && th.IOThreads > 0 {
+				s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = th.IO.ReadBytes, th.IO.WriteBytes, th.IO.CancelledWrite
+			}
 			s.RunDelayNS, s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = th.RunDelayNS, th.BlkioTicks, th.VolCtx, th.NonVolCtx
 			s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = th.Run, th.SleepI, th.SleepU, th.Idle
 			s.IOPrioDif = r.ioprioDif(th.Prio)
@@ -962,6 +983,11 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	}
 	if io, err := r.fs.ReadIO(e.key.pid); err == nil {
 		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = io.RChar, io.WChar, io.ReadBytes, io.WriteBytes, io.CancelledWrite
+	}
+	if s.Threads <= 1 {
+		if io, err := r.fs.ReadThreadIO(e.key.pid); err == nil {
+			s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = io.ReadBytes, io.WriteBytes, io.CancelledWrite
+		}
 	}
 }
 

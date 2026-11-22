@@ -152,7 +152,7 @@ clifr: ip: option -b is not supported for recorded data (see: clifr help ip)
 
 `clifr help` lists every supported command, and `clifr help COMMAND` its options, notes on how exact each part is, and examples. The man page `man clifr` has the same text.
 
-Supported commands: `ps`, `top`, `atop`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
+Supported commands: `ps`, `top`, `atop`, `iotop`, `pstree`, `pidstat`, `lsof`, `ss`, `netstat`, `vmstat`, `mpstat`, `iostat`, `free`, `uptime`, `df`, `mount`, `findmnt`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip` (link, address, route, rule, neigh, netns), `dmesg`, `systemctl`, `systemd-cgls`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack`, `nfsstat`, `mountstats`; and clifr's own `events`, `life`, `oom`, `mounts`, `containers`, `pstore`.
 
 ### Counters at a moment
 
@@ -693,7 +693,7 @@ Each use case gives the question, the steps, what to look for, and what clifr ca
     …
    ```
 
-   pgbench used 1.4 CPUs and each of its eight postgres backends most of one, out of 22 (`CPU` adds up all CPUs: 2200% here); the load average was rising (`avg1` 5.5 against `avg5` 2.3), and each backend wrote about 840 MB in the minute while the disk stayed 18% busy. The same screen in another view: `atop -d` sorts by disk transfer, `atop -m` by memory (sizes, growth, swap), `atop -s` shows scheduling (thread states, run-queue delay, context switches), `atop -v` parent, users and start times, `atop -c` the full command lines. At one moment, `clifr --at T atop` prints atop's first screen, the totals since boot.
+   pgbench used 1.4 CPUs and each of its eight postgres backends most of one, out of 22 (`CPU` adds up all CPUs: 2200% here); the load average was rising (`avg1` 5.5 against `avg5` 2.3), and each backend wrote about 840 MB in the minute while the disk stayed 18% busy. The same screen in another view: `atop -d` sorts by disk transfer, `atop -m` by memory (sizes, growth, swap), `atop -s` shows scheduling (thread states, run-queue delay, context switches), `atop -v` parent, users and start times, `atop -c` the full command lines. At one moment, `clifr --at T atop` prints atop's first screen, the totals since boot. To see only who read and wrote the disk, per interval, `clifr --since A --until B "iotop -b -o -P -d 60"` prints iotop's batch output (each process's bytes read and written per second, with its I/O priority).
 
    Each interval is the difference between two recorded samples, so choose INTERVAL as a multiple of the sample intervals (30 s for processes, 10 s for the system by default). A process that only woke up briefly, without using a full CPU tick, is not listed as active.
 

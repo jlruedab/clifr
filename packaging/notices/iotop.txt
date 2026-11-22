@@ -1,0 +1,28 @@
+iotop: parts of clifr's iotop and of clifrd's I/O priorities
+
+clifr's iotop prints iotop's batch output (iotop -b) as iotop 0.6 does: the
+Python iotop (http://guichaz.free.fr/iotop/, https://repo.or.cz/iotop.git),
+as Ubuntu (0.6-24, 0.6-42) and RHEL (0.6-18, 0.6-30) ship it. Parts of
+clifr's Go code follow iotop's Python code, written anew in Go:
+
+- internal/query/iotop.go: the sizes and rates (human_size, format_size,
+  format_bandwidth, format_stats), a line's and the header's layout
+  (IOTopUI.get_data, refresh_display), the default sort and its switch
+  without delay accounting (sorting_keys, adjust_sorting_key), the command
+  (ProcessInfo.get_cmdline) and the per-process sums (update_stats); in
+  iotop/ui.py and iotop/data.py.
+- internal/recorder/ioprio.go: a task's I/O priority derived from its
+  scheduling policy and nice value, and its names (get_ioprio_from_sched,
+  get, ProcessInfo.get_ioprio's "?dif"; iotop/ioprio.py and iotop/data.py).
+
+Their notice:
+
+  iotop/ui.py, iotop/data.py, iotop/ioprio.py:
+    Copyright (c) 2007 Guillaume Chazarain <guichaz@gmail.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+
+clifr uses these parts under the GNU General Public License version 3, which
+section 13 of both the GPLv3 and the GNU Affero General Public License
+version 3 allows to be combined with clifr's AGPL-3.0 code.
+
+GNU General Public License version 3: https://www.gnu.org/licenses/gpl-3.0.txt

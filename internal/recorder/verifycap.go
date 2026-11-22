@@ -123,6 +123,7 @@ func lookSystem(name string) (string, error) {
 // 2 where NFS is not in use: "No Client Stats"), is skipped: nothing is
 // compared for it. That is said once per run, not at every checkpoint.
 func (r *Recorder) captureVerify(sampleTS int64) {
+	r.startIotop(sampleTS)
 	_, otherNS := hostMountNS()
 	for _, argv := range verifyCommands {
 		cmdline := strings.Join(argv, " ")
@@ -162,7 +163,7 @@ func (r *Recorder) captureVerify(sampleTS int64) {
 		}
 		r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
 			TS: start.UnixMilli(), EndTS: end.UnixMilli(), SampleTS: sampleTS,
-			Cmd: cmdline, IgnorePIDs: fmt.Sprintf("%d,%s", os.Getpid(), strconv.Itoa(pid)),
+			Cmd: cmdline, IgnorePIDs: fmt.Sprintf("%d,%s%s", os.Getpid(), strconv.Itoa(pid), r.iotopIgnore()),
 			Output: output,
 		})
 	}
@@ -193,4 +194,98 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 func firstLine(s string) string {
 	l, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(l)
+}
+
+// iotopCapture is a real iotop measuring one interval in the background: it
+// starts at a checkpoint, before the other tools, and is collected at a
+// later sample (iotop -b -P -n 2 -d INTERVAL: its second screen is the
+// interval clifr compares with, from the checkpoint sample to the one at
+// its end).
+type iotopCapture struct {
+	cmdline  string
+	sampleTS int64
+	start    time.Time
+	pid      int
+	out      bytes.Buffer
+	stderr   limitedBuffer
+	done     chan error
+	end      time.Time
+	cmd      *exec.Cmd
+}
+
+// startIotop starts iotop at a checkpoint (Python iotop or iotop-c: skipped
+// where it is not installed, and without per-process I/O counters).
+func (r *Recorder) startIotop(sampleTS int64) {
+	if r.iotopRun != nil || !r.cfg.ProcIO {
+		return
+	}
+	d := max(int((r.cfg.Interval+time.Second/2)/time.Second), 1)
+	argv := []string{"-b", "-P", "-n", "2", "-d", strconv.Itoa(d)}
+	cmdline := "iotop " + strings.Join(argv, " ")
+	path, err := lookSystem("iotop")
+	if err != nil {
+		r.verifySkip(cmdline, "not found")
+		return
+	}
+	c := &iotopCapture{cmdline: cmdline, sampleTS: sampleTS, done: make(chan error, 1)}
+	cmd := exec.Command(path, argv...)
+	cmd.Env = []string{"LC_ALL=C", "PATH=" + verifyPath, "COLUMNS=512"}
+	cmd.Stdout, cmd.Stderr = &c.out, &c.stderr
+	c.start = time.Now()
+	if err := cmd.Start(); err != nil {
+		r.log.Errorf("verify: iotop: %v", err)
+		return
+	}
+	c.pid = cmd.Process.Pid
+	go func() {
+		err := cmd.Wait()
+		c.end = time.Now()
+		c.done <- err
+	}()
+	c.cmd = cmd
+	r.iotopRun = c
+}
+
+// iotopIgnore is ",PID" of the iotop running in the background (the other
+// tools see it), else "".
+func (r *Recorder) iotopIgnore() string {
+	if r.iotopRun == nil {
+		return ""
+	}
+	return "," + strconv.Itoa(r.iotopRun.pid)
+}
+
+// collectIotop queues iotop's output once it has finished; stop: kill it
+// (shutdown).
+func (r *Recorder) collectIotop(stop bool) {
+	c := r.iotopRun
+	if c == nil {
+		return
+	}
+	var err error
+	select {
+	case err = <-c.done:
+	default:
+		if !stop {
+			return
+		}
+		c.cmd.Process.Kill()
+		<-c.done
+		r.iotopRun = nil
+		return
+	}
+	r.iotopRun = nil
+	if err != nil && c.out.Len() == 0 {
+		why := err.Error()
+		if l := firstLine(c.stderr.String()); l != "" {
+			why += ": " + l
+		}
+		r.verifySkip(c.cmdline, why)
+		return
+	}
+	r.pending.Verify = append(r.pending.Verify, store.VerifySnap{
+		TS: c.start.UnixMilli(), EndTS: c.end.UnixMilli(), SampleTS: c.sampleTS,
+		Cmd: c.cmdline, IgnorePIDs: fmt.Sprintf("%d,%d", os.Getpid(), c.pid),
+		Output: r.redact.Text(c.out.String()),
+	})
 }

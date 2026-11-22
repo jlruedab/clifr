@@ -147,10 +147,14 @@ func TestReadThreads(t *testing.T) {
 		os.WriteFile(filepath.Join(d, "schedstat"), []byte(v[0]), 0o644)
 		os.WriteFile(filepath.Join(d, "stat"), []byte(v[1]), 0o644)
 		os.WriteFile(filepath.Join(d, "status"), []byte("Uid:\t0\t0\t0\t0\n"+v[2]), 0o644)
+		if tid != "42" { // a thread without an io file (gone) is left out
+			os.WriteFile(filepath.Join(d, "io"), []byte("rchar: 10\nwchar: 20\nsyscr: 1\nsyscw: 2\nread_bytes: 4096\nwrite_bytes: 8192\ncancelled_write_bytes: 512\n"), 0o644)
+		}
 	}
 	f := FS{Root: dir}
 	got, err := f.ReadThreads(40)
-	want := Threads{RunDelayNS: 2501, BlkioTicks: 12, VolCtx: 15, NonVolCtx: 3, SleepI: 1, SleepU: 1, Idle: 1}
+	want := Threads{RunDelayNS: 2501, BlkioTicks: 12, VolCtx: 15, NonVolCtx: 3, SleepI: 1, SleepU: 1, Idle: 1,
+		IO: IO{RChar: 20, WChar: 40, ReadBytes: 8192, WriteBytes: 16384, CancelledWrite: 1024}, IOThreads: 2}
 	prio := got.Prio
 	sort.Slice(prio, func(i, j int) bool { return prio[i].TID < prio[j].TID })
 	got.Prio = nil
@@ -162,6 +166,9 @@ func TestReadThreads(t *testing.T) {
 	}
 	if _, err := f.ReadThreads(41); err == nil {
 		t.Error("no such process: no error")
+	}
+	if io, err := f.ReadThreadIO(40); err != nil || io.WriteBytes != 8192 || io.CancelledWrite != 512 {
+		t.Errorf("main thread's io: %+v %v", io, err)
 	}
 }
 

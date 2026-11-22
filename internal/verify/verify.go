@@ -194,7 +194,10 @@ func Run(db *store.DB) (*Report, error) {
 			}
 			res, err = compareNetstat(db, s)
 		default:
-			continue
+			if !strings.HasPrefix(s.cmd, "iotop -b -P -n 2 -d ") {
+				continue
+			}
+			res, err = compareIotop(db, s)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%s at %s: %w", s.cmd, query.FormatMS(s.sampleTS), err)
@@ -823,8 +826,8 @@ func printResult(w io.Writer, r Result, examples bool) {
 // compared lists the commands in report order; laterCommands are those added
 // after older recordings were made, listed only when present.
 var (
-	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link", "ip -o addr", "ip -d address", "ip route show table all", "ip -6 route show table all", "ip -4 rule list", "ip -6 rule list", "dmesg", "dmesg -T", "systemctl list-units --no-pager", "systemctl list-units --all --no-pager", "systemctl list-units --failed --no-pager", "ps alxwww", "ps auxZww", "pidstat -h -u -r -d -w -p ALL", "systemd-cgls --no-pager", "systemd-cgls --no-pager -l", "swapon --show", "swapon --summary", "lsmod", "lsblk", "lsblk -f", "mount -l", "ip neigh", "ip -s -s neigh", "ip netns", "lslocks", "ipcs", "ipcs -u", "sysctl -a", "slabtop -o", "numastat", "numastat -m", "conntrack -S", "nfsstat", "mountstats", "mountstats -x"}
-	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link", "ip -o addr", "ip -d address", "ip route show table all", "ip -6 route show table all", "ip -4 rule list", "ip -6 rule list", "dmesg", "dmesg -T", "systemctl list-units --no-pager", "systemctl list-units --all --no-pager", "systemctl list-units --failed --no-pager", "ps alxwww", "ps auxZww", "pidstat -h -u -r -d -w -p ALL", "systemd-cgls --no-pager", "systemd-cgls --no-pager -l", "swapon --show", "swapon --summary", "lsmod", "lsblk", "lsblk -f", "mount -l", "ip neigh", "ip -s -s neigh", "ip netns", "lslocks", "ipcs", "ipcs -u", "sysctl -a", "slabtop -o", "numastat", "numastat -m", "conntrack -S", "nfsstat", "mountstats", "mountstats -x")
+	laterCommands = []string{"free", "ps -ef", "netstat -tanp", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link", "ip -o addr", "ip -d address", "ip route show table all", "ip -6 route show table all", "ip -4 rule list", "ip -6 rule list", "dmesg", "dmesg -T", "systemctl list-units --no-pager", "systemctl list-units --all --no-pager", "systemctl list-units --failed --no-pager", "ps alxwww", "ps auxZww", "pidstat -h -u -r -d -w -p ALL", "systemd-cgls --no-pager", "systemd-cgls --no-pager -l", "swapon --show", "swapon --summary", "lsmod", "lsblk", "lsblk -f", "mount -l", "ip neigh", "ip -s -s neigh", "ip netns", "lslocks", "ipcs", "ipcs -u", "sysctl -a", "slabtop -o", "numastat", "numastat -m", "conntrack -S", "nfsstat", "mountstats", "mountstats -x", "atop 1 1", "atop -m 1 1", "atop -d 1 1", "atop -s 1 1", "atop -v 1 1", "atop -c 1 1"}
+	compared      = append(append([]string{"ps aux", "ps -ef", "ss -tanp", "netstat -tanp", "lsof -n -P"}, systemCommands...), "free", "df", "mount", "top -b -n 1 -w 512", "pstree -lpT", "ps auxfwww", "df -al -x autofs", "findmnt", "uname -a", "ss -s", "nstat -zas", "netstat -s", "netstat -s -6", "ip -s -d link", "ip -o addr", "ip -d address", "ip route show table all", "ip -6 route show table all", "ip -4 rule list", "ip -6 rule list", "dmesg", "dmesg -T", "systemctl list-units --no-pager", "systemctl list-units --all --no-pager", "systemctl list-units --failed --no-pager", "ps alxwww", "ps auxZww", "pidstat -h -u -r -d -w -p ALL", "systemd-cgls --no-pager", "systemd-cgls --no-pager -l", "swapon --show", "swapon --summary", "lsmod", "lsblk", "lsblk -f", "mount -l", "ip neigh", "ip -s -s neigh", "ip netns", "lslocks", "ipcs", "ipcs -u", "sysctl -a", "slabtop -o", "numastat", "numastat -m", "conntrack -S", "nfsstat", "mountstats", "mountstats -x", "atop 1 1", "atop -m 1 1", "atop -d 1 1", "atop -s 1 1", "atop -v 1 1", "atop -c 1 1")
 )
 
 // noCheckpoints says how to get checkpoints. A packaged clifrd takes no
@@ -849,14 +852,25 @@ func Print(w io.Writer, rep *Report, verbose bool) {
 			printResult(w, r, verbose)
 		}
 	}
+	// The listed commands in report order, then the others compared (atop's
+	// views, iotop with its interval) by name.
+	order := slices.Clone(compared)
+	var others []string
+	for c := range rep.Totals {
+		if !slices.Contains(compared, c) {
+			others = append(others, c)
+		}
+	}
+	slices.Sort(others)
+	order = append(order, others...)
 	fmt.Fprintf(w, "\nTOTAL over %d checkpoints\n", len(rep.Checkpoints))
-	for _, c := range compared {
+	for _, c := range order {
 		if r, ok := rep.Totals[c]; ok {
 			printResult(w, r, true)
 		}
 	}
 	fmt.Fprintln(w, "\nNot compared:")
-	for _, c := range compared {
+	for _, c := range order {
 		if _, ok := rep.Totals[c]; ok || !slices.Contains(systemCommands, c) && !slices.Contains(laterCommands, c) {
 			fmt.Fprintf(w, "  %-13s %s\n", c, rep.IgnoredFields[c])
 		}

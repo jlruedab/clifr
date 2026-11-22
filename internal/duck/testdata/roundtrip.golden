@@ -20,9 +20,9 @@ writes_stop | 1
 1950 | 10 | 900 | srv | 4000 | 1
 == open_files: id, proc_id, fd, target, deleted, ftype, mode, name, node, first_seen, last_seen
 401 | 101 | 4 | /var/log/x (deleted) | 1 | REG | w | <nil> | 77 | 1000 | 1000
-== proc_samples: proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan, run_delay_ns, vm_stk_kb, vm_swap_kb, blkio_all_ticks, vol_ctx_all, nonvol_ctx_all, thr_sleep_i, ioprio, ioprio_dif
-101 | 1000 | S | 5 | 100 | 200 | 2 | 7 | 4096 | 8192 | 11 | 2 | 40 | -51 | 1 | 50 | 3 | 5 | 2 | 1 | 6 | 96 | 12345 | 9 | 4 | do_epoll_wait | 23456 | 132 | 8 | 7 | 15 | 5 | 2 | 24576 | 1
-101 | 2000 | R | 9 | 120 | 200 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+== proc_samples: proc_id, ts, state, cpu_ticks, rss_kb, vsz_kb, threads, rchar, read_bytes, write_bytes, min_flt, maj_flt, shr_kb, priority, policy, rt_priority, processor, ps_flags, stime_ticks, guest_ticks, blkio_ticks, rss_stat_kb, wait_ns, vol_ctx, nonvol_ctx, wchan, run_delay_ns, vm_stk_kb, vm_swap_kb, blkio_all_ticks, vol_ctx_all, nonvol_ctx_all, thr_sleep_i, ioprio, ioprio_dif, thr_read_bytes, thr_write_bytes, thr_cancelled_write_bytes
+101 | 1000 | S | 5 | 100 | 200 | 2 | 7 | 4096 | 8192 | 11 | 2 | 40 | -51 | 1 | 50 | 3 | 5 | 2 | 1 | 6 | 96 | 12345 | 9 | 4 | do_epoll_wait | 23456 | 132 | 8 | 7 | 15 | 5 | 2 | 24576 | 1 | 1024 | 2048 | 256
+101 | 2000 | R | 9 | 120 | 200 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
 == processes: id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, rgid, netns, killer_pid, killer_uid, killer_comm
 101 | 10 | 900 | 1 | 5 | srv | srv -y | 1000 | 2000 | 2500 | sample | /usr/bin/srv | 1900 | 2500 | <nil> | 9 | 1 | unconfined | 0::/system.slice/srv.service | 7 | 0 | 0 | 4321 | 0 | pkill
 102 | 11 | 1600 | 10 | 0 | sh | sh -c true | 1600 | 1700 | 1700 | ebpf | /bin/sh | 1600 | 1700 | 3 | <nil> | 0 |  |  | 0 | 0 | 4026532512 | <nil> | <nil> | 

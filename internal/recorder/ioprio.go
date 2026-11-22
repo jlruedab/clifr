@@ -1,3 +1,8 @@
+// I/O priorities as iotop shows them: the derivation from the scheduling
+// policy and nice value and the names follow iotop 0.6's iotop/ioprio.py
+// (Copyright (c) 2007 Guillaume Chazarain, GPL-2.0-or-later;
+// packaging/notices/iotop.txt).
+
 package recorder
 
 import (

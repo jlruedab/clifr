@@ -2,8 +2,11 @@ package recorder
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"clifr/internal/procfs"
 )
@@ -93,5 +96,43 @@ func TestSysIOPrioGet(t *testing.T) {
 	}
 	if p, err := sysSchedGet(os.Getpid()); err != nil || p&^0x40000000 > 7 {
 		t.Fatalf("sched_getscheduler: %d %v", p, err)
+	}
+}
+
+// TestFreshBySchedstat: a process charged no CPU tick (a kernel thread such
+// as jbd2 writing megabytes in microseconds) has its I/O counters re-read
+// when its main thread's time on a CPU (schedstat, ns) changed; the threads'
+// own counters (task/PID/io) are what iotop adds up.
+func TestFreshBySchedstat(t *testing.T) {
+	fp := newFakeProc(t)
+	fp.set(10, "jbd2", 100, 5)
+	dir := filepath.Join(fp.root, "10")
+	io := func(whole, own int) {
+		os.WriteFile(filepath.Join(dir, "io"), []byte(fmt.Sprintf("read_bytes: 0\nwrite_bytes: %d\ncancelled_write_bytes: 0\n", whole)), 0o644)
+		os.MkdirAll(filepath.Join(dir, "task", "10"), 0o755)
+		os.WriteFile(filepath.Join(dir, "task", "10", "io"), []byte(fmt.Sprintf("read_bytes: 0\nwrite_bytes: %d\ncancelled_write_bytes: 0\n", own)), 0o644)
+	}
+	sched := func(run int) {
+		os.WriteFile(filepath.Join(dir, "schedstat"), []byte(fmt.Sprintf("%d 50 3\n", run)), 0o644)
+	}
+	io(1000, 1000)
+	sched(1_000_000)
+	r, _ := newTestRecorder(t, fp.root)
+	r.cfg.ProcIO = true
+	t1 := time.UnixMilli(1790001000000)
+	must(t, r.sample(t1, true))
+	got := func() (int64, int64) { s := r.byPID[10].sample; return s.WriteBytes, s.ThrWriteBytes }
+	if w, own := got(); w != 1000 || own != 1000 {
+		t.Fatalf("first sample: %d %d", w, own)
+	}
+	io(9000, 5000) // wrote, and reaped a child that wrote 4000
+	must(t, r.sample(t1.Add(30*time.Second), false))
+	if w, own := got(); w != 1000 || own != 1000 {
+		t.Errorf("no tick, no run time: re-read (%d %d)", w, own)
+	}
+	sched(1_000_400) // ran 400 ns: no tick
+	must(t, r.sample(t1.Add(60*time.Second), false))
+	if w, own := got(); w != 9000 || own != 5000 {
+		t.Errorf("ran without a tick: not re-read (%d %d)", w, own)
 	}
 }

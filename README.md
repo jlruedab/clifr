@@ -53,6 +53,7 @@ clifr can rebuild **41 commands**: 35 are the usual Linux tools and 6 are clifr'
 | `ps` | processes with their CPU, memory, state and command line |
 | `top` | the system summary and the busiest processes |
 | `atop` | atop's screen since boot or per interval; process views `-m -d -s -v -c` |
+| `iotop` | each process's disk reads and writes per interval, as `iotop -b` prints them |
 | `pstree` | the process tree |
 | `pidstat` | CPU, memory, disk and context switches per process |
 | `systemd-cgls` | processes grouped by service (cgroups) |
@@ -337,7 +338,7 @@ Every setting, the configuration file and the unit's limits are explained in the
 | `-D`, `--data-dir` | /var/lib/clifr | the Parquet data directory |
 | `--interval` | 30s | sample processes (and, at least that often, the system-wide counters) |
 | `--sys-interval` | 10s | system-wide counters (uptime, vmstat, mpstat, iostat, free), at most `--interval` |
-| `--proc-io` | true | per-process I/O counters (`/proc/<pid>/io`), read when the process used CPU since its last sample and at every fd walk |
+| `--proc-io` | true | per-process I/O counters (`/proc/<pid>/io`, and its threads' own for iotop), read when the process used CPU since its last sample (its CPU ticks or its main thread's run time in ns changed) and at every fd walk |
 | `--fd-interval` | 120s | walk the processes' open files |
 | `--keyframe-interval` | 5m | full socket dump: queues, UDP, check of the event stream |
 | `--flush-interval` | 5m | write buffered rows to Parquet (a crash loses at most this much) |
@@ -742,6 +743,30 @@ chooses one; a line on stderr says when a style other than current is used.
   between clifrd's sample and atop's reading.
   `clifr verify` compares it with real `atop [-m|-d|-s|-v|-c] 1 1` captures
   (`--verify-every`).
+- `iotop [-b] [-o] [-P] [-a] [-k] [-t] [-q...] [-n NUM] [-d SEC] [-p PID]... [-u USER]...`:
+  the batch output of iotop 0.6, the Python iotop every distribution installs
+  as `iotop`, in the recorded host's build: RHEL 8 and 9 ("Actual DISK READ",
+  each line printed as Python bytes, `b'...'`), Ubuntu 22.04 (0.6-24) or
+  0.6-42. At `--at`, one screen: the interval between the two process samples
+  at or before T. Over a range, iotop's first screen (zeros) then one per `-d
+  SEC` (default: every process sample; snapped to the samples), at most `-n
+  NUM` screens. A process is listed when alive at both ends of an interval
+  (new ones with zeros), as iotop sees processes at its refreshes. Threads are
+  not recorded: every line is a process, as with `-P` (without `-P` a header
+  line says so). DISK READ/WRITE are the increase of the process's threads'
+  own I/O counters (`/proc/PID/task/*/io`, schema 13): what iotop adds up, not
+  `/proc/PID/io`, which also holds the I/O of reaped children (a shell
+  running `dd` would show the copy) and exited threads. PRIO is the recorded
+  I/O priority (schema 13; `?dif` when the threads differ). IO % (and the
+  sort by it) only where the host had delay accounting (RHEL 8's kernel, or
+  `kernel.task_delayacct = 1`), from the block I/O delay at 10 ms
+  resolution; SWAPIN is not recorded (taskstats only) and shows as `?`. It
+  follows iotop's code (packaging/notices/iotop.txt). `clifr verify` compares
+  it with a real `iotop -b -P -n 2 -d INTERVAL` that clifrd runs in the
+  background at each checkpoint: on this desktop and in Rocky 8, Alma 9,
+  Ubuntu 22.04 and 24.04 VMs (2026-11-22) every process matched and 99.4-100%
+  were exact on every field; the rest are journal commits falling on either
+  side of windows that start a fraction of a second apart.
 - `pstree -p [-l] [-T] [-n] [-A|-U] [PID]`: psmisc's layout; threads are not
   recorded, so the tree is the one `-T` prints (`-p` is required: without it
   pstree merges identical subtrees). Over a range: one tree per sample with

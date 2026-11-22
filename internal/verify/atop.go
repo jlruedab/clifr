@@ -16,6 +16,12 @@ import (
 // 134423e3, 4m59s, 12%) may differ by 5% or 3 units, as the system moved
 // between clifrd's sample and atop's own reading. A process on one side
 // only started or ended in between: churn.
+func init() {
+	for _, v := range []string{"", "-m ", "-d ", "-s ", "-v ", "-c "} {
+		ignoredFields["atop "+v+"1 1"] = "the date and time atop ran; numbers in atop's forms within 5% or 3 units"
+	}
+}
+
 func compareAtop(db *store.DB, snap snapshot) (Result, error) {
 	res := newResult(snap.cmd)
 	a, err := query.AtopSysAt(db, snap.ts)
