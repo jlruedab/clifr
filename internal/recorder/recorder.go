@@ -85,7 +85,11 @@ type procEntry struct {
 	closed  bool   // closed in the current sample
 	sample  store.ProcSample
 	hasSamp bool
-	runNS   int64            // the main thread's CPU time (schedstat) when last read
+	runNS   int64 // the main thread's CPU time (schedstat) when last read
+	// threads: each thread's values from the last per-thread walk, and
+	// thrPrio its I/O priority then (ioprioDif), by thread id.
+	threads procfs.ThreadCache
+	thrPrio map[int]int
 	upd     store.ProcUpdate // current slow attributes
 }
 
@@ -968,21 +972,33 @@ func (r *Recorder) sampleRun(e *procEntry, s *store.ProcSample, fresh bool, stat
 	// iotop's sums of the threads' own I/O counters: the previous ones
 	// unless read now.
 	s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = p.ThrReadBytes, p.ThrWriteBytes, p.ThrCancelledWrite
+	// The process's own I/O counters, read first: when they did not change,
+	// neither did any live thread's (the thread walk skips their io files).
+	var pio procfs.IO
+	pioOK := false
+	if r.cfg.ProcIO {
+		if io, err := r.fs.ReadIO(e.key.pid); err == nil {
+			pio, pioOK = io, true
+			s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = io.RChar, io.WChar, io.ReadBytes, io.WriteBytes, io.CancelledWrite
+		}
+	}
 	if s.Threads > 1 {
-		if th, err := r.fs.ReadThreads(e.key.pid); err == nil {
+		if e.threads == nil {
+			e.threads = procfs.ThreadCache{}
+		}
+		e.threads.SkipIO(!r.cfg.ProcIO || pioOK && e.hasSamp && pio.ReadBytes == p.ReadBytes && pio.WriteBytes == p.WriteBytes &&
+			pio.CancelledWrite == p.CancelledWrite)
+		if th, err := r.fs.ReadThreadsCached(e.key.pid, e.threads); err == nil {
 			if r.cfg.ProcIO && th.IOThreads > 0 {
 				s.ThrReadBytes, s.ThrWriteBytes, s.ThrCancelledWrite = th.IO.ReadBytes, th.IO.WriteBytes, th.IO.CancelledWrite
 			}
 			s.RunDelayNS, s.BlkioAllTicks, s.VolCtxAll, s.NonVolCtxAll = th.RunDelayNS, th.BlkioTicks, th.VolCtx, th.NonVolCtx
 			s.ThrRun, s.ThrSleepI, s.ThrSleepU, s.ThrIdle = th.Run, th.SleepI, th.SleepU, th.Idle
-			s.IOPrioDif = r.ioprioDif(th.Prio)
+			s.IOPrioDif = r.ioprioDif(e, th.Prio)
 		}
 	}
 	if !r.cfg.ProcIO {
 		return
-	}
-	if io, err := r.fs.ReadIO(e.key.pid); err == nil {
-		s.RChar, s.WChar, s.ReadBytes, s.WriteBytes, s.CancelledWrite = io.RChar, io.WChar, io.ReadBytes, io.WriteBytes, io.CancelledWrite
 	}
 	if s.Threads <= 1 {
 		if io, err := r.fs.ReadThreadIO(e.key.pid); err == nil {

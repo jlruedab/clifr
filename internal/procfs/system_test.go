@@ -161,9 +161,43 @@ func TestReadThreads(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("threads: %+v %v, want %+v", got, err, want)
 	}
-	if fmt.Sprint(prio) != "[{40 0 0} {41 -5 0} {42 0 2}]" {
+	if fmt.Sprint(prio) != "[{40 0 0 false} {41 -5 0 false} {42 0 2 false}]" {
 		t.Errorf("thread priorities: %v", prio)
 	}
+	// With a cache: a thread whose schedstat is unchanged keeps its values
+	// (its stat and status are not read again), one that ran is re-read,
+	// one gone is dropped.
+	c := ThreadCache{}
+	if _, err := f.ReadThreadsCached(40, c); err != nil || len(c) != 3 {
+		t.Fatalf("first cached walk: %v, %d threads", err, len(c))
+	}
+	t41 := filepath.Join(dir, "40", "task", "41")
+	os.WriteFile(filepath.Join(t41, "stat"), []byte(stat('R', 99, 0, 0)), 0o644)
+	t40 := filepath.Join(dir, "40", "task", "40")
+	os.WriteFile(filepath.Join(t40, "schedstat"), []byte("200 2100 4\n"), 0o644)
+	os.WriteFile(filepath.Join(t40, "stat"), []byte(stat('R', 6, 0, 0)), 0o644)
+	os.RemoveAll(filepath.Join(dir, "40", "task", "42"))
+	got, err = f.ReadThreadsCached(40, c)
+	if err != nil || got.Run != 1 || got.SleepU != 1 || got.SleepI != 0 || got.Idle != 0 || got.BlkioTicks != 13 ||
+		got.RunDelayNS != 2600 || len(c) != 2 {
+		t.Errorf("cached walk: %+v %v, %d threads cached", got, err, len(c))
+	}
+	sort.Slice(got.Prio, func(i, j int) bool { return got.Prio[i].TID < got.Prio[j].TID })
+	if fmt.Sprint(got.Prio) != "[{40 0 0 false} {41 -5 0 true}]" {
+		t.Errorf("cached thread priorities: %v", got.Prio)
+	}
+	// SkipIO: a thread that ran keeps its io values; without it they are read.
+	os.WriteFile(filepath.Join(t40, "schedstat"), []byte("300 2200 5\n"), 0o644)
+	os.WriteFile(filepath.Join(t40, "io"), []byte("rchar: 10\nwchar: 20\nread_bytes: 1\nwrite_bytes: 1\ncancelled_write_bytes: 0\n"), 0o644)
+	c.SkipIO(true)
+	if got, err = f.ReadThreadsCached(40, c); err != nil || got.IO.ReadBytes != 8192 || len(c) != 2 {
+		t.Errorf("SkipIO: %+v %v, %d cached", got.IO, err, len(c))
+	}
+	os.WriteFile(filepath.Join(t40, "schedstat"), []byte("400 2300 6\n"), 0o644)
+	if got, err = f.ReadThreadsCached(40, c); err != nil || got.IO.ReadBytes != 4097 {
+		t.Errorf("after SkipIO: %+v %v", got.IO, err)
+	}
+	os.WriteFile(filepath.Join(t40, "io"), []byte("rchar: 10\nwchar: 20\nsyscr: 1\nsyscw: 2\nread_bytes: 4096\nwrite_bytes: 8192\ncancelled_write_bytes: 512\n"), 0o644)
 	if _, err := f.ReadThreads(41); err == nil {
 		t.Error("no such process: no error")
 	}
@@ -199,5 +233,18 @@ func TestSarInputs(t *testing.T) {
 	mhz, err := f.ReadCPUFreq()
 	if err != nil || mhz[0] != 299520 || mhz[1] != 80005 { // sadc: whole*100 + the fraction's digits / 10
 		t.Errorf("cpu MHz: %v %v", mhz, err)
+	}
+}
+
+// TestParseCtxSwitches: the per-thread walk's two status lines, as
+// ParseStatus reads them.
+func TestParseCtxSwitches(t *testing.T) {
+	b := []byte("Name:\tworker\nState:\tS (sleeping)\nUid:\t0\t0\t0\t0\nvoluntary_ctxt_switches:\t1234\nnonvoluntary_ctxt_switches:\t56\n")
+	st, _ := ParseStatus(b)
+	if v, n := parseCtxSwitches(b); v != 1234 || n != 56 || v != st.VolCtx || n != st.NonVolCtx {
+		t.Errorf("parseCtxSwitches: %d %d, ParseStatus %d %d", v, n, st.VolCtx, st.NonVolCtx)
+	}
+	if v, n := parseCtxSwitches([]byte("Name:\tx\n")); v != 0 || n != 0 {
+		t.Errorf("no such lines: %d %d", v, n)
 	}
 }

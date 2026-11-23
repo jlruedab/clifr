@@ -284,6 +284,15 @@ func (s *sysSampler) addLinks(ts int64, links []rtnl.Link, b *store.Batch) {
 	seen := map[int]store.LinkRow{}
 	for i := range links {
 		row := linkRow(&links[i])
+		// Speed and duplex (sysfs, two reads) change with a renegotiation,
+		// which rtnetlink shows (carrier changes, state, flags): read again
+		// then and at each full write, else the last values stand.
+		if old, ok := s.linkLast[row.Index]; ok && !full && old.Name == row.Name && old.OperState == row.OperState &&
+			old.CarrierChanges == row.CarrierChanges && old.Flags == row.Flags {
+			row.Speed, row.Duplex = old.Speed, old.Duplex
+		} else {
+			row.Speed, row.Duplex = linkSpeed(row.Name)
+		}
 		seen[row.Index] = row
 		if old, ok := s.linkLast[row.Index]; full || !ok || !reflect.DeepEqual(old, row) {
 			row.TS = ts
@@ -314,7 +323,7 @@ func linkRow(l *rtnl.Link) store.LinkRow {
 			r.Stats[i] = int64(v)
 		}
 	}
-	r.Speed, r.Duplex = linkSpeed(l.Name)
+	r.Speed, r.Duplex = -1, -1 // addLinks: linkSpeed
 	return r
 }
 

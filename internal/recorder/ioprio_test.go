@@ -71,19 +71,19 @@ func TestIOPrioDif(t *testing.T) {
 		return v, nil
 	}}
 	same := []procfs.ThreadPrio{{TID: 1}, {TID: 2}, {TID: 9, Nice: 19}}
-	if r.ioprioDif(same) != 0 {
+	if r.ioprioDif(&procEntry{}, same) != 0 {
 		t.Error("same names (a gone thread left out): dif")
 	}
-	if r.ioprioDif([]procfs.ThreadPrio{{TID: 1}, {TID: 2, Nice: -10}}) != 1 {
+	if r.ioprioDif(&procEntry{}, []procfs.ThreadPrio{{TID: 1}, {TID: 2, Nice: -10}}) != 1 {
 		t.Error("nice 0 and -10: no dif")
 	}
-	if r.ioprioDif([]procfs.ThreadPrio{{TID: 1}, {TID: 3}}) != 1 {
+	if r.ioprioDif(&procEntry{}, []procfs.ThreadPrio{{TID: 1}, {TID: 3}}) != 1 {
 		t.Error("be/4 and idle: no dif")
 	}
-	if r.ioprioDif([]procfs.ThreadPrio{{TID: 3}, {TID: 4}}) != 0 {
+	if r.ioprioDif(&procEntry{}, []procfs.ThreadPrio{{TID: 3}, {TID: 4}}) != 0 {
 		t.Error("idle/0 and idle/7 (both \"idle\"): dif")
 	}
-	if (&Recorder{}).ioprioOf(1, 0, 0) != -1 || (&Recorder{}).ioprioDif(same) != 0 {
+	if (&Recorder{}).ioprioOf(1, 0, 0) != -1 || (&Recorder{}).ioprioDif(&procEntry{}, same) != 0 {
 		t.Error("no getter: not unknown")
 	}
 }

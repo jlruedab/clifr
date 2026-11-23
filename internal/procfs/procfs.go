@@ -523,11 +523,52 @@ type Threads struct {
 }
 
 // ThreadPrio is one thread's id, nice value and policy, from its stat.
-type ThreadPrio struct{ TID, Nice, Policy int }
+// Same: the thread did not run since the walk that read them (ThreadCache),
+// so a value derived from them then still stands.
+type ThreadPrio struct {
+	TID, Nice, Policy int
+	Same              bool
+}
 
-// ReadThreads reads /proc/<pid>/task/*/{schedstat,stat,status}. A thread
+// ThreadCache keeps each thread's values from the last walk of one process
+// (ReadThreadsCached), by thread id. With SkipIO set before a walk, the
+// threads' io files are not read (their last values stand): the process's
+// own I/O counters did not change, so no live thread's did.
+type ThreadCache map[int]threadVals
+
+// threadSkipIO is the key under which SkipIO is kept (no thread has id -1).
+const threadSkipIO = -1
+
+// SkipIO sets whether the next walk leaves out the threads' io files.
+func (c ThreadCache) SkipIO(skip bool) {
+	if skip {
+		c[threadSkipIO] = threadVals{}
+	} else {
+		delete(c, threadSkipIO)
+	}
+}
+
+type threadVals struct {
+	runNS, delayNS, blkio, vol, nonvol int64
+	state                              byte
+	nice, policy                       int
+	io                                 IO
+	hasIO                              bool
+}
+
+// ReadThreads reads /proc/<pid>/task/*/{schedstat,stat,status,io}. A thread
 // gone between the listing and its files is left out.
-func (f FS) ReadThreads(pid int) (t Threads, err error) {
+func (f FS) ReadThreads(pid int) (t Threads, err error) { return f.ReadThreadsCached(pid, nil) }
+
+// ReadThreadsCached is ReadThreads keeping each thread's values in c: a
+// thread whose time on a CPU (schedstat's first field) is what it was at the
+// last walk did not run since, and what is summed changes only while a
+// thread runs (its switches, I/O counters, block I/O delay; its state, as
+// a sleeping thread wakes by running), so only its schedstat is read and the
+// rest is taken from c. Threads gone are dropped from c. A thread made
+// runnable but not yet run keeps its old state; a nice value set from
+// outside shows once the thread runs.
+func (f FS) ReadThreadsCached(pid int, c ThreadCache) (t Threads, err error) {
 	d, err := os.Open(f.path(strconv.Itoa(pid), "task"))
 	if err != nil {
 		return t, err
@@ -538,21 +579,49 @@ func (f FS) ReadThreads(pid int) (t Threads, err error) {
 		return t, err
 	}
 	read := 0
+	seen := map[int]bool{}
+	_, skipIO := c[threadSkipIO]
+	delete(c, threadSkipIO)
 	for _, n := range names {
 		if n == "" || n[0] < '0' || n[0] > '9' {
 			continue
 		}
-		dir := "task/" + n + "/"
-		var st Stat
-		err := f.readPID(pid, dir+"stat", func(b []byte) (err error) { st, err = ParseStat(b); return })
+		tid, err := strconv.Atoi(n)
 		if err != nil {
 			continue
 		}
-		read++
-		if tid, err := strconv.Atoi(n); err == nil {
-			t.Prio = append(t.Prio, ThreadPrio{TID: tid, Nice: st.Nice, Policy: st.Policy})
+		dir := "task/" + n + "/"
+		v, same := threadVals{runNS: -1}, false
+		if f.readPID(pid, dir+"schedstat", func(b []byte) error {
+			if fs := strings.Fields(string(b)); len(fs) >= 2 {
+				v.runNS, v.delayNS = int64(atou(fs[0])), int64(atou(fs[1]))
+			}
+			return nil
+		}) != nil {
+			continue
 		}
-		switch st.State {
+		if old, ok := c[tid]; ok && v.runNS >= 0 && old.runNS == v.runNS && old.delayNS == v.delayNS {
+			v, same = old, true
+		} else {
+			var st Stat
+			if err := f.readPID(pid, dir+"stat", func(b []byte) (err error) { st, err = ParseStat(b); return }); err != nil {
+				continue
+			}
+			v.state, v.blkio, v.nice, v.policy = st.State, int64(st.BlkioTicks), st.Nice, st.Policy
+			f.readPID(pid, dir+"status", func(b []byte) error { v.vol, v.nonvol = parseCtxSwitches(b); return nil })
+			if old, ok := c[tid]; ok && skipIO {
+				v.io, v.hasIO = old.io, old.hasIO
+			} else {
+				v.hasIO = f.readPID(pid, dir+"io", func(b []byte) error { v.io = parseIO(b); return nil }) == nil
+			}
+		}
+		read++
+		seen[tid] = true
+		if c != nil {
+			c[tid] = v
+		}
+		t.Prio = append(t.Prio, ThreadPrio{TID: tid, Nice: v.nice, Policy: v.policy, Same: same})
+		switch v.state {
 		case 'R':
 			t.Run++
 		case 'S':
@@ -562,36 +631,47 @@ func (f FS) ReadThreads(pid int) (t Threads, err error) {
 		case 'I':
 			t.Idle++
 		}
-		t.BlkioTicks += int64(st.BlkioTicks)
-		f.readPID(pid, dir+"schedstat", func(b []byte) error {
-			if fs := strings.Fields(string(b)); len(fs) >= 2 {
-				t.RunDelayNS += int64(atou(fs[1]))
-			}
-			return nil
-		})
-		f.readPID(pid, dir+"status", func(b []byte) error {
-			if s, err := ParseStatus(b); err == nil {
-				t.VolCtx += s.VolCtx
-				t.NonVolCtx += s.NonVolCtx
-			}
-			return nil
-		})
-		if err := f.readPID(pid, dir+"io", func(b []byte) error {
-			io := parseIO(b)
-			t.IO.RChar += io.RChar
-			t.IO.WChar += io.WChar
-			t.IO.ReadBytes += io.ReadBytes
-			t.IO.WriteBytes += io.WriteBytes
-			t.IO.CancelledWrite += io.CancelledWrite
-			return nil
-		}); err == nil {
+		t.BlkioTicks += v.blkio
+		t.RunDelayNS += v.delayNS
+		t.VolCtx += v.vol
+		t.NonVolCtx += v.nonvol
+		if v.hasIO {
+			t.IO.RChar += v.io.RChar
+			t.IO.WChar += v.io.WChar
+			t.IO.ReadBytes += v.io.ReadBytes
+			t.IO.WriteBytes += v.io.WriteBytes
+			t.IO.CancelledWrite += v.io.CancelledWrite
 			t.IOThreads++
+		}
+	}
+	for tid := range c {
+		if !seen[tid] {
+			delete(c, tid)
 		}
 	}
 	if read == 0 {
 		return t, errShort
 	}
 	return t, nil
+}
+
+// parseCtxSwitches takes status's voluntary_ctxt_switches and
+// nonvoluntary_ctxt_switches, its last lines, without parsing the rest (the
+// per-thread walk reads a status file for every thread that ran).
+func parseCtxSwitches(b []byte) (vol, nonvol int64) {
+	num := func(key string) int64 {
+		i := bytes.Index(b, []byte("\n"+key))
+		if i < 0 {
+			return 0
+		}
+		rest := b[i+1+len(key):]
+		if j := bytes.IndexByte(rest, '\n'); j >= 0 {
+			rest = rest[:j]
+		}
+		n, _ := strconv.ParseInt(string(bytes.TrimSpace(rest)), 10, 64)
+		return n
+	}
+	return num("voluntary_ctxt_switches:"), num("nonvoluntary_ctxt_switches:")
 }
 
 // ReadWchan returns /proc/<pid>/wchan: the kernel function the process

@@ -95,14 +95,22 @@ func ioprioName(v int) string {
 
 // ioprioDif returns 1 when the threads' I/O priorities, as iotop 0.6 prints
 // them, differ (iotop -P prints "?dif"), else 0. A thread gone before its
-// ioprio_get is left out.
-func (r *Recorder) ioprioDif(threads []procfs.ThreadPrio) int {
+// ioprio_get is left out. A thread that did not run since the last walk
+// (Same) keeps the priority read then (e.thrPrio): ioprio_set from another
+// process shows once it runs, which is when the priority applies.
+func (r *Recorder) ioprioDif(e *procEntry, threads []procfs.ThreadPrio) int {
 	first := ""
+	prio := make(map[int]int, len(threads))
+	defer func() { e.thrPrio = prio }()
 	for _, t := range threads {
-		v := r.ioprioOf(t.TID, t.Nice, t.Policy)
+		v, ok := e.thrPrio[t.TID]
+		if !ok || !t.Same {
+			v = r.ioprioOf(t.TID, t.Nice, t.Policy)
+		}
 		if v < 0 {
 			continue
 		}
+		prio[t.TID] = v
 		if n := ioprioName(v); first == "" {
 			first = n
 		} else if n != first {
