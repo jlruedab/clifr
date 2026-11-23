@@ -6,6 +6,7 @@ import (
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"clifr/internal/query"
 )
@@ -21,21 +22,7 @@ func addSystemTools() {
 		"--since: one report for the range; with --samples (or an INTERVAL argument) one per interval,",
 		"at least INTERVAL (or -e) long and a multiple of the recording interval (30 s by default).",
 	}
-	addTool(&tool{
-		name: "vmstat", synopsis: "[INTERVAL [COUNT]]",
-		about: "memory, swap, I/O, system and CPU activity", window: true, notes: common,
-		examples: []string{`clifr --since "02:00" --until "02:30" "vmstat 60"`},
-		prepare: func(p parsed, c *runCtx) (func() error, error) {
-			return prepareSys("vmstat", p, c, func(spans []query.Span) error {
-				rows, err := query.VMStat(c.db, spans)
-				if err != nil {
-					return err
-				}
-				return c.emit(rows, func(i int) rowMeta { return spanMeta(spans, rows[i].TS, rows[i]) },
-					func(w io.Writer) { query.PrintVMStat(w, rows) })
-			})
-		},
-	})
+	addTool(vmstatTool(common))
 	addTool(&tool{
 		name: "mpstat", synopsis: "[-P ALL|N[,M...]] [INTERVAL [COUNT]]",
 		about:  "CPU time by CPU",
@@ -55,16 +42,28 @@ func addSystemTools() {
 		},
 	})
 	addTool(&tool{
-		name: "iostat", synopsis: "[-x] [-d] [-p [ALL]] [INTERVAL [COUNT]]",
+		name: "iostat", synopsis: "[-c] [-d] [-x] [-s] [-k|-m] [-z] [-N] [-t] [-y] [-p [ALL]] [INTERVAL [COUNT]]",
 		about: "CPU and block device I/O",
 		opts: []opt{
+			{short: 'c', help: "the CPU report only"},
+			{short: 'd', help: "the device report only (no avg-cpu)"},
 			{short: 'x', help: "extended device statistics"},
-			{short: 'd', help: "device report only (no avg-cpu)"},
+			{short: 's', help: "short (narrow) device statistics"},
+			{short: 'k', help: "kilobytes per second (the default)"},
+			{short: 'm', help: "megabytes per second"},
+			{short: 'z', help: "leave out devices without I/O in the interval"},
+			{short: 'N', help: "device-mapper devices by their names"},
+			{short: 't', help: "the time of each report"},
+			{short: 'y', help: "no since-boot report (clifr prints none over a range anyway)"},
 			{short: 'p', help: "also list partitions (ALL is accepted)"},
 		},
-		window: true, notes: common,
+		window:   true,
+		notes:    append(append([]string{}, common...), "As iostat prints them, reports carry no time unless -t is given."),
 		examples: []string{`clifr --since "02:00" --until "02:30" --samples -e 1m "iostat -x"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
+			if p.has("k") && p.has("m") {
+				return nil, errors.New("iostat: -k and -m: one unit")
+			}
 			if p.has("p") && len(p.pos) > 0 && p.pos[0] == "ALL" {
 				p.pos = p.pos[1:]
 			}
@@ -73,8 +72,10 @@ func addSystemTools() {
 				if err != nil {
 					return err
 				}
+				o := query.IOStatOpts{Extended: p.has("x"), Short: p.has("s"), MB: p.has("m"), Zero: p.has("z"),
+					DevMap: p.has("N"), Times: p.has("t"), CPU: !p.has("d") || p.has("c"), Disk: !p.has("c") || p.has("d")}
 				return c.emit(reps, func(i int) rowMeta { return spanMeta(spans, reps[i].TS, reps[i]) },
-					func(w io.Writer) { query.PrintIOStat(w, reps, p.has("x"), p.has("d")) })
+					func(w io.Writer) { query.PrintIOStatOpts(w, reps, o) })
 			})
 		},
 	})
@@ -173,6 +174,8 @@ func prepareSys(name string, p parsed, c *runCtx, print func([]query.Span) error
 		case !c.w.IsRange():
 			if name == "uptime" {
 				c.header("uptime at %s: load averages from the sample of %s", query.FormatMS(c.w.At), query.FormatMS(spans[0].To))
+			} else if strings.HasPrefix(name, "vmstat -") { // -d, -p, -m: counters, not averages
+				c.header("%s: the counters at the sample of %s", name, query.FormatMS(spans[0].To))
 			} else {
 				c.header("%s: averages since boot at the sample of %s", name, query.FormatMS(spans[0].To))
 			}

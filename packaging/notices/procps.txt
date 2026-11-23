@@ -1,6 +1,6 @@
-procps-ng: parts of clifr's w, slabtop and ps, and of clifrd's sysctl reading
+procps-ng: parts of clifr's w, slabtop, ps and vmstat, and of clifrd's sysctl reading
 
-From procps-ng (https://gitlab.com/procps-ng/procps, tags v3.3.17 and v4.0.4),
+From procps-ng (https://gitlab.com/procps-ng/procps, tags v3.3.15, v3.3.17 and v4.0.4),
 written anew in Go:
 
 - internal/query/w.go: w's choice of a session's process and its output
@@ -10,6 +10,11 @@ written anew in Go:
   from slabtop.c and proc/slab.c (3.3.17).
 - internal/query/ps.go: ps's STIME and %CPU (pr_stime, and %CPU over
   elapsed_seconds), from src/ps/output.c (4.0.4).
+- internal/query/vmstat.go and vmstat's values in internal/query/system.go:
+  vmstat's reports, formats and headers (new_header, new_format,
+  diskheader, diskformat, diskpartition_format, disksum_format, slabformat,
+  sum_format, fork_format, unitConvert), from vmstat.c (3.3.15, 3.3.17) and
+  src/vmstat.c (4.0.4).
 - internal/recorder/sysctl.go (clifrd): sysctl -a's skipped names
   (DEPRECATED) and slashdot, from src/sysctl.c (4.0.4).
 
@@ -25,6 +30,17 @@ Their notices:
     Copyright © 2002-2006 Albert Cahalan
     Copyright © 1996      Charles Blake
     Copyright © 1993      Larry Greenfield
+  vmstat.c (3.3.15, 3.3.17): Copyright 1994 by Henry Ware; most code
+    copyright 2002 Albert Cahalan; 27/05/2003 (Fabian Frederick): unit
+    conversion and interface.
+  src/vmstat.c (4.0.4):
+    Copyright © 2011-2023 Craig Small <csmall@dropbear.xyz>
+    Copyright © 2012-2023 Jim Warner <james.warner@comcast.net>
+    Copyright © 2011-2012 Sami Kerola <kerolasa@iki.fi>
+    Copyright © 2010      Jan Görig <jgorig@redhat.com>
+    Copyright © 2003      Fabian Frederick
+    Copyright © 1998-2002 Albert Cahalan
+    Copyright © 1994      Henry Ware <al172@yfn.ysu.edu>
   slabtop.c (3.3.17): Copyright (C) 2003 Chris Rivera
   proc/slab.c (3.3.17): Copyright (C) 2003 Chris Rivera, Copyright 2004, Albert Cahalan
   src/ps/output.c (4.0.4):

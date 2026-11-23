@@ -192,12 +192,7 @@ func AtopSysAt(db *store.DB, t int64) (*AtopSys, error) {
 		return nil, fmt.Errorf("atop: no system sample at or before %s", FormatMS(t))
 	}
 	a := &AtopSys{Host: HostnameAt(db, t), T: t, BootMS: BootAt(db, t)}
-	a.BTime = a.BootMS / 1000
-	if clock, _, ok := BootClockAt(db, t); ok { // btime at t: after a clock step, the new one
-		a.BTime = clock / 1000
-	} else if bt, err := strconv.ParseInt(MetaAt(db, "boot_time", t), 10, 64); err == nil && bt > 0 {
-		a.BTime = bt
-	}
+	a.BTime = BTimeAt(db, t)
 	// atop shows the node name up to its first dot.
 	a.Host, _, _ = strings.Cut(a.Host, ".")
 	s := &a.Sys
@@ -1481,4 +1476,17 @@ func AtopJSONOf(a *AtopSys) AtopJSON {
 		}
 	}
 	return j
+}
+
+// BTimeAt is /proc/stat's btime at t (whole seconds): the boot time on the
+// clock then (after a clock step, the new one), else the run's meta
+// boot_time, else the run's boot time cut to seconds.
+func BTimeAt(db *store.DB, t int64) int64 {
+	if clock, _, ok := BootClockAt(db, t); ok {
+		return clock / 1000
+	}
+	if bt, err := strconv.ParseInt(MetaAt(db, "boot_time", t), 10, 64); err == nil && bt > 0 {
+		return bt
+	}
+	return BootAt(db, t) / 1000
 }

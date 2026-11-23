@@ -271,6 +271,9 @@ type VMStatRow struct {
 	WA        int64  `json:"wa"`
 	ST        int64  `json:"st"`
 	GU        int64  `json:"gu"`
+	// -a's columns: inactive and active memory (kB).
+	Inact    int64 `json:"inact"`
+	ActiveKB int64 `json:"active"`
 }
 
 func rate(n int64, secs float64) int64 {
@@ -305,7 +308,12 @@ func VMStat(db *store.DB, spans []Span) ([]VMStatRow, error) {
 		t := cpus[-1]
 		use, sys := t[cUser]+t[cNice], t[cSystem]+t[cIRQ]+t[cSoftIRQ]
 		div := use + sys + t[cIdle] + t[cIOWait] + t[cSteal]
-		if sp.From == 0 && div > 0 && StyleAt(db, sp.To).VmstatTickRates {
+		gu := t[cGuest] + t[cGuestNice]
+		st := StyleAt(db, sp.To)
+		if !st.VmstatTickRates { // procps-ng 4: guest time is in user time, taken out of us
+			use = max(use-gu, 0)
+		}
+		if sp.From == 0 && div > 0 && st.VmstatTickRates {
 			// procps-ng before 4.0: since boot, per second of CPU time summed
 			// over the CPUs (so divided by their number).
 			secs = float64(div) / float64(procfs.ClockTicks)
@@ -316,7 +324,7 @@ func VMStat(db *store.DB, spans []Span) ([]VMStatRow, error) {
 			}
 			return (100*v + div/2) / div
 		}
-		out = append(out, VMStatRow{TS: to.TS, Time: FormatMS(to.TS), SinceBoot: sp.From == 0,
+		row := VMStatRow{TS: to.TS, Time: FormatMS(to.TS), SinceBoot: sp.From == 0,
 			// The process that read the counters was running itself; vmstat
 			// leaves itself out the same way.
 			R: int64(max(to.ProcsRunning-1, 0)), B: int64(to.ProcsBlocked),
@@ -324,20 +332,28 @@ func VMStat(db *store.DB, spans []Span) ([]VMStatRow, error) {
 			SI: rate((to.PswpIn-from.PswpIn)*pageKB, secs), SO: rate((to.PswpOut-from.PswpOut)*pageKB, secs),
 			BI: rate(to.PgpgIn-from.PgpgIn, secs), BO: rate(to.PgpgOut-from.PgpgOut, secs),
 			In: rate(to.Intr-from.Intr, secs), CS: rate(to.Ctxt-from.Ctxt, secs),
-			US: pct(use), SY: pct(sys), ID: pct(t[cIdle]), WA: pct(t[cIOWait]), ST: pct(t[cSteal]), GU: pct(t[cGuest] + t[cGuestNice])})
+			US: pct(use), SY: pct(sys), ID: pct(t[cIdle]), WA: pct(t[cIOWait]), ST: pct(t[cSteal]), GU: pct(gu),
+			Inact: to.Inactive, ActiveKB: to.Active}
+		if sp.From == 0 && !st.VmstatTickRates && secs > 0 {
+			// procps-ng 4's since-boot line: the counters over the uptime,
+			// truncated, and cs over the CPUs' clock ticks (its Div), not
+			// per second.
+			row.SI, row.SO = int64(float64((to.PswpIn)*pageKB)/secs), int64(float64((to.PswpOut)*pageKB)/secs)
+			row.BI, row.BO = int64(float64(to.PgpgIn)/secs), int64(float64(to.PgpgOut)/secs)
+			row.In = int64(float64(to.Intr) / secs)
+			row.CS = 0
+			if div > 0 {
+				row.CS = to.Ctxt / div
+			}
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }
 
-// PrintVMStat formats rows like procps-ng 4 vmstat.
-func PrintVMStat(w io.Writer, rows []VMStatRow) {
-	fmt.Fprintln(w, "procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------")
-	fmt.Fprintln(w, " r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu")
-	for _, r := range rows {
-		fmt.Fprintf(w, "%2d %2d %6d %6d %6d %6d %4d %4d %5d %5d %4d %4d %2d %2d %2d %2d %2d %2d\n",
-			r.R, r.B, r.Swpd, r.Free, r.Buff, r.Cache, r.SI, r.SO, r.BI, r.BO, r.In, r.CS, r.US, r.SY, r.ID, r.WA, r.ST, r.GU)
-	}
-}
+// PrintVMStat formats rows like procps-ng 4 vmstat (PrintVMStatOpts: the
+// other releases and options).
+func PrintVMStat(w io.Writer, rows []VMStatRow) { PrintVMStatOpts(w, rows, VmstatOpts{}) }
 
 // ---- mpstat ----
 
@@ -478,6 +494,8 @@ type IOStatDev struct {
 	FAwait  float64 `json:"f_await"`
 	AquSz   float64 `json:"aqu_sz"`
 	Util    float64 `json:"util"`
+	// DMName: a device-mapper device's name (-N), "" otherwise.
+	DMName string `json:"dm_name,omitempty"`
 }
 
 // IOStatReport is one iostat report.
@@ -488,6 +506,8 @@ type IOStatReport struct {
 	CPU       IOStatCPU   `json:"avg_cpu"`
 	Devices   []IOStatDev `json:"devices"`
 	v11       bool        // sysstat 11 layout (ToolStyle.IostatV11)
+	// first: the line iostat starts with (kernel, host, date, machine, CPUs).
+	first string
 }
 
 type diskVals [17]int64
@@ -519,6 +539,25 @@ func loadDisks(db *store.DB, ts int64, parts bool) (map[string]diskVals, error) 
 		out[name] = v
 	}
 	return out, rows.Err()
+}
+
+// diskPos: each device's position in /proc/diskstats at a sample (schema
+// 14; none before).
+func diskPos(db *store.DB, ts int64) map[string]int {
+	out := map[string]int{}
+	rows, err := db.Query(`SELECT name, pos FROM disk_samples WHERE ts = ? AND pos IS NOT NULL`, ts)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n string
+		var p int
+		if rows.Scan(&n, &p) == nil {
+			out[n] = p
+		}
+	}
+	return out
 }
 
 func div(a, b float64) float64 {
@@ -557,11 +596,34 @@ func IOStat(db *store.DB, spans []Span, parts bool) ([]IOStatReport, error) {
 			return nil, err
 		}
 		secs := sp.seconds(to)
+		dm := map[string]string{}
+		if devs, err := blockDevsAt(db, sp.To); err == nil {
+			for n, b := range devs {
+				if b.DMName != "" {
+					dm[n] = b.DMName
+				}
+			}
+		}
+		if cpus, err := loadCPUs(db, sp.To); err == nil {
+			first := sp.From
+			if first == 0 {
+				first = sp.To
+			}
+			rep.first = SysstatFirstLine(db, first, len(cpus)-1)
+		}
 		names := make([]string, 0, len(now))
 		for n := range now {
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		if rep.v11 { // sysstat 11 lists them in /proc/diskstats' order (schema 14's pos)
+			pos := diskPos(db, sp.To)
+			sort.SliceStable(names, func(i, j int) bool {
+				pi, oki := pos[names[i]]
+				pj, okj := pos[names[j]]
+				return oki && (!okj || pi < pj)
+			})
+		}
 		for _, n := range names {
 			v, b := now[n], before[n]
 			var d [17]float64
@@ -579,74 +641,10 @@ func IOStat(db *store.DB, spans []Span, parts bool) ([]IOStatReport, error) {
 				DS: div(d[8], secs), DKBS: div(d[10]/2, secs), DRQMS: div(d[9], secs), DRQMPct: 100 * div(d[9], d[9]+d[8]),
 				DAwait: div(d[11], d[8]), DAreqSz: div(d[10]/2, d[8]),
 				FS: div(d[15], secs), FAwait: div(d[16], d[15]),
-				AquSz: div(d[14], secs*1000), Util: math.Min(100, div(d[13], secs*10))}
+				AquSz: div(d[14], secs*1000), Util: math.Min(100, div(d[13], secs*10)), DMName: dm[n]}
 			rep.Devices = append(rep.Devices, dev)
 		}
 		out = append(out, rep)
 	}
 	return out, nil
-}
-
-// PrintIOStat formats reports like sysstat iostat: the avg-cpu block unless
-// devOnly, then the basic or the extended (-x) device table.
-func PrintIOStat(w io.Writer, reps []IOStatReport, extended, devOnly bool) {
-	for i, rep := range reps {
-		if i > 0 {
-			fmt.Fprintln(w)
-		}
-		if len(reps) > 1 {
-			fmt.Fprintln(w, FormatMS(rep.TS))
-		}
-		if !devOnly {
-			c := rep.CPU
-			io.WriteString(w, "avg-cpu:  %user   %nice %system %iowait  %steal   %idle\n")
-			fmt.Fprintf(w, "        %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f\n\n", c.User, c.Nice, c.System, c.IOWait, c.Steal, c.Idle)
-		}
-		if rep.v11 {
-			printIOStat11(w, rep, extended)
-			continue
-		}
-		if extended {
-			io.WriteString(w, "Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util\n")
-			for _, d := range rep.Devices {
-				fmt.Fprintf(w, "%-13s %7.2f %9.2f %8.2f %6.2f %7.2f %8.2f %7.2f %9.2f %8.2f %6.2f %7.2f %8.2f %7.2f %9.2f %8.2f %6.2f %7.2f %8.2f %7.2f %7.2f %7.2f %6.2f\n",
-					d.Device, d.RS, d.RKBS, d.RRQMS, d.RRQMPct, d.RAwait, d.RAreqSz, d.WS, d.WKBS, d.WRQMS, d.WRQMPct, d.WAwait, d.WAreqSz,
-					d.DS, d.DKBS, d.DRQMS, d.DRQMPct, d.DAwait, d.DAreqSz, d.FS, d.FAwait, d.AquSz, d.Util)
-			}
-			continue
-		}
-		io.WriteString(w, "Device             tps    kB_read/s    kB_wrtn/s    kB_dscd/s    kB_read    kB_wrtn    kB_dscd\n")
-		for _, d := range rep.Devices {
-			fmt.Fprintf(w, "%-13s %8.2f %12.2f %12.2f %12.2f %10d %10d %10d\n", d.Device, d.TPS, d.RKBS, d.WKBS, d.DKBS, d.KBRead, d.KBWrtn, d.KBDscd)
-		}
-	}
-}
-
-// printIOStat11 prints the devices as sysstat 11 (RHEL 8) does: no discard
-// and flush columns, svctm (%util spread over the I/Os, in ms), and sr
-// devices named scd as its ioconf maps them.
-func printIOStat11(w io.Writer, rep IOStatReport, extended bool) {
-	name := func(d string) string {
-		if n, ok := strings.CutPrefix(d, "sr"); ok {
-			return "scd" + n
-		}
-		return d
-	}
-	if !extended {
-		io.WriteString(w, "Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn\n")
-		for _, d := range rep.Devices {
-			fmt.Fprintf(w, "%-13s %8.2f %12.2f %12.2f %10d %10d\n", name(d.Device), d.TPS, d.RKBS, d.WKBS, d.KBRead, d.KBWrtn)
-		}
-		return
-	}
-	io.WriteString(w, "Device            r/s     w/s     rkB/s     wkB/s   rrqm/s   wrqm/s  %rrqm  %wrqm r_await w_await aqu-sz rareq-sz wareq-sz  svctm  %util\n")
-	for _, d := range rep.Devices {
-		svctm := 0.0
-		if ios := d.RS + d.WS; ios > 0 {
-			svctm = d.Util * 10 / ios
-		}
-		fmt.Fprintf(w, "%-13s %7.2f %7.2f %9.2f %9.2f %8.2f %8.2f %6.2f %6.2f %7.2f %7.2f %6.2f %8.2f %8.2f %6.2f %6.2f\n",
-			name(d.Device), d.RS, d.WS, d.RKBS, d.WKBS, d.RRQMS, d.WRQMS, d.RRQMPct, d.WRQMPct, d.RAwait, d.WAwait, d.AquSz,
-			d.RAreqSz, d.WAreqSz, svctm, d.Util)
-	}
 }

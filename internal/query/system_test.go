@@ -60,22 +60,24 @@ func TestSystemReports(t *testing.T) {
 		t.Errorf("uptime = %q", got)
 	}
 
-	// Since boot (100 s): rates are the counters over the uptime.
+	// Since boot (100 s): rates are the counters over the uptime; cs is
+	// procps-ng 4's, context switches over the CPUs' clock ticks (20000 / 10000).
 	vm, _ := VMStat(db, boot)
 	want := VMStatRow{TS: base, Time: FormatMS(base), SinceBoot: true, R: 2, Swpd: 100, Free: 5000, Buff: 300, Cache: 2500,
-		SI: 4, BI: 10, BO: 20, In: 100, CS: 200, US: 10, SY: 5, ID: 80, WA: 5}
+		SI: 4, BI: 10, BO: 20, In: 100, CS: 2, US: 10, SY: 5, ID: 80, WA: 5}
 	if len(vm) != 1 || vm[0] != want {
 		t.Errorf("vmstat since boot = %+v", vm)
 	}
-	// The 10 s interval. vmstat's shares leave guest time out of the total.
+	// The 10 s interval. vmstat's shares leave guest time out of the total;
+	// procps 4 takes it out of us too (40 - 10).
 	vm, _ = VMStat(db, rng)
 	want = VMStatRow{TS: base + 10_000, Time: FormatMS(base + 10_000), R: 2, B: 2, Swpd: 100, Free: 5000, Buff: 300, Cache: 2500,
-		SI: 20, BI: 50, BO: 10, In: 500, CS: 3000, US: 40, SY: 15, ID: 40, WA: 5, GU: 10}
+		SI: 20, BI: 50, BO: 10, In: 500, CS: 3000, US: 30, SY: 15, ID: 40, WA: 5, GU: 10}
 	if len(vm) != 1 || vm[0] != want {
 		t.Errorf("vmstat interval = %+v", vm)
 	}
 	line := strings.Split(out(func(sb *strings.Builder) { PrintVMStat(sb, vm) }), "\n")[2]
-	if line != " 2  2    100   5000    300   2500   20    0    50    10  500 3000 40 15 40  5  0 10" {
+	if line != " 2  2    100   5000    300   2500   20    0    50    10  500 3000 30 15 40  5  0 10" {
 		t.Errorf("vmstat line = %q", line)
 	}
 
@@ -115,7 +117,12 @@ func TestSystemReports(t *testing.T) {
 	if withParts, _ := IOStat(db, rng, true); len(withParts[0].Devices) != 2 {
 		t.Errorf("iostat -p = %+v", withParts[0].Devices)
 	}
-	ext := strings.Split(out(func(sb *strings.Builder) { PrintIOStat(sb, io, true, true) }), "\n")[1]
+	// After iostat's first line (kernel, host, date, CPUs) and a blank line.
+	lines := strings.Split(out(func(sb *strings.Builder) { PrintIOStat(sb, io, true, true) }), "\n")
+	if !strings.HasSuffix(lines[0], "\t(1 CPU)") || lines[1] != "" {
+		t.Errorf("iostat first lines = %q", lines[:2])
+	}
+	ext := lines[3]
 	if !strings.HasPrefix(ext, "sda             20.00    200.00     0.00   0.00    2.00    10.00   10.00    200.00    10.00  50.00   20.00    20.00") ||
 		!strings.HasSuffix(ext, "    1.00    4.00    0.30  20.00") {
 		t.Errorf("iostat -x line = %q", ext)

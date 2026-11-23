@@ -199,19 +199,25 @@ func Sar(db *store.DB, from, to int64, o SarOpts) (*SarData, error) {
 		first = all[0]
 	}
 	n := d.ncpu[0]
+	d.Header = SysstatFirstLine(db, first.ts, n)
+	return d, nil
+}
+
+// SysstatFirstLine is the line sysstat's tools start with (print_gal_header,
+// C locale): "Linux 6.8.0 (host) \t11/22/26 \t_x86_64_\t(4 CPU)", at ts.
+func SysstatFirstLine(db *store.DB, ts int64, ncpu int) string {
 	meta := func(k string) string {
-		if v := MetaAt(db, k, first.ts); v != "" {
+		if v := MetaAt(db, k, ts); v != "" {
 			return v
 		}
 		return db.Meta(k)
 	}
 	host := meta("hostname")
-	if lines, _, ok, _ := FileAt(db, "hostname", first.ts); ok && len(lines) > 0 {
+	if lines, _, ok, _ := FileAt(db, "hostname", ts); ok && len(lines) > 0 {
 		host = strings.TrimSpace(lines[0])
 	}
-	d.Header = fmt.Sprintf("%s %s (%s) \t%s \t_%s_\t(%d CPU)", meta("uname_sysname"), meta("uname_release"),
-		host, time.UnixMilli(first.ts).Format("01/02/06"), meta("uname_machine"), n)
-	return d, nil
+	return fmt.Sprintf("%s %s (%s) \t%s \t_%s_\t(%d CPU)", meta("uname_sysname"), meta("uname_release"),
+		host, time.UnixMilli(ts).Format("01/02/06"), meta("uname_machine"), ncpu)
 }
 
 // load fills each record with what the reports need.

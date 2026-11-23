@@ -395,6 +395,16 @@ wait for the user's go-ahead.
   namespace and host name (Ubuntu cloud images' udevd/timesyncd keep "ubuntu"), dropping
   RDELAY/BDELAY; clifrd cannot read those host names (setns needs CAP_SYS_ADMIN). Captures, all
   views as root on the desktop and four VMs: bench/results/atop-captures-20261121.
+- `clifr vmstat` (query/vmstat.go, following procps' vmstat.c; 2026-11-23): `-a -w -t -n -y -S UNIT` on the
+  default report and `-s -f -D` (--at), `-d -p -m` (counters at each report's sample), by `ToolStyle.Vmstat`
+  ("" 4.0.4, "3.3.17" rhel-9/ubuntu-22.04: no gu, "3.3.15" rhel-8); the header again every 21 lines (a pipe;
+  -d: 4.0.4 counts every /proc/diskstats device, partitions too); procps 4's since-boot line divides cs by
+  the CPUs' ticks and takes guest time out of us. -d lists devices without I/O (not in disk_samples) from
+  blockdevs with zeros, placed by device number. `clifr iostat` (query/iostat.go, sysstat's iostat.c):
+  the first line (`SysstatFirstLine`, shared with sar), `-c -d -x -s -k -m -z -N -t -y`, a blank line after
+  each report (two in sysstat 12), no time without -t; sysstat 11.7 lists devices in diskstats order (pos).
+  Checked with bench/vmstatcheck.sh + bench/vmstatcompare.py: 28 commands on the desktop and four VMs, all
+  laid out the same (-t prints the sample's time).
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it

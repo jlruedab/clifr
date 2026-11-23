@@ -68,7 +68,7 @@ clifr rebuilds the output of the real tools. Where matching them needed their ex
 |---|---|---|---|
 | `last`, `dmesg`, `swapon`, `lsblk`, `lslocks` (libsmartcols' table layout); clifrd's lock file lookup | util-linux 2.37 / 2.41 | GPL-2.0-or-later; libsmartcols and `mbsalign.c` LGPL-2.1-or-later; `strutils.c` public domain | GPLv3 |
 | `who`, `df` (column widths) | GNU coreutils 8.32 | GPL-3.0-or-later | GPLv3 |
-| `w`, `slabtop` (3.3), `ps` (STIME, %CPU); clifrd's sysctl walk | procps-ng 3.3.17 / 4.0.4 | LGPL-2.1-or-later; `sysctl.c` GPL-2.0-or-later | GPLv3 |
+| `w`, `slabtop` (3.3), `ps` (STIME, %CPU), `vmstat` (reports, options, layouts); clifrd's sysctl walk | procps-ng 3.3.15 / 3.3.17 / 4.0.4 | LGPL-2.1-or-later; `sysctl.c` GPL-2.0-or-later | GPLv3 |
 | `numastat` | numactl 2.0.19 `numastat.c` | LGPL-2.1 (section 3 allows the GPL) | GPLv3 |
 | `nfsstat` | nfs-utils `nfsstat.c` | GPL-2.0-or-later | GPLv3 |
 | `systemctl list-units`, `systemd-cgls` (command lines) | systemd | LGPL-2.1-or-later | GPLv3 |
@@ -76,7 +76,7 @@ clifr rebuilds the output of the real tools. Where matching them needed their ex
 | `conntrack -S` (counter names) | conntrack-tools | GPL-2.0-or-later | GPLv3 |
 | `atop` (value formats, line layout) | atop 2.7.1 / 2.10.0 / 2.12.1 | GPL-2.0-or-later | GPLv3 |
 | `iotop` (sizes, layout, sort, command); clifrd's I/O priorities | iotop 0.6 (Python) | GPL-2.0-or-later | GPLv3 |
-| `sar` (report layouts, values, averages, header repeats) | sysstat 11.7.3 / 12.5 / 12.6.1 / 12.7.7 | GPL-2.0-or-later | GPLv3 |
+| `sar` (report layouts, values, averages, header repeats), `iostat` (reports, options) | sysstat 11.7.3 / 12.5 / 12.6.1 / 12.7.7 | GPL-2.0-or-later | GPLv3 |
 | `htop` (meters, layout, column formats, sort, tree); 3.0.5's screen is from its output only (GPL-2.0-only) | htop 3.2.1 / 3.3.0 / 3.4.1 | GPL-2.0-or-later | GPLv3 |
 | `netstat -s` (sentences; section above) | net-tools 2.10 | GPL, no version named | GPLv3 |
 

@@ -21,8 +21,7 @@ var systemCommands = []string{"uptime", "vmstat", "mpstat -P ALL", "iostat -dx"}
 
 func init() {
 	ignoredFields["uptime"] = "the number of users before 2026-11-20 (not recorded); loads may differ by 0.05, the uptime by one minute"
-	ignoredFields["vmstat"] = "r and b (the moment the tool ran); cs (procps-ng 4.0.4 prints context switches per clock tick " +
-		"summed over the CPUs on its since-boot line; clifr prints them per second); numbers match within 1% or 0.02 (free, buff, cache: 2%)"
+	ignoredFields["vmstat"] = "r and b (the moment the tool ran); numbers match within 1% or 0.02 (free, buff, cache: 2%)"
 	ignoredFields["mpstat -P ALL"] = "none; numbers match within 1% or 0.02"
 	ignoredFields["iostat -dx"] = "none; numbers match within 1% or 0.02"
 }
@@ -184,9 +183,9 @@ func compareSystem(db *store.DB, snap snapshot) (Result, error) {
 		}
 	case "vmstat":
 		real = parseColumns(snap.output, " r  b", "", 0)
-		skip["r"], skip["b"], skip["cs"] = true, true, true
+		skip["r"], skip["b"] = true, true
 		rel["free"], rel["buff"], rel["cache"] = 0.02, 0.02, 0.02
-		for _, c := range []string{"us", "sy", "id", "wa", "st", "gu", "si", "so", "bi", "bo", "in"} {
+		for _, c := range []string{"us", "sy", "id", "wa", "st", "gu", "si", "so", "bi", "bo", "in", "cs"} {
 			abs[c] = 1 // whole numbers: a rounding step
 		}
 	case "mpstat -P ALL":

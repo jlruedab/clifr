@@ -1,4 +1,4 @@
-sysstat: parts of clifr's sar
+sysstat: parts of clifr's sar and iostat
 
 clifr's sar prints sar's reports as sar -f prints them from a daily file,
 as sysstat (https://sysstat.github.io, https://github.com/sysstat/sysstat)
@@ -21,11 +21,17 @@ sysstat's C code, written anew in Go:
   read_loadavg, read_kernel_tables, read_net_nfs, read_net_nfsd,
   read_net_sock, read_filesystem); the number formats (common.c:
   cprintf_f, cprintf_u64, cprintf_xpc).
+- internal/query/iostat.go and the device order in internal/query/system.go:
+  iostat's reports and options (write_stats, write_disk_stat_header,
+  write_plain_cpu_stat, write_plain_basic_stat, write_plain_ext_stat,
+  write_ext_stat, write_sample_timestamp, rw_io_stat_loop; rd_stats.c:
+  compute_ext_disk_stats), from iostat.c (11.7.3, 12.5.2, 12.7.7).
 
 Their notice:
 
   sar.c, pr_stats.c, activity.c, rd_stats.c, sa_common.c, common.c:
     (C) 1999-2025 by Sebastien Godard (sysstat <at> orange.fr)
+  iostat.c: (C) 1998-2025 by Sebastien GODARD (sysstat <at> orange.fr)
     This program is free software; you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by the
     Free Software Foundation; either version 2 of the License, or (at your
