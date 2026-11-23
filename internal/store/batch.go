@@ -36,7 +36,13 @@ type ProcRow struct {
 	// NetNS: the network namespace (inode of /proc/<pid>/ns/net), 0 for the
 	// host's (schema 10), read when the process is first sampled and at an exec.
 	NetNS uint32
+	// NS: the other namespaces (NSTypes' inode numbers, 0 unknown; schema 15),
+	// read when the process is first sampled (lsns).
+	NS [7]uint32
 }
+
+// NSTypes are the namespaces of ProcRow.NS, in order (lsns' names).
+var NSTypes = [7]string{"cgroup", "ipc", "mnt", "pid", "time", "user", "uts"}
 
 // ProcUpdate changes slow-moving attributes (re-read at exec or fd walks).
 type ProcUpdate struct {

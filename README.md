@@ -18,7 +18,7 @@ It comes in two parts:
   - open files, disks, mounts, network routes, logins, kernel messages and the system-wide counters.
 
   It keeps the data in `/var/lib/clifr`, 72 hours by default. It uses the kernel's eBPF so short-lived events don't slip through, and it is light: about 2% of one CPU core on a busy server in our tests.
-- **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and 48 in total) **as they would have looked at a past moment**:
+- **`clifr`**, the query tool. It rebuilds the output of the usual commands (`ps`, `top`, `ss`, `lsof`, `df`, `free`, `vmstat`, `ip`, `dmesg` and 51 in total) **as they would have looked at a past moment**:
 
   ```sh
   clifr --at "2026-11-12 02:45" "ps aux"
@@ -44,7 +44,7 @@ It complements those tools: Prometheus tells you *when* something happened, clif
 
 ## What commands can I see with clifr?
 
-clifr can rebuild **48 commands**: 42 are the usual Linux tools and 6 are clifr's own. `clifr help COMMAND` shows the options each one supports.
+clifr can rebuild **51 commands**: 45 are the usual Linux tools and 6 are clifr's own. `clifr help COMMAND` shows the options each one supports.
 
 **Processes**
 
@@ -95,6 +95,9 @@ clifr can rebuild **48 commands**: 42 are the usual Linux tools and 6 are clifr'
 | `numastat` | memory per NUMA node |
 | `ipcs` | shared memory, semaphores and message queues |
 | `lsipc` | the same objects and their system-wide limits, as util-linux lsipc prints them |
+| `lscpu` | CPU model, topology, caches, frequencies, vulnerabilities and hypervisor |
+| `lsmem` | memory ranges and whether they are online |
+| `lsns` | namespaces and the processes in them |
 
 **System**
 

@@ -23,8 +23,10 @@ import (
 // blockdevs, neighs; 10 (2026-11-08): netns in processes, tcp_conns and
 // tcp_keyframes (containers' connections: other network namespaces); 11
 // (2026-11-20): killer_pid, killer_uid, killer_comm in processes (who sent the
-// signal that ended a process). Readers refuse versions newer than theirs.
-const SchemaVersion = 14
+// signal that ended a process); 12-14 (2026-11-21/22): atop, iotop, sar
+// counters; 15 (2026-11-23): the other namespaces of processes (ns_cgroup ..
+// ns_uts) and meta netns_host (lsns). Readers refuse versions newer than theirs.
+const SchemaVersion = 15
 
 type DB struct {
 	*sql.DB

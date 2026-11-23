@@ -284,7 +284,7 @@ func New(cfg Config, logger *Logger) (*Recorder, error) {
 		"interval_s": fmt.Sprint(cfg.Interval.Seconds()), "fd_interval_s": fmt.Sprint(cfg.FDInterval.Seconds()),
 		"flush_interval_s": fmt.Sprint(cfg.Parquet.FlushInterval.Seconds()),
 		"sys_interval_s":   fmt.Sprint(min(cfg.SysInterval, cfg.Interval).Seconds()), "redact_patterns": strconv.Itoa(len(redact)),
-		"proc_io": strconv.FormatBool(cfg.ProcIO),
+		"proc_io": strconv.FormatBool(cfg.ProcIO), "netns_host": strconv.FormatUint(uint64(r.hostNetNS), 10),
 	} {
 		if err := db.SetMeta(k, v); err != nil {
 			return nil, err
@@ -874,6 +874,9 @@ func (r *Recorder) newProc(key procKey, st procfs.Stat, status procfs.Status, ts
 	row := store.ProcRow{ID: e.id, PID: key.pid, StartTime: key.start,
 		PPID: st.PPID, UID: status.UID, RUID: status.RUID, RGID: status.RGID, CmdlinePad: pad, Comm: st.Comm, Cmdline: cmd, Argv0Len: argv0, TTY: st.TTY, SID: st.Session,
 		PGRP: st.PGRP, Locked: status.VmLckK > 0, Source: "sample", Label: label, Cgroup: cgroup, NetNS: netns}
+	for i, typ := range store.NSTypes { // lsns: read once, when first sampled
+		row.NS[i], _ = r.fs.ReadNS(key.pid, typ)
+	}
 	if ep := r.evProcs[key]; ep != nil {
 		if cmd == "" && ep.ev.attrs.Cmdline != "" {
 			// Seen first as a zombie: its exec event has the command line.

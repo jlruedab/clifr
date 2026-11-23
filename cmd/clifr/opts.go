@@ -16,6 +16,9 @@ type opt struct {
 	// optional: the argument is given only as "--long=value" (getopt's
 	// optional_argument); without it the value is "".
 	optional bool
+	// attached: an optional argument may also follow its short letter
+	// ("-eLIST", "-e=LIST": getopt's "e::"); the rest of the word is the value.
+	attached bool
 	// words: an optional argument may also be the next word when it is one
 	// of these (sar's "-u ALL", "-q CPU").
 	words []string
@@ -78,6 +81,10 @@ func parseOpts(tool string, opts []opt, args []string) (parsed, error) {
 				o, ok := findShort(opts, a[j])
 				if !ok {
 					return p, unsupported("-" + string(a[j]))
+				}
+				if o.optional && o.attached && j < len(a)-1 {
+					p.add(o.key(), a[j+1:])
+					break
 				}
 				if o.arg == "" || o.optional {
 					if j == len(a)-1 && i+1 < len(args) && slices.Contains(o.words, args[i+1]) {

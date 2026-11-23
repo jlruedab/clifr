@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `sar`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `lsipc`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `sar`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `lsipc`, `lscpu`, `lsmem`, `lsns`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -316,6 +316,9 @@ wait for the user's go-ahead.
   single-threaded one takes its own values): `blkio_all_ticks`, `vol_ctx_all`, `nonvol_ctx_all`,
   `thr_run|sleep_i|sleep_u|idle` (atop's BDELAY, NVCSW/NIVCSW, TRUN/TSLPI/TSLPU/TIDLE, PRC #tidle);
   status's `vm_stk|swap|data|exe|lib|lck_kb` (atop -m); `processes.rgid` (-1: event-only).
+  Schema 15 (2026-11-23, for lsns): `processes.ns_cgroup|ns_ipc|ns_mnt|ns_pid|ns_time|ns_user|ns_uts` (inode
+  numbers, read when a process is first sampled: 7 readlinks; NULL unknown, event-only processes) and meta
+  `netns_host` (the host's net namespace, written as 0 in netns).
   Schema 13 (2026-11-22, for iotop, `recorder/ioprio.go`): `proc_samples.ioprio`, the main thread's I/O
   priority as both iotops show it (class << 13 | data: the one set with ioprio_set, else derived
   from the policy and nice: FIFO/RR rt/((nice+20)/5), IDLE idle, else be/((nice+20)/5); the policy
@@ -412,6 +415,33 @@ wait for the user's go-ahead.
   before 2.41. COMMAND: the creator's command line if alive at T. Not recorded: 2.41's POSIX queue count
   (MQUMNI USED "-", a header says so), POSIX objects (-M -Q -S), semaphore values (-s --id: no Elements).
   Checked with bench/lsipccheck.sh (creates a queue, a segment and a set with ipcmk) + bench/vmstatcompare.py.
+- `clifr lscpu` (query/lscpu.go, lscpuarm.go generated from lscpu-arm.c; util-linux's lscpu*.c; 2026-11-23):
+  snapshot sources "cpus" (`recorder/cpus.go`: /sys/devices/system/cpu's lists, vulnerabilities,
+  cpufreq/boost, hotplug/states' online line, per CPU online/hotplug state/topology/caches/cpuinfo_min|max_freq,
+  node cpumaps, "virt\tVENDOR\tTYPE" as an unprivileged lscpu finds it: WSL, CPUID 0x40000000 via
+  `internal/cpuid` (Go assembly, no cgo), /proc/xen, /proc/vz; arm64 "pptt" and "aarch32" (personality)) once a
+  minute, the per-CPU part again only when the CPU lists change or every 10 min (15 ms for 1,300 files on 22 CPUs);
+  "cpuinfo" (/proc/cpuinfo without "cpu MHz", keyed "N:field") once a minute. No DMI (serials; root's only:
+  no BIOS lines). MHz (MHZ, CPU(s) scaling MHz) from cpu_samples.mhz, where lscpu reads scaling_cur_freq. Summary
+  (flat, as into a pipe), -e -p -C [=LIST|=+LIST] -a -b -c -B -x -y --output-all, by `ToolStyle.Lscpu` ("" 2.41,
+  "2.39", "2.37": no scaling MHz, MODELNAME/SCALMHZ%, -p compatible even with a list; "2.32": its own summary order,
+  per-instance cache sizes, CPU MHz, left-aligned -e, no -C/-B). Checked: bench/vmstatcheck.sh with CHECK_USER (as
+  a user) + bench/vmstatcompare.py, 14 commands on the desktop and four VMs: all laid out the same but the scaling %
+  (a value) and the real tool's errors for options its release lacks. arm64: tables and cluster wording
+  ported, not checked on hardware.
+- `clifr lsmem` (query/lsmem.go, util-linux's lsmem.c; 2026-11-23): snapshot source "memory"
+  (`recorder/memblocks.go`, every 10 min: block_size_bytes, "zones" when valid_zones exists, then consecutive
+  blocks with equal state/removable/node/valid_zones as one "first\tlast\t..." line); lsmem's merging by the
+  columns shown or -S, -a -b -n -o [+]LIST --output-all -r -P --summary[=WHEN]; util-linux release as lsipc's
+  (`ToolStyle.Lsipc`: summary labels 23 wide before 2.41, "-" for empty cells in 2.32, no --output-all in 2.32).
+  Checked in the four VMs (13 commands, all the same); lsmem is not installed on the desktop (2.41 unchecked).
+- `clifr lsns` (query/lsns.go, util-linux's lsns.c; 2026-11-23, reduced by the user's choice): the namespaces of
+  the processes sampled at T (schema 15), NPROCS, the lowest PID, USER, COMMAND; -l -t (repeatable) -p -o [+]LIST
+  --output-all -n -r -u -W; NSFS from nsfs mounts, NETNSID "unassigned" unless /run/netns names it. 2.39+: the
+  process tree on COMMAND (a namespace under the line of its process's parent, if that one was printed); 2.32/2.37
+  and without COMMAND: inode order. Not recorded: namespaces held only by fds, sockets or bind mounts (lsns 2.39+
+  lists them with NPROCS 0), PNS/ONS and -T. Checked as root on the desktop (all the same but those NPROCS 0 lines)
+  and four VMs (11 commands, all the same).
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it
@@ -544,8 +574,8 @@ wait for the user's go-ahead.
   Source "group" (schema 12, for atop -v): "gid name" pairs only (never members), `query.GroupName`;
   without it this machine's names only for a recording from this machine or one without names.
 - `meta` (per run, latest wins in DuckDB; the store writes the run's whole meta again hourly, as
-  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 13 since
-  2026-11-22; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
+  retention deletes hours: `query.MetaAt` takes the copy of the run recording at T, else its first later one): `schema_version` (`store.SchemaVersion`, 15 since
+  2026-11-23; no key = 1; clifr refuses newer ones), `clifrd_version`, `hostname`,
   `machine_id`, `boot_id`, `timezone` (IANA name), `tz_offset_s`, `uname_sysname|release|version|
   machine` (schema 3), `os_id`, `os_version_id`, `os_id_like`, `os_pretty_name` (2026-10-21),
   plus boot time, intervals and modes. Tool styles (`query/style.go`): clifr prints free, top,

@@ -51,7 +51,8 @@ func batches() []*store.Batch {
 			Sample: store.Sample{TS: 2000, NProc: 2, Rows: 3, CPUUS: 20},
 			Skips:  []int64{1500},
 			ProcInserts: []store.ProcRow{{ID: 102, PID: 11, StartTime: 1600, PPID: 10, Comm: "sh", Cmdline: "sh -c true", FirstSeen: 1600,
-				LastSeen: p64(1700), Ended: p64(1700), Source: "ebpf", Exe: "/bin/sh", ExecTS: p64(1600), ExitTS: p64(1700), ExitCode: pint(3), NetNS: 4026532512}},
+				LastSeen: p64(1700), Ended: p64(1700), Source: "ebpf", Exe: "/bin/sh", ExecTS: p64(1600), ExitTS: p64(1700), ExitCode: pint(3), NetNS: 4026532512,
+				NS: [7]uint32{4026531835, 4026531839, 4026532600, 4026531836, 4026531834, 4026531837, 4026531838}}},
 			ProcUpdates: []store.ProcUpdate{{ID: 101, UID: 5, PPID: 1, Comm: "srv", Cmdline: "srv -y", Source: "sample", Exe: "/usr/bin/srv", ExecTS: 1900,
 				Label: "unconfined", Cgroup: "0::/system.slice/srv.service", RUID: 7}},
 			ProcExits: []store.ProcExit{{ID: 101, OOMKilled: true}},
@@ -123,7 +124,7 @@ func dump(t *testing.T, db *sql.DB, table, cols string) string {
 
 var compare = map[string]string{
 	"samples":          "ts, fd_walk, skipped, nproc, rows, cpu_us",
-	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, rgid, netns, killer_pid, killer_uid, killer_comm",
+	"processes":        "id, pid, start_time, ppid, uid, comm, cmdline, first_seen, last_seen, ended, source, exe, exec_ts, exit_ts, exit_code, signal, oom_killed, label, cgroup, ruid, rgid, netns, killer_pid, killer_uid, killer_comm, ns_cgroup, ns_ipc, ns_mnt, ns_pid, ns_time, ns_user, ns_uts",
 	"oom_events":       "ts, pid, start_time, comm, rss_kb, snapshot",
 	"recorder_stats":   "ts, source, events, dropped",
 	"tcp_conns":        "id, pid, start_time, fd, owner_until, inode, laddr, lport, raddr, rport, direction, open_ts, close_ts, first_state, final_state, linger_state, linger_until, retransmits, resets_sent, resets_received, source, netns",

@@ -1,4 +1,4 @@
-util-linux: parts of clifr's last, dmesg, swapon, lsblk, lslocks and lsipc, and of clifrd's lock reading
+util-linux: parts of clifr's last, dmesg, swapon, lsblk, lslocks, lsipc, lscpu, lsmem and lsns, and of clifrd's lock, CPU and memory block reading
 
 clifr rebuilds the output of util-linux's tools. Some of its Go code follows
 util-linux's C code closely (https://github.com/util-linux/util-linux, tags
@@ -18,6 +18,25 @@ v2.37.4 and v2.41); that code was written anew in Go:
   global_set_data, do_msg, do_shm, do_sem and their _global summaries,
   print_pretty), from sys-utils/lsipc.c and ipcutils.c (2.32, 2.37, 2.39,
   2.41), and strtime_short from lib/timeutils.c (2.41).
+- internal/query/lscpu.go and lscpuarm.go: lscpu's cpuinfo parsing, CPU
+  types, topology, caches, NUMA nodes and vulnerabilities, its summary, -e,
+  -p and -C (lscpu_read_cpuinfo, deduplicate_cputypes, cputype_read_topology,
+  read_caches, read_mhz, lscpu_read_vulnerabilities, print_summary,
+  print_cpus_readable, print_cpus_parsable, print_caches_readable), from
+  sys-utils/lscpu.c, lscpu-cputype.c, lscpu-topology.c (2.37, 2.39, 2.41) and
+  lscpu.c (2.32); the ARM implementer and part names (lscpuarm.go, generated
+  from lscpu-arm.c 2.41).
+- internal/query/lsmem.go: lsmem's merging of blocks (read_info,
+  is_mergeable, set_split_policy), columns and summary, from
+  sys-utils/lsmem.c (2.32, 2.37, 2.39, 2.41); internal/recorder/memblocks.go
+  (clifrd) reads what it reads (memory_block_read_attrs).
+- internal/query/lsns.go: lsns' grouping of processes by namespace, its
+  columns, the process tree and its line order (add_process_to_namespace,
+  show_namespaces, add_scols_line, fill_column), from sys-utils/lsns.c (2.32,
+  2.37, 2.39, 2.41).
+- internal/recorder/cpus.go (clifrd): what lscpu reads under /sys, and its
+  hypervisor detection as an unprivileged user runs it (read_virtualization,
+  read_hypervisor_cpuid), from sys-utils/lscpu-virt.c (2.41).
 - internal/recorder/locks.go (clifrd): lslocks' get_filename_sz, from
   misc-utils/lslocks.c (2.41).
 
@@ -47,6 +66,24 @@ Their notices:
   sys-utils/ipcutils.c:
     Copyright (C) 2012 Sami Kerola <kerolasa@iki.fi>
     Copyright (C) 2012-2023 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lscpu.c, lscpu-topology.c, lscpu-virt.c (2.37 to 2.41):
+    Copyright (C) 2008 Cai Qian <qcai@redhat.com>
+    Copyright (C) 2008-2023 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lscpu-cputype.c: Copyright (C) 2020 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lscpu-arm.c: Copyright (C) 2018 Riku Voipio <riku.voipio@iki.fi>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lsns.c: Copyright (C) 2015 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lsmem.c:
+    Copyright IBM Corp. 2016
+    Copyright (C) 2016 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lscpu.c (2.32):
+    Copyright (C) 2008 Cai Qian <qcai@redhat.com>
+    Copyright (C) 2008 Karel Zak <kzak@redhat.com>
     GNU General Public License, version 2 or (at your option) any later version.
   lib/timeutils.c:
     Copyright 2010 Lennart Poettering

@@ -58,6 +58,14 @@ type processRow struct {
 	KillerPID  *int32 `parquet:"killer_pid,optional"`
 	KillerUID  *int32 `parquet:"killer_uid,optional"`
 	KillerComm string `parquet:"killer_comm,dict"`
+	// Schema 15: the other namespaces (store.NSTypes; NULL unknown).
+	NSCgroup *int64 `parquet:"ns_cgroup,optional"`
+	NSIPC    *int64 `parquet:"ns_ipc,optional"`
+	NSMnt    *int64 `parquet:"ns_mnt,optional"`
+	NSPID    *int64 `parquet:"ns_pid,optional"`
+	NSTime   *int64 `parquet:"ns_time,optional"`
+	NSUser   *int64 `parquet:"ns_user,optional"`
+	NSUTS    *int64 `parquet:"ns_uts,optional"`
 }
 
 type procSampleRow struct {
@@ -392,6 +400,11 @@ func processOf(p store.ProcRow) processRow {
 		OOMKilled: b2i(p.OOMKilled), Label: p.Label, Cgroup: p.Cgroup, RUID: int32(p.RUID), RGID: int32(p.RGID), CmdlinePad: int32(p.CmdlinePad),
 		NetNS: int64(p.NetNS)}
 	setKiller(&r, p.Killer)
+	for i, dst := range []**int64{&r.NSCgroup, &r.NSIPC, &r.NSMnt, &r.NSPID, &r.NSTime, &r.NSUser, &r.NSUTS} {
+		if p.NS[i] != 0 {
+			*dst = ptr(int64(p.NS[i]))
+		}
+	}
 	return r
 }
 

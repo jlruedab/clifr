@@ -7,7 +7,8 @@
 # Records 90 s (--interval 5s --sys-interval 5s), and 45 s in runs each
 # command in OUTDIR/cmds (one per line, default list below) into
 # OUTDIR/out-N.txt, with the time just before in OUTDIR/at-N.txt
-# (YYYY-MM-DD HH:MM:SS.mmm) and the command in OUTDIR/cmd-N.txt.
+# (YYYY-MM-DD HH:MM:SS.mmm) and the command in OUTDIR/cmd-N.txt. With
+# CHECK_USER=NAME the commands run as that user.
 set -u
 CLIFRD=${1:?clifrd binary}
 OUT=${2:?outdir}
@@ -52,7 +53,11 @@ while read -r c; do
 	n=$((n + 1))
 	date '+%Y-%m-%d %H:%M:%S.%3N' >"$OUT/at-$n.txt"
 	echo "$c" >"$OUT/cmd-$n.txt"
-	LC_ALL=C $c >"$OUT/out-$n.txt" 2>&1
+	if [ -n "${CHECK_USER:-}" ]; then # as that user (lscpu: as an unprivileged user runs it)
+		runuser -u "$CHECK_USER" -- env LC_ALL=C $c >"$OUT/out-$n.txt" 2>&1
+	else
+		LC_ALL=C $c >"$OUT/out-$n.txt" 2>&1
+	fi
 done <"$OUT/cmds"
 wait "$CPID"
 chown -R "${SUDO_UID:-0}:${SUDO_GID:-0}" "$OUT"

@@ -66,7 +66,7 @@ clifr rebuilds the output of the real tools. Where matching them needed their ex
 
 | clifr code | Follows | Its license | Used under |
 |---|---|---|---|
-| `last`, `dmesg`, `swapon`, `lsblk`, `lslocks`, `lsipc` (libsmartcols' table layout); clifrd's lock file lookup | util-linux 2.32 / 2.37 / 2.39 / 2.41 | GPL-2.0-or-later; libsmartcols and `mbsalign.c` LGPL-2.1-or-later; `strutils.c` public domain | GPLv3 |
+| `last`, `dmesg`, `swapon`, `lsblk`, `lslocks`, `lsipc`, `lscpu`, `lsmem`, `lsns` (libsmartcols' table layout); clifrd's lock file lookup and CPU and memory block reading | util-linux 2.32 / 2.37 / 2.39 / 2.41 | GPL-2.0-or-later; libsmartcols and `mbsalign.c` LGPL-2.1-or-later; `strutils.c` public domain | GPLv3 |
 | `who`, `df` (column widths) | GNU coreutils 8.32 | GPL-3.0-or-later | GPLv3 |
 | `w`, `slabtop` (3.3), `ps` (STIME, %CPU), `vmstat` (reports, options, layouts); clifrd's sysctl walk | procps-ng 3.3.15 / 3.3.17 / 4.0.4 | LGPL-2.1-or-later; `sysctl.c` GPL-2.0-or-later | GPLv3 |
 | `numastat` | numactl 2.0.19 `numastat.c` | LGPL-2.1 (section 3 allows the GPL) | GPLv3 |
