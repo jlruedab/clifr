@@ -68,6 +68,10 @@ type ToolStyle struct {
 	// LslocksOld: util-linux before 2.41: an OFD lock's holder is not
 	// looked up (pid -1, "(undefined)", the mount point and "..." as path).
 	LslocksOld bool
+	// Lsipc: util-linux's lsipc release: "" 2.41 (System V and POSIX
+	// summary), "2.39" (ubuntu-24.04), "2.37" (rhel-9, ubuntu-22.04), "2.32"
+	// (rhel-8: limits as plain numbers).
+	Lsipc string
 	// LslocksZeroSize: util-linux 2.32's lslocks prints an empty file's
 	// size as 0B.
 	LslocksZeroSize bool
@@ -109,17 +113,17 @@ var Styles = map[string]ToolStyle{
 	// (procps-ng 3.3.15, coreutils 8.30, lsof 4.93.2, sysstat 11.7.3), AlmaLinux
 	// 9.8 (procps-ng 3.3.17, coreutils 8.32, lsof 4.94.0, sysstat 12.5.4),
 	// Ubuntu 22.04.5 (procps-ng 3.3.17, coreutils 8.32, lsof 4.93.2).
-	"rhel-8": {Name: "rhel-8", Iotop: "rhel", Htop: "3.2", Sar: "11.7", Atop271: true, OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, Vmstat: "3.3.15", IostatV11: true,
+	"rhel-8": {Name: "rhel-8", Lsipc: "2.32", Iotop: "rhel", Htop: "3.2", Sar: "11.7", Atop271: true, OldUsed: true, DFListAll: true, LsofNoUnixState: true, VmstatTickRates: true, Vmstat: "3.3.15", IostatV11: true,
 		DmesgTime: "2.32", SystemdList: "239", SystemdCgls: "239", SwapSummaryOwn: true, LsblkV232: true, LslocksOld: true,
 		LslocksZeroSize: true, Slabtop3: true, NumastatOld: true, ConntrackOld: true, Mountstats233: true, Procps3: true},
-	"rhel-9": {Name: "rhel-9", Iotop: "rhel", Htop: "3.3", Sar: "12.5", Atop271: true, DFListAll: true, VmstatTickRates: true, Vmstat: "3.3.17", DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
+	"rhel-9": {Name: "rhel-9", Lsipc: "2.37", Iotop: "rhel", Htop: "3.3", Sar: "12.5", Atop271: true, DFListAll: true, VmstatTickRates: true, Vmstat: "3.3.17", DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "252", LslocksOld: true, Slabtop3: true,
 		Procps3: true, WNoFrom: true},
-	"ubuntu-22.04": {Name: "ubuntu-22.04", Iotop: "0.6-24", Htop: "3.0", Sar: "12.5", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true, Vmstat: "3.3.17",
+	"ubuntu-22.04": {Name: "ubuntu-22.04", Lsipc: "2.37", Iotop: "0.6-24", Htop: "3.0", Sar: "12.5", Atop271: true, OldUsed: true, LsofNoUnixState: true, VmstatTickRates: true, Vmstat: "3.3.17",
 		DmesgTime: "2.37", SystemdList: "249", SystemdCgls: "249", IPNeighOld: true, LslocksOld: true, Slabtop3: true,
 		NumastatOld: true, ConntrackOld: true, Procps3: true},
 	// Ubuntu 24.04.5 (2026-11-21): the current tools' style and atop 2.10.0
 	// (checked against its root captures of every view in a VM).
-	"ubuntu-24.04": {Name: "ubuntu-24.04", Htop: "3.3", Sar: "12.6", DmesgCaller: true, Atop210: true},
+	"ubuntu-24.04": {Name: "ubuntu-24.04", Lsipc: "2.39", Htop: "3.3", Sar: "12.6", DmesgCaller: true, Atop210: true},
 }
 
 // StyleOverride, if set (clifr --style), is used instead of the recorded

@@ -3,7 +3,7 @@
 `clifrd` continuously records which processes existed, which sockets and open
 files each one held, short-lived process start/exit events and the system-wide
 counters, as Parquet files.
-`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `sar`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
+`clifr` reconstructs the output of the real tools (`ps`, `top`, `atop`, `iotop`, `htop`, `sar`, `pstree`, `pidstat`, `systemd-cgls`, `date`, `hostname`, `uname`, `who`, `w`, `last`, `nstat`, `ip link|address|route|rule|neigh|netns`, `dmesg`, `systemctl list-units`, `swapon`, `lsmod`, `lsblk`, `lslocks`, `ipcs`, `lsipc`, `sysctl`, `slabtop`, `numastat`, `conntrack -S|-C`, `nfsstat`, `mountstats`, `findmnt`, `lsof`, `ss`, `netstat`, `free`,
 `uptime`, `vmstat`, `mpstat`, `iostat`; clifr-only `events`, `life`, `oom`, `mounts`, `containers`, `pstore`) for a
 past moment or time range;
 `clifr info` and `clifr verify` describe and check the recording.
@@ -405,6 +405,13 @@ wait for the user's go-ahead.
   each report (two in sysstat 12), no time without -t; sysstat 11.7 lists devices in diskstats order (pos).
   Checked with bench/vmstatcheck.sh + bench/vmstatcompare.py: 28 commands on the desktop and four VMs, all
   laid out the same (-t prints the sample's time).
+- `clifr lsipc` (query/lsipc.go, util-linux's lsipc.c; 2026-11-23): the global summary (limits from the
+  sysctl snapshot, a minute old at most), -q/-m/-s with -g -b -c -t -P -o [+]LIST -r -e -n --noheadings
+  --time-format, --id's pretty lines, by `ToolStyle.Lsipc` ("" 2.41: System V and POSIX lines; "2.39",
+  "2.37": older descriptions; "2.32": limits and USEDBYTES as numbers); --noheadings keeps the header's widths
+  before 2.41. COMMAND: the creator's command line if alive at T. Not recorded: 2.41's POSIX queue count
+  (MQUMNI USED "-", a header says so), POSIX objects (-M -Q -S), semaphore values (-s --id: no Elements).
+  Checked with bench/lsipccheck.sh (creates a queue, a segment and a set with ipcmk) + bench/vmstatcompare.py.
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it

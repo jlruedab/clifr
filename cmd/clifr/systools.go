@@ -117,6 +117,7 @@ func addSystemTools() {
 	addTool(lsblkTool())
 	addTool(lslocksTool())
 	addTool(ipcsTool())
+	addTool(lsipcTool())
 	addTool(sysctlTool())
 	addTool(slabtopTool())
 	addTool(numastatTool())

@@ -1,4 +1,4 @@
-util-linux: parts of clifr's last, dmesg, swapon, lsblk and lslocks, and of clifrd's lock reading
+util-linux: parts of clifr's last, dmesg, swapon, lsblk, lslocks and lsipc, and of clifrd's lock reading
 
 clifr rebuilds the output of util-linux's tools. Some of its Go code follows
 util-linux's C code closely (https://github.com/util-linux/util-linux, tags
@@ -13,6 +13,11 @@ v2.37.4 and v2.41); that code was written anew in Go:
   of libsmartcols (column widths with and without width hints, and its
   mbs_safe_encode escaping, lib/mbsalign.c) and size_to_human_string
   (lib/strutils.c), as lsblk, lslocks and swapon print into a pipe.
+- internal/query/lsipc.go: lsipc's columns, default column sets, global
+  summary, -o, --id's pretty output and its time formats (make_time,
+  global_set_data, do_msg, do_shm, do_sem and their _global summaries,
+  print_pretty), from sys-utils/lsipc.c and ipcutils.c (2.32, 2.37, 2.39,
+  2.41), and strtime_short from lib/timeutils.c (2.41).
 - internal/recorder/locks.go (clifrd): lslocks' get_filename_sz, from
   misc-utils/lslocks.c (2.41).
 
@@ -34,6 +39,20 @@ Their notices:
   misc-utils/lslocks.c:
     Copyright (C) 2012 Davidlohr Bueso <dave@gnu.org>
     GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/lsipc.c:
+    Copyright (C) 2015 Ondrej Oprala <ooprala@redhat.com>
+    Copyright (C) 2015 Karel Zak <ooprala@redhat.com>
+    2025 Prasanna Paithankar <paithankarprasanna@gmail.com> (POSIX IPC support)
+    GNU General Public License, version 2 or (at your option) any later version.
+  sys-utils/ipcutils.c:
+    Copyright (C) 2012 Sami Kerola <kerolasa@iki.fi>
+    Copyright (C) 2012-2023 Karel Zak <kzak@redhat.com>
+    GNU General Public License, version 2 or (at your option) any later version.
+  lib/timeutils.c:
+    Copyright 2010 Lennart Poettering
+    Copyright (C) 2014 Karel Zak <kzak@redhat.com>
+    GNU Lesser General Public License, version 2.1 or (at your option) any
+    later version.
   libsmartcols (src/print.c):
     Copyright (C) 2010-2014 Karel Zak <kzak@redhat.com>
     Copyright (C) 2016 Igor Gnatenko <i.gnatenko.brain@gmail.com>
