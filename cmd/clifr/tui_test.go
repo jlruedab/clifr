@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -374,5 +376,50 @@ func TestTUIUnwritten(t *testing.T) {
 	r := []rune(string(u.markRow()))
 	if r[u.cols()-1] != '┈' || r[u.col(u.points[len(u.points)-1].ts)] == '┈' {
 		t.Errorf("not on disk yet: %q", string(r))
+	}
+}
+
+func TestTUITabRow(t *testing.T) {
+	u := testTUI()
+	ansi := regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+	for _, width := range []int{40, 80, 200} {
+		u.width = width
+		u.compare, u.playing, u.filter = width == 80, true, "firefox"
+		for i := range tuiPanes {
+			u.setPane(i)
+			row := u.tabRow()
+			plain := ansi.ReplaceAllString(row, "")
+			if n := utf8.RuneCountInString(plain); n > width {
+				t.Errorf("width %d, pane %s: %d columns: %q", width, tuiPanes[i].name, n, plain)
+			}
+			if !strings.Contains(row, tuiRev+" "+tuiPanes[i].name+" ") {
+				t.Errorf("width %d: pane %s not shown: %q", width, tuiPanes[i].name, plain)
+			}
+		}
+	}
+	if u.width = 200; strings.ContainsAny(ansi.ReplaceAllString(u.tabRow(), ""), "‹›") {
+		t.Error("‹ › when every pane fits")
+	}
+	// dmesg opens at its end; 0 is the tenth pane.
+	u.render = func(pane int, ts int64, width int) []string {
+		l := make([]string, 100)
+		for i := range l {
+			l[i] = fmt.Sprintf("line %d", i)
+		}
+		return l
+	}
+	u.filter, u.compare, u.playing = "", false, false
+	u.setPane(slices.IndexFunc(tuiPanes, func(p struct {
+		name, cmd string
+		tail      bool
+	}) bool {
+		return p.name == "dmesg"
+	}))
+	if scr := u.screen(); !strings.Contains(scr, "line 99") || strings.Contains(scr, "line 0\x1b") {
+		t.Errorf("dmesg not at its end")
+	}
+	u.key("0")
+	if u.pane != 9 || u.scroll != 0 {
+		t.Errorf("0: pane %d, scroll %d", u.pane, u.scroll)
 	}
 }

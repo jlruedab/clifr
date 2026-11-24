@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -29,15 +30,27 @@ import (
 
 // tuiPanes are the commands the pane shows, in tab order. %W is the pane's
 // width.
-var tuiPanes = []struct{ name, cmd string }{
-	{"top", "top -b -n 1 -w %W"},
-	{"ps", "ps aux"},
-	{"ss", "ss -tanp"},
-	{"lsof", "lsof -i"},
-	{"free", "free -m"},
-	{"vmstat", "vmstat"},
-	{"iostat", "iostat -x"},
-	{"events", ""}, // clifr events over the window, from the cursor on
+// tail: the pane opens at its end (dmesg: the messages nearest the cursor).
+var tuiPanes = []struct {
+	name, cmd string
+	tail      bool
+}{
+	{"top", "top -b -n 1 -w %W", false},
+	{"ps", "ps aux", false},
+	{"ss", "ss -tanp", false},
+	{"lsof", "lsof -i", false},
+	{"free", "free -m", false},
+	{"vmstat", "vmstat", false},
+	{"iostat", "iostat -x", false},
+	{"events", "", false}, // clifr events over the window, from the cursor on
+	{"df", "df -h", false},
+	{"mpstat", "mpstat -P ALL", false},
+	{"iotop", "iotop -b -o", false},
+	{"pstree", "pstree -p", false},
+	{"dmesg", "dmesg -T", true},
+	{"w", "w", false},
+	{"ip", "ip address", false},
+	{"systemctl", "systemctl list-units --type=service", false},
 }
 
 // tuiDefaultSpan is the window without --since: the last hour.
@@ -781,9 +794,9 @@ func (u *tui) key(k string) bool {
 			u.cur = m
 		}
 	case "\t":
-		u.pane, u.scroll = (u.pane+1)%len(tuiPanes), 0
+		u.setPane((u.pane + 1) % len(tuiPanes))
 	case "S-Tab":
-		u.pane, u.scroll = (u.pane+len(tuiPanes)-1)%len(tuiPanes), 0
+		u.setPane((u.pane + len(tuiPanes) - 1) % len(tuiPanes))
 	case "Up", "k":
 		u.scroll = max(u.scroll-1, 0)
 	case "Down", "j":
@@ -793,11 +806,19 @@ func (u *tui) key(k string) bool {
 	case "PgDn":
 		u.scroll += u.paneHeight()
 	default:
-		if len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(tuiPanes) {
-			u.pane, u.scroll = int(k[0]-'1'), 0
+		if i := strings.Index("1234567890", k); len(k) == 1 && i >= 0 && i < len(tuiPanes) {
+			u.setPane(i)
 		}
 	}
 	return false
+}
+
+// setPane shows pane i from its top, or its end (tail).
+func (u *tui) setPane(i int) {
+	u.pane, u.scroll = i, 0
+	if tuiPanes[i].tail {
+		u.scroll = math.MaxInt32 // screen cuts it to the last page
+	}
 }
 
 // promptKey edits the filter being typed: Enter applies it (empty: no
@@ -981,25 +1002,7 @@ func (u *tui) screen() string {
 	line(fmt.Sprintf(" %-*s%s", tuiLabelW-1, "events", ev.String()))
 	line(tuiDim + strings.Repeat(" ", tuiLabelW) + u.axis() + tuiReset)
 
-	var tabs strings.Builder
-	tabs.WriteString(" ")
-	for i, t := range tuiPanes {
-		if i == u.pane {
-			tabs.WriteString(tuiRev + " " + t.name + " " + tuiReset)
-		} else {
-			tabs.WriteString(" " + t.name + " ")
-		}
-	}
-	if u.compare {
-		tabs.WriteString("   " + tuiBold + "A → B" + tuiReset + " (d: back to the cursor, v: layout)")
-	}
-	if u.playing {
-		tabs.WriteString("   " + tuiBold + "▶ " + tuiSpeeds[u.speed].String() + tuiReset + " a sample")
-	}
-	if u.filter != "" {
-		tabs.WriteString("   " + tuiBold + "/" + termSafe(u.filter) + tuiReset)
-	}
-	line(tabs.String())
+	line(u.tabRow())
 
 	body := u.pane1(p.ts)
 	if u.compare {
@@ -1051,6 +1054,61 @@ func (u *tui) pane1(ts int64) []string {
 	return l
 }
 
+// tabRow is the panes' names, the current one in reverse, then what is on
+// (comparison, play, filter) in bold. When the names do not fit, those
+// around the current one are shown, ‹ › where more are hidden.
+func (u *tui) tabRow() string {
+	var st []string
+	if u.compare {
+		st = append(st, "A → B (d: back, v: layout)")
+	}
+	if u.playing {
+		st = append(st, "▶ "+tuiSpeeds[u.speed].String()+" a sample")
+	}
+	if u.filter != "" {
+		st = append(st, "/"+termSafe(u.filter))
+	}
+	status := fit(strings.Join(st, "   "), u.width/2)
+	room := u.width - 1 - 2 // the leading space, ‹ and ›
+	if status != "" {
+		room -= utf8.RuneCountInString(status) + 3
+	}
+	w := func(i int) int { return utf8.RuneCountInString(tuiPanes[i].name) + 2 }
+	lo, hi, used := u.pane, u.pane, w(u.pane)
+	for grew := true; grew; {
+		grew = false
+		if hi+1 < len(tuiPanes) && used+w(hi+1) <= room {
+			hi++
+			used += w(hi)
+			grew = true
+		}
+		if lo > 0 && used+w(lo-1) <= room {
+			lo--
+			used += w(lo)
+			grew = true
+		}
+	}
+	var b strings.Builder
+	b.WriteString(" ")
+	if lo > 0 {
+		b.WriteString(tuiDim + "‹" + tuiReset)
+	}
+	for i := lo; i <= hi; i++ {
+		if i == u.pane {
+			b.WriteString(tuiRev + " " + tuiPanes[i].name + " " + tuiReset)
+		} else {
+			b.WriteString(" " + tuiPanes[i].name + " ")
+		}
+	}
+	if hi < len(tuiPanes)-1 {
+		b.WriteString(tuiDim + "›" + tuiReset)
+	}
+	if status != "" {
+		b.WriteString("   " + tuiBold + status + tuiReset)
+	}
+	return b.String()
+}
+
 // paneAB is the pane comparing marks A and B, rendered once per width.
 func (u *tui) paneAB() []string {
 	a, b := u.points[u.markA].ts, u.points[u.markB].ts
@@ -1087,7 +1145,8 @@ func (u *tui) tuiHelp() []string {
 		"                 and changed (ps, ss, lsof), the events between them, else",
 		"                 the output at A and at B side by side",
 		"  v              A and B side by side, or A above B (top free vmstat iostat)",
-		"  tab ⇧tab 1-8   the pane: " + tuiPaneNames(),
+		"  tab ⇧tab       the next, previous pane: " + tuiPaneNames(),
+		"  1-9 0          the first ten panes",
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
 		"  space          play: one sample after another, and pause",
 		"  + -            play faster, slower (" + tuiSpeeds[0].String() + " to " + tuiSpeeds[len(tuiSpeeds)-1].String() + " a sample)",
