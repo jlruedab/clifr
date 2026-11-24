@@ -21,7 +21,7 @@ if [ -n "$tag" ] && [ -n "${VERSION:-}" ] && [ "$VERSION" != "${tag#v}" ]; then
 	exit 1
 fi
 VERSION=${VERSION:-${tag#v}}
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.2.0}
 DOCKER=${DOCKER:-docker}
 # Pinned by digest (the multi-arch index of rockylinux:8 as of 2023-11-24, used
 # for every package so far): a moved tag cannot change a build. The compiler

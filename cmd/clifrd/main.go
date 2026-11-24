@@ -86,7 +86,7 @@ func run(args []string) error {
 	fs.StringVar(&c.ProcRoot, "proc-root", "/proc", "proc filesystem root (for fixtures)")
 	budget := fs.String("cpu-budget", "2%", "recorder CPU budget, percent of one core")
 	fs.DurationVar(&c.BudgetWindow, "budget-window", 5*time.Minute, "CPU history the budget guard averages over")
-	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also save real ps/ss/lsof and uptime/vmstat/mpstat/iostat output this often")
+	fs.DurationVar(&c.VerifyEvery, "verify-every", 0, "also run the real tools this often (ps, top, ss, lsof, vmstat, iostat, sar, atop, iotop and the others clifr rebuilds, where installed) and save their output for clifr verify")
 	fs.DurationVar(&c.Parquet.FlushInterval, "flush-interval", 5*time.Minute, "write buffered rows to Parquet this often (a crash loses at most this much)")
 	fs.DurationVar(&c.Parquet.EarlyFlush, "early-flush", 30*time.Second, "after an OOM kill or a kernel message that often comes before a crash (or SIGUSR1), write buffered rows at the next sample if the last write is at least this old (0 = never early)")
 	fs.IntVar(&c.Parquet.FlushRows, "flush-rows", 400_000, "also write them once this many rows are buffered: lowers the heap's peak under load, for more and smaller files (0 = only by time)")

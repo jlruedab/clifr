@@ -40,7 +40,7 @@ It comes in two parts:
 
 It complements those tools: Prometheus tells you *when* something happened, clifr tells you *what* happened.
 
-**Status:** a working prototype, licensed AGPL-3.0, tested on Ubuntu 22.04 and 26.04, RHEL/Rocky 8 and Alma 9, including a 4-day soak test with a mixed server load; not yet run on a production server ([Status](#status)). Packages: the [0.1.0 pre-release](https://github.com/jlruedab/clifr/releases) ([release notes](RELEASE-NOTES.md)).
+**Status:** a working prototype, licensed AGPL-3.0, tested on Ubuntu 22.04, 24.04 and 26.04, RHEL/Rocky 8 and Alma 9, including a 4-day soak test with a mixed server load; not yet run on a production server ([Status](#status)). Packages: the [0.2.0 pre-release](https://github.com/jlruedab/clifr/releases) ([release notes](RELEASE-NOTES.md)).
 
 ## What commands can I see with clifr?
 

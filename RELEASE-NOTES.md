@@ -1,5 +1,86 @@
 # Release notes
 
+## clifr 0.2.0 (pre-release), 2026-11
+
+Ten more tools, who killed a process, and the rest of vmstat's and iostat's options. clifr is still a **working prototype**: tested in virtual machines and on one desktop, not yet on a production server.
+
+### Downloads
+
+| File | What |
+|---|---|
+| [`clifrd_0.2.0_amd64.deb`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/clifrd_0.2.0_amd64.deb), [`clifrd-0.2.0-1.x86_64.rpm`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/clifrd-0.2.0-1.x86_64.rpm) | the recorder: a static Go binary, the systemd unit, the sos plugin |
+| [`clifr_0.2.0_amd64.deb`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/clifr_0.2.0_amd64.deb), [`clifr-0.2.0-1.x86_64.rpm`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/clifr-0.2.0-1.x86_64.rpm) | the query tool (needs glibc 2.28 or later) |
+| [`SHA256SUMS`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/SHA256SUMS), [`SHA256SUMS.asc`](https://github.com/jlruedab/clifr/releases/download/v0.2.0/SHA256SUMS.asc) | checksums, and their signature |
+
+Check the download before installing, with the same release key as 0.1.0 ([`KEYS`](https://raw.githubusercontent.com/jlruedab/clifr/v0.2.0/KEYS), fingerprint `2AD0 6804 EA2D 2396 1971  79AC 6336 C307 D721 2C5F`):
+
+```sh
+gpg --import KEYS                       # once: the release key, from the repository
+gpg --verify SHA256SUMS.asc SHA256SUMS  # must say "Good signature"
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+### Upgrading from 0.1.0
+
+```sh
+sudo apt install ./clifrd_0.2.0_amd64.deb ./clifr_0.2.0_amd64.deb       # Debian, Ubuntu
+sudo dnf install ./clifrd-0.2.0-1.x86_64.rpm ./clifr-0.2.0-1.x86_64.rpm  # RHEL, Rocky, Alma
+```
+
+- **Upgrade clifr wherever you read recordings**, not only on the recorded hosts. 0.2.0 records schema 15 (0.1.0: schema 10), and clifr 0.1.0 refuses a newer recording ("recorded by a newer clifrd … update clifr"), a bundle or `--host` included.
+- **The existing recording stays readable.** What 0.1.0 did not record (namespaces for `lsns`, CPU and memory topology for `lscpu` and `lsmem`, per-thread values for `atop`, I/O priorities for `iotop`, signal senders, logins) is missing for that part: the commands say from when it is recorded.
+
+### What's new
+
+**Ten more tools**, each following the real tool's code for the versions on the tested distributions:
+
+| Tool | What it shows from the recording |
+|---|---|
+| `atop` | the screen since boot at a moment, or `atop INTERVAL` over a range; the process views `-m -d -s -v -c` |
+| `htop` | the default screen at a moment, as text |
+| `iotop` | `iotop -b`: I/O per process between two samples |
+| `sar` | `sar -f`'s reports over a range: CPU, memory, paging, disks, network, sockets, PSI, interrupts and more |
+| `who`, `w` | who was logged in, from utmp and logind |
+| `lsipc` | System V IPC limits and objects |
+| `lscpu` | CPUs, caches, topology, vulnerabilities, the hypervisor |
+| `lsmem` | memory blocks, online and offline |
+| `lsns` | the processes' namespaces |
+
+That makes 45 tools, plus clifr's own 6 commands.
+
+**Also new:**
+- **Who killed a process**: the sender of a fatal signal (PID, command and user, or the kernel), in `clifr life` (SENT BY) and `clifr events`.
+- **`last`** shows logins and logouts, not only reboots, and takes a range.
+- **`vmstat`** gains `-a -w -t -n -y -S`, `-s -f -D`, `-d -p -m`; **`iostat`** gains `-c -d -x -s -k -m -z -N -t -y` and the first line.
+- **`ps --container NAME`**: one container's processes.
+- **`--json`** for `sar`, `htop`, `iotop` and `atop`: what the screen shows, one object per row.
+- **`clifr verify`** also compares `atop`, `iotop` and `sar` with the real tools, in the recorded host's time zone.
+- **Clock steps** (an NTP jump, a manual `date -s`) no longer move process start times or keys.
+- **Lost TCP events**: the next full dump of the connection table comes a minute later instead of five, and `ss`, `netstat` and `lsof -i` print an "incomplete:" header for the time affected.
+
+### Tested on
+
+| Distribution | Kernel | How |
+|---|---|---|
+| Ubuntu 26.04 | 7.0 | the development desktop, bare metal: daily use, the benchmarks |
+| Ubuntu 24.04 | 6.8 | KVM virtual machine (new in 0.2.0) |
+| Ubuntu 22.04 | 5.15 | KVM virtual machine |
+| Rocky Linux 8.10 | 4.18 (cgroup v1) | KVM virtual machine, SELinux enforcing |
+| AlmaLinux 9.8 | 5.14 | KVM virtual machine, SELinux enforcing |
+
+In each virtual machine the packages pass the installed-service checks, eBPF in all three program modes, the end-to-end test, the ground-truth test (43 of 43 checks), the network features (`--metrics`, `--serve`, TLS) and the sos plugin: 23 of 23 checks on Rocky 8 and Alma 9 (with SELinux), 21 of 21 on Ubuntu. The packages also install and remove cleanly in Ubuntu 22.04 and 24.04 and Rocky 8 and 9 containers. Each new tool was compared with the real one on the desktop and in the four virtual machines.
+
+### What it costs
+
+At the busy-server benchmark (80,000 PostgreSQL transactions a second, 2026-11-23): **2.2% of one core** (1.9% in 0.1.0), about 290 MiB of memory on average, 330 MiB at most. The increase is the per-thread values that `atop` and `iotop` need. Desktop and mixed-load figures were measured for 0.1.0 and are below.
+
+### Known limitations
+
+As in 0.1.0 (below), and:
+- `lsns` lists only namespaces with a process in them: a namespace held only by an open file, a socket or a bind mount is not recorded.
+- `htop` shows processes, not user threads; `iotop` shows processes only (as `iotop -P`).
+- `lscpu` has no BIOS lines (the DMI table is root's only); `atop` cannot show the CID column for containers with their own host name.
+
 ## clifr 0.1.0 (pre-release), 2026-11
 
 The first public release: packages for x86_64 Linux. clifr is a **working prototype**: tested for days in virtual machines and on one desktop, not yet on a production server. Please try it on machines where an incident would not hurt, and report what you find.

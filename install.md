@@ -71,13 +71,13 @@ packaging/build.sh                         # or: DOCKER="sudo docker" packaging/
 ls dist/
 ```
 
-`dist/` then holds four files. Built at a release tag (`git checkout v0.1.0`), they carry that version (`clifrd_0.1.0_amd64.deb`, `clifrd-0.1.0-1.x86_64.rpm`). Otherwise the version is a snapshot of the next release, taken from the last git commit: its time in UTC (date and time to the second), then its hash, so a package built from a later commit always installs as an upgrade, and the release itself as an upgrade of its snapshots:
+`dist/` then holds four files. Built at a release tag (`git checkout v0.2.0`), they carry that version (`clifrd_0.2.0_amd64.deb`, `clifrd-0.2.0-1.x86_64.rpm`). Otherwise the version is a snapshot of the next release, taken from the last git commit: its time in UTC (date and time to the second), then its hash, so a package built from a later commit always installs as an upgrade, and the release itself as an upgrade of its snapshots:
 
 ```
-clifr_0.1.0~git20261105.142233.6f30dcebea9e_amd64.deb
-clifrd_0.1.0~git20261105.142233.6f30dcebea9e_amd64.deb
-clifr-0.1.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
-clifrd-0.1.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
+clifr_0.2.0~git20261105.142233.6f30dcebea9e_amd64.deb
+clifrd_0.2.0~git20261105.142233.6f30dcebea9e_amd64.deb
+clifr-0.2.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
+clifrd-0.2.0-0.git20261105.142233.6f30dcebea9e.x86_64.rpm
 ```
 
 Copy the two files for your distribution to the host.
