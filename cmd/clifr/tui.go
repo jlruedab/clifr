@@ -82,11 +82,17 @@ type tui struct {
 	color    bool // ANSI colors (not with NO_COLOR)
 	render   func(pane int, ts int64, width int) []string
 	cache    map[tuiKey][]string
+	// Marks A and B (sample indexes, -1: not set); with compare the pane
+	// shows what changed from A to B instead of the cursor's moment.
+	markA, markB int
+	compare      bool
+	diff         func(pane int, a, b int64, width int) []string
+	msg          string // a note for the event line until the next key
 }
 
 type tuiKey struct {
 	pane, width int
-	ts          int64
+	ts, a, b    int64 // a, b: a comparison's marks
 }
 
 func cmdTUI(g *globals) error {
@@ -112,7 +118,7 @@ func cmdTUI(g *globals) error {
 		return err
 	}
 	defer db.Close()
-	u := &tui{from: w.From, to: w.To, cache: map[tuiKey][]string{}, color: os.Getenv("NO_COLOR") == ""}
+	u := &tui{from: w.From, to: w.To, cache: map[tuiKey][]string{}, color: os.Getenv("NO_COLOR") == "", markA: -1, markB: -1}
 	if u.points, err = tuiPoints(db, w.From, w.To); err != nil {
 		return err
 	}
@@ -129,6 +135,9 @@ func cmdTUI(g *globals) error {
 			return ev.at(ts, 3*u.paneHeight()) // room to scroll
 		}
 		return tuiRender(g, db, pane, ts, width)
+	}
+	u.diff = func(pane int, a, b int64, width int) []string {
+		return tuiCompare(g, db, ev, pane, a, b, width)
 	}
 	if h := tuiCapture(g, db, "hostname", u.points[u.cur].ts); len(h) > 0 {
 		u.host = strings.TrimSpace(h[0])
@@ -348,6 +357,31 @@ func tuiRender(g *globals, db *store.DB, pane int, ts int64, width int) []string
 	return tuiCapture(g, db, cmd, ts)
 }
 
+// tuiCompare is a pane comparing marks A and B: clifr diff for the commands
+// with rows to compare, the events between them, else A's output above B's.
+func tuiCompare(g *globals, db *store.DB, ev *tuiEvents, pane int, a, b int64, width int) []string {
+	name := tuiPanes[pane].name
+	if name == "events" {
+		return ev.between(a, b, tuiCompareMax)
+	}
+	cmd := strings.ReplaceAll(tuiPanes[pane].cmd, "%W", fmt.Sprint(max(width, 80)))
+	if t := tools[name]; t.diff {
+		return tuiCapture(g, db, cmd, a, b)
+	}
+	out := []string{tuiRule("A "+query.FormatMS(a), width)}
+	out = append(out, tuiCapture(g, db, cmd, a)...)
+	out = append(out, "", tuiRule("B "+query.FormatMS(b), width))
+	return append(out, tuiCapture(g, db, cmd, b)...)
+}
+
+// tuiCompareMax is the most events the comparison lists.
+const tuiCompareMax = 2000
+
+// tuiRule is a title in a line across the pane.
+func tuiRule(title string, width int) string {
+	return "── " + title + " " + strings.Repeat("─", max(width-utf8.RuneCountInString(title)-4, 0))
+}
+
 // tuiEvents is the events pane: clifr events from a few before the cursor
 // on, "▸" on the first at or after it. Read in stretches around the cursor:
 // a busy host's whole window can hold millions of process events.
@@ -452,9 +486,43 @@ func (e *tuiEvents) at(ts int64, rows int) []string {
 	return append(out, after...)
 }
 
+// between lists the events from a to b, at most limit of them.
+func (e *tuiEvents) between(a, b int64, limit int) []string {
+	header := "TIME                     EVENT        PID DETAIL"
+	var lines []string
+	more := false
+	for s := a - (a-e.from)%tuiEventsSpan; s <= b && !more; s += tuiEventsSpan {
+		sp := e.span(s)
+		if sp.err != nil {
+			return []string{termSafe("clifr: " + sp.err.Error())}
+		}
+		if sp.header != "" {
+			header = sp.header
+		}
+		for i, ev := range sp.evs {
+			if ev.TS < a || ev.TS > b {
+				continue
+			}
+			if len(lines) == limit {
+				more = true
+				break
+			}
+			lines = append(lines, "  "+sp.lines[i])
+		}
+	}
+	title := fmt.Sprintf("events from A %s to B %s: %d", query.FormatMS(a), query.FormatMS(b), len(lines))
+	switch {
+	case more:
+		title = fmt.Sprintf("events from A %s to B %s: the first %d (move A or B closer for the rest)", query.FormatMS(a), query.FormatMS(b), limit)
+	case len(lines) == 0:
+		return []string{title}
+	}
+	return append([]string{title, "  " + header}, lines...)
+}
+
 // tuiCapture runs one command at ts and returns its lines (an error as the
-// only line).
-func tuiCapture(g *globals, db *store.DB, cmd string, ts int64) []string {
+// only line); with two times it compares them, as clifr diff.
+func tuiCapture(g *globals, db *store.DB, cmd string, ts ...int64) []string {
 	var out bytes.Buffer
 	err := func() error {
 		words, err := splitWords(cmd)
@@ -466,14 +534,20 @@ func tuiCapture(g *globals, db *store.DB, cmd string, ts int64) []string {
 		if err != nil {
 			return err
 		}
-		savedOut, savedHdr := outOverride, query.HeaderOut
-		outOverride, query.HeaderOut = &out, io.Discard
-		defer func() { outOverride, query.HeaderOut = savedOut, savedHdr }()
-		c := &runCtx{g: g, w: query.Window{At: ts}, db: db}
-		if err := query.Covered(db, ts); err != nil {
-			return err
+		savedOut, savedHdr, savedErr := outOverride, query.HeaderOut, stderr
+		outOverride, query.HeaderOut, stderr = &out, io.Discard, &out // diff's "no differences" too
+		defer func() { outOverride, query.HeaderOut, stderr = savedOut, savedHdr, savedErr }()
+		at := ts[len(ts)-1]
+		c := &runCtx{g: g, w: query.Window{At: at}, db: db}
+		if len(ts) == 2 {
+			c.diffAt = ts
 		}
-		if _, err := query.LoadUsers(db, ts); err != nil {
+		for _, t := range ts {
+			if err := query.Covered(db, t); err != nil {
+				return err
+			}
+		}
+		if _, err := query.LoadUsers(db, at); err != nil {
 			return err
 		}
 		exec, err := t.prepare(p, c)
@@ -570,6 +644,7 @@ func (u *tui) axis() string {
 // key handles one key; true: quit.
 func (u *tui) key(k string) bool {
 	last := len(u.points) - 1
+	u.msg = ""
 	switch k {
 	case "q", "Q", "Ctrl-C":
 		return true
@@ -606,6 +681,20 @@ func (u *tui) key(k string) bool {
 				break
 			}
 		}
+	case "m":
+		u.setMark()
+	case "M":
+		u.markA, u.markB, u.compare = -1, -1, false
+	case "d":
+		if u.markA < 0 || u.markB < 0 {
+			u.msg = " d compares marks A and B: m on one sample, m on another, then d"
+		} else {
+			u.compare, u.scroll = !u.compare, 0
+		}
+	case "a", "b":
+		if m := map[string]int{"a": u.markA, "b": u.markB}[k]; m >= 0 {
+			u.cur = m
+		}
 	case "\t":
 		u.pane, u.scroll = (u.pane+1)%len(tuiPanes), 0
 	case "S-Tab":
@@ -624,6 +713,23 @@ func (u *tui) key(k string) bool {
 		}
 	}
 	return false
+}
+
+// setMark is m: mark A, then B (the later of the two is B), then A again.
+func (u *tui) setMark() {
+	switch {
+	case u.markA < 0 || u.markB >= 0:
+		u.markA, u.markB, u.compare = u.cur, -1, false
+		u.msg = " A set: move to another sample and press m for B"
+	case u.cur == u.markA:
+		u.msg = " B must be another sample than A"
+	default:
+		u.markB = u.cur
+		if u.markB < u.markA {
+			u.markA, u.markB = u.markB, u.markA
+		}
+		u.msg = " B set: d compares A and B"
+	}
 }
 
 // at is the sample at ts: the last at or before it (dir < 0) or the first
@@ -665,9 +771,24 @@ func (u *tui) screen() string {
 		cur = cur[11:]
 	}
 	head := fmt.Sprintf(" clifr  %s  %s – %s %s   cursor %s", u.host, query.FormatMS(u.from)[:16], end, zone, cur)
+	for i, m := range []int{u.markA, u.markB} {
+		if m >= 0 {
+			head += fmt.Sprintf("  %c %s", 'A'+i, query.FormatMS(u.points[m].ts)[11:])
+		}
+	}
 	line(tuiRev + fit(head, u.width) + tuiReset)
 
 	ruler := []rune(strings.Repeat(" ", n))
+	if u.compare {
+		for c := u.col(u.points[u.markA].ts); c < u.col(u.points[u.markB].ts); c++ {
+			ruler[c] = '─'
+		}
+	}
+	for i, m := range []int{u.markA, u.markB} {
+		if m >= 0 {
+			ruler[u.col(u.points[m].ts)] = rune('A' + i)
+		}
+	}
 	ruler[cc] = '▼'
 	line(strings.Repeat(" ", tuiLabelW) + string(ruler))
 
@@ -713,9 +834,15 @@ func (u *tui) screen() string {
 			tabs.WriteString(" " + t.name + " ")
 		}
 	}
+	if u.compare {
+		tabs.WriteString("   " + tuiBold + "A → B" + tuiReset + " (d: back to the cursor)")
+	}
 	line(tabs.String())
 
 	body := u.pane1(p.ts)
+	if u.compare {
+		body = u.paneAB()
+	}
 	if u.help {
 		body = u.tuiHelp()
 	}
@@ -729,12 +856,14 @@ func (u *tui) screen() string {
 		line(s)
 	}
 
-	if r := []rune(fit(u.nearMark(p.ts), u.width)); len(r) > 1 { // " SYM time text"
+	if u.msg != "" {
+		line(tuiBold + fit(u.msg, u.width) + tuiReset)
+	} else if r := []rune(fit(u.nearMark(p.ts), u.width)); len(r) > 1 { // " SYM time text"
 		line(" " + u.paint(symColor(string(r[1])), string(r[1])) + string(r[2:]))
 	} else {
 		line("")
 	}
-	keys := " ←→ sample  ⇧←→ minute  n/N next/prev event  tab pane  ↑↓ scroll  ? help  q quit"
+	keys := " ←→ sample  ⇧←→ minute  n/N event  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
 	b.WriteString(tuiDim + fit(keys, u.width) + tuiReset + tuiEOL)
 	return b.String()
 }
@@ -753,6 +882,18 @@ func (u *tui) pane1(ts int64) []string {
 	return l
 }
 
+// paneAB is the pane comparing marks A and B, rendered once per width.
+func (u *tui) paneAB() []string {
+	a, b := u.points[u.markA].ts, u.points[u.markB].ts
+	k := tuiKey{pane: u.pane, width: u.width, a: a, b: b}
+	if l, ok := u.cache[k]; ok {
+		return l
+	}
+	l := u.diff(u.pane, a, b, u.width)
+	u.cache[k] = l
+	return l
+}
+
 // tuiHelp is what ? shows in the pane.
 func (u *tui) tuiHelp() []string {
 	l := []string{
@@ -761,6 +902,12 @@ func (u *tui) tuiHelp() []string {
 		"  ⇧← ⇧→  H L     one minute",
 		"  Home End       the window's first, last sample",
 		"  n  N           next, previous event on the timeline (the sample before it)",
+		"  m              mark the sample: A, then B (the later one is B), then A again",
+		"  M              clear the marks",
+		"  a  b           go to mark A, B",
+		"  d              compare A and B in the pane, and back: what appeared, went",
+		"                 and changed (ps, ss, lsof), the events between them, else",
+		"                 the output at A above the output at B",
 		"  tab ⇧tab 1-8   the pane: " + tuiPaneNames(),
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
 		"  ?              this help (? or Esc to close)",

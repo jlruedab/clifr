@@ -24,7 +24,7 @@ func TestSplitKeys(t *testing.T) {
 // testTUI is a 10-minute window with a sample every 10 s, 80 columns wide.
 func testTUI() *tui {
 	from := time.Date(2026, 11, 23, 2, 40, 0, 0, time.Local).UnixMilli()
-	u := &tui{from: from, to: from + 600_000, width: 80, height: 30, cache: map[tuiKey][]string{}}
+	u := &tui{from: from, to: from + 600_000, width: 80, height: 30, cache: map[tuiKey][]string{}, markA: -1, markB: -1}
 	for ts := from; ts <= u.to; ts += 10_000 {
 		u.points = append(u.points, tuiPoint{ts: ts, cpu: 50, mem: 100, load: 1, io: -1})
 	}
@@ -180,5 +180,76 @@ func TestTUIEventsPane(t *testing.T) {
 	}
 	if got := e.at(50*min, 3); !strings.Contains(got[len(got)-1], "no events") {
 		t.Errorf("after the last: %q", got)
+	}
+
+	// Between marks: 12 to 24 minutes inclusive, across a span boundary.
+	got = pids(e.between(12*min, 24*min, 100)[1:])
+	if want := []string{"3", "4", "5", "6"}; !slices.Equal(got, want) {
+		t.Errorf("between 12 and 24 min: %q, want %q", got, want)
+	}
+	if l := e.between(0, 60*min, 2); len(l) != 4 || !strings.Contains(l[0], "the first 2") {
+		t.Errorf("limited: %q", l)
+	}
+	if l := e.between(41*min, 43*min, 100); len(l) != 1 || !strings.HasSuffix(l[0], ": 0") {
+		t.Errorf("none: %q", l)
+	}
+}
+
+func TestTUICompare(t *testing.T) {
+	u := testTUI()
+	var asked [2]int64
+	u.diff = func(pane int, a, b int64, width int) []string {
+		asked = [2]int64{a, b}
+		return []string{"diff of " + tuiPanes[pane].name}
+	}
+	u.cur = 30
+	u.key("d")
+	if u.compare || !strings.Contains(u.msg, "m on one sample") {
+		t.Fatalf("d without marks: compare %v, %q", u.compare, u.msg)
+	}
+	u.key("m")
+	u.key("m") // the same sample: not B
+	if u.markB >= 0 || !strings.Contains(u.msg, "another sample") {
+		t.Fatalf("B on A: %d, %q", u.markB, u.msg)
+	}
+	u.cur = 12
+	u.key("m") // B before A: the later one is B
+	if u.markA != 12 || u.markB != 30 {
+		t.Fatalf("marks %d %d", u.markA, u.markB)
+	}
+	u.key("d")
+	u.cur = 0 // the cursor's ▼ covers a mark under it
+	scr := u.screen()
+	if !u.compare || asked != [2]int64{u.points[12].ts, u.points[30].ts} || !strings.Contains(scr, "diff of top") {
+		t.Fatalf("compare %v, asked %v", u.compare, asked)
+	}
+	ruler := []rune(strings.Split(scr, "\r\n")[1])
+	if a, b := ruler[tuiLabelW+u.col(u.points[12].ts)], ruler[tuiLabelW+u.col(u.points[30].ts)]; a != 'A' || b != 'B' {
+		t.Errorf("ruler %q", string(ruler))
+	}
+	u.cur = 0
+	u.key("b")
+	if u.cur != 30 {
+		t.Errorf("b: %d", u.cur)
+	}
+	u.key("a")
+	if u.cur != 12 {
+		t.Errorf("a: %d", u.cur)
+	}
+	u.key("d")
+	if u.compare || !strings.Contains(u.screen(), "top") {
+		t.Error("d does not go back")
+	}
+	u.key("d")
+	u.key("m") // a third m starts again at A
+	if u.markA != 12 || u.markB != -1 || u.compare {
+		t.Errorf("third m: %d %d %v", u.markA, u.markB, u.compare)
+	}
+	u.key("M")
+	if u.markA != -1 || u.markB != -1 {
+		t.Errorf("M: %d %d", u.markA, u.markB)
+	}
+	if lines := strings.Split(u.screen(), "\r\n"); len(lines) != u.height {
+		t.Errorf("%d lines", len(lines))
 	}
 }
