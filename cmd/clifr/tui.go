@@ -86,8 +86,12 @@ type tui struct {
 	// shows what changed from A to B instead of the cursor's moment.
 	markA, markB int
 	compare      bool
-	diff         func(pane int, a, b int64, width int) []string
-	msg          string // a note for the event line until the next key
+	stacked      bool // v: A above B, not side by side
+	// diff renders a comparison: one list (right nil), or A's and B's
+	// output to lay out.
+	diff  func(pane int, a, b int64, width int) (left, right []string)
+	pairs map[tuiKey][2][]string
+	msg   string // a note for the event line until the next key
 }
 
 type tuiKey struct {
@@ -136,7 +140,7 @@ func cmdTUI(g *globals) error {
 		}
 		return tuiRender(g, db, pane, ts, width)
 	}
-	u.diff = func(pane int, a, b int64, width int) []string {
+	u.diff = func(pane int, a, b int64, width int) ([]string, []string) {
 		return tuiCompare(g, db, ev, pane, a, b, width)
 	}
 	if h := tuiCapture(g, db, "hostname", u.points[u.cur].ts); len(h) > 0 {
@@ -358,20 +362,48 @@ func tuiRender(g *globals, db *store.DB, pane int, ts int64, width int) []string
 }
 
 // tuiCompare is a pane comparing marks A and B: clifr diff for the commands
-// with rows to compare, the events between them, else A's output above B's.
-func tuiCompare(g *globals, db *store.DB, ev *tuiEvents, pane int, a, b int64, width int) []string {
+// with rows to compare, the events between them (one list each), else A's
+// and B's output.
+func tuiCompare(g *globals, db *store.DB, ev *tuiEvents, pane int, a, b int64, width int) (left, right []string) {
 	name := tuiPanes[pane].name
 	if name == "events" {
-		return ev.between(a, b, tuiCompareMax)
+		return ev.between(a, b, tuiCompareMax), nil
 	}
 	cmd := strings.ReplaceAll(tuiPanes[pane].cmd, "%W", fmt.Sprint(max(width, 80)))
 	if t := tools[name]; t.diff {
-		return tuiCapture(g, db, cmd, a, b)
+		return tuiCapture(g, db, cmd, a, b), nil
 	}
+	return tuiCapture(g, db, cmd, a), tuiCapture(g, db, cmd, b)
+}
+
+// tuiStacked puts A's output above B's.
+func tuiStacked(top, bottom []string, a, b int64, width int) []string {
 	out := []string{tuiRule("A "+query.FormatMS(a), width)}
-	out = append(out, tuiCapture(g, db, cmd, a)...)
+	out = append(out, top...)
 	out = append(out, "", tuiRule("B "+query.FormatMS(b), width))
-	return append(out, tuiCapture(g, db, cmd, b)...)
+	return append(out, bottom...)
+}
+
+// tuiSideBySide puts A's output on the left and B's on the right, each cut
+// to half the pane.
+func tuiSideBySide(left, right []string, a, b int64, width int) []string {
+	half := max((width-3)/2, 10)
+	pad := func(s string) string {
+		s = fit(s, half)
+		return s + strings.Repeat(" ", half-utf8.RuneCountInString(s))
+	}
+	out := []string{pad(tuiRule("A "+query.FormatMS(a), half)) + " │ " + tuiRule("B "+query.FormatMS(b), half)}
+	for i := range max(len(left), len(right)) {
+		var l, r string
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		out = append(out, pad(l)+" │ "+r)
+	}
+	return out
 }
 
 // tuiCompareMax is the most events the comparison lists.
@@ -691,6 +723,8 @@ func (u *tui) key(k string) bool {
 		} else {
 			u.compare, u.scroll = !u.compare, 0
 		}
+	case "v":
+		u.stacked, u.scroll = !u.stacked, 0
 	case "a", "b":
 		if m := map[string]int{"a": u.markA, "b": u.markB}[k]; m >= 0 {
 			u.cur = m
@@ -835,7 +869,7 @@ func (u *tui) screen() string {
 		}
 	}
 	if u.compare {
-		tabs.WriteString("   " + tuiBold + "A → B" + tuiReset + " (d: back to the cursor)")
+		tabs.WriteString("   " + tuiBold + "A → B" + tuiReset + " (d: back to the cursor, v: layout)")
 	}
 	line(tabs.String())
 
@@ -886,12 +920,21 @@ func (u *tui) pane1(ts int64) []string {
 func (u *tui) paneAB() []string {
 	a, b := u.points[u.markA].ts, u.points[u.markB].ts
 	k := tuiKey{pane: u.pane, width: u.width, a: a, b: b}
-	if l, ok := u.cache[k]; ok {
-		return l
+	p, ok := u.pairs[k]
+	if !ok {
+		if u.pairs == nil || len(u.pairs) > 50 {
+			u.pairs = map[tuiKey][2][]string{}
+		}
+		p[0], p[1] = u.diff(u.pane, a, b, u.width)
+		u.pairs[k] = p
 	}
-	l := u.diff(u.pane, a, b, u.width)
-	u.cache[k] = l
-	return l
+	switch {
+	case p[1] == nil:
+		return p[0]
+	case u.stacked:
+		return tuiStacked(p[0], p[1], a, b, u.width)
+	}
+	return tuiSideBySide(p[0], p[1], a, b, u.width)
 }
 
 // tuiHelp is what ? shows in the pane.
@@ -907,7 +950,8 @@ func (u *tui) tuiHelp() []string {
 		"  a  b           go to mark A, B",
 		"  d              compare A and B in the pane, and back: what appeared, went",
 		"                 and changed (ps, ss, lsof), the events between them, else",
-		"                 the output at A above the output at B",
+		"                 the output at A and at B side by side",
+		"  v              A and B side by side, or A above B (top free vmstat iostat)",
 		"  tab ⇧tab 1-8   the pane: " + tuiPaneNames(),
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
 		"  ?              this help (? or Esc to close)",

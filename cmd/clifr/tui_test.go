@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"clifr/internal/query"
 )
@@ -198,9 +199,12 @@ func TestTUIEventsPane(t *testing.T) {
 func TestTUICompare(t *testing.T) {
 	u := testTUI()
 	var asked [2]int64
-	u.diff = func(pane int, a, b int64, width int) []string {
+	u.diff = func(pane int, a, b int64, width int) ([]string, []string) {
 		asked = [2]int64{a, b}
-		return []string{"diff of " + tuiPanes[pane].name}
+		if pane == 4 { // free: two outputs to lay out
+			return []string{"free at A"}, []string{"free at B"}
+		}
+		return []string{"diff of " + tuiPanes[pane].name}, nil
 	}
 	u.cur = 30
 	u.key("d")
@@ -227,6 +231,16 @@ func TestTUICompare(t *testing.T) {
 	if a, b := ruler[tuiLabelW+u.col(u.points[12].ts)], ruler[tuiLabelW+u.col(u.points[30].ts)]; a != 'A' || b != 'B' {
 		t.Errorf("ruler %q", string(ruler))
 	}
+	u.key("5")
+	if l := u.paneAB(); len(l) != 2 || !strings.HasPrefix(l[1], "free at A") || !strings.HasSuffix(l[1], "│ free at B") {
+		t.Errorf("side by side: %q", l)
+	}
+	u.key("v")
+	if l := u.paneAB(); len(l) != 5 || l[1] != "free at A" || l[4] != "free at B" {
+		t.Errorf("stacked: %q", l)
+	}
+	u.key("v")
+	u.key("1")
 	u.cur = 0
 	u.key("b")
 	if u.cur != 30 {
@@ -251,5 +265,21 @@ func TestTUICompare(t *testing.T) {
 	}
 	if lines := strings.Split(u.screen(), "\r\n"); len(lines) != u.height {
 		t.Errorf("%d lines", len(lines))
+	}
+}
+
+func TestTUISideBySide(t *testing.T) {
+	from := time.Date(2026, 11, 23, 2, 40, 0, 0, time.Local).UnixMilli()
+	got := tuiSideBySide([]string{"Mem: 100", "Swap: 1", "a line longer than half the pane"}, []string{"Mem: 90"}, from, from+60_000, 43)
+	if len(got) != 4 {
+		t.Fatalf("%d lines: %q", len(got), got)
+	}
+	for i, l := range got[1:] {
+		if p := strings.Index(l, "│"); utf8.RuneCountInString(l[:p]) != 21 {
+			t.Errorf("line %d: divider at %d: %q", i+1, utf8.RuneCountInString(l[:p]), l)
+		}
+	}
+	if !strings.HasPrefix(got[1], "Mem: 100 ") || !strings.HasSuffix(got[1], "│ Mem: 90") || !strings.HasPrefix(got[3], "a line longer than h") {
+		t.Errorf("%q", got)
 	}
 }
