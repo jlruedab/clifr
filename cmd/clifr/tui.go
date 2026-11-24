@@ -15,6 +15,8 @@ import (
 	"io"
 	"math"
 	"os"
+	"regexp"
+	"regexp/syntax"
 	"slices"
 	"strconv"
 	"strings"
@@ -115,10 +117,13 @@ type tui struct {
 	// Space plays: the cursor moves one sample every tuiSpeeds[speed].
 	playing bool
 	speed   int
-	// / filters the pane: its header and the lines with filter in them;
-	// prompt is the text being typed (nil: not typing).
-	filter string
-	prompt *string
+	// / filters the pane: its header and the lines filterRE (filter, a
+	// regular expression, any case) matches; prompt is the text being typed
+	// (nil: not typing), promptErr why Enter did not take it.
+	filter    string
+	filterRE  *regexp.Regexp
+	prompt    *string
+	promptErr string
 	// unwritten: the window runs on past the last sample on disk by less
 	// than clifrd's flush interval: shaded as not on disk yet.
 	unwritten bool
@@ -850,13 +855,22 @@ func (u *tui) setPane(i int) {
 }
 
 // promptKey edits the filter being typed: Enter applies it (empty: no
-// filter), Esc leaves it as it was.
+// filter; a bad pattern: the prompt stays, saying why), Esc leaves it as it
+// was.
 func (u *tui) promptKey(k string) bool {
+	if k != "Tick" {
+		u.promptErr = ""
+	}
 	switch k {
 	case "Ctrl-C":
 		return true
 	case "Enter":
-		u.filter, u.prompt, u.scroll = *u.prompt, nil, 0
+		re, err := tuiFilterRE(*u.prompt)
+		if err != nil {
+			u.promptErr = err.Error()
+			return false
+		}
+		u.filter, u.filterRE, u.prompt, u.scroll = *u.prompt, re, nil, 0
 	case "Esc":
 		u.prompt = nil
 	case "Backspace":
@@ -889,11 +903,28 @@ func (u *tui) tick() time.Duration {
 	return tuiSpeeds[u.speed]
 }
 
-// tuiFilter keeps a pane's header and the lines with text in them (any
-// case): the header is the first line, or, when a blank line comes within
-// the first 8 (top's summary, iostat), everything up to the line after it;
-// titles (comparisons' "#" and "──" lines) stay too.
-func tuiFilter(lines []string, text string) []string {
+// tuiFilterRE compiles a filter: a regular expression (Go's RE2 syntax),
+// any case; nil for an empty one.
+func tuiFilterRE(text string) (*regexp.Regexp, error) {
+	if text == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile("(?i)" + text)
+	if err != nil {
+		var se *syntax.Error
+		if errors.As(err, &se) {
+			return nil, fmt.Errorf("bad pattern: %s: %s", se.Code, strings.TrimPrefix(se.Expr, "(?i)"))
+		}
+		return nil, fmt.Errorf("bad pattern: %v", err)
+	}
+	return re, nil
+}
+
+// tuiFilter keeps a pane's header and the lines re matches: the header is
+// the first line, or, when a blank line comes within the first 8 (top's
+// summary, iostat), everything up to the line after it; titles
+// (comparisons' "#" and "──" lines) stay too.
+func tuiFilter(lines []string, re *regexp.Regexp, text string) []string {
 	head := min(1, len(lines))
 	for i, l := range lines[:min(len(lines), 8)] {
 		if strings.TrimSpace(l) == "" {
@@ -902,11 +933,10 @@ func tuiFilter(lines []string, text string) []string {
 		}
 	}
 	out := slices.Clone(lines[:head])
-	want := strings.ToLower(text)
 	n := 0
 	for _, l := range lines[head:] {
 		switch t := strings.TrimSpace(l); {
-		case strings.Contains(strings.ToLower(l), want):
+		case re.MatchString(l):
 			n++
 		case strings.HasPrefix(t, "#"), strings.HasPrefix(t, "──"):
 		default:
@@ -915,7 +945,7 @@ func tuiFilter(lines []string, text string) []string {
 		out = append(out, l)
 	}
 	if n == 0 {
-		out = append(out, fmt.Sprintf("(no line has %q)", text))
+		out = append(out, fmt.Sprintf("(no line matches %q)", text))
 	}
 	return out
 }
@@ -1036,8 +1066,8 @@ func (u *tui) screen() string {
 	if u.compare {
 		body = u.paneAB()
 	}
-	if u.filter != "" {
-		body = tuiFilter(body, u.filter)
+	if u.filterRE != nil {
+		body = tuiFilter(body, u.filterRE, u.filter)
 	}
 	if u.help {
 		body = u.tuiHelp()
@@ -1061,7 +1091,11 @@ func (u *tui) screen() string {
 	}
 	keys := " ←→ sample  ⇧←→ minute  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
 	if u.prompt != nil {
-		b.WriteString(fit("/"+termSafe(*u.prompt)+"█   (Enter: filter the pane, empty: no filter; Esc: cancel)", u.width) + tuiEOL)
+		l := fit("/"+termSafe(*u.prompt)+"█   (a regular expression, any case; Enter: filter the pane, empty: no filter; Esc: cancel)", u.width)
+		if u.promptErr != "" {
+			l = tuiBold + fit("/"+termSafe(*u.prompt)+"█   "+termSafe(u.promptErr), u.width) + tuiReset
+		}
+		b.WriteString(l + tuiEOL)
 		return b.String()
 	}
 	b.WriteString(tuiDim + fit(keys, u.width) + tuiReset + tuiEOL)
@@ -1181,8 +1215,9 @@ func (u *tui) tuiHelp() []string {
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
 		"  space          play: one sample after another, and pause",
 		"  + -            play faster, slower (" + tuiSpeeds[0].String() + " to " + tuiSpeeds[len(tuiSpeeds)-1].String() + " a sample)",
-		"  /              filter the pane: its header and the lines with the text (any",
-		"                 case); / then Enter on nothing: no filter",
+		"  /              filter the pane: its header and the lines a regular expression",
+		"                 matches, any case (postgres|nginx, ^root, :(80|443) ); / then",
+		"                 Enter on nothing: no filter",
 		"  ?              this help (? or Esc to close)",
 		"  q              quit",
 		"",

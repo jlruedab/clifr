@@ -342,6 +342,18 @@ func TestTUIFilterKeys(t *testing.T) {
 	if u.filter != "fIRe" || u.prompt != nil {
 		t.Errorf("Esc: %q", u.filter)
 	}
+	// A bad pattern keeps the prompt open and says why.
+	u.key("/")
+	u.key("(")
+	u.key("Enter")
+	if u.prompt == nil || u.filter != "fIRe" || !strings.Contains(u.screen(), "bad pattern") {
+		t.Fatalf("bad pattern: prompt %v, filter %q", u.prompt, u.filter)
+	}
+	u.key("Backspace")
+	u.key("Enter")
+	if u.prompt != nil || u.filter != "fIRe" {
+		t.Errorf("fixed: prompt %v, filter %q", u.prompt, u.filter)
+	}
 	u.key("/")
 	for range 5 {
 		u.key("Backspace")
@@ -354,15 +366,39 @@ func TestTUIFilterKeys(t *testing.T) {
 
 func TestTUIFilter(t *testing.T) {
 	top := []string{"top - 10:00", "Tasks: 3", "", "  PID USER COMMAND", "  1 root systemd", "  2 alice firefox"}
-	if got := tuiFilter(top, "fire"); !slices.Equal(got, []string{"top - 10:00", "Tasks: 3", "", "  PID USER COMMAND", "  2 alice firefox"}) {
+	re := func(s string) *regexp.Regexp {
+		r, err := tuiFilterRE(s)
+		if err != nil {
+			panic(err)
+		}
+		return r
+	}
+	if got := tuiFilter(top, re("FIRE"), "FIRE"); !slices.Equal(got, []string{"top - 10:00", "Tasks: 3", "", "  PID USER COMMAND", "  2 alice firefox"}) {
 		t.Errorf("top: %q", got)
 	}
 	diff := []string{"# ps, A -> B: 1 appeared", "## appeared", "USER PID", "alice 2 firefox", "## gone", "USER PID", "bob 3 bash"}
-	if got := tuiFilter(diff, "bash"); !slices.Equal(got, []string{"# ps, A -> B: 1 appeared", "## appeared", "## gone", "bob 3 bash"}) {
+	if got := tuiFilter(diff, re("bash$"), "bash$"); !slices.Equal(got, []string{"# ps, A -> B: 1 appeared", "## appeared", "## gone", "bob 3 bash"}) {
 		t.Errorf("diff: %q", got)
 	}
-	if got := tuiFilter([]string{"H", "a"}, "zz"); len(got) != 2 || !strings.Contains(got[1], "no line") {
+	if got := tuiFilter([]string{"H", "a"}, re("zz"), "zz"); len(got) != 2 || !strings.Contains(got[1], "no line") {
 		t.Errorf("none: %q", got)
+	}
+	// A regular expression: alternatives, anchors; a dot matches itself too.
+	ps := []string{"USER PID", "root 1 /sbin/init", "alice 2 nginx", "bob 3 postgres", "carol 4 10.0.0.1:443"}
+	if got := tuiFilter(ps, re("nginx|postgres"), ""); !slices.Equal(got, []string{"USER PID", "alice 2 nginx", "bob 3 postgres"}) {
+		t.Errorf("alternatives: %q", got)
+	}
+	if got := tuiFilter(ps, re("^root"), ""); !slices.Equal(got, []string{"USER PID", "root 1 /sbin/init"}) {
+		t.Errorf("anchor: %q", got)
+	}
+	if got := tuiFilter(ps, re(`10.0.0.1:(80|443)\b`), ""); !slices.Equal(got, []string{"USER PID", "carol 4 10.0.0.1:443"}) {
+		t.Errorf("address: %q", got)
+	}
+	if r, err := tuiFilterRE("(nginx"); r != nil || err == nil || !strings.Contains(err.Error(), "missing closing )") || strings.Contains(err.Error(), "(?i)") {
+		t.Errorf("bad pattern: %v", err)
+	}
+	if r, err := tuiFilterRE(""); r != nil || err != nil {
+		t.Errorf("empty: %v %v", r, err)
 	}
 }
 

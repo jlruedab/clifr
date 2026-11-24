@@ -222,7 +222,7 @@ The line above the keys names the event nearest the cursor. `NO_COLOR` turns col
 | `space` | play: one sample after another, and pause; `+` `-` faster, slower (2 s to 100 ms a sample) |
 | `Tab` `⇧Tab`, `1`–`9` `0` | the next, previous pane; the first ten panes |
 | `↑` `↓` `PgUp` `PgDn` | scroll the pane |
-| `/` | filter the pane: its header and the lines that contain the text, in any case; `/` then Enter on nothing removes it |
+| `/` | filter the pane: its header and the lines a regular expression matches, in any case (Go's [RE2 syntax](https://github.com/google/re2/wiki/Syntax): `postgres\|nginx`, `^root`, `:(80\|443)\b`); a bad pattern keeps the prompt open and says why; `/` then Enter on nothing removes it |
 | `m` | mark the sample: A, then B (the later of the two is B), then A again; `M` clears them, `a` `b` go to them |
 | `d` | compare A and B, and back to the cursor: for `ps`, `ss`, `lsof` and `df` what appeared, went and changed (as [`clifr diff`](#compare-two-moments-clifr-diff)), for `events` the events from A to B, for `oom` the kills from A to B, for the others the output at A and at B side by side |
 | `v` | A and B side by side, or A above B (wide outputs such as `iostat -x` are cut in half the pane) |
