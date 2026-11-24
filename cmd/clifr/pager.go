@@ -276,7 +276,7 @@ func runPager(pages []page, forced bool) error {
 	if err := termLoop(func(w, h int) string {
 		p.width, p.height = w, h
 		return p.screen()
-	}, p.key); err != nil {
+	}, p.key, nil); err != nil {
 		return err
 	}
 	return p.err

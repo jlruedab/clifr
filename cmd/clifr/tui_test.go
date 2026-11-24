@@ -283,3 +283,96 @@ func TestTUISideBySide(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+func TestTUIPlay(t *testing.T) {
+	u := testTUI()
+	last := len(u.points) - 1
+	u.cur = last
+	if u.tick() != 0 {
+		t.Fatal("ticks while paused")
+	}
+	u.key(" ") // at the end: plays from the start
+	if !u.playing || u.cur != 0 || u.tick() != tuiSpeeds[0] {
+		t.Fatalf("play: %v at %d, tick %v", u.playing, u.cur, u.tick())
+	}
+	u.key("+")
+	u.key("+")
+	if u.tick() != tuiSpeeds[2] {
+		t.Errorf("faster: %v", u.tick())
+	}
+	u.key("Tick")
+	u.key("Tick")
+	if u.cur != 2 {
+		t.Errorf("two ticks: %d", u.cur)
+	}
+	u.cur = last - 1
+	u.key("Tick")
+	if u.cur != last || u.playing {
+		t.Errorf("at the end: %d, playing %v", u.cur, u.playing)
+	}
+	u.key("Tick")
+	if u.cur != last {
+		t.Errorf("tick after the end: %d", u.cur)
+	}
+}
+
+func TestTUIFilterKeys(t *testing.T) {
+	u := testTUI()
+	u.render = func(pane int, ts int64, width int) []string {
+		return []string{"USER PID COMMAND", "root 1 systemd", "alice 2 Firefox", "bob 3 bash"}
+	}
+	for _, k := range []string{"/", "f", "I", "x", "Backspace", "R", "e", "Enter"} {
+		u.key(k)
+	}
+	if u.filter != "fIRe" || u.prompt != nil {
+		t.Fatalf("filter %q, prompt %v", u.filter, u.prompt)
+	}
+	scr := u.screen()
+	if !strings.Contains(scr, "alice 2 Firefox") || strings.Contains(scr, "bob 3") || !strings.Contains(scr, "USER PID") {
+		t.Errorf("filtered pane:\n%s", scr)
+	}
+	u.key("/")
+	u.key("q") // typed, not quit
+	if u.prompt == nil || *u.prompt != "fIReq" {
+		t.Fatalf("prompt %v", u.prompt)
+	}
+	u.key("Esc")
+	if u.filter != "fIRe" || u.prompt != nil {
+		t.Errorf("Esc: %q", u.filter)
+	}
+	u.key("/")
+	for range 5 {
+		u.key("Backspace")
+	}
+	u.key("Enter")
+	if u.filter != "" || !strings.Contains(u.screen(), "bob 3") {
+		t.Errorf("cleared: %q", u.filter)
+	}
+}
+
+func TestTUIFilter(t *testing.T) {
+	top := []string{"top - 10:00", "Tasks: 3", "", "  PID USER COMMAND", "  1 root systemd", "  2 alice firefox"}
+	if got := tuiFilter(top, "fire"); !slices.Equal(got, []string{"top - 10:00", "Tasks: 3", "", "  PID USER COMMAND", "  2 alice firefox"}) {
+		t.Errorf("top: %q", got)
+	}
+	diff := []string{"# ps, A -> B: 1 appeared", "## appeared", "USER PID", "alice 2 firefox", "## gone", "USER PID", "bob 3 bash"}
+	if got := tuiFilter(diff, "bash"); !slices.Equal(got, []string{"# ps, A -> B: 1 appeared", "## appeared", "## gone", "bob 3 bash"}) {
+		t.Errorf("diff: %q", got)
+	}
+	if got := tuiFilter([]string{"H", "a"}, "zz"); len(got) != 2 || !strings.Contains(got[1], "no line") {
+		t.Errorf("none: %q", got)
+	}
+}
+
+func TestTUIUnwritten(t *testing.T) {
+	u := testTUI()
+	u.points = u.points[:len(u.points)-12] // the last 2 minutes not on disk
+	if r := []rune(string(u.markRow())); r[u.cols()-1] != '░' {
+		t.Errorf("a past window's end without samples: %q", r[u.cols()-1])
+	}
+	u.unwritten = true
+	r := []rune(string(u.markRow()))
+	if r[u.cols()-1] != '┈' || r[u.col(u.points[len(u.points)-1].ts)] == '┈' {
+		t.Errorf("not on disk yet: %q", string(r))
+	}
+}

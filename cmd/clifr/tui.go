@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -92,7 +93,20 @@ type tui struct {
 	diff  func(pane int, a, b int64, width int) (left, right []string)
 	pairs map[tuiKey][2][]string
 	msg   string // a note for the event line until the next key
+	// Space plays: the cursor moves one sample every tuiSpeeds[speed].
+	playing bool
+	speed   int
+	// / filters the pane: its header and the lines with filter in them;
+	// prompt is the text being typed (nil: not typing).
+	filter string
+	prompt *string
+	// unwritten: the window runs on past the last sample on disk by less
+	// than clifrd's flush interval: shaded as not on disk yet.
+	unwritten bool
 }
+
+// tuiSpeeds are the play speeds, slowest first.
+var tuiSpeeds = []time.Duration{2 * time.Second, time.Second, 500 * time.Millisecond, 250 * time.Millisecond, 100 * time.Millisecond}
 
 type tuiKey struct {
 	pane, width int
@@ -133,6 +147,8 @@ func cmdTUI(g *globals) error {
 		return err
 	}
 	u.cur = len(u.points) - 1
+	u.speed = 2
+	u.unwritten = tuiUnwritten(db, u.points[u.cur].ts, w.To, time.Now().UnixMilli())
 	ev := &tuiEvents{db: db, from: w.From, to: w.To}
 	u.render = func(pane int, ts int64, width int) []string {
 		if tuiPanes[pane].name == "events" {
@@ -147,6 +163,19 @@ func cmdTUI(g *globals) error {
 		u.host = strings.TrimSpace(h[0])
 	}
 	return u.run()
+}
+
+// tuiUnwritten: the window reaches now, and its last sample is no older
+// than clifrd's flush interval (and a half): the rest is still in clifrd's
+// memory, not missing.
+func tuiUnwritten(db *store.DB, last, to, now int64) bool {
+	flush := 300.0
+	var v string
+	db.QueryRow(`SELECT value FROM meta WHERE key = 'flush_interval_s'`).Scan(&v)
+	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+		flush = f
+	}
+	return to >= now-time.Minute.Milliseconds() && now-last <= int64(flush*1500)
 }
 
 // tuiPoints reads the timeline: every system sample in [from, to].
@@ -195,7 +224,7 @@ func tuiPoints(db *store.DB, from, to int64) ([]tuiPoint, error) {
 var tuiMarkOrder = []struct{ sym, name, color string }{
 	{"✕", "OOM kill", tuiRed}, {"▲", "unit failed", tuiRed}, {"↻", "boot", tuiYellow},
 	{"↺", "unit restarting", tuiYellow}, {"●", "login", tuiCyan}, {"○", "logout", tuiCyan},
-	{"░", "no samples", tuiDim},
+	{"░", "no samples", tuiDim}, {"┈", "not on disk yet (clifrd writes every few minutes)", tuiDim},
 }
 
 // The colors.
@@ -676,8 +705,30 @@ func (u *tui) axis() string {
 // key handles one key; true: quit.
 func (u *tui) key(k string) bool {
 	last := len(u.points) - 1
+	if u.prompt != nil {
+		return u.promptKey(k)
+	}
+	if k == "Tick" {
+		if u.playing {
+			u.cur = min(u.cur+1, last)
+			u.playing = u.cur < last
+		}
+		return false
+	}
 	u.msg = ""
 	switch k {
+	case " ":
+		u.playing = !u.playing
+		if u.playing && u.cur == last {
+			u.cur = 0
+		}
+	case "+", "=":
+		u.speed = min(u.speed+1, len(tuiSpeeds)-1)
+	case "-":
+		u.speed = max(u.speed-1, 0)
+	case "/":
+		f := u.filter
+		u.prompt = &f
 	case "q", "Q", "Ctrl-C":
 		return true
 	case "?":
@@ -739,7 +790,7 @@ func (u *tui) key(k string) bool {
 		u.scroll++
 	case "PgUp":
 		u.scroll = max(u.scroll-u.paneHeight(), 0)
-	case "PgDn", " ":
+	case "PgDn":
 		u.scroll += u.paneHeight()
 	default:
 		if len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(tuiPanes) {
@@ -747,6 +798,77 @@ func (u *tui) key(k string) bool {
 		}
 	}
 	return false
+}
+
+// promptKey edits the filter being typed: Enter applies it (empty: no
+// filter), Esc leaves it as it was.
+func (u *tui) promptKey(k string) bool {
+	switch k {
+	case "Ctrl-C":
+		return true
+	case "Enter":
+		u.filter, u.prompt, u.scroll = *u.prompt, nil, 0
+	case "Esc":
+		u.prompt = nil
+	case "Backspace":
+		if r := []rune(*u.prompt); len(r) > 0 {
+			*u.prompt = string(r[:len(r)-1])
+		}
+	case "Tick":
+		return u.keyTick()
+	default:
+		if r := []rune(k); len(r) == 1 && r[0] >= ' ' {
+			*u.prompt += k
+		}
+	}
+	return false
+}
+
+// keyTick plays on while the filter is typed.
+func (u *tui) keyTick() bool {
+	p := u.prompt
+	u.prompt = nil
+	defer func() { u.prompt = p }()
+	return u.key("Tick")
+}
+
+// tick is how long termLoop waits before the next sample while playing.
+func (u *tui) tick() time.Duration {
+	if !u.playing {
+		return 0
+	}
+	return tuiSpeeds[u.speed]
+}
+
+// tuiFilter keeps a pane's header and the lines with text in them (any
+// case): the header is the first line, or, when a blank line comes within
+// the first 8 (top's summary, iostat), everything up to the line after it;
+// titles (comparisons' "#" and "──" lines) stay too.
+func tuiFilter(lines []string, text string) []string {
+	head := min(1, len(lines))
+	for i, l := range lines[:min(len(lines), 8)] {
+		if strings.TrimSpace(l) == "" {
+			head = min(i+2, len(lines))
+			break
+		}
+	}
+	out := slices.Clone(lines[:head])
+	want := strings.ToLower(text)
+	n := 0
+	for _, l := range lines[head:] {
+		switch t := strings.TrimSpace(l); {
+		case strings.Contains(strings.ToLower(l), want):
+			n++
+		case strings.HasPrefix(t, "#"), strings.HasPrefix(t, "──"):
+		default:
+			continue
+		}
+		out = append(out, l)
+	}
+	if n == 0 {
+		out = append(out, fmt.Sprintf("(no line has %q)", text))
+	}
+	return out
 }
 
 // setMark is m: mark A, then B (the later of the two is B), then A again.
@@ -871,11 +993,20 @@ func (u *tui) screen() string {
 	if u.compare {
 		tabs.WriteString("   " + tuiBold + "A → B" + tuiReset + " (d: back to the cursor, v: layout)")
 	}
+	if u.playing {
+		tabs.WriteString("   " + tuiBold + "▶ " + tuiSpeeds[u.speed].String() + tuiReset + " a sample")
+	}
+	if u.filter != "" {
+		tabs.WriteString("   " + tuiBold + "/" + termSafe(u.filter) + tuiReset)
+	}
 	line(tabs.String())
 
 	body := u.pane1(p.ts)
 	if u.compare {
 		body = u.paneAB()
+	}
+	if u.filter != "" {
+		body = tuiFilter(body, u.filter)
 	}
 	if u.help {
 		body = u.tuiHelp()
@@ -897,7 +1028,11 @@ func (u *tui) screen() string {
 	} else {
 		line("")
 	}
-	keys := " ←→ sample  ⇧←→ minute  n/N event  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
+	keys := " ←→ sample  ⇧←→ minute  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
+	if u.prompt != nil {
+		b.WriteString(fit("/"+termSafe(*u.prompt)+"█   (Enter: filter the pane, empty: no filter; Esc: cancel)", u.width) + tuiEOL)
+		return b.String()
+	}
 	b.WriteString(tuiDim + fit(keys, u.width) + tuiReset + tuiEOL)
 	return b.String()
 }
@@ -954,12 +1089,16 @@ func (u *tui) tuiHelp() []string {
 		"  v              A and B side by side, or A above B (top free vmstat iostat)",
 		"  tab ⇧tab 1-8   the pane: " + tuiPaneNames(),
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
+		"  space          play: one sample after another, and pause",
+		"  + -            play faster, slower (" + tuiSpeeds[0].String() + " to " + tuiSpeeds[len(tuiSpeeds)-1].String() + " a sample)",
+		"  /              filter the pane: its header and the lines with the text (any",
+		"                 case); / then Enter on nothing: no filter",
 		"  ?              this help (? or Esc to close)",
 		"  q              quit",
 		"",
 		"Timeline: CPU busy, memory used (without page cache), the 1-minute load, the",
 		"share of time some task waited for I/O (PSI); each column is a stretch of the",
-		"window, its mean shown; blank: no sample there (or not yet written to disk).",
+		"window, its mean shown; blank: no sample there.",
 		"",
 		"Events row",
 	}
@@ -1000,7 +1139,7 @@ func (u *tui) markRow() []rune {
 	}
 	// Stretches without samples: between two samples further apart than
 	// tuiGapFactor times the usual interval.
-	gap := []rune(tuiMarkOrder[len(tuiMarkOrder)-1].sym)[0]
+	gap := '░'
 	if d := u.interval() * tuiGapFactor; d > 0 {
 		for i := 1; i < len(u.points); i++ {
 			if a, b := u.points[i-1].ts, u.points[i].ts; b-a > d {
@@ -1008,6 +1147,18 @@ func (u *tui) markRow() []rune {
 					put(c, gap)
 				}
 			}
+		}
+	}
+	// After the last sample: still in clifrd's memory, or a gap.
+	last := u.points[len(u.points)-1].ts
+	switch d := u.interval() * tuiGapFactor; {
+	case u.unwritten:
+		for c := u.col(last) + 1; c < n; c++ {
+			put(c, '┈')
+		}
+	case d > 0 && u.to-last > d:
+		for c := u.col(last) + 1; c < n; c++ {
+			put(c, gap)
 		}
 	}
 	return row
@@ -1078,5 +1229,5 @@ func (u *tui) run() error {
 	return termLoop(func(w, h int) string {
 		u.width, u.height = w, h
 		return u.screen()
-	}, u.key)
+	}, u.key, u.tick)
 }

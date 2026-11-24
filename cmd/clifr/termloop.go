@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/signal"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
@@ -12,9 +13,10 @@ import (
 // termLoop runs a full-screen view (the pager, clifr tui) on the alternate
 // screen in raw mode: it draws, then waits for keys or a resize, until key
 // says to quit. draw gets the terminal's size and returns the screen; key
-// gets each key's name (keyName). The terminal is restored on return and on
-// a signal's exit.
-func termLoop(draw func(w, h int) string, key func(string) bool) error {
+// gets each key's name (keyName). tick, if not nil, is asked after each
+// draw how long to wait for a key before key gets "Tick" (0: no tick). The
+// terminal is restored on return and on a signal's exit.
+func termLoop(draw func(w, h int) string, key func(string) bool, tick func() time.Duration) error {
 	out, in := int(os.Stdout.Fd()), int(os.Stdin.Fd())
 	state, err := term.MakeRaw(in)
 	if err != nil {
@@ -51,7 +53,17 @@ func termLoop(draw func(w, h int) string, key func(string) bool) error {
 			w, h = cw, ch
 		}
 		os.Stdout.WriteString("\x1b[H" + draw(w, h))
+		var timer <-chan time.Time
+		if tick != nil {
+			if d := tick(); d > 0 {
+				timer = time.After(d)
+			}
+		}
 		select {
+		case <-timer:
+			if key("Tick") {
+				return nil
+			}
 		case <-winch:
 			os.Stdout.WriteString("\x1b[2J") // the old layout's leftovers
 		case b, ok := <-keys:
