@@ -409,17 +409,30 @@ func TestTUITabRow(t *testing.T) {
 		return l
 	}
 	u.filter, u.compare, u.playing = "", false, false
-	u.setPane(slices.IndexFunc(tuiPanes, func(p struct {
-		name, cmd string
-		tail      bool
-	}) bool {
-		return p.name == "dmesg"
-	}))
+	u.setPane(slices.IndexFunc(tuiPanes, func(p tuiPane) bool { return p.name == "dmesg" }))
 	if scr := u.screen(); !strings.Contains(scr, "line 99") || strings.Contains(scr, "line 0\x1b") {
 		t.Errorf("dmesg not at its end")
 	}
 	u.key("0")
 	if u.pane != 9 || u.scroll != 0 {
 		t.Errorf("0: pane %d, scroll %d", u.pane, u.scroll)
+	}
+}
+
+func TestTUISpanPane(t *testing.T) {
+	u := testTUI()
+	oom := slices.IndexFunc(tuiPanes, func(p tuiPane) bool { return p.name == "oom" })
+	if oom < 0 || !tuiPanes[oom].span {
+		t.Fatal("no oom pane over the window")
+	}
+	renders := 0
+	u.render = func(pane int, ts int64, width int) []string { renders++; return []string{"kills"} }
+	u.setPane(oom)
+	for _, k := range []string{"Left", "Left", "Home", "End"} {
+		u.key(k)
+		u.screen()
+	}
+	if renders != 1 {
+		t.Errorf("rendered %d times: the window's kills do not move with the cursor", renders)
 	}
 }

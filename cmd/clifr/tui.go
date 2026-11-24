@@ -30,27 +30,33 @@ import (
 
 // tuiPanes are the commands the pane shows, in tab order. %W is the pane's
 // width.
-// tail: the pane opens at its end (dmesg: the messages nearest the cursor).
-var tuiPanes = []struct {
-	name, cmd string
-	tail      bool
-}{
-	{"top", "top -b -n 1 -w %W", false},
-	{"ps", "ps aux", false},
-	{"ss", "ss -tanp", false},
-	{"lsof", "lsof -i", false},
-	{"free", "free -m", false},
-	{"vmstat", "vmstat", false},
-	{"iostat", "iostat -x", false},
-	{"events", "", false}, // clifr events over the window, from the cursor on
-	{"df", "df -h", false},
-	{"mpstat", "mpstat -P ALL", false},
-	{"iotop", "iotop -b -o", false},
-	{"pstree", "pstree -p", false},
-	{"dmesg", "dmesg -T", true},
-	{"w", "w", false},
-	{"ip", "ip address", false},
-	{"systemctl", "systemctl list-units --type=service", false},
+var tuiPanes = []tuiPane{
+	{name: "top", cmd: "top -b -n 1 -w %W"},
+	{name: "ps", cmd: "ps aux"},
+	{name: "ss", cmd: "ss -tanp"},
+	{name: "lsof", cmd: "lsof -i"},
+	{name: "free", cmd: "free -m"},
+	{name: "vmstat", cmd: "vmstat"},
+	{name: "iostat", cmd: "iostat -x"},
+	{name: "events"}, // clifr events over the window, from the cursor on
+	{name: "oom", cmd: "oom", span: true},
+	{name: "df", cmd: "df -h"},
+	{name: "mpstat", cmd: "mpstat -P ALL"},
+	{name: "iotop", cmd: "iotop -b -o"},
+	{name: "pstree", cmd: "pstree -p"},
+	{name: "dmesg", cmd: "dmesg -T", tail: true},
+	{name: "w", cmd: "w"},
+	{name: "containers", cmd: "containers"},
+	{name: "systemctl", cmd: "systemctl list-units --type=service"},
+}
+
+// tuiPane is a pane: cmd run at the cursor's sample (%W: the pane's width).
+// tail: it opens at its end (dmesg: the messages nearest the cursor); span:
+// cmd runs over the whole window instead, and over A to B in a comparison
+// (oom: at a moment it looks only a minute either side).
+type tuiPane struct {
+	name, cmd  string
+	tail, span bool
 }
 
 // tuiDefaultSpan is the window without --since: the last hour.
@@ -164,8 +170,11 @@ func cmdTUI(g *globals) error {
 	u.unwritten = tuiUnwritten(db, u.points[u.cur].ts, w.To, time.Now().UnixMilli())
 	ev := &tuiEvents{db: db, from: w.From, to: w.To}
 	u.render = func(pane int, ts int64, width int) []string {
-		if tuiPanes[pane].name == "events" {
+		switch {
+		case tuiPanes[pane].name == "events":
 			return ev.at(ts, 3*u.paneHeight()) // room to scroll
+		case tuiPanes[pane].span:
+			return tuiCaptureSpan(g, db, tuiPanes[pane].cmd, u.from, u.to)
 		}
 		return tuiRender(g, db, pane, ts, width)
 	}
@@ -408,8 +417,11 @@ func tuiRender(g *globals, db *store.DB, pane int, ts int64, width int) []string
 // and B's output.
 func tuiCompare(g *globals, db *store.DB, ev *tuiEvents, pane int, a, b int64, width int) (left, right []string) {
 	name := tuiPanes[pane].name
-	if name == "events" {
+	switch {
+	case name == "events":
 		return ev.between(a, b, tuiCompareMax), nil
+	case tuiPanes[pane].span:
+		return tuiCaptureSpan(g, db, tuiPanes[pane].cmd, a, b), nil
 	}
 	cmd := strings.ReplaceAll(tuiPanes[pane].cmd, "%W", fmt.Sprint(max(width, 80)))
 	if t := tools[name]; t.diff {
@@ -597,6 +609,22 @@ func (e *tuiEvents) between(a, b int64, limit int) []string {
 // tuiCapture runs one command at ts and returns its lines (an error as the
 // only line); with two times it compares them, as clifr diff.
 func tuiCapture(g *globals, db *store.DB, cmd string, ts ...int64) []string {
+	var diff []int64
+	if len(ts) == 2 {
+		diff = ts
+	}
+	return tuiRun(g, db, cmd, query.Window{At: ts[len(ts)-1]}, diff, ts)
+}
+
+// tuiCaptureSpan runs one command over [from, to].
+func tuiCaptureSpan(g *globals, db *store.DB, cmd string, from, to int64) []string {
+	return tuiRun(g, db, cmd, query.Window{From: from, To: to}, nil, nil)
+}
+
+// tuiRun runs cmd over w (diff: two moments compared), after checking that
+// the recording covers each of covered; its lines, or an error as the only
+// line.
+func tuiRun(g *globals, db *store.DB, cmd string, w query.Window, diff, covered []int64) []string {
 	var out bytes.Buffer
 	err := func() error {
 		words, err := splitWords(cmd)
@@ -611,12 +639,12 @@ func tuiCapture(g *globals, db *store.DB, cmd string, ts ...int64) []string {
 		savedOut, savedHdr, savedErr := outOverride, query.HeaderOut, stderr
 		outOverride, query.HeaderOut, stderr = &out, io.Discard, &out // diff's "no differences" too
 		defer func() { outOverride, query.HeaderOut, stderr = savedOut, savedHdr, savedErr }()
-		at := ts[len(ts)-1]
-		c := &runCtx{g: g, w: query.Window{At: at}, db: db}
-		if len(ts) == 2 {
-			c.diffAt = ts
+		at := w.At
+		if w.IsRange() {
+			at = w.To
 		}
-		for _, t := range ts {
+		c := &runCtx{g: g, w: w, db: db, diffAt: diff}
+		for _, t := range covered {
 			if err := query.Covered(db, t); err != nil {
 				return err
 			}
@@ -1043,6 +1071,9 @@ func (u *tui) screen() string {
 // pane1 is the pane at ts, rendered once per width.
 func (u *tui) pane1(ts int64) []string {
 	k := tuiKey{pane: u.pane, width: u.width, ts: ts}
+	if tuiPanes[u.pane].span {
+		k.ts = 0 // the same at every sample
+	}
 	if l, ok := u.cache[k]; ok {
 		return l
 	}
@@ -1142,9 +1173,9 @@ func (u *tui) tuiHelp() []string {
 		"  M              clear the marks",
 		"  a  b           go to mark A, B",
 		"  d              compare A and B in the pane, and back: what appeared, went",
-		"                 and changed (ps, ss, lsof), the events between them, else",
-		"                 the output at A and at B side by side",
-		"  v              A and B side by side, or A above B (top free vmstat iostat)",
+		"                 and changed (ps, ss, lsof, df), the events between them, else",
+		"                 the output at A and at B side by side; oom: the kills from A to B",
+		"  v              A and B side by side, or A above B (the panes without a change list)",
 		"  tab ⇧tab       the next, previous pane: " + tuiPaneNames(),
 		"  1-9 0          the first ten panes",
 		"  ↑ ↓ PgUp PgDn  scroll the pane",
