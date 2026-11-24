@@ -1,10 +1,9 @@
 // Package remote is clifrd --serve and what clifr --host needs of it: the
 // recording's Parquet files over HTTPS, so clifr can query another host's
-// recording locally (phase 7.2, docs/clifr-plan.md). Every request needs a
-// token (stored hashed, tokens.go); TLS uses clifrd's own self-signed
-// certificate, which clifr pins on first use (cert.go); plain HTTP only on
-// loopback addresses. Only data files are served, never the token file or
-// the TLS key. Pure Go: clifrd is static.
+// recording locally. Every request needs a token (stored hashed, tokens.go);
+// TLS uses clifrd's own self-signed certificate, which clifr pins on first
+// use (cert.go); plain HTTP only on loopback addresses. Only data files are
+// served, never the token file or the TLS key. Pure Go: clifrd is static.
 package remote
 
 import (

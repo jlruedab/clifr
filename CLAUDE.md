@@ -18,7 +18,8 @@ evidence, not CLI polish.
 Renamed from sosv on 2026-10-19 (module `clifr`, `cmd/clifrd`, `cmd/clifr`,
 `/var/lib/clifr`); the v1 tag, the bench database `sosvbench`, its slice and
 result file names (`sosv-stats.*`, `sosv.db`, `sosv_commit`) keep the old name.
-The product plan (phases 1–7) is in `docs/clifr-plan.md`.
+The product plan (phases 1–7) is in `docs/clifr-plan.md`, a local file kept out of git
+(`.gitignore`): a fresh clone does not have it.
 
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
 1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot`; its benchmark
@@ -56,7 +57,7 @@ wait for the user's go-ahead.
 - Parse /proc ourselves. **Never read `/proc/*/environ`.**
 - All /proc access goes through `procfs.FS` so `--proc-root` fixtures work.
 - Network only for phase 7's opt-in features, each off by default (the user, 2026-11-07,
-  `docs/clifr-plan.md`): `--metrics` (Prometheus text format written by hand; loopback
+  in the local product plan): `--metrics` (Prometheus text format written by hand; loopback
   addresses only, unless `--metrics-tls-config` gives TLS: then any address); `--serve` (7.2: any address, but every request needs a token, and
   TLS with clifrd's self-signed certificate, pinned by clifr, except on loopback, or with the
   admin's (`--serve-tls-config`, Node Exporter's format, TLS 1.3, also on loopback), checked by
