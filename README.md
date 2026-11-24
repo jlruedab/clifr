@@ -491,6 +491,13 @@ second. Within a window:
     development machine (`go build -a`, empty cache, 11 s) peaked at 1,445
     forks a second, about 2,900 fork and exec events, and averaged 450:
     within the full budget even before the 10-second window averages it.
+    A Linux 7.0 kernel build on the same machine (`make defconfig`, then
+    `make -j22`, 173 s, 2026-11-25) started 34,800 processes: 200 a second on
+    average, 827 in the busiest second and 401 a second over the busiest
+    10-second window (about 800 fork and exec events a second, a fifth of
+    the budget). Nothing was dropped, skipped or shed; the recorder's CPU
+    over those minutes was 2.3% of one core, above its 2% target (a
+    `budget_exceeded` guard event).
   - *10,000 a second at most:* this sets most of the recorder's memory
     during a flood. A process is three queued events of 264 bytes each,
     plus its command line. The events are applied every 5 seconds, and
