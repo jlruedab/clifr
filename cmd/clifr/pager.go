@@ -249,6 +249,12 @@ func keyName(b []byte) string {
 		return "Backspace"
 	case "\x03":
 		return "Ctrl-C"
+	case "\x1b[1;2D":
+		return "S-Left"
+	case "\x1b[1;2C":
+		return "S-Right"
+	case "\x1b[Z":
+		return "S-Tab"
 	default:
 		return s
 	}
@@ -267,30 +273,11 @@ func runPager(pages []page, forced bool) error {
 		_, err := os.Stdout.WriteString(strings.Join(p.lines(0), "\n") + "\n")
 		return err
 	}
-	state, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
+	if err := termLoop(func(w, h int) string {
+		p.width, p.height = w, h
+		return p.screen()
+	}, p.key); err != nil {
 		return err
 	}
-	defer term.Restore(int(os.Stdin.Fd()), state)
-	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l") // alternate screen, no cursor
-	defer os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
-	setRestoreTerm(func() { // a signal's exit skips the deferred calls
-		os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
-		term.Restore(int(os.Stdin.Fd()), state)
-	})
-	defer setRestoreTerm(nil)
-	buf := make([]byte, 16)
-	for {
-		if w, h, err := term.GetSize(out); err == nil {
-			p.width, p.height = w, h
-		}
-		os.Stdout.WriteString("\x1b[H" + p.screen())
-		n, err := os.Stdin.Read(buf)
-		if err != nil {
-			return nil
-		}
-		if p.key(keyName(buf[:n])) {
-			return p.err
-		}
-	}
+	return p.err
 }

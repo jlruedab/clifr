@@ -90,11 +90,19 @@ func (t *termWriter) Flush() error {
 	return err
 }
 
+// outOverride, when set, takes the place of os.Stdout for stdout and
+// dataOut: clifr tui renders a pane into a buffer.
+var outOverride io.Writer
+
 // stdout is where the text views go: os.Stdout through a termWriter, also
 // into a pipe or a file (procps and lsof escape these characters always, and
 // "clifr ... | grep x" hands its output to the terminal). Call done before
 // returning.
 func stdout() (w io.Writer, done func()) {
+	if outOverride != nil {
+		t := &termWriter{w: outOverride}
+		return t, func() { t.Flush() }
+	}
 	t := &termWriter{w: os.Stdout}
 	return t, func() { t.Flush() }
 }
@@ -103,6 +111,9 @@ func stdout() (w io.Writer, done func()) {
 // a terminal, as it is into a pipe or file (JSON escapes control characters
 // itself; a CSV export keeps the recorded bytes).
 func dataOut() (w io.Writer, done func()) {
+	if outOverride != nil {
+		return stdout()
+	}
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return os.Stdout, func() {}
 	}

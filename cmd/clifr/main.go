@@ -131,7 +131,7 @@ type usageError struct{ error }
 
 // subcommands are clifr's own commands; everything else names a recorded tool.
 var subcommands = map[string]bool{"help": true, "info": true, "stats": true, "verify": true, "export": true,
-	"diff": true, "list": true}
+	"diff": true, "list": true, "tui": true}
 
 func run(args []string) error {
 	var g globals
@@ -607,6 +607,11 @@ func runSub(g *globals, sub string, args []string) error {
 			return nil
 		}
 		return helpTool(args[0])
+	case "tui":
+		if len(args) > 0 {
+			return usageError{fmt.Errorf("tui: unexpected argument %q", args[0])}
+		}
+		return cmdTUI(g)
 	case "list":
 		return usageError{errors.New(`"clifr list" is not available; "clifr help" lists the commands and "clifr help COMMAND" their options`)}
 	case "diff":

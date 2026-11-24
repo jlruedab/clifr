@@ -15,6 +15,7 @@ Usage:
   clifr --since TIME [--until TIME] [OPTIONS] "COMMAND [ARGS]"
   clifr diff --at TIME_A --at TIME_B [OPTIONS] "COMMAND [ARGS]"
   clifr info [OPTIONS]
+  clifr tui [--since TIME [--until TIME]]
   clifr help COMMAND
 
 Supported commands:
@@ -110,6 +111,13 @@ Other commands:
                        hourly "seal anchor" log line kept elsewhere) must still
                        be reached. Exit 1 when anything was altered
   clifr export TABLE   one recorded table as CSV
+  clifr tui            browse a window in the terminal (default: the last
+                       hour): CPU, memory, load and I/O pressure over time,
+                       with OOM kills, boots, logins, failed or restarting
+                       units and gaps marked; a cursor moved sample by sample
+                       (arrows; shift: a minute; n/N: the next event) and a
+                       pane with top, ps, ss, lsof, free, vmstat, iostat or
+                       events at the cursor (tab, 1-8); ? lists the keys
 
 Environment variables:
   CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,
