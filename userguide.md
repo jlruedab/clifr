@@ -173,7 +173,11 @@ When you do not yet know *which* moment to ask about, `clifr tui` shows a window
 ```sh
 clifr tui                                                  # the last hour
 clifr --since "2026-11-05 12:30" --until "2026-11-05 14:30" tui
+clifr --since yesterday --until today tui                  # all of yesterday
+clifr --since -72h tui                                     # everything kept (the default retention)
 ```
+
+A long window puts more time in each column (a day on 100 columns: about 15 minutes a column); `z` zooms in around the cursor and `Z` back out, so you can open a day, find the spike and zoom to it.
 
 Here marks A and B are ten minutes apart and the `free` pane compares them (a screen from 24 November, the host renamed):
 
@@ -218,6 +222,7 @@ The line above the keys names the event nearest the cursor. `NO_COLOR` turns col
 | `←` `→` (`h` `l`) | one sample back, forward |
 | `⇧←` `⇧→` (`H` `L`) | one minute |
 | `Home` `End` | the window's first, last sample |
+| `z` `Z` | zoom in to a quarter of the window around the cursor (down to 5 minutes), zoom out to four times it (up to now and the recording's start); the cursor and the marks keep their times |
 | `n` `N` | the next, previous event on the timeline: the sample before it (the state it hit), for a boot the first after |
 | `space` | play: one sample after another, and pause; `+` `-` faster, slower (2 s to 100 ms a sample) |
 | `Tab` `⇧Tab`, `1`–`9` `0` | the next, previous pane; the first ten panes |
@@ -230,7 +235,7 @@ The line above the keys names the event nearest the cursor. `NO_COLOR` turns col
 
 A typical session: open the window around an incident, press `n` until the cursor is on the `✕` or the spike, look at `top` and `ps` there, `m` a quiet sample before it and `m` the bad one, then `d` in the `ps`, `ss` and `events` panes to see what started, connected and happened in between. A filter narrows any of them, for instance `/postgres|pgbouncer` to the database's processes, or `/:5432\b` in `ss` to its connections.
 
-What it does not do: it reads the recording as it was when it started (restart it for newer samples), and each pane runs the command with fixed options; for other options or a range report, quit and use `clifr --at` or `--since`/`--until` with the command you need. It needs a terminal (not a pipe) and holds the window in memory: about 650 MiB for an hour on a desktop, 1.6 GB for three days.
+What it does not do: it reads the recording as it was when it started (restart it, or zoom out, for newer samples), and each pane runs the command with fixed options; for other options or a range report, quit and use `clifr --at` or `--since`/`--until` with the command you need. It needs a terminal (not a pipe) and holds the window in memory: about 650 MiB for an hour on a desktop, 1.6 GB for three days (zooming in keeps the wider window's data; zooming out reads the new window).
 
 ## 3. Advanced usage
 

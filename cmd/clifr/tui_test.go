@@ -472,3 +472,75 @@ func TestTUISpanPane(t *testing.T) {
 		t.Errorf("rendered %d times: the window's kills do not move with the cursor", renders)
 	}
 }
+
+func TestTUIZoom(t *testing.T) {
+	// A recording of 6 hours, a sample every 10 s; the clock at its end.
+	start := time.Date(2026, 11, 23, 10, 0, 0, 0, time.Local).UnixMilli()
+	end := start + 6*3600_000
+	loads := 0
+	u := &tui{width: 100, height: 30, cache: map[tuiKey][]string{}, markA: -1, markB: -1,
+		now: func() int64 { return end }}
+	u.load = func(from, to int64) error {
+		loads++
+		u.from, u.to, u.points = from, to, nil
+		for ts := start; ts <= end; ts += 10_000 {
+			if ts >= from && ts <= to {
+				u.points = append(u.points, tuiPoint{ts: ts})
+			}
+		}
+		u.render = func(pane int, ts int64, width int) []string { return []string{"x"} }
+		return nil
+	}
+	// The last hour, the cursor at 15:30.
+	u.load(end-3600_000, end)
+	u.cur = u.at(start+5*3600_000+1800_000, -1)
+	c := u.points[u.cur].ts
+	u.key("m")
+	u.key("Left")
+	u.key("m") // A 15:29:50, B 15:30:00
+	u.key("Right")
+	u.key("z") // 15 minutes around 15:30
+	if u.to-u.from != 900_000 || u.points[u.cur].ts != c || u.from > c || u.to < c {
+		t.Errorf("z: %s .. %s, cursor %s", query.FormatMS(u.from), query.FormatMS(u.to), query.FormatMS(u.points[u.cur].ts))
+	}
+	if u.markA < 0 || u.markB < 0 || u.points[u.markB].ts != c {
+		t.Errorf("marks after z: %d %d", u.markA, u.markB)
+	}
+	for range 3 {
+		u.key("z")
+	}
+	if u.to-u.from != tuiMinSpan || !strings.Contains(u.msg, "narrowest") {
+		t.Errorf("narrowest: %d ms, %q", u.to-u.from, u.msg)
+	}
+	// Out: 20 minutes, 80, then 5h20 (up to now), then the recording's start.
+	for _, want := range []int64{20 * 60_000, 80 * 60_000, 320 * 60_000} {
+		u.key("Z")
+		if u.to-u.from != want {
+			t.Errorf("Z: %d min, want %d", (u.to-u.from)/60_000, want/60_000)
+		}
+		if u.to > end {
+			t.Errorf("Z past now: %s", query.FormatMS(u.to))
+		}
+	}
+	if u.to != end {
+		t.Errorf("a window up to now stays up to now: %s", query.FormatMS(u.to))
+	}
+	u.key("Z")
+	if u.from != start || u.to != end || u.points[u.cur].ts != c {
+		t.Errorf("whole recording: %s .. %s, cursor %s", query.FormatMS(u.from), query.FormatMS(u.to), query.FormatMS(u.points[u.cur].ts))
+	}
+	u.key("Z")
+	if u.from != start || !strings.Contains(u.msg, "whole recording") {
+		t.Errorf("past the start: %s, %q", query.FormatMS(u.from), u.msg)
+	}
+	// A mark outside the new window goes; B alone becomes A.
+	u.key("Home")
+	u.key("m")
+	u.key("End")
+	u.key("m")
+	u.cur = u.at(end-60_000, -1)
+	u.key("z")
+	if u.markA != -1 && u.points[u.markA].ts != end || u.markB != -1 || u.compare {
+		t.Errorf("marks out of the window: %d %d %v", u.markA, u.markB, u.compare)
+	}
+}

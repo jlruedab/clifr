@@ -127,6 +127,9 @@ type tui struct {
 	// unwritten: the window runs on past the last sample on disk by less
 	// than clifrd's flush interval: shaded as not on disk yet.
 	unwritten bool
+	// load reads the window [from, to] (z, Z); now is the clock.
+	load func(from, to int64) error
+	now  func() int64
 }
 
 // tuiSpeeds are the play speeds, slowest first.
@@ -155,41 +158,142 @@ func cmdTUI(g *globals) error {
 		return err
 	}
 	g.plain = true // the tools print, they do not page
-	db, err := openWindow(g, duck.Window{From: w.From, To: w.To})
-	if err != nil {
-		return err
+	u := &tui{cache: map[tuiKey][]string{}, color: os.Getenv("NO_COLOR") == "", markA: -1, markB: -1, speed: 2,
+		now: func() int64 { return time.Now().UnixMilli() }}
+	var db *store.DB
+	var loaded duck.Window
+	defer func() {
+		if db != nil {
+			db.Close()
+		}
+	}()
+	// load shows [from, to]: a window inside the one loaded reuses it (z),
+	// another is read (Z). Nothing changes on an error.
+	u.load = func(from, to int64) error {
+		d, win := db, loaded
+		if d == nil || from < win.From || to > win.To {
+			nd, err := openWindow(g, duck.Window{From: from, To: to})
+			if err != nil {
+				return err
+			}
+			d, win = nd, duck.Window{From: from, To: to}
+		}
+		pts, err := tuiPoints(d, from, to)
+		if err == nil && len(pts) == 0 {
+			err = fmt.Errorf("tui: no system samples between %s and %s", query.FormatMS(from), query.FormatMS(to))
+		}
+		var marks []tuiMark
+		if err == nil {
+			marks, err = tuiMarks(d, from, to)
+		}
+		if err != nil {
+			if d != db {
+				d.Close()
+			}
+			return err
+		}
+		if d != db {
+			if db != nil {
+				db.Close()
+			}
+			db, loaded = d, win
+		}
+		ev := &tuiEvents{db: d, from: from, to: to}
+		u.from, u.to, u.points, u.marks = from, to, pts, marks
+		u.unwritten = tuiUnwritten(d, pts[len(pts)-1].ts, to, u.now())
+		u.render = func(pane int, ts int64, width int) []string {
+			switch {
+			case tuiPanes[pane].name == "events":
+				return ev.at(ts, 3*u.paneHeight()) // room to scroll
+			case tuiPanes[pane].span:
+				return tuiCaptureSpan(g, d, tuiPanes[pane].cmd, u.from, u.to)
+			}
+			return tuiRender(g, d, pane, ts, width)
+		}
+		u.diff = func(pane int, a, b int64, width int) ([]string, []string) {
+			return tuiCompare(g, d, ev, pane, a, b, width)
+		}
+		clear(u.cache)
+		u.pairs = nil
+		return nil
 	}
-	defer db.Close()
-	u := &tui{from: w.From, to: w.To, cache: map[tuiKey][]string{}, color: os.Getenv("NO_COLOR") == "", markA: -1, markB: -1}
-	if u.points, err = tuiPoints(db, w.From, w.To); err != nil {
-		return err
-	}
-	if len(u.points) == 0 {
-		return fmt.Errorf("tui: no system samples between %s and %s", query.FormatMS(w.From), query.FormatMS(w.To))
-	}
-	if u.marks, err = tuiMarks(db, w.From, w.To); err != nil {
+	if err := u.load(w.From, w.To); err != nil {
 		return err
 	}
 	u.cur = len(u.points) - 1
-	u.speed = 2
-	u.unwritten = tuiUnwritten(db, u.points[u.cur].ts, w.To, time.Now().UnixMilli())
-	ev := &tuiEvents{db: db, from: w.From, to: w.To}
-	u.render = func(pane int, ts int64, width int) []string {
-		switch {
-		case tuiPanes[pane].name == "events":
-			return ev.at(ts, 3*u.paneHeight()) // room to scroll
-		case tuiPanes[pane].span:
-			return tuiCaptureSpan(g, db, tuiPanes[pane].cmd, u.from, u.to)
-		}
-		return tuiRender(g, db, pane, ts, width)
-	}
-	u.diff = func(pane int, a, b int64, width int) ([]string, []string) {
-		return tuiCompare(g, db, ev, pane, a, b, width)
-	}
 	if h := tuiCapture(g, db, "hostname", u.points[u.cur].ts); len(h) > 0 {
 		u.host = strings.TrimSpace(h[0])
 	}
 	return u.run()
+}
+
+// tuiMinSpan is the narrowest window z zooms to.
+const tuiMinSpan = int64(5 * time.Minute / time.Millisecond)
+
+// zoom is z (in: a quarter of the window) and Z (out: four times it),
+// around the cursor; out stops at now and at the recording's first sample.
+// The cursor and the marks keep their times (a mark outside the new window
+// goes).
+func (u *tui) zoom(in bool) {
+	span := u.to - u.from
+	ns := span * 4
+	if in {
+		if span <= tuiMinSpan {
+			u.msg = " z: the narrowest window (5 minutes); Z zooms out"
+			return
+		}
+		ns = max(span/4, tuiMinSpan)
+	}
+	c := u.points[u.cur].ts
+	from := c - ns/2
+	to := from + ns
+	if !in && u.to >= u.now()-time.Minute.Milliseconds() || to > u.now() {
+		to = max(u.to, min(to, u.now())) // a window up to now stays up to now
+		from = to - ns
+	}
+	if in {
+		from, to = max(from, u.from), min(to, u.to)
+		if to-from < ns { // near an end: the quarter at that end
+			if from == u.from {
+				to = from + ns
+			} else {
+				from = to - ns
+			}
+		}
+	}
+	marks := [2]int64{-1, -1}
+	for i, m := range []int{u.markA, u.markB} {
+		if m >= 0 {
+			marks[i] = u.points[m].ts
+		}
+	}
+	if err := u.load(from, to); err != nil {
+		u.msg = " " + err.Error()
+		return
+	}
+	if !in && u.points[0].ts > u.from { // the recording starts later
+		u.from = u.points[0].ts
+		if old := span; u.to-u.from <= old {
+			u.msg = " Z: the whole recording up to the window's end is shown"
+		}
+	}
+	u.cur = u.at(c, -1)
+	u.markA, u.markB = -1, -1
+	for i, ts := range marks {
+		if j := u.at(ts, -1); ts >= 0 && u.points[j].ts == ts {
+			if i == 0 {
+				u.markA = j
+			} else {
+				u.markB = j
+			}
+		}
+	}
+	if u.markA < 0 || u.markB < 0 {
+		u.compare = false
+		if u.markB >= 0 { // B alone is A now
+			u.markA, u.markB = u.markB, -1
+		}
+	}
 }
 
 // tuiUnwritten: the window reaches now, and its last sample is no older
@@ -822,6 +926,8 @@ func (u *tui) key(k string) bool {
 		}
 	case "v":
 		u.stacked, u.scroll = !u.stacked, 0
+	case "z", "Z":
+		u.zoom(k == "z")
 	case "a", "b":
 		if m := map[string]int{"a": u.markA, "b": u.markB}[k]; m >= 0 {
 			u.cur = m
@@ -1089,7 +1195,7 @@ func (u *tui) screen() string {
 	} else {
 		line("")
 	}
-	keys := " ←→ sample  ⇧←→ minute  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
+	keys := " ←→ sample  ⇧←→ minute  z/Z zoom  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
 	if u.prompt != nil {
 		l := fit("/"+termSafe(*u.prompt)+"█   (a regular expression, any case; Enter: filter the pane, empty: no filter; Esc: cancel)", u.width)
 		if u.promptErr != "" {
@@ -1202,6 +1308,9 @@ func (u *tui) tuiHelp() []string {
 		"  ← →  h l       one sample back, forward",
 		"  ⇧← ⇧→  H L     one minute",
 		"  Home End       the window's first, last sample",
+		"  z  Z           zoom in to a quarter of the window around the cursor (down to",
+		"                 5 minutes), zoom out to four times it (up to now and the",
+		"                 recording's start; a wider window takes longer to read)",
 		"  n  N           next, previous event on the timeline (the sample before it)",
 		"  m              mark the sample: A, then B (the later one is B), then A again",
 		"  M              clear the marks",
