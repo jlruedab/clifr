@@ -542,12 +542,31 @@ func BootClockAt(db *store.DB, t int64) (clock, run int64, ok bool) {
 
 // StartShiftAt is what to add to a recorded start time to have it on the
 // clock of t, as a tool run at t computes it (its boot time then plus the
-// process's ticks): 0 without a clock step, or in older recordings.
+// process's ticks): 0 in older recordings. It is the difference at the
+// boot's first sample loaded plus the clock steps from there to t, not the
+// difference at t's sample: boot_ms moves a millisecond or so between
+// samples (the clock and CLOCK_BOOTTIME are read one after the other), and
+// start times that moved with it would make every process look new to
+// ps --changes and clifr diff.
 func StartShiftAt(db *store.DB, t int64) int64 {
-	if clock, run, ok := BootClockAt(db, t); ok {
-		return clock - run
+	boots, err := Boots(db, t)
+	if err != nil || len(boots) == 0 || boots[len(boots)-1].BootMS <= 0 {
+		return 0
 	}
-	return 0
+	b := boots[len(boots)-1]
+	var first, clock sql.NullInt64
+	db.QueryRow(`SELECT min(ts), arg_min(boot_ms, ts) FROM sys_samples WHERE ts >= ? AND ts <= ? AND boot_ms > 0`,
+		b.BootMS, t).Scan(&first, &clock)
+	if !first.Valid || !clock.Valid {
+		return 0
+	}
+	shift := clock.Int64 - b.BootMS
+	for _, s := range clockSteps(db) {
+		if s.ts > first.Int64 && s.ts <= t {
+			shift += s.d
+		}
+	}
+	return shift
 }
 
 // clockStep is a step of the clock while clifrd ran: the boot time on the

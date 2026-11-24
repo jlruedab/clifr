@@ -77,6 +77,28 @@ func TestClockStep(t *testing.T) {
 	}
 }
 
+// TestStartShiftJitter: boot_ms moves a millisecond between samples (the
+// clock and the boot clock are read one after the other) and stays about a
+// second from the run's boot time (measured otherwise at start): no clock
+// step, so the start times stay the same at every sample.
+func TestStartShiftJitter(t *testing.T) {
+	boot := int64(1_790_000_000_300)
+	run := int64(1_790_000_100)
+	base := run * 1000
+	var batches []*store.Batch
+	for i, d := range []int64{-1079, -1080, -1079, -1081} {
+		ts := base + int64(i)*10_000
+		batches = append(batches, &store.Batch{Sample: store.Sample{TS: ts},
+			Sys: []store.SysSample{{TS: ts, UptimeMS: ts - boot - d, BootMS: boot + d, MemTotal: 1000}}})
+	}
+	db := testrec.Open(t, []string{"boot_ms", itoa(boot), "boot_time", itoa(boot / 1000), "boot_id", "b1"}, batches...)
+	for i := range 4 {
+		if got := StartShiftAt(db, base+int64(i)*10_000); got != -1079 {
+			t.Errorf("sample %d: shift %d, want -1079 (the first sample's)", i, got)
+		}
+	}
+}
+
 // TestRebootNotAClockStep: a reboot between two samples moves boot_ms by the
 // time between the boots (under a day here) while the boot clock starts
 // again. That is not a clock step: the new boot's processes keep their
