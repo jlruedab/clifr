@@ -83,7 +83,10 @@ wait for the user's go-ahead.
 - `cmd/clifrd/` — the recorder binary (static, no cgo).
 - `cmd/clifr/` — the query CLI (DuckDB via cgo): `clifr [--at T | --since A --until B] [OPTIONS] "COMMAND [ARGS]"`;
   per-command option tables in `tools.go`, `tools2.go`, `systools.go` (unsupported options
-  are rejected);
+  are rejected); `clifr tui` in `tui.go` (a window's timeline from sys_samples and marks, panes =
+  `tuiPanes`' commands run in-process at the cursor through `tuiRun`/`outOverride`, marks A/B with
+  `clifr diff`'s views, play, filter; the view is the `tui` struct, tested without a terminal),
+  `termloop.go` (raw mode, alternate screen, SIGWINCH, key reader; shared with the pager);
   `--data-dir` Parquet.
 - `internal/procfs/` — /proc parsers (stat, status, cmdline, fd, net/*, meminfo; `system.go`: the
   system-wide stat, loadavg, meminfo, vmstat, diskstats).

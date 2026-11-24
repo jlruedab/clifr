@@ -115,9 +115,11 @@ Other commands:
                        hour): CPU, memory, load and I/O pressure over time,
                        with OOM kills, boots, logins, failed or restarting
                        units and gaps marked; a cursor moved sample by sample
-                       (arrows; shift: a minute; n/N: the next event) and a
-                       pane with top, ps, ss, lsof, free, vmstat, iostat or
-                       events at the cursor (tab, 1-8); ? lists the keys
+                       (arrows; shift: a minute; n/N: the next event; space:
+                       play) and a pane with top, ps, ss, lsof, events, oom
+                       and 11 other commands at the cursor (tab, 1-9 0; /
+                       filters); m marks A and B, d compares them as clifr
+                       diff; ? lists the keys
 
 Environment variables:
   CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,

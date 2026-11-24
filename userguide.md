@@ -14,7 +14,7 @@ To install clifr, see the [installation guide](install.md).
 ## Contents
 
 1. [Concepts](#1-concepts)
-2. [Basic usage](#2-basic-usage)
+2. [Basic usage](#2-basic-usage): [browsing a window: clifr tui](#browsing-a-window-clifr-tui)
 3. [Advanced usage](#3-advanced-usage): [using clifr from an AI agent](#using-clifr-from-an-ai-agent), [sealing](#sealing-showing-that-a-recording-was-not-altered)
 4. [Use cases](#4-use-cases)
    1. [Review a performance issue from yesterday](#use-case-1-review-a-performance-issue-from-yesterday)
@@ -165,6 +165,72 @@ clifr --since "2026-11-05 13:00" --until "2026-11-05 13:30" "vmstat 300"   # one
 ### Reading the output on a terminal
 
 On a terminal, output goes through clifr's pager when it does not fit on the screen. With `--samples` it shows one page per sample: PgDn/`n` and PgUp/`p` move between samples, Home/End to the first and last, `g` jumps to a time, `q` quits. When output is piped (`| grep`, `| less`) or with `--plain`, it is simply printed.
+
+### Browsing a window: `clifr tui`
+
+When you do not yet know *which* moment to ask about, `clifr tui` shows a window of the recording in the terminal (the last hour by default, or `--since`/`--until`): CPU, memory, load and I/O pressure over time, the events that matter marked on a timeline, and below them one of the commands at a cursor you move through the samples.
+
+```sh
+clifr tui                                                  # the last hour
+clifr --since "2026-11-05 12:30" --until "2026-11-05 14:30" tui
+```
+
+Here marks A and B are ten minutes apart and the `free` pane compares them (a screen from 24 November, the host renamed):
+
+```
+ clifr  desktop01  2026-11-24 18:50 – 19:50 ACDT   cursor 19:37:31  A 19:37:31  B 19:47:31
+                                                                          ▼─────────────B
+ CPU    ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁         1%
+ MEM    ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▂▂▂▂▂▂▂▂▂▂        11%
+ LOAD   ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▃▄▂▂▂▂▂▂▇▅▃▃▂▁▁▁▂▁▁▆▃▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▅▃▂▁▁▁▃▃▂▂       0.08
+ PSI io ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁         0%
+ events                                                                                  ┈┈┈┈
+                     19:00         19:10         19:20         19:30         19:40
+  top  ps  ss  lsof  free  vmstat  iostat  events  oom  df  mpstat ›   A → B (d: back, v: layout)
+── A 2026-11-24 19:37:31 ─────────────────────── │ ── B 2026-11-24 19:47:31 ───────────────────────
+               total        used        free     │                total        used        free
+Mem:           62464        7043        9359     │ Mem:           62464       12278        4011
+Swap:           8191           5        8186     │ Swap:           8191           5        8186
+…
+ ←→ sample  ⇧←→ minute  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll
+```
+
+**The timeline.** Each column is a stretch of the window and shows its mean: CPU busy, memory used without the page cache, the 1-minute load (scaled to the window's highest) and the share of time some task waited for I/O (PSI). CPU, MEM and PSI are green, yellow from half, red from three quarters; LOAD is one color, as it is relative. The `▼` above the graphs is the cursor, its values at the right. The *events* row marks, in this order of precedence when several fall in one column:
+
+| Mark | Meaning |
+|---|---|
+| `✕` | OOM kill |
+| `▲` | a systemd unit failed |
+| `↻` | boot |
+| `↺` | a unit restarting (Restart=) |
+| `●` `○` | login, logout |
+| `░` | no samples (clifrd was not running, or the machine was off) |
+| `┈` | not on disk yet: the window runs to now and clifrd writes every few minutes (flush interval) |
+
+The line above the keys names the event nearest the cursor. `NO_COLOR` turns colors off.
+
+**The pane** shows a command at the cursor's sample, as `clifr --at` prints it: `top`, `ps aux`, `ss -tanp`, `lsof -i`, `free -m`, `vmstat`, `iostat -x`, `events` (from a few before the cursor on, `▸` on the first at or after it), `oom` (every kill in the window, with the largest processes then), `df -h`, `mpstat -P ALL`, `iotop -b -o`, `pstree -p`, `dmesg -T` (opens at its end: the messages nearest the cursor), `w`, `containers`, `systemctl list-units --type=service`. When the names do not fit, the tab row shows those around the current one, with `‹ ›` where more are hidden.
+
+**Keys** (`?` shows them in the pane):
+
+| Key | What it does |
+|---|---|
+| `←` `→` (`h` `l`) | one sample back, forward |
+| `⇧←` `⇧→` (`H` `L`) | one minute |
+| `Home` `End` | the window's first, last sample |
+| `n` `N` | the next, previous event on the timeline: the sample before it (the state it hit), for a boot the first after |
+| `space` | play: one sample after another, and pause; `+` `-` faster, slower (2 s to 100 ms a sample) |
+| `Tab` `⇧Tab`, `1`–`9` `0` | the next, previous pane; the first ten panes |
+| `↑` `↓` `PgUp` `PgDn` | scroll the pane |
+| `/` | filter the pane: its header and the lines that contain the text, in any case; `/` then Enter on nothing removes it |
+| `m` | mark the sample: A, then B (the later of the two is B), then A again; `M` clears them, `a` `b` go to them |
+| `d` | compare A and B, and back to the cursor: for `ps`, `ss`, `lsof` and `df` what appeared, went and changed (as [`clifr diff`](#compare-two-moments-clifr-diff)), for `events` the events from A to B, for `oom` the kills from A to B, for the others the output at A and at B side by side |
+| `v` | A and B side by side, or A above B (wide outputs such as `iostat -x` are cut in half the pane) |
+| `q` `Esc` | quit |
+
+A typical session: open the window around an incident, press `n` until the cursor is on the `✕` or the spike, look at `top` and `ps` there, `m` a quiet sample before it and `m` the bad one, then `d` in the `ps`, `ss` and `events` panes to see what started, connected and happened in between.
+
+What it does not do: it reads the recording as it was when it started (restart it for newer samples), and each pane runs the command with fixed options; for other options or a range report, quit and use `clifr --at` or `--since`/`--until` with the command you need. It needs a terminal (not a pipe) and holds the window in memory: about 650 MiB for an hour on a desktop, 1.6 GB for three days.
 
 ## 3. Advanced usage
 

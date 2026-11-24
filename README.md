@@ -631,6 +631,12 @@ in the real tool's syntax. `clifr help` lists the commands, `clifr help
 COMMAND` the options each supports; any other option is rejected. The
 resolved time and time zone and other informational lines go to stderr.
 
+To find the moment first, `clifr tui` browses a window in the terminal (the last hour by
+default): CPU, memory, load and I/O pressure over time with OOM kills, boots, logins and failed
+units marked, and a pane with `top`, `ps`, `ss`, `lsof`, `events` and a dozen other commands at a
+cursor moved sample by sample; two marks compare moments as `clifr diff` does. See the user
+guide's [clifr tui](userguide.md#browsing-a-window-clifr-tui).
+
     clifr --at "02:45" "ps aux"
     clifr --at "02:45" "ps -ef"
     clifr --at "02:45" "ps -u postgres -o pid,rss,etime,args"
