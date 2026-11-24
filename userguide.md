@@ -228,7 +228,7 @@ The line above the keys names the event nearest the cursor. `NO_COLOR` turns col
 | `v` | A and B side by side, or A above B (wide outputs such as `iostat -x` are cut in half the pane) |
 | `q` `Esc` | quit |
 
-A typical session: open the window around an incident, press `n` until the cursor is on the `✕` or the spike, look at `top` and `ps` there, `m` a quiet sample before it and `m` the bad one, then `d` in the `ps`, `ss` and `events` panes to see what started, connected and happened in between.
+A typical session: open the window around an incident, press `n` until the cursor is on the `✕` or the spike, look at `top` and `ps` there, `m` a quiet sample before it and `m` the bad one, then `d` in the `ps`, `ss` and `events` panes to see what started, connected and happened in between. A filter narrows any of them, for instance `/postgres|pgbouncer` to the database's processes, or `/:5432\b` in `ss` to its connections.
 
 What it does not do: it reads the recording as it was when it started (restart it for newer samples), and each pane runs the command with fixed options; for other options or a range report, quit and use `clifr --at` or `--since`/`--until` with the command you need. It needs a terminal (not a pipe) and holds the window in memory: about 650 MiB for an hour on a desktop, 1.6 GB for three days.
 

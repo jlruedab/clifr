@@ -118,8 +118,9 @@ Other commands:
                        (arrows; shift: a minute; n/N: the next event; space:
                        play) and a pane with top, ps, ss, lsof, events, oom
                        and 11 other commands at the cursor (tab, 1-9 0; /
-                       filters); m marks A and B, d compares them as clifr
-                       diff; ? lists the keys
+                       keeps the lines a regular expression matches, any
+                       case); m marks A and B, d compares them as clifr diff;
+                       ? lists the keys
 
 Environment variables:
   CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,
