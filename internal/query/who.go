@@ -555,10 +555,21 @@ func StartShiftAt(db *store.DB, t int64) int64 {
 type clockStep struct{ ts, d int64 }
 
 // clockSteps are the recording's clock steps (moves of sys_samples.boot_ms
-// above 100 ms between consecutive samples of one boot; schema 12).
+// above 100 ms between consecutive samples of one boot; schema 12). A
+// reboot between two samples moves boot_ms too, by the time between the
+// boots: not a step. A reboot is a new boot's first clifrd run starting
+// between the two samples, or the boot clock going back (uptime_ms lower).
 func clockSteps(db *store.DB) []clockStep {
-	rows, err := db.Query(`SELECT ts, d FROM (
-		SELECT ts, boot_ms - lag(boot_ms) OVER (ORDER BY ts) AS d FROM sys_samples WHERE boot_ms > 0)
+	var starts []int64 // when clifrd first ran in each boot after the first
+	if boots, err := Boots(db, openEnd); err == nil {
+		for _, b := range boots[min(1, len(boots)):] {
+			starts = append(starts, b.FirstRun)
+		}
+	}
+	rows, err := db.Query(`SELECT ts, d, pts, up < pup FROM (
+		SELECT ts, boot_ms - lag(boot_ms) OVER w AS d, lag(ts) OVER w AS pts,
+			uptime_ms AS up, lag(uptime_ms) OVER w AS pup
+		FROM sys_samples WHERE boot_ms > 0 WINDOW w AS (ORDER BY ts))
 		WHERE abs(d) > 100 AND abs(d) < 86400000 ORDER BY ts`)
 	if err != nil {
 		return nil
@@ -567,9 +578,13 @@ func clockSteps(db *store.DB) []clockStep {
 	var out []clockStep
 	for rows.Next() {
 		var s clockStep
-		if rows.Scan(&s.ts, &s.d) == nil {
-			out = append(out, s)
+		var pts int64
+		var back bool
+		if rows.Scan(&s.ts, &s.d, &pts, &back) != nil || back ||
+			slices.ContainsFunc(starts, func(r int64) bool { return r > pts && r <= s.ts }) {
+			continue
 		}
+		out = append(out, s)
 	}
 	return out
 }

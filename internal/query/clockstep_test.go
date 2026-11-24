@@ -76,3 +76,38 @@ func TestClockStep(t *testing.T) {
 		t.Errorf("atop btime %d, want %d", a.BTime, want)
 	}
 }
+
+// TestRebootNotAClockStep: a reboot between two samples moves boot_ms by the
+// time between the boots (under a day here) while the boot clock starts
+// again. That is not a clock step: the new boot's processes keep their
+// recorded start times (2026-11-22, desktop: life and events had them 23 h
+// late, after the next boot's samples, and listed them twice).
+func TestRebootNotAClockStep(t *testing.T) {
+	saved := time.Local
+	defer func() { time.Local = saved }()
+	time.Local = time.UTC
+	boot1 := int64(1_790_000_000_000)
+	run := int64(1_790_000_100)
+	base := run * 1000
+	boot2 := base + 5*3_600_000 // rebooted 5 h later
+	sys := func(ts, bootMS int64) store.SysSample {
+		return store.SysSample{TS: ts, UptimeMS: ts - bootMS, BootMS: bootMS, MemTotal: 1000}
+	}
+	p := store.ProcRow{ID: run*1_000_000_000 + 1, PID: 30, StartTime: boot2 + 30_000, PPID: 1, Comm: "new",
+		Cmdline: "new", FirstSeen: boot2 + 60_000, Source: "sample"}
+	db := testrec.Open(t, []string{"boot_ms", itoa(boot1), "boot_time", itoa(boot1 / 1000), "boot_id", "b1"},
+		&store.Batch{Sample: store.Sample{TS: base}, Sys: []store.SysSample{sys(base, boot1)}},
+		&store.Batch{Sample: store.Sample{TS: boot2 + 60_000}, Sys: []store.SysSample{sys(boot2+60_000, boot2)},
+			ProcInserts: []store.ProcRow{p},
+			ProcSamples: []store.ProcSample{{ProcID: p.ID, TS: boot2 + 60_000, State: "S", Threads: 1}}})
+	if s := clockSteps(db); len(s) != 0 {
+		t.Errorf("clock steps %v, want none", s)
+	}
+	life, err := Life(db, base, boot2+60_000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(life) != 1 || life[0].Start != p.StartTime {
+		t.Errorf("life %+v, want one row starting at %d", life, p.StartTime)
+	}
+}
