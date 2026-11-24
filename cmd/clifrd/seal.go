@@ -11,7 +11,7 @@ import (
 )
 
 // sealSetupCmd is `clifrd seal-setup [--new]`: starts sealing the
-// recording's integrity log (docs/sealing.md). The verification key is
+// recording's integrity log. The verification key is
 // printed once, on standard output, and never stored on this host.
 func sealSetupCmd(args []string) error {
 	fs := flag.NewFlagSet("clifrd seal-setup", flag.ExitOnError)

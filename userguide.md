@@ -571,7 +571,7 @@ clifr verify --integrity --seal-key @web01.key --seal-anchor 98d169b8/1234:9f2c1
 
 **Reboots, backups and snapshots.** A reboot needs nothing: clifrd keeps sealing with the key in `/var/lib/clifr/integrity/seal.state`. A backup or VM snapshot, however, contains the key of its moment: whoever has it can forge seals from that moment on, and restoring it brings the old key back. Leave `integrity/seal.state` out of backups and snapshots, or accept that their age limits what sealing proves.
 
-`clifr info` shows whether a recording is sealed (`Sealing: on, chain 98d169b8, last seal …`), and `LOST` when clifrd's key file disappeared or was damaged; then nothing new is sealed until `sudo clifrd seal-setup --new`. The design is in [docs/sealing.md](docs/sealing.md).
+`clifr info` shows whether a recording is sealed (`Sealing: on, chain 98d169b8, last seal …`), and `LOST` when clifrd's key file disappeared or was damaged; then nothing new is sealed until `sudo clifrd seal-setup --new`.
 
 ### Querying another host directly: `--host`
 

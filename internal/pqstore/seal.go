@@ -1,6 +1,6 @@
 package pqstore
 
-// Forward-secure sealing of the integrity log (docs/sealing.md).
+// Forward-secure sealing of the integrity log.
 //
 // `clifrd seal-setup` (SealSetup) draws a random k0, the verification key,
 // prints it once and stores only k1 = evolve(k0) in integrity/seal.state.

@@ -1151,8 +1151,7 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
   writes it (`integrity/DAY.log`); `clifr verify --integrity` checks a
   recording or bundle against it (files without a logged sum are read page by
   page), without DuckDB: 1,842 files (61 MB) read whole in 1 s on the desktop.
-- Sealing (`clifrd seal-setup`, off by default; design in
-  [docs/sealing.md](docs/sealing.md)): after every flush clifrd seals the
+- Sealing (`clifrd seal-setup`, off by default): after every flush clifrd seals the
   integrity log with an HMAC-SHA256 key that it then replaces by a one-way
   successor, so root gained later cannot alter, remove or reorder what was
   sealed before without `clifr verify --integrity --seal-key KEY` reporting
