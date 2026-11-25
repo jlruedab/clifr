@@ -207,11 +207,14 @@ Swap:           8191           5        8186     │ Swap:           8191       
 | `▲` | a systemd unit failed |
 | `↻` | boot |
 | `↺` | a unit restarting (Restart=) |
+| `◆` | in a virtual machine, the memory balloon inflating (the hypervisor took memory back) or deflating; or MemTotal changing (memory hotplug) |
 | `●` `○` | login, logout |
 | `░` | no samples (clifrd was not running, or the machine was off) |
 | `┈` | not on disk yet: the window runs to now and clifrd writes every few minutes (flush interval) |
 
 The line above the keys names the event nearest the cursor. `NO_COLOR` turns colors off.
+
+A balloon is easy to miss otherwise: `free` and `vmstat` show the memory it holds as used, or leave it out of the total, depending on the driver. They print a `# memory balloon:` line when the balloon holds memory or changed in the window. clifrd records the balloon's size since the release after 0.2.0 (schema 16), from `nr_balloon_pages` (Linux 6.14 and later: virtio, VMware, Hyper-V, Xen) or `balloon_inflate` and `balloon_deflate` (older kernels: virtio and VMware). On older kernels a Hyper-V or Xen balloon shows only as MemTotal changing.
 
 **The pane** shows a command at the cursor's sample, as `clifr --at` prints it: `top`, `ps aux`, `ss -tanp`, `lsof -i`, `free -m`, `vmstat`, `iostat -x`, `events` (from a few before the cursor on, `▸` on the first at or after it), `oom` (every kill in the window, with the largest processes then), `df -h`, `mpstat -P ALL`, `iotop -b -o`, `pstree -p`, `dmesg -T` (opens at its end: the messages nearest the cursor), `w`, `containers`, `systemctl list-units --type=service`. When the names do not fit, the tab row shows those around the current one, with `‹ ›` where more are hidden.
 

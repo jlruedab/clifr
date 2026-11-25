@@ -568,6 +568,17 @@ func runToolAt(g *globals, words []string, diff []string) error {
 			query.Header("%s", note)
 		}
 	}
+	// free and vmstat do not show a memory balloon: the memory the hypervisor
+	// took back is in their total and used, or gone from the total.
+	if (t.name == "free" || t.name == "vmstat") && len(c.diffAt) == 0 {
+		from, to := c.w.At, c.w.At
+		if c.w.IsRange() {
+			from, to = c.w.From, c.w.To
+		}
+		if note := query.BalloonNote(c.db, from, to); note != "" {
+			query.Header("%s", note)
+		}
+	}
 	// A moment the recording has nothing for is an error, not an empty or
 	// stale answer.
 	for _, at := range append([]int64{c.w.At}, c.diffAt...) {

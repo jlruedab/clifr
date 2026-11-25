@@ -447,6 +447,11 @@ wait for the user's go-ahead.
   and without COMMAND: inode order. Not recorded: namespaces held only by fds, sockets or bind mounts (lsns 2.39+
   lists them with NPROCS 0), PNS/ONS and -T. Checked as root on the desktop (all the same but those NPROCS 0 lines)
   and four VMs (11 commands, all the same).
+- Memory balloons (schema 16, 2026-11-25): `sys_samples.balloon_pages` (/proc/vmstat nr_balloon_pages,
+  Linux 6.14+, all balloon drivers; -1 without the line), `balloon_inflate`, `balloon_deflate` (since boot;
+  virtio and VMware only). `query.BalloonChanges`: runs of samples where the balloon (pages, else inflate -
+  deflate) or MemTotal moved the same way, within a boot; the tui's `◆` mark and a `# memory balloon:`
+  header on free and vmstat. Checked in the Ubuntu 22.04 VM with `virsh setmem` (8 -> 6 -> 4 -> 8 GiB).
 - `net_counters` (schema 4): every counter of /proc/net/snmp, netstat and snmp6 (nstat names,
   `section` = snmp/netstat section, "" in snmp6, `pos` = file order), at system samples, written when changed and all every
   `store.NetCountersFullMS` (5 min), so a moment needs only the rows of the 5 minutes before it

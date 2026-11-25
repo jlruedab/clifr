@@ -292,6 +292,13 @@ type VMStat struct {
 	// steals (sar adds every pgsteal_ line), promotions and demotions (every
 	// pgdemote_ line summed).
 	PgFree, PgstealAnon, PgstealFile, PgPromoteSuccess, PgDemote uint64
+	// Memory balloons (schema 16): nr_balloon_pages, the pages a balloon
+	// driver holds (virtio, VMware, Hyper-V, Xen; Linux 6.14+, -1 without
+	// the line), and balloon_inflate/deflate, the pages put into and taken
+	// out of a balloon since boot (virtio and VMware, the drivers that use
+	// balloon compaction; 0 without the lines).
+	BalloonPages                   int64
+	BalloonInflate, BalloonDeflate uint64
 }
 
 func (f FS) ReadVMStat() (VMStat, error) {
@@ -299,8 +306,8 @@ func (f FS) ReadVMStat() (VMStat, error) {
 	if err != nil {
 		return VMStat{}, err
 	}
-	var v VMStat
-	dst := map[string]*uint64{"pgpgin": &v.PgpgIn, "pgpgout": &v.PgpgOut, "pswpin": &v.PswpIn,
+	v := VMStat{BalloonPages: -1}
+	dst := map[string]*uint64{"balloon_inflate": &v.BalloonInflate, "balloon_deflate": &v.BalloonDeflate, "pgpgin": &v.PgpgIn, "pgpgout": &v.PgpgOut, "pswpin": &v.PswpIn,
 		"pswpout": &v.PswpOut, "pgfault": &v.PgFault, "pgmajfault": &v.PgMajFault,
 		"compact_stall": &v.CompactStall, "pgmigrate_success": &v.PgmigrateSuccess,
 		"numa_pages_migrated": &v.NumaPagesMigrated, "oom_kill": &v.OOMKill, "zswpin": &v.ZswpIn, "zswpout": &v.ZswpOut,
@@ -322,6 +329,10 @@ func (f FS) ReadVMStat() (VMStat, error) {
 			return
 		}
 		name := string(fs[0])
+		if name == "nr_balloon_pages" {
+			v.BalloonPages = int64(u64(fs[1]))
+			return
+		}
 		if p := dst[name]; p != nil {
 			*p = u64(fs[1])
 			found++

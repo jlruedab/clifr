@@ -25,8 +25,10 @@ import (
 // (2026-11-20): killer_pid, killer_uid, killer_comm in processes (who sent the
 // signal that ended a process); 12-14 (2026-11-21/22): atop, iotop, sar
 // counters; 15 (2026-11-23): the other namespaces of processes (ns_cgroup ..
-// ns_uts) and meta netns_host (lsns). Readers refuse versions newer than theirs.
-const SchemaVersion = 15
+// ns_uts) and meta netns_host (lsns); 16 (2026-11-25): memory balloon counters
+// in sys_samples (balloon_pages, balloon_inflate, balloon_deflate). Readers
+// refuse versions newer than theirs.
+const SchemaVersion = 16
 
 type DB struct {
 	*sql.DB

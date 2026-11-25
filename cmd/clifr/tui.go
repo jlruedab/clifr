@@ -354,7 +354,7 @@ func tuiPoints(db *store.DB, from, to int64) ([]tuiPoint, error) {
 // (the first of this list), and the legend.
 var tuiMarkOrder = []struct{ sym, name, color string }{
 	{"✕", "OOM kill", tuiRed}, {"▲", "unit failed", tuiRed}, {"↻", "boot", tuiYellow},
-	{"↺", "unit restarting", tuiYellow}, {"●", "login", tuiCyan}, {"○", "logout", tuiCyan},
+	{"↺", "unit restarting", tuiYellow}, {"◆", "memory balloon or MemTotal changed", tuiYellow}, {"●", "login", tuiCyan}, {"○", "logout", tuiCyan},
 	{"░", "no samples", tuiDim}, {"┈", "not on disk yet (clifrd writes every few minutes)", tuiDim},
 }
 
@@ -461,6 +461,13 @@ func tuiMarks(db *store.DB, from, to int64) ([]tuiMark, error) {
 		return nil, err
 	}
 	out = append(out, units...)
+	balloons, err := query.BalloonChanges(db, from, to)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range balloons {
+		out = append(out, tuiMark{ts: b.TS, sym: "◆", text: query.BalloonText(b), after: true})
+	}
 	gaps, err := query.Events(db, from, to, nil, map[string]bool{"gap": true})
 	if err != nil {
 		return nil, err

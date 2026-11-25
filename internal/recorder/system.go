@@ -192,6 +192,9 @@ func (r *Recorder) sampleSystem(ts int64, b *store.Batch) {
 		row.PgscanDirectThrottle = int64(v.PgscanDirectThrottle)
 		row.PgFree, row.PgstealAnon, row.PgstealFile = int64(v.PgFree), int64(v.PgstealAnon), int64(v.PgstealFile)
 		row.PgPromote, row.PgDemote = int64(v.PgPromoteSuccess), int64(v.PgDemote)
+		row.BalloonPages, row.BalloonInflate, row.BalloonDeflate = v.BalloonPages, int64(v.BalloonInflate), int64(v.BalloonDeflate)
+	} else {
+		row.BalloonPages = -1
 	}
 	press := r.readPressure(fail)
 	if c, ok := press["cpu"]; ok {

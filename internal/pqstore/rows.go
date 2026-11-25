@@ -562,6 +562,9 @@ type sysRow struct {
 	PSIIOFullAvg10       int64 `parquet:"psi_io_full_avg10"`
 	PSIIOFullAvg60       int64 `parquet:"psi_io_full_avg60"`
 	PSIIOFullAvg300      int64 `parquet:"psi_io_full_avg300"`
+	BalloonPages         int64 `parquet:"balloon_pages"`
+	BalloonInflate       int64 `parquet:"balloon_inflate"`
+	BalloonDeflate       int64 `parquet:"balloon_deflate"`
 }
 
 func sysOf(s *store.SysSample) sysRow {
@@ -577,7 +580,8 @@ func sysOf(s *store.SysSample) sysRow {
 		PgFree: s.PgFree, PgstealAnon: s.PgstealAnon, PgstealFile: s.PgstealFile, PgPromote: s.PgPromote, PgDemote: s.PgDemote,
 		AnonPages: s.AnonPages, KernelStack: s.KernelStack, VmallocUsed: s.VmallocUsed, HugePagesRsvd: s.HugePagesRsvd, HugePagesSurp: s.HugePagesSurp,
 		PSIMemFullAvg10: s.PSIMemFullAvg[0], PSIMemFullAvg60: s.PSIMemFullAvg[1], PSIMemFullAvg300: s.PSIMemFullAvg[2],
-		PSIIOFullAvg10: s.PSIIOFullAvg[0], PSIIOFullAvg60: s.PSIIOFullAvg[1], PSIIOFullAvg300: s.PSIIOFullAvg[2]}
+		PSIIOFullAvg10: s.PSIIOFullAvg[0], PSIIOFullAvg60: s.PSIIOFullAvg[1], PSIIOFullAvg300: s.PSIIOFullAvg[2],
+		BalloonPages: s.BalloonPages, BalloonInflate: s.BalloonInflate, BalloonDeflate: s.BalloonDeflate}
 }
 
 type cpuRow struct {

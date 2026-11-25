@@ -188,6 +188,10 @@ type SysSample struct {
 	AnonPages, KernelStack, VmallocUsed                   int64
 	HugePagesRsvd, HugePagesSurp                          int64
 	PSIMemFullAvg, PSIIOFullAvg                           [3]int64
+	// Schema 16: memory balloons (procfs.VMStat): the pages a balloon holds
+	// (-1: not reported, before Linux 6.14), and the pages put into and taken
+	// out of one since boot (virtio, VMware).
+	BalloonPages, BalloonInflate, BalloonDeflate int64
 }
 
 // CPUCols names CPUSample.T, DiskCols DiskSample.V (the table columns).

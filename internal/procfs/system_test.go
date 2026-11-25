@@ -23,7 +23,8 @@ func TestSystemCounters(t *testing.T) {
 			"Shmem:           1200424 kB\nSReclaimable:    1474496 kB\nHugePages_Total:       0\n",
 		"vmstat": "nr_free_pages 8730717\npgpgin 9966704\npgpgout 17804165\npswpin 5\npswpout 6\npgfault 734874843\npgmajfault 32135\n" +
 			"allocstall_dma 1\nallocstall_normal 2\npgsteal_kswapd 7\npgscan_kswapd 10\npgscan_kswapd_normal 5\npgscan_direct 3\n" +
-			"pgscan_direct_throttle 99\npgscan_anon 50\npgscan_proactive 4\noom_kill 2\ncompact_stall 8\n",
+			"pgscan_direct_throttle 99\npgscan_anon 50\npgscan_proactive 4\noom_kill 2\ncompact_stall 8\n" +
+			"nr_balloon_pages 1024\nballoon_inflate 3000\nballoon_deflate 1976\nballoon_migrate 4\n",
 		"diskstats": "   7       2 loop2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
 			" 259       0 nvme0n1 934 1 5498 15 20 2 300 40 3 13 55 7 8 900 10 11 12\n" +
 			"   8       0 sda 10 0 80 5 0 0 0 0 0 5 5\n",
@@ -69,7 +70,7 @@ func TestSystemCounters(t *testing.T) {
 	}
 	vmWant := VMStat{PgpgIn: 9966704, PgpgOut: 17804165, PswpIn: 5, PswpOut: 6, PgFault: 734874843, PgMajFault: 32135,
 		AllocStall: 3, PgstealKswapd: 7, PgscanKswapd: 15, PgscanDirect: 3, PgscanProactive: 4, OOMKill: 2, CompactStall: 8,
-		PgscanDirectThrottle: 99}
+		PgscanDirectThrottle: 99, BalloonPages: 1024, BalloonInflate: 3000, BalloonDeflate: 1976}
 	if v, err := fs.ReadVMStat(); err != nil || v != vmWant {
 		t.Errorf("vmstat = %+v %v", v, err)
 	}
@@ -246,5 +247,15 @@ func TestParseCtxSwitches(t *testing.T) {
 	}
 	if v, n := parseCtxSwitches([]byte("Name:\tx\n")); v != 0 || n != 0 {
 		t.Errorf("no such lines: %d %d", v, n)
+	}
+}
+
+// Kernels before 6.14 have no nr_balloon_pages: -1, not 0 (no balloon).
+func TestVMStatNoBalloonPages(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "vmstat"), []byte("pgpgin 1\nballoon_inflate 300\nballoon_deflate 100\n"), 0o644)
+	v, err := New(dir).ReadVMStat()
+	if err != nil || v.BalloonPages != -1 || v.BalloonInflate != 300 || v.BalloonDeflate != 100 {
+		t.Errorf("vmstat = %+v %v", v, err)
 	}
 }
