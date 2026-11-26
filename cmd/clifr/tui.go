@@ -217,7 +217,10 @@ func cmdTUI(g *globals) error {
 		u.pairs = nil
 		return nil
 	}
-	if err := u.load(w.From, w.To); err != nil {
+	splash := showSplash(u.color, w.From, w.To)
+	err = u.load(w.From, w.To)
+	splash(err == nil)
+	if err != nil {
 		return err
 	}
 	u.cur = len(u.points) - 1
