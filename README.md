@@ -498,6 +498,14 @@ second. Within a window:
     the budget). Nothing was dropped, skipped or shed; the recorder's CPU
     over those minutes was 2.3% of one core, above its 2% target (a
     `budget_exceeded` guard event).
+    The budget is applied after the kernel's ring buffer (4 MiB for process
+    events), so a short burst could fill that buffer first. Bursts of 2 seconds on
+    the same machine (2026-11-26; fork and exec of `/bin/true` with a 200-byte or
+    4 KiB argument, 8 or 22 workers) reached 24,000 to 25,000 processes a second,
+    75,000 kernel events a second and all the 22 busy CPUs could start, and
+    dropped nothing, with the 4 MiB buffer as with 16 MiB; the 10-second window
+    kept them lite, none shed. Machines with many more CPUs feeding the one
+    reader are not tested.
   - *10,000 a second at most:* this sets most of the recorder's memory
     during a flood. A process is three queued events of 264 bytes each,
     plus its command line. The events are applied every 5 seconds, and
