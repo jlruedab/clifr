@@ -28,6 +28,7 @@ type lifeProc struct {
 	killerPID        sql.NullInt64 // schema 11; 0: the kernel
 	killerUID        sql.NullInt64
 	killerComm       sql.NullString
+	uid              sql.NullInt64
 }
 
 // processesInRange returns processes that existed at some point in [from, to].
@@ -35,7 +36,7 @@ func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 	steps := clockSteps(db) // before the rows: one connection
 	rows, err := db.Query(`
 		SELECT id, pid, ppid, start_time, first_seen, last_seen, ended, comm, cmdline, source,
-		       exit_code, signal, COALESCE(oom_killed, 0), killer_pid, killer_uid, killer_comm
+		       exit_code, signal, COALESCE(oom_killed, 0), killer_pid, killer_uid, killer_comm, uid
 		FROM processes
 		WHERE first_seen <= ?2 AND COALESCE(ended, last_seen, ?3) >= ?1
 		ORDER BY start_time, pid`, from, to, openEnd)
@@ -49,7 +50,7 @@ func processesInRange(db *store.DB, from, to int64) ([]lifeProc, error) {
 		var comm, cmdline string
 		var oom int
 		if err := rows.Scan(&p.id, &p.pid, &p.ppid, &p.start, &p.first, &p.last, &p.ended, &comm, &cmdline, &p.source,
-			&p.exitCode, &p.signal, &oom, &p.killerPID, &p.killerUID, &p.killerComm); err != nil {
+			&p.exitCode, &p.signal, &oom, &p.killerPID, &p.killerUID, &p.killerComm, &p.uid); err != nil {
 			return nil, err
 		}
 		p.oom = oom != 0
@@ -81,6 +82,8 @@ type LifeRow struct {
 	KillerUID     *int64 `json:"killer_uid,omitempty"`
 	KillerComm    string `json:"killer_comm,omitempty"`
 	KillerCommand string `json:"killer_command,omitempty"`
+	// UID: the process's user (effective), when recorded.
+	UID *int64 `json:"uid,omitempty"`
 }
 
 // SentBy is who sent the signal that ended the process: "PID (COMM, USER)",
@@ -131,6 +134,9 @@ func Life(db *store.DB, from, to int64, re *regexp.Regexp) ([]LifeRow, error) {
 			continue
 		}
 		r := LifeRow{Start: p.start, PID: p.pid, PPID: p.ppid, Command: p.command, Source: p.source, OOMKilled: p.oom}
+		if p.uid.Valid && p.uid.Int64 >= 0 {
+			r.UID = &p.uid.Int64
+		}
 		if p.exitCode.Valid {
 			r.ExitCode = &p.exitCode.Int64
 		}

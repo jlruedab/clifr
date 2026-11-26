@@ -1063,8 +1063,9 @@ chooses one; a line on stderr says when a style other than current is used.
   known: `PID (COMM, USER)`, `the kernel` (a fault, a timer or resource
   limit, the terminal's ^C, the OOM killer) or `itself` (`abort()`, `kill
   $$`). The sender is the last process to send that signal before the exit;
-  a handler that re-raises its signal keeps the first sender. `events` adds
-  it to the exit ("SIGTERM from 4321 (bash, root) [its command line]");
+  a handler that re-raises its signal keeps the first sender. `events` shows
+  it in its own SENT BY column beside the exit's STATUS (the sender's command
+  line in `--json`'s `detail`);
   `--json` has `killer_pid` (0: the kernel), `killer_uid`, `killer_comm`,
   `killer_command`. `oom` the OOM kills with the largest processes; `mounts`
   the mount table at a moment or its changes over a range.

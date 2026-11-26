@@ -14,11 +14,24 @@ import (
 
 // Event is one line of the clifr events timeline.
 type Event struct {
-	TS     int64  `json:"ts_ms"`
-	Kind   string `json:"kind"` // start, exit, oom, mount, unmount, remount, gap, skipped, guard
-	Exact  bool   `json:"exact"`
-	PID    int    `json:"pid,omitempty"`
+	TS    int64  `json:"ts_ms"`
+	Kind  string `json:"kind"` // start, exit, oom, mount, unmount, remount, gap, skipped, guard
+	Exact bool   `json:"exact"`
+	PID   int    `json:"pid,omitempty"`
+	// Detail: the whole event as one text (the table's columns together).
 	Detail string `json:"detail"`
+	// The table's columns, for process events (start, exit, oom): PPID, the
+	// user, STATUS (an exit's code, signal name or "OOM"; an OOM kill's RSS),
+	// LIFE (exit: how long it ran; at least that when the exit is bounded by
+	// samples), SENT BY (who sent the fatal signal) and the command line.
+	PPID     int    `json:"ppid,omitempty"`
+	User     string `json:"user,omitempty"`
+	Status   string `json:"status,omitempty"`
+	ExitCode *int64 `json:"exit_code,omitempty"`
+	Signal   string `json:"signal,omitempty"`
+	LifeMS   *int64 `json:"life_ms,omitempty"`
+	SentBy   string `json:"sent_by,omitempty"`
+	Command  string `json:"command,omitempty"`
 }
 
 // killerCmdMax: runes of a signal sender's command line in an exit's
@@ -45,9 +58,14 @@ func Events(db *store.DB, from, to int64, re *regexp.Regexp, kinds map[string]bo
 			return nil, err
 		}
 		for _, r := range rows {
+			user := ""
+			if r.UID != nil {
+				user = UserName(int(*r.UID), false)
+			}
 			if want("start") && r.Start >= from && r.Start <= to {
 				out = append(out, Event{TS: r.Start, Kind: "start", Exact: true, PID: r.PID,
-					Detail: fmt.Sprintf("ppid %d: %s", r.PPID, r.Command)})
+					Detail: fmt.Sprintf("ppid %d: %s", r.PPID, r.Command),
+					PPID:   r.PPID, User: user, Command: r.Command})
 			}
 			// Without an exit event, a process that was not seen again is an
 			// exit only if the recorder took another sample; otherwise the
@@ -66,7 +84,17 @@ func Events(db *store.DB, from, to int64, re *regexp.Regexp, kinds map[string]bo
 				if r.EndKind == "after" {
 					d = "between this sample and the next, " + d
 				}
-				out = append(out, Event{TS: r.End, Kind: "exit", Exact: r.EndKind == "exact", PID: r.PID, Detail: d})
+				e := Event{TS: r.End, Kind: "exit", Exact: r.EndKind == "exact", PID: r.PID, Detail: d,
+					PPID: r.PPID, User: user, Status: r.Exit(), ExitCode: r.ExitCode, SentBy: r.SentBy(), Command: r.Command}
+				if r.Signal != nil {
+					e.Signal = r.Exit()
+					if r.OOMKilled {
+						e.Signal = "SIGKILL"
+					}
+				}
+				life := r.Duration
+				e.LifeMS = &life
+				out = append(out, e)
 			}
 		}
 	}
@@ -78,7 +106,8 @@ func Events(db *store.DB, from, to int64, re *regexp.Regexp, kinds map[string]bo
 		for _, k := range kills {
 			if re == nil || re.MatchString(k.Command) {
 				out = append(out, Event{TS: k.TS, Kind: "oom", Exact: true, PID: k.PID,
-					Detail: fmt.Sprintf("RSS %d kB: %s", k.RSSKB, k.Command)})
+					Detail: fmt.Sprintf("RSS %d kB: %s", k.RSSKB, k.Command),
+					Status: "RSS " + shortKB(k.RSSKB), Command: k.Command})
 			}
 		}
 	}
@@ -208,18 +237,81 @@ func recorderGaps(db *store.DB, from, to int64, gaps, skipped bool) ([]Event, er
 	return out, rows.Err()
 }
 
-// PrintEvents prints the timeline; "~" marks times bounded by samples.
+// PrintEvents prints the timeline as a table; "~" marks times bounded by
+// samples, ">" a lifetime known to be at least that. SENT BY is as wide as
+// its widest value, and left out when no event has a sender.
 func PrintEvents(w io.Writer, evs []Event) {
-	fmt.Fprintf(w, "%-24s %-8s %7s %s\n", "TIME", "EVENT", "PID", "DETAIL")
+	by := 0
+	for _, e := range evs {
+		by = max(by, len([]rune(e.SentBy)))
+	}
+	if by > 0 {
+		by = max(by, len("SENT BY"))
+	}
+	PrintEventsWidth(w, evs, by)
+}
+
+// EventsHeader is the table's header with a SENT BY column of width by (0:
+// none).
+func EventsHeader(by int) string {
+	return eventsLine("TIME", "EVENT", "PID", "PPID", "USER", "STATUS", "LIFE", "SENT BY", "COMMAND / DETAIL", by)
+}
+
+// PrintEventsWidth prints the table with a fixed SENT BY width (0: no such
+// column; a longer value is cut): the tui prints one event at a time.
+func PrintEventsWidth(w io.Writer, evs []Event, by int) {
+	fmt.Fprintln(w, EventsHeader(by))
 	for _, e := range evs {
 		t := time.UnixMilli(e.TS).Format(msLayout)
 		if !e.Exact {
 			t = "~" + t
 		}
-		pid := "-"
+		pid, ppid := "-", "-"
 		if e.PID != 0 {
 			pid = fmt.Sprint(e.PID)
 		}
-		fmt.Fprintf(w, "%-24s %-8s %7s %s\n", t, e.Kind, pid, strings.TrimSpace(e.Detail))
+		if e.PPID != 0 {
+			ppid = fmt.Sprint(e.PPID)
+		}
+		user := e.User
+		if user == "" {
+			user = "-"
+		} else if r := []rune(user); len(r) > 8 {
+			user = string(r[:7]) + "+" // as ps cuts names
+		}
+		status, life, sentBy := e.Status, "", e.SentBy
+		if e.LifeMS != nil {
+			life = fmtDur(*e.LifeMS)
+			if !e.Exact {
+				life = ">" + life
+			}
+		}
+		if r := []rune(sentBy); by > 0 && len(r) > by {
+			sentBy = string(r[:by-1]) + "+"
+		}
+		text := e.Command
+		if text == "" {
+			text = strings.TrimSpace(e.Detail)
+		}
+		fmt.Fprintln(w, eventsLine(t, e.Kind, pid, ppid, user, status, life, sentBy, text, by))
 	}
+}
+
+func eventsLine(t, kind, pid, ppid, user, status, life, sentBy, text string, by int) string {
+	l := fmt.Sprintf("%-24s %-7s %7s %7s %-8s %-9s %7s ", t, kind, pid, ppid, user, status, life)
+	if by > 0 {
+		l += fmt.Sprintf("%-*s ", by, sentBy)
+	}
+	return l + text
+}
+
+// shortKB is a size in KiB as top prints memory: 812K, 512M, 3.2G.
+func shortKB(kb int64) string {
+	switch {
+	case kb >= 1<<20:
+		return fmt.Sprintf("%.1fG", float64(kb)/(1<<20))
+	case kb >= 1<<10:
+		return fmt.Sprintf("%dM", kb>>10)
+	}
+	return fmt.Sprintf("%dK", kb)
 }

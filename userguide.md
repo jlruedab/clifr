@@ -316,14 +316,15 @@ clifr diff --at "1 hour ago" --at "10 minutes ago" --json "ss -tnp" | jq -c '{ch
 `events` is a timeline of everything recorded as an event: process starts and exits, OOM kills, mounts, recorder gaps, skipped samples and the recorder's guard events:
 
 ```console
-$ clifr --since "2026-11-06 20:00" --until "2026-11-06 20:05" events
-TIME                     EVENT        PID DETAIL
-2026-11-06 20:00:09.911  start     597232 ppid 1: sh -c ENABLED=false; [ -r /etc/default/sysstat ] && …
-2026-11-06 20:00:09.931  start     597234 ppid 1: /usr/libexec/sysstat/sadc -F -L -S DISK 1 1 /var/log/sysstat
-2026-11-06 20:00:09.933  exit      597232 0 after 22ms: sh -c ENABLED=false; …
-2026-11-06 20:00:09.993  exit      597234 0 after 62ms: /usr/libexec/sysstat/sadc -F -L -S DISK 1 1 /var/log/sysstat
-…
+$ clifr --since "2026-11-23 18:35:03" --until "2026-11-23 18:35:05" "events --name dbus-daemon"
+TIME                     EVENT       PID    PPID USER     STATUS       LIFE SENT BY                     COMMAND / DETAIL
+2026-11-23 18:35:03.603  start   2023234    5563 alice                                                  /usr/bin/dbus-daemon --session --address=syste …
+2026-11-23 18:35:03.649  exit    2023234    5563 alice    SIGKILL      46ms 5563 (dbus-daemon, alice)   /usr/bin/dbus-daemon --session --address=syste …
+2026-11-23 18:35:04.023  start   2023288    5563 alice                                                  /usr/bin/dbus-daemon --session --address=syste …
+2026-11-23 18:35:04.127  exit    2023288    5563 alice    SIGKILL     104ms 5563 (dbus-daemon, alice)   /usr/bin/dbus-daemon --session --address=syste …
 ```
+
+The columns: the parent's PID, the user, STATUS (an exit's code, or the signal that ended it, or `OOM`; an OOM kill's RSS), LIFE (how long the process ran, `>` when the exit is known only between two samples, its time then marked `~`), SENT BY (who sent the fatal signal, when known) and last the command line, or for the other events what happened. Only the last column is cut when the line is too long. SENT BY appears when some event in the list has a sender; the sender's own command line is in `--json` (`detail`) and in `clifr life --json` (`killer_command`).
 
 Filter it with `--name REGEX` (matched against the command line) and `--type start,exit,oom,mount,unmount,remount,gap,skipped,guard`.
 
@@ -332,7 +333,7 @@ A hung NFS server shows up there too: when statfs of a mount does not answer wit
 A clock corrected while clifrd runs shows up as a `clock_step` guard event, typically the first time synchronization after a boot, when clifrd has already started. The recorded times before it are on the old clock; clifr prints process start times as a tool run at the moment asked for would print them (on the corrected clock after the step), and in `life` on the clock of the moment each process started:
 
 ```
-2026-11-21 10:58:50.906  guard          - clock_step: the clock moved +1.493 s (boot time 10:58:08.926 -> 10:58:10.419)
+2026-11-21 10:58:50.906  guard         -       - -                                - -                          clock_step: the clock moved +1.493 s (boot time 10:58:08.926 -> 10:58:10.419)
 ```
 
 A flood of processes or connections shows up as `events_shed` guard events: above clifrd's [event budget](#clifrd-the-configuration-file), process events are recorded with less detail or only counted, and each event says how many, and from which users and commands. The lists that cover that time say so in a header line:
@@ -341,9 +342,9 @@ A flood of processes or connections shows up as `events_shed` guard events: abov
 $ clifr --since "2026-11-11 01:33" --until "2026-11-11 01:34" "events --type guard"
 # 2 events 2026-11-11 01:33:00 .. 2026-11-11 01:34:00
 # incomplete: process events (fork, exec) above clifrd's event budget were recorded without command lines or only counted (2026-11-11 01:33:03 .. 2026-11-11 01:34:33; clifr events --type guard says how many and from whom)
-TIME                     EVENT        PID DETAIL
-2026-11-11 01:33:03.545  guard          - events_shed: processes: 162741 only counted, 220711 without /proc reads, command lines cut to 256 bytes of 442928 process events (fork, exec) since 01:32:33 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); 16523 of those only counted because the recorder's heap was above the memory guard; most from: uid 1000 flood 244456, uid 1000 true 138957, uid 0 watch.sh 39
-2026-11-11 01:33:33.545  guard          - events_shed: processes: 114545 only counted, 237981 without /proc reads, command lines cut to 256 bytes of 412002 process events (fork, exec) since 01:33:03 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); most from: uid 1000 flood 204509, uid 1000 true 147978, uid 0 watch.sh 39
+TIME                     EVENT       PID    PPID USER     STATUS       LIFE COMMAND / DETAIL
+2026-11-11 01:33:03.545  guard         -       - -                                - -                          events_shed: processes: 162741 only counted, 220711 without /proc reads, command lines cut to 256 bytes of 442928 process events (fork, exec) since 01:32:33 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); 16523 of those only counted because the recorder's heap was above the memory guard; most from: uid 1000 flood 244456, uid 1000 true 138957, uid 0 watch.sh 39
+2026-11-11 01:33:33.545  guard         -       - -                                - -                          events_shed: processes: 114545 only counted, 237981 without /proc reads, command lines cut to 256 bytes of 412002 process events (fork, exec) since 01:33:03 (budget: 4000/s in full, 1024 KiB/s of command lines, 10000/s at most); most from: uid 1000 flood 204509, uid 1000 true 147978, uid 0 watch.sh 39
 ```
 
 That was a test: user 1000 ran a program (`flood`) that started `/bin/true` 8,700 times a second with a different 4 KB argument each time. The first numbers say how much was lost; "most from" says who did it (`flood` is the forks, `true` the execs; `watch.sh` was the test's own monitoring script, caught in the same seconds).
@@ -356,7 +357,7 @@ START                   END                        DURATION     PID    PPID EXIT
 2026-11-04 09:09:00.496 >2026-11-04 20:30:30.386 >11h21m30s    3089       1 0       sample sshd: /usr/sbin/sshd -D [listener] …
 ```
 
-When a signal ended a process, a `SENT BY` column says who sent it (recorded since 2026-11-20): `4321 (bash, root)` for a process, `the kernel` for a fault, a timer or resource limit, the terminal's ^C or the OOM killer, `itself` for `abort()` or `kill $$`. `events` puts the sender's command line after it. It is `-` when the sender is unknown: an older recording, a kernel without BTF tracing programs (`clifrd doctor` says which it uses), or clifrd on the proc connector fallback.
+When a signal ended a process, a `SENT BY` column says who sent it (recorded since 2026-11-20): `4321 (bash, root)` for a process, `the kernel` for a fault, a timer or resource limit, the terminal's ^C or the OOM killer, `itself` for `abort()` or `kill $$`. `events` shows it in its SENT BY column. It is `-` when the sender is unknown: an older recording, a kernel without BTF tracing programs (`clifrd doctor` says which it uses), or clifrd on the proc connector fallback.
 
 `SOURCE ebpf` means start and end are exact. `sample` means the process was seen only at samples (it was already running when the recording started, or the end was not observed), and `>t` means it ended after `t` and before the next sample.
 
@@ -1191,14 +1192,14 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
    reboot   system boot  7.0.0-42-generic Thu Nov  5 09:22:41 2026   still running
    reboot   system boot  7.0.0-42-generic Wed Nov  4 09:08:53 2026 - Wed Nov  4 20:30:30 2026  (11:21)
    $ clifr --since "2026-11-04" "events --type gap"
-   2026-11-04 20:30:30.386  gap            - no samples for 12h52m18s, until 2026-11-05 09:22:48
+   2026-11-04 20:30:30.386  gap           -       - -                          no samples for 12h52m18s, until 2026-11-05 09:22:48
    ```
 
    The previous boot's recording ends at 20:30:30. When clifrd did not stop cleanly in that boot (the machine went down without a shutdown), `last` prints `- crash` instead of the end time (the real `last` has no record of the crash and would run that boot on to the next shutdown; the logins open then say `- crash` in both), and the next start of clifrd recorded an `unclean_stop` guard event that says so and when the last sample on disk was:
 
    ```console
    $ clifr --since "2026-11-05 09:00" "events --type guard"
-   2026-11-05 09:22:48.120  guard          - unclean_stop: the previous run (started 2026-11-04 09:09:20 ACDT) ended without a clean stop: the system went down without a clean shutdown (a crash, a power loss or a reset); last sample on disk at 2026-11-04 20:30:30 ACDT (what came after it, up to 5m0s, was lost)
+   2026-11-05 09:22:48.120  guard         -       - -                          unclean_stop: the previous run (started 2026-11-04 09:09:20 ACDT) ended without a clean stop: the system went down without a clean shutdown (a crash, a power loss or a reset); last sample on disk at 2026-11-04 20:30:30 ACDT (what came after it, up to 5m0s, was lost)
    ```
 
    If clifrd alone was killed (the system kept running), the event says that instead. Recordings made before clifrd wrote clean-stop markers have neither.
@@ -1225,7 +1226,7 @@ sudo ausearch -m EXECVE -ts 11/05/2026 13:00:00 -te 11/05/2026 14:00:00 -ui 0 -i
 
    ```console
    $ clifr --since "2026-11-05 09:00" "events --type guard"
-   2026-11-05 09:22:48.130  guard          - pstore: kernel crash records of the previous boot (pstore, 1 files: dmesg-efi-173100000001001): Kernel panic - not syncing: ...; 412 lines stored (clifr pstore)
+   2026-11-05 09:22:48.130  guard         -       - -                          pstore: kernel crash records of the previous boot (pstore, 1 files: dmesg-efi-173100000001001): Kernel panic - not syncing: ...; 412 lines stored (clifr pstore)
    $ clifr pstore
    == dmesg-efi-173100000001001, boot 3f2a9c1e, saved 2026-11-04 20:31:02: Kernel panic - not syncing: ...
    <6>[40102.311512] ...

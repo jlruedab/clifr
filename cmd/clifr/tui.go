@@ -601,6 +601,10 @@ type tuiEventSpan struct {
 	err    error
 }
 
+// tuiSentBy: the events pane's SENT BY width (the pane prints one event
+// at a time, so its columns cannot be sized to the window's events).
+const tuiSentBy = 24
+
 const (
 	tuiEventsBefore = 3                                          // events shown before the cursor's
 	tuiEventsSpan   = int64(10 * time.Minute / time.Millisecond) // read this much at a time
@@ -629,7 +633,7 @@ func (e *tuiEvents) span(start int64) tuiEventSpan {
 			}
 			var b bytes.Buffer
 			t := &termWriter{w: &b}
-			query.PrintEvents(t, []query.Event{ev})
+			query.PrintEventsWidth(t, []query.Event{ev}, tuiSentBy)
 			t.Flush()
 			l := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
 			sp.header = l[0]
@@ -655,7 +659,7 @@ func (e *tuiEvents) at(ts int64, rows int) []string {
 			break
 		}
 	}
-	header := "TIME                     EVENT        PID DETAIL"
+	header := query.EventsHeader(tuiSentBy)
 	var after []string
 	marked := false
 	for s := start; s <= min(e.to, start+tuiEventsLook) && len(after) < rows; s += tuiEventsSpan {
@@ -690,7 +694,7 @@ func (e *tuiEvents) at(ts int64, rows int) []string {
 
 // between lists the events from a to b, at most limit of them.
 func (e *tuiEvents) between(a, b int64, limit int) []string {
-	header := "TIME                     EVENT        PID DETAIL"
+	header := query.EventsHeader(tuiSentBy)
 	var lines []string
 	more := false
 	for s := a - (a-e.from)%tuiEventsSpan; s <= b && !more; s += tuiEventsSpan {

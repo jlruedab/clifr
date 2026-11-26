@@ -479,7 +479,10 @@ func eventsTool() *tool {
 		},
 		notes: []string{
 			"Without --since: the whole recording. Times are exact (events) except exits marked ~:",
-			"those happened between the sample shown and the next.",
+			"those happened between the sample shown and the next (LIFE then starts with >).",
+			"STATUS: an exit's code, the signal that ended it, or OOM; an OOM kill's RSS. SENT BY:",
+			"who sent that signal (shown when some event has a sender; its command line is in",
+			"--json's detail). The last column, cut when too long: the command line, or what happened.",
 		},
 		examples: []string{`clifr --since "1 hour ago" events`, `clifr --since today "events --type oom,gap"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
