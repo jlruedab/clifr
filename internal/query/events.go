@@ -107,7 +107,7 @@ func Events(db *store.DB, from, to int64, re *regexp.Regexp, kinds map[string]bo
 			if re == nil || re.MatchString(k.Command) {
 				out = append(out, Event{TS: k.TS, Kind: "oom", Exact: true, PID: k.PID,
 					Detail: fmt.Sprintf("RSS %d kB: %s", k.RSSKB, k.Command),
-					Status: "RSS " + shortKB(k.RSSKB), Command: k.Command})
+					Status: "RSS " + shortKB(k.RSSKB), Command: k.Command, PPID: k.PPID, User: k.User})
 			}
 		}
 	}

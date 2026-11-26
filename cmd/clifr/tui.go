@@ -410,8 +410,11 @@ func tuiMarks(db *store.DB, from, to int64) ([]tuiMark, error) {
 		return nil, err
 	}
 	for _, k := range kills {
-		out = append(out, tuiMark{ts: k.TS, sym: "✕",
-			text: fmt.Sprintf("OOM kill: PID %d, %s: %s", k.PID, tuiSize(k.RSSKB), k.Command)})
+		t := fmt.Sprintf("OOM kill: PID %d, %s: %s", k.PID, tuiSize(k.RSSKB), k.Command)
+		if k.Constraint == "cgroup" {
+			t = fmt.Sprintf("OOM kill at a cgroup's limit: PID %d, %s: %s", k.PID, tuiSize(k.RSSKB), k.Command)
+		}
+		out = append(out, tuiMark{ts: k.TS, sym: "✕", text: t})
 	}
 	boots, err := query.Boots(db, to)
 	if err != nil {

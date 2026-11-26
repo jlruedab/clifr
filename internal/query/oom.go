@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	"clifr/internal/store"
 )
@@ -21,8 +22,22 @@ type OOMKill struct {
 	Snapshot bool   `json:"snapshot"` // ps shows the victim with that RSS from the kill on
 	// FromLog: known only from the kernel log's "Killed process" line (no
 	// OOM event recorded: clifrd without eBPF), its time the line's.
-	FromLog bool      `json:"from_kernel_log,omitempty"`
-	Top     []OOMProc `json:"top_rss"`
+	FromLog bool `json:"from_kernel_log,omitempty"`
+	// The victim's parent and user, when recorded.
+	PPID int    `json:"ppid,omitempty"`
+	User string `json:"user,omitempty"`
+	// From the kernel's report (its "oom-kill:" line, Linux 4.19+, and the
+	// memory cgroup's "memory: usage ..., limit ..." line): Constraint is
+	// "system" (the machine was out of memory), "cgroup" (a memory cgroup
+	// reached its limit: Cgroup, LimitKB, UsageKB), "cpuset" or
+	// "mempolicy"; "" when the report was not recorded.
+	Constraint string `json:"constraint,omitempty"`
+	Cgroup     string `json:"cgroup,omitempty"`
+	LimitKB    int64  `json:"limit_kb,omitempty"`
+	UsageKB    int64  `json:"usage_kb,omitempty"`
+	// Top: the processes using the most memory at the kill, in Cgroup
+	// (and its children) for a cgroup's kill, else on the machine.
+	Top []OOMProc `json:"top_rss"`
 }
 
 type OOMProc struct {
@@ -35,7 +50,7 @@ type OOMProc struct {
 // OOMKills lists the kills in [from, to], each with the top n processes by RSS.
 func OOMKills(db *store.DB, from, to int64, n int) ([]OOMKill, error) {
 	rows, err := db.Query(`
-		SELECT o.ts, o.pid, o.comm, COALESCE(p.cmdline, ''), o.rss_kb, o.snapshot
+		SELECT o.ts, o.pid, o.comm, COALESCE(p.cmdline, ''), o.rss_kb, o.snapshot, COALESCE(p.ppid, 0), p.uid
 		FROM oom_events o
 		LEFT JOIN processes p ON p.pid = o.pid AND p.start_time = o.start_time
 		WHERE o.ts >= ?1 AND o.ts <= ?2
@@ -48,9 +63,13 @@ func OOMKills(db *store.DB, from, to int64, n int) ([]OOMKill, error) {
 		var k OOMKill
 		var comm, cmdline string
 		var snap int
-		if err := rows.Scan(&k.TS, &k.PID, &comm, &cmdline, &k.RSSKB, &snap); err != nil {
+		var uid sql.NullInt64
+		if err := rows.Scan(&k.TS, &k.PID, &comm, &cmdline, &k.RSSKB, &snap, &k.PPID, &uid); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if uid.Valid && uid.Int64 >= 0 {
+			k.User = UserName(int(uid.Int64), false)
 		}
 		k.Command, k.Snapshot = commandOf(cmdline, comm, ""), snap != 0
 		out = append(out, k)
@@ -66,9 +85,24 @@ func OOMKills(db *store.DB, from, to int64, n int) ([]OOMKill, error) {
 		}
 	}
 	slices.SortStableFunc(out, func(a, b OOMKill) int { return int(a.TS - b.TS) })
+	reports := oomReports(db, from, to)
 	for i := range out {
+		k := &out[i]
+		for _, r := range reports {
+			if r.pid == k.PID && r.ts-k.TS < 10_000 && k.TS-r.ts < 10_000 {
+				k.Constraint, k.Cgroup, k.LimitKB, k.UsageKB = r.constraint, r.memcg, r.limitKB, r.usageKB
+				if k.User == "" && r.uid >= 0 {
+					k.User = UserName(r.uid, false)
+				}
+				break
+			}
+		}
 		if n > 0 {
-			if out[i].Top, err = topRSS(db, out[i].TS, n); err != nil {
+			cg := ""
+			if k.Constraint == "cgroup" {
+				cg = k.Cgroup
+			}
+			if k.Top, err = topRSS(db, k.TS, n, cg); err != nil {
 				return nil, err
 			}
 		}
@@ -76,19 +110,95 @@ func OOMKills(db *store.DB, from, to int64, n int) ([]OOMKill, error) {
 	return out, nil
 }
 
-// topRSS: processes alive at t with their latest RSS at or before t.
-func topRSS(db *store.DB, t int64, n int) ([]OOMProc, error) {
+// oomReport is what the kernel's OOM report says about a kill.
+type oomReport struct {
+	ts, limitKB, usageKB int64
+	pid, uid             int
+	constraint, memcg    string
+}
+
+// oomKillLine: the report's summary line (oom_kill.c, dump_oom_summary,
+// Linux 4.19+): "oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),
+// cpuset=...,mems_allowed=0,oom_memcg=/a/b,task_memcg=/a/b,task=python3,
+// pid=481875,uid=1000" (oom_memcg only for a cgroup's kill).
+var (
+	oomKillLine   = regexp.MustCompile(`^oom-kill:constraint=CONSTRAINT_(\w+),.*?(?:,oom_memcg=([^,]*))?,task_memcg=[^,]*,task=.*,pid=(\d+),uid=(\d+)`)
+	oomUsageLine  = regexp.MustCompile(`^memory: usage (\d+)kB, limit (\d+)kB`)
+	oomConstraint = map[string]string{"NONE": "system", "MEMCG": "cgroup", "CPUSET": "cpuset", "MEMORY_POLICY": "mempolicy"}
+)
+
+// oomReports reads the OOM reports in the recorded kernel log around
+// [from, to]; none when the log was not recorded.
+func oomReports(db *store.DB, from, to int64) []oomReport {
+	recs, err := KmsgBetween(db, from-60_000, to+60_000)
+	if err != nil {
+		return nil
+	}
+	var out []oomReport
+	var usage, limit int64
+	for _, r := range recs {
+		switch {
+		case strings.Contains(r.Msg, " invoked oom-killer: "): // a new report
+			usage, limit = 0, 0
+		case strings.HasPrefix(r.Msg, "memory: usage "):
+			if m := oomUsageLine.FindStringSubmatch(r.Msg); m != nil {
+				usage, _ = strconv.ParseInt(m[1], 10, 64)
+				limit, _ = strconv.ParseInt(m[2], 10, 64)
+			}
+		case strings.HasPrefix(r.Msg, "oom-kill:"):
+			m := oomKillLine.FindStringSubmatch(r.Msg)
+			if m == nil {
+				continue
+			}
+			rep := oomReport{ts: r.TS, constraint: oomConstraint[m[1]], memcg: m[2], uid: -1}
+			if rep.constraint == "" {
+				rep.constraint = strings.ToLower(m[1])
+			}
+			rep.pid, _ = strconv.Atoi(m[3])
+			rep.uid, _ = strconv.Atoi(m[4])
+			if rep.constraint == "cgroup" {
+				rep.usageKB, rep.limitKB = usage, limit
+			}
+			out = append(out, rep)
+		}
+	}
+	return out
+}
+
+// inCgroup: a process's recorded cgroup (/proc/PID/cgroup's lines) is cg or
+// below it, in the unified hierarchy or v1's memory controller.
+func inCgroup(lines, cg string) bool {
+	for _, l := range strings.Split(lines, "\n") {
+		f := strings.SplitN(l, ":", 3)
+		if len(f) != 3 || f[1] != "" && !slices.Contains(strings.Split(f[1], ","), "memory") {
+			continue
+		}
+		if f[2] == cg || strings.HasPrefix(f[2], strings.TrimSuffix(cg, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// topRSS: processes alive at t with their latest RSS at or before t; in
+// cgroup cg (and below) when cg is set.
+func topRSS(db *store.DB, t int64, n int, cg string) ([]OOMProc, error) {
+	limit := n
+	if cg != "" {
+		limit = 4*n + 50 // room for LIKE's false matches, dropped below
+	}
 	s, err := SnapshotAt(db, t, false)
 	if err != nil {
 		return nil, nil // the kill came before the first sample
 	}
 	rows, err := db.Query(`
-		SELECT p.pid, p.comm, p.cmdline, x.rss_kb, x.ts
+		SELECT p.pid, p.comm, p.cmdline, x.rss_kb, x.ts, COALESCE(p.cgroup, '')
 		FROM processes p JOIN proc_samples x ON x.proc_id = p.id
 		WHERE p.first_seen <= ?2 AND COALESCE(p.last_seen, ?3) >= ?2
 		  AND x.ts = (SELECT MAX(ts) FROM proc_samples WHERE proc_id = p.id AND ts <= ?1)
+		  AND (?5 = '' OR p.cgroup LIKE '%' || ?5 || '%')
 		ORDER BY x.rss_kb DESC, p.pid
-		LIMIT ?4`, t, s, openEnd, n)
+		LIMIT ?4`, t, s, openEnd, limit, cg)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +206,17 @@ func topRSS(db *store.DB, t int64, n int) ([]OOMProc, error) {
 	var out []OOMProc
 	for rows.Next() {
 		var p OOMProc
-		var comm, cmdline string
-		if err := rows.Scan(&p.PID, &comm, &cmdline, &p.RSSKB, &p.SampleTS); err != nil {
+		var comm, cmdline, cgroup string
+		if err := rows.Scan(&p.PID, &comm, &cmdline, &p.RSSKB, &p.SampleTS, &cgroup); err != nil {
 			return nil, err
 		}
+		if cg != "" && !inCgroup(cgroup, cg) { // the LIKE matched elsewhere in the text
+			continue
+		}
 		p.Command = commandOf(cmdline, comm, "")
-		out = append(out, p)
+		if out = append(out, p); len(out) == n {
+			break
+		}
 	}
 	return out, rows.Err()
 }
@@ -115,14 +230,46 @@ func PrintOOM(w io.Writer, kills []OOMKill) {
 		if i > 0 {
 			fmt.Fprintln(w)
 		}
-		fmt.Fprintf(w, "%s  OOM kill: pid %d, RSS at the kill %d kB  %s\n",
-			FormatMS(k.TS), k.PID, k.RSSKB, k.Command)
+		ppid, user, limit := "-", k.User, k.Constraint
+		if k.PPID != 0 {
+			ppid = fmt.Sprint(k.PPID)
+		}
+		if user == "" {
+			user = "-"
+		} else if r := []rune(user); len(r) > 8 {
+			user = string(r[:7]) + "+"
+		}
+		if limit == "" {
+			limit = "-"
+		}
+		fmt.Fprintf(w, "%-19s %7s %7s %-8s %10s %-9s %s\n", "OOM KILL", "PID", "PPID", "USER", "RSS_KB", "LIMIT", "COMMAND")
+		fmt.Fprintf(w, "%-19s %7d %7s %-8s %10d %-9s %s\n", FormatMS(k.TS), k.PID, ppid, user, k.RSSKB, limit, k.Command)
+		switch k.Constraint {
+		case "cgroup":
+			l := "  the memory cgroup " + k.Cgroup + " reached its limit"
+			if k.LimitKB > 0 {
+				l += fmt.Sprintf(" (%s; usage %s)", SizeKB(k.LimitKB), SizeKB(k.UsageKB))
+			}
+			fmt.Fprintln(w, l+": the machine itself was not out of memory")
+		case "system":
+			fmt.Fprintln(w, "  the machine was out of memory (RAM and swap)")
+		case "cpuset", "mempolicy":
+			fmt.Fprintf(w, "  the victim's allowed memory (%s) was full, not the whole machine's\n", k.Constraint)
+		}
 		if k.FromLog {
 			fmt.Fprintln(w, "  (from the kernel log: no OOM event was recorded, as clifrd ran without eBPF)")
 		}
 		if len(k.Top) == 0 {
+			if k.Constraint == "cgroup" {
+				fmt.Fprintln(w, "  (no other process of that cgroup was sampled before the kill)")
+			}
 			continue
 		}
+		where := "on the machine"
+		if k.Constraint == "cgroup" {
+			where = "in that cgroup"
+		}
+		fmt.Fprintf(w, "  the largest processes %s at the kill:\n", where)
 		fmt.Fprintf(w, "  %7s %10s %-19s %s\n", "PID", "RSS_KB", "SAMPLED", "COMMAND")
 		for _, p := range k.Top {
 			fmt.Fprintf(w, "  %7d %10d %-19s %s\n", p.PID, p.RSSKB, FormatMS(p.SampleTS), p.Command)

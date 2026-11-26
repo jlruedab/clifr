@@ -123,7 +123,10 @@ func init() {
 		name: "oom", synopsis: "[--top N]",
 		about: "clifr only: OOM kills with the largest processes at the time",
 		opts:  []opt{{long: "top", arg: "N", help: "processes to list by RSS for each kill (default 10)"}},
-		notes: []string{"Without --at or --since: the whole recording; --at T: one minute either side of T."},
+		notes: []string{"Without --at or --since: the whole recording; --at T: one minute either side of T.",
+			"LIMIT, from the kernel's report in the recorded log: system (the machine was out of",
+			"memory), cgroup (a memory cgroup reached its limit: the largest processes listed are",
+			"that cgroup's), cpuset or mempolicy; - when the report was not recorded."},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			top := 10
 			if v, ok := p.set["top"]; ok {
