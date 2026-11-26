@@ -39,3 +39,27 @@ func TestPrintEvents(t *testing.T) {
 		t.Errorf("no sender, yet a SENT BY column: %q", l)
 	}
 }
+
+// events --signal: exits by a signal; a list by name or number.
+func TestSignalFilter(t *testing.T) {
+	kill := Event{Kind: "exit", Signal: "SIGKILL"}
+	term := Event{Kind: "exit", Signal: "SIGTERM"}
+	clean := Event{Kind: "exit", Status: "0"}
+	start := Event{Kind: "start"}
+	for spec, want := range map[string][4]bool{
+		"":           {true, true, false, false},
+		"KILL":       {true, false, false, false},
+		"sigterm, 9": {true, true, false, false},
+	} {
+		f, err := SignalFilter(spec)
+		if err != nil {
+			t.Fatalf("%q: %v", spec, err)
+		}
+		if got := [4]bool{f(kill), f(term), f(clean), f(start)}; got != want {
+			t.Errorf("%q: %v, want %v", spec, got, want)
+		}
+	}
+	if _, err := SignalFilter("NOPE"); err == nil {
+		t.Error("NOPE: no error")
+	}
+}

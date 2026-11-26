@@ -326,7 +326,11 @@ TIME                     EVENT       PID    PPID USER     STATUS       LIFE SENT
 
 The columns: the parent's PID, the user, STATUS (an exit's code, or the signal that ended it, or `OOM`; an OOM kill's RSS), LIFE (how long the process ran, `>` when the exit is known only between two samples, its time then marked `~`), SENT BY (who sent the fatal signal, when known) and last the command line, or for the other events what happened. Only the last column is cut when the line is too long. SENT BY appears when some event in the list has a sender; the sender's own command line is in `--json` (`detail`) and in `clifr life --json` (`killer_command`).
 
-Filter it with `--name REGEX` (matched against the command line) and `--type start,exit,oom,mount,unmount,remount,gap,skipped,guard`.
+Filter it with `--name REGEX` (matched against the command line) and `--type start,exit,oom,mount,unmount,remount,gap,skipped,guard`. `--signal` keeps only the exits a signal caused, and `--signal=KILL,TERM` only those signals (names or numbers): with the SENT BY column, what was killed and by whom.
+
+```sh
+clifr --since yesterday "events --signal=KILL,TERM"
+```
 
 A hung NFS server shows up there too: when statfs of a mount does not answer within a second, clifrd records a `statfs_stuck` guard event and stops asking until the call returns (`statfs_ok`). Meanwhile `clifr df` prints that file system's last usage with a line such as `# /mnt/nfs: statfs not answering since 2026-11-10 22:30:20 (hung server?); usage as of 2026-11-10 22:30:00`, where the real `df` would hang.
 

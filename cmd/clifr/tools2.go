@@ -476,6 +476,7 @@ func eventsTool() *tool {
 		opts: []opt{
 			{long: "name", arg: "REGEX", help: "only process events whose command line matches"},
 			{long: "type", arg: "KINDS", help: "comma separated: " + strings.Join(query.EventKinds, ",")},
+			{long: "signal", arg: "SIGNALS", optional: true, help: "only exits ended by a signal; --signal=KILL,TERM: those (names or numbers)"},
 		},
 		notes: []string{
 			"Without --since: the whole recording. Times are exact (events) except exits marked ~:",
@@ -484,16 +485,31 @@ func eventsTool() *tool {
 			"who sent that signal (shown when some event has a sender; its command line is in",
 			"--json's detail). The last column, cut when too long: the command line, or what happened.",
 		},
-		examples: []string{`clifr --since "1 hour ago" events`, `clifr --since today "events --type oom,gap"`},
+		examples: []string{`clifr --since "1 hour ago" events`, `clifr --since today "events --type oom,gap"`,
+			`clifr --since yesterday "events --signal=KILL,TERM"`},
 		prepare: func(p parsed, c *runCtx) (func() error, error) {
 			if !c.w.IsRange() {
 				return nil, errors.New("events: needs a range (--since), or no time for the whole recording")
+			}
+			if len(p.pos) > 0 {
+				hint := ""
+				if _, ok := p.set["signal"]; ok {
+					hint = " (a list of signals goes after an equals sign: --signal=KILL,TERM)"
+				}
+				return nil, fmt.Errorf("events: unexpected argument %q%s", p.pos[0], hint)
 			}
 			var re *regexp.Regexp
 			if v, ok := p.set["name"]; ok {
 				var err error
 				if re, err = regexp.Compile(v); err != nil {
 					return nil, fmt.Errorf("events: --name: %w", err)
+				}
+			}
+			var bySignal func(query.Event) bool
+			if v, ok := p.set["signal"]; ok {
+				var err error
+				if bySignal, err = query.SignalFilter(v); err != nil {
+					return nil, fmt.Errorf("events: --signal: %w", err)
 				}
 			}
 			var kinds map[string]bool
@@ -510,9 +526,15 @@ func eventsTool() *tool {
 				if c.w.From == 0 { // the whole recording: from its first sample
 					c.w.From = query.RecordingStart(c.db)
 				}
+				if bySignal != nil {
+					kinds = map[string]bool{"exit": true}
+				}
 				evs, err := query.Events(c.db, c.w.From, c.w.To, re, kinds)
 				if err != nil {
 					return err
+				}
+				if bySignal != nil {
+					evs = slices.DeleteFunc(evs, func(e query.Event) bool { return !bySignal(e) })
 				}
 				c.header("%d events %s .. %s", len(evs), query.FormatMS(c.w.From), query.FormatMS(c.w.To))
 				if n := query.BudgetNote(c.db, c.w.From, c.w.To, "processes"); n != "" {

@@ -6,8 +6,12 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"clifr/internal/store"
 )
@@ -235,6 +239,36 @@ func recorderGaps(db *store.DB, from, to int64, gaps, skipped bool) ([]Event, er
 		prev = ts
 	}
 	return out, rows.Err()
+}
+
+// SignalFilter is events' --signal: exits ended by a signal; spec ("" =
+// any) lists signals by name (KILL, SIGKILL, kill) or number.
+func SignalFilter(spec string) (func(Event) bool, error) {
+	want := map[string]bool{}
+	for _, s := range strings.Split(spec, ",") {
+		s = strings.ToUpper(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		var sig syscall.Signal
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n < 65 {
+			sig = syscall.Signal(n)
+		} else if sig = unix.SignalNum("SIG" + strings.TrimPrefix(s, "SIG")); sig == 0 {
+			return nil, fmt.Errorf("unknown signal %q", s)
+		}
+		want[signalName(sig)] = true
+	}
+	return func(e Event) bool {
+		return e.Kind == "exit" && e.Signal != "" && (len(want) == 0 || want[e.Signal])
+	}, nil
+}
+
+// signalName: as an exit's STATUS names it (LifeRow.Exit).
+func signalName(s syscall.Signal) string {
+	if n := unix.SignalName(s); n != "" {
+		return n
+	}
+	return fmt.Sprintf("signal %d", int(s))
 }
 
 // PrintEvents prints the timeline as a table; "~" marks times bounded by
