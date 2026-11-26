@@ -117,6 +117,22 @@ func (p *pager) key(k string) bool {
 		}
 		return false
 	}
+	if len(p.pages) == 1 { // one output (events, a long ps): the keys move in it
+		switch k {
+		case "PgDn", "n":
+			k = " "
+		case "PgUp", "p":
+			k = "b"
+		case "Home":
+			p.top = 0
+			return false
+		case "End":
+			p.scroll(len(p.lines(p.cur)))
+			return false
+		case "g":
+			return false
+		}
+	}
 	switch k {
 	case "q", "Q", "Ctrl-C":
 		return true
@@ -209,6 +225,10 @@ func (p *pager) screen() string {
 	}
 	status := fmt.Sprintf(" %d/%d  lines %d-%d of %d  n/p next/previous  Home/End  g time  arrows, space, b scroll  q quit",
 		p.cur+1, len(p.pages), p.top+1, min(p.top+p.view(), len(l)), len(l))
+	if len(p.pages) == 1 {
+		status = fmt.Sprintf(" lines %d-%d of %d  Home/End top, bottom  PgUp/PgDn, space, b page  arrows scroll  q quit",
+			p.top+1, min(p.top+p.view(), len(l)), len(l))
+	}
 	switch {
 	case p.prompt != nil:
 		status = " go to time: " + *p.prompt

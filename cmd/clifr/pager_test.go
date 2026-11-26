@@ -127,3 +127,22 @@ func TestDateText(t *testing.T) {
 		}
 	}
 }
+
+// One page (events, a long ps): Home/End, PgUp/PgDn and n/p move in it.
+func TestPagerOnePage(t *testing.T) {
+	p := &pager{pages: testPages(1, 50), cache: map[int][]string{}, width: 40, height: 11, now: time.Now}
+	for _, c := range []struct {
+		key string
+		top int
+	}{{"End", 41}, {"Home", 0}, {"PgDn", 9}, {"n", 18}, {"PgUp", 9}, {"p", 0}, {"g", 0}} {
+		if p.key(c.key) {
+			t.Fatalf("quit on %q", c.key)
+		}
+		if p.top != c.top || p.cur != 0 || p.prompt != nil {
+			t.Errorf("%s: top %d page %d prompt %v, want top %d", c.key, p.top, p.cur, p.prompt, c.top)
+		}
+	}
+	if s := p.screen(); !strings.Contains(s, "Home/End top, bottom") || strings.Contains(s, "n/p") {
+		t.Errorf("status line names page keys: %q", s[strings.LastIndex(s, "\x1b[7m"):])
+	}
+}
