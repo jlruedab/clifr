@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"regexp/syntax"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/term"
 
 	"clifr/internal/duck"
+	"clifr/internal/pqstore"
 	"clifr/internal/query"
 	"clifr/internal/store"
 )
@@ -131,6 +133,22 @@ type tui struct {
 	// load reads the window [from, to] (z, Z); now is the clock.
 	load func(from, to int64) error
 	now  func() int64
+	// Following (no --until, not a bundle): while the window reaches now,
+	// its end moves with the clock and every pollMS fetch checks in the
+	// background whether clifrd wrote more and reads the window again; its
+	// result comes back on fetched and is applied at a tick (fetching: one
+	// is running; refetch: the next tick starts another). gen counts the
+	// windows loaded: a result for an older one is dropped. flushMS is
+	// clifrd's flush interval.
+	follow   bool
+	pollMS   int64
+	pollNext int64
+	fetch    func(from, to int64, force bool)
+	fetched  chan func()
+	fetching bool
+	refetch  bool
+	gen      int
+	flushMS  int64
 }
 
 // tuiSpeeds are the play speeds, slowest first.
@@ -168,14 +186,19 @@ func cmdTUI(g *globals) error {
 			db.Close()
 		}
 	}()
-	// load shows [from, to]: a window inside the one loaded reuses it (z),
-	// another is read (Z). Nothing changes on an error.
-	u.load = func(from, to int64) error {
-		d, win := db, loaded
-		if d == nil || from < win.From || to > win.To {
-			nd, err := openWindow(g, duck.Window{From: from, To: to})
+	// read opens [from, to] (a window inside the one loaded reuses it,
+	// unless fresh) and reads its timeline. It changes nothing: the
+	// following runs it in the background (fresh, so it does not look at
+	// db either, and quiet).
+	read := func(from, to int64, fresh bool) (*store.DB, duck.Window, []tuiPoint, error) {
+		var d *store.DB
+		var win duck.Window
+		if !fresh && db != nil && from >= loaded.From && to <= loaded.To {
+			d, win = db, loaded
+		} else {
+			nd, err := openWindowOpt(g, duck.Window{From: from, To: to}, fresh)
 			if err != nil {
-				return err
+				return nil, win, nil, err
 			}
 			d, win = nd, duck.Window{From: from, To: to}
 		}
@@ -183,10 +206,17 @@ func cmdTUI(g *globals) error {
 		if err == nil && len(pts) == 0 {
 			err = fmt.Errorf("tui: no system samples between %s and %s", query.FormatMS(from), query.FormatMS(to))
 		}
-		var marks []tuiMark
-		if err == nil {
-			marks, err = tuiMarks(d, from, to)
+		if err != nil {
+			if d != db {
+				d.Close()
+			}
+			return nil, win, nil, err
 		}
+		return d, win, pts, nil
+	}
+	// apply shows what read returned. Nothing changes on an error.
+	apply := func(d *store.DB, win duck.Window, pts []tuiPoint, from, to int64) error {
+		marks, err := tuiMarks(d, from, to)
 		if err != nil {
 			if d != db {
 				d.Close()
@@ -201,7 +231,8 @@ func cmdTUI(g *globals) error {
 		}
 		ev := &tuiEvents{db: d, from: from, to: to}
 		u.from, u.to, u.points, u.marks = from, to, pts, marks
-		u.unwritten = tuiUnwritten(d, pts[len(pts)-1].ts, to, u.now())
+		u.flushMS = tuiFlushMS(d)
+		u.unwritten = u.isUnwritten()
 		u.render = func(pane int, ts int64, width int) []string {
 			switch {
 			case tuiPanes[pane].name == "events":
@@ -216,7 +247,51 @@ func cmdTUI(g *globals) error {
 		}
 		clear(u.cache)
 		u.pairs = nil
+		u.gen++
 		return nil
+	}
+	// load shows [from, to]: a window inside the one loaded reuses it (z),
+	// another is read (Z).
+	u.load = func(from, to int64) error {
+		d, win, pts, err := read(from, to, false)
+		if err != nil {
+			return err
+		}
+		return apply(d, win, pts, from, to)
+	}
+	if g.until == "" && !g.fromBundle {
+		changed := tuiChanged(g)
+		changed() // where the recording stands now: the first poll compares with it
+		u.follow, u.fetched, u.pollMS = true, make(chan func(), 1), 10_000
+		if g.host != "" {
+			u.pollMS = 30_000 // over the network
+		}
+		u.fetch = func(from, to int64, force bool) {
+			u.fetching = true
+			gen := u.gen
+			go func() {
+				c, err := changed()
+				var d *store.DB
+				var win duck.Window
+				var pts []tuiPoint
+				if err == nil && (c || force) {
+					d, win, pts, err = read(from, to, true)
+				}
+				u.fetched <- func() {
+					u.fetching = false
+					switch {
+					case err != nil:
+						u.msg = " live: " + err.Error()
+					case d == nil: // nothing new
+					case gen != u.gen || !u.following(): // zoomed meanwhile
+						d.Close()
+						u.refetch = u.following()
+					default:
+						u.applyFetched(func() error { return apply(d, win, pts, from, max(to, u.to)) })
+					}
+				}
+			}()
+		}
 	}
 	splash := showSplash(u.color, w.From, w.To)
 	err = u.load(w.From, w.To)
@@ -265,13 +340,7 @@ func (u *tui) zoom(in bool) {
 			}
 		}
 	}
-	marks := [2]int64{-1, -1}
-	for i, m := range []int{u.markA, u.markB} {
-		if m >= 0 {
-			marks[i] = u.points[m].ts
-		}
-	}
-	if err := u.load(from, to); err != nil {
+	if err := u.keepPlace(false, func() error { return u.load(from, to) }); err != nil {
 		u.msg = " " + err.Error()
 		return
 	}
@@ -281,7 +350,29 @@ func (u *tui) zoom(in bool) {
 			u.msg = " Z: the whole recording up to the window's end is shown"
 		}
 	}
+}
+
+// keepPlace runs load, which replaces the samples, keeping the cursor's
+// and the marks' times (a mark whose sample is gone goes, and a comparison
+// with it); with ride, a cursor on the last sample stays on the last (the
+// following: new samples came).
+func (u *tui) keepPlace(ride bool, load func() error) error {
+	atEnd := ride && u.cur == len(u.points)-1
+	c := u.points[u.cur].ts
+	marks := [2]int64{-1, -1}
+	for i, m := range []int{u.markA, u.markB} {
+		if m >= 0 {
+			marks[i] = u.points[m].ts
+		}
+	}
+	comparing := u.compare
+	if err := load(); err != nil {
+		return err
+	}
 	u.cur = u.at(c, -1)
+	if atEnd {
+		u.cur = len(u.points) - 1
+	}
 	u.markA, u.markB = -1, -1
 	for i, ts := range marks {
 		if j := u.at(ts, -1); ts >= 0 && u.points[j].ts == ts {
@@ -298,19 +389,139 @@ func (u *tui) zoom(in bool) {
 			u.markA, u.markB = u.markB, -1
 		}
 	}
+	if comparing && !u.compare && u.msg == "" {
+		u.msg = " a mark's sample is no longer in the window: the comparison ended"
+	}
+	return nil
 }
 
-// tuiUnwritten: the window reaches now, and its last sample is no older
-// than clifrd's flush interval (and a half): the rest is still in clifrd's
-// memory, not missing.
-func tuiUnwritten(db *store.DB, last, to, now int64) bool {
+// applyFetched applies a fetch's new window (keepPlace: the cursor on the
+// last sample rides on); a cursor elsewhere stays, and the line above the
+// keys says that new samples came, until the next key.
+func (u *tui) applyFetched(apply func() error) {
+	prev := u.points[len(u.points)-1].ts
+	if err := u.keepPlace(true, apply); err != nil {
+		u.msg = " live: " + err.Error()
+		return
+	}
+	last := len(u.points) - 1
+	if u.points[last].ts > prev && u.cur < last && (u.msg == "" || strings.HasPrefix(u.msg, tuiNewData)) {
+		u.msg = tuiNewData + query.FormatMS(u.points[last].ts) + " (End: go there)"
+	}
+}
+
+const tuiNewData = " new data up to "
+
+// tuiShortDur is a duration as the header shows it: 5m, 30s, 1m30s, 1h.
+func tuiShortDur(ms int64) string {
+	s := (time.Duration(ms) * time.Millisecond).Round(time.Second).String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+// following: the window follows the clock (no --until) and still reaches
+// now (z into the past stops it, Z up to now again).
+func (u *tui) following() bool {
+	return u.follow && u.to >= u.now()-time.Minute.Milliseconds()
+}
+
+// followTick applies a finished fetch, moves the window's end to now and
+// starts the next fetch when it is due.
+func (u *tui) followTick() {
+	select {
+	case f := <-u.fetched:
+		f()
+	default:
+	}
+	if !u.following() {
+		return
+	}
+	now := u.now()
+	u.to = max(u.to, now)
+	u.unwritten = u.isUnwritten()
+	if !u.fetching && (u.refetch || now >= u.pollNext) {
+		u.pollNext = now + u.pollMS
+		force := u.refetch
+		u.refetch = false
+		u.fetch(u.from, now, force)
+	}
+}
+
+// tuiChanged returns a check whether clifrd wrote more since the last
+// call (the first call only takes the state): locally the newest integrity
+// log (a line for every file written, pqstore.IntegrityDir), without it the
+// newest open-entity file; with --host the end of the remote recording.
+// Not safe for concurrent use: one fetch at a time calls it.
+func tuiChanged(g *globals) func() (bool, error) {
+	last := ""
+	var h *remoteHost
+	return func() (bool, error) {
+		var now string
+		if g.host != "" {
+			if h == nil {
+				nh, err := connect(g)
+				if err != nil {
+					return false, err
+				}
+				h = nh
+			}
+			end, err := h.remoteEnd()
+			if err != nil {
+				return false, err
+			}
+			now = strconv.FormatInt(end, 10)
+		} else {
+			now = tuiDataSig(g.dataDir)
+		}
+		c := now != last
+		last = now
+		return c, nil
+	}
+}
+
+// tuiDataSig names the state of a data directory's newest writes: the
+// newest integrity log's name, size and time, else the newest open-entity
+// file's time.
+func tuiDataSig(dir string) string {
+	if es, err := os.ReadDir(filepath.Join(dir, pqstore.IntegrityDir)); err == nil && len(es) > 0 {
+		e := es[len(es)-1] // by name: by day
+		if fi, err := e.Info(); err == nil {
+			return fmt.Sprintf("%s %d %d", e.Name(), fi.Size(), fi.ModTime().UnixNano())
+		}
+	}
+	var newest int64
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "open", "*.parquet"))
+	for _, f := range files {
+		if fi, err := os.Stat(f); err == nil {
+			newest = max(newest, fi.ModTime().UnixNano())
+		}
+	}
+	return strconv.FormatInt(newest, 10)
+}
+
+// tuiFlushMS is clifrd's flush interval (meta flush_interval_s; 5 minutes
+// if not recorded).
+func tuiFlushMS(db *store.DB) int64 {
 	flush := 300.0
 	var v string
 	db.QueryRow(`SELECT value FROM meta WHERE key = 'flush_interval_s'`).Scan(&v)
 	if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
 		flush = f
 	}
-	return to >= now-time.Minute.Milliseconds() && now-last <= int64(flush*1500)
+	return int64(flush * 1000)
+}
+
+// isUnwritten: the window reaches now, and its last sample is no older
+// than one and a half flush intervals: the rest is still in clifrd's
+// memory, not a gap.
+func (u *tui) isUnwritten() bool {
+	now, last := u.now(), u.points[len(u.points)-1].ts
+	return u.to >= now-time.Minute.Milliseconds() && now-last <= u.flushMS*3/2
 }
 
 // tuiPoints reads the timeline: every system sample in [from, to].
@@ -877,9 +1088,11 @@ func (u *tui) key(k string) bool {
 		return u.promptKey(k)
 	}
 	if k == "Tick" {
+		u.followTick()
+		last = len(u.points) - 1
 		if u.playing {
 			u.cur = min(u.cur+1, last)
-			u.playing = u.cur < last
+			u.playing = u.cur < last || u.following() // at the end, on with new samples
 		}
 		return false
 	}
@@ -1033,10 +1246,13 @@ func (u *tui) keyTick() bool {
 
 // tick is how long termLoop waits before the next sample while playing.
 func (u *tui) tick() time.Duration {
-	if !u.playing {
-		return 0
+	switch {
+	case u.playing:
+		return tuiSpeeds[u.speed]
+	case u.following():
+		return time.Second // the clock, and a fetch's result
 	}
-	return tuiSpeeds[u.speed]
+	return 0
 }
 
 // tuiFilterRE compiles a filter: a regular expression (Go's RE2 syntax),
@@ -1190,7 +1406,11 @@ func (u *tui) screen() string {
 	if cur[:10] == query.FormatMS(u.to)[:10] && end == query.FormatMS(u.to)[11:16] {
 		cur = cur[11:]
 	}
-	head := fmt.Sprintf(" clifr  %s  %s – %s %s   cursor %s", u.host, query.FormatMS(u.from)[:16], end, zone, cur)
+	live := ""
+	if u.following() {
+		live = "  live · " + tuiShortDur(u.flushMS) // new samples come a flush at a time
+	}
+	head := fmt.Sprintf(" clifr  %s  %s – %s %s%s   cursor %s", u.host, query.FormatMS(u.from)[:16], end, zone, live, cur)
 	for i, m := range []int{u.markA, u.markB} {
 		if m >= 0 {
 			head += fmt.Sprintf("  %c %s", 'A'+i, query.FormatMS(u.points[m].ts)[11:])
@@ -1418,6 +1638,14 @@ func (u *tui) tuiHelp() []string {
 		"Timeline: CPU busy, memory used (without page cache), the 1-minute load, the",
 		"share of time some task waited for I/O (PSI); each column is a stretch of the",
 		"window, its mean shown; blank: no sample there.",
+		"",
+		"live · 5m (in the header; 5m: clifrd's flush interval, how often new samples",
+		"come): without --until the window's end follows the clock and",
+		"what clifrd writes (at every flush: 5 minutes by default) is read as it comes,",
+		"locally every 10 s, with --host every 30 s; a cursor on the last sample moves",
+		"on with it (elsewhere it stays, and the line above the keys says new data",
+		"came), marks stay where they are. z into the past stops it, Z back to now",
+		"resumes it.",
 		"",
 		"Events row",
 	}

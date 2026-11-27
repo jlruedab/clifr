@@ -177,6 +177,8 @@ clifr --since yesterday --until today tui                  # all of yesterday
 clifr --since -72h tui                                     # everything kept (the default retention)
 ```
 
+Without `--until` the window follows the clock: the header says `live · 5m` (5m: clifrd's flush interval, how often new samples arrive), its end moves with the time and what clifrd writes is read as it comes, so a `clifr --since "2 days ago" tui` left open keeps growing. Data reaches the disk at each of clifrd's flushes (`--flush-interval`, 5 minutes by default; the `┈` stretch at the end is what clifrd still holds in memory), so the timeline grows a flush at a time, not sample by sample. The tui checks for new files every 10 seconds (with `--host` every 30 seconds, fetching only files it does not have yet) and reads the window again in the background. A cursor on the last sample moves on to the new last one; elsewhere it stays (the line above the keys says `new data up to TIME (End: go there)`), and marks A and B and a comparison stay on their samples. `z` into the past stops following, `Z` back up to now resumes it. A bundle is a fixed copy and does not grow.
+
 A long window puts more time in each column (a day on 100 columns: about 15 minutes a column); `⇧←` `⇧→` move the cursor a column, `g` goes to a time you type, `z` zooms in around the cursor and `Z` back out, so you can open a day, find the spike and zoom to it.
 
 Here marks A and B are ten minutes apart and the `free` pane compares them (a screen from 24 November, the host renamed):

@@ -120,7 +120,10 @@ Other commands:
                        and 11 other commands at the cursor (tab, 1-9 0; /
                        keeps the lines a regular expression matches, any
                        case); m marks A and B, d compares them as clifr diff;
-                       ? lists the keys
+                       ? lists the keys. Without --until the window follows
+                       the clock ("live"): what clifrd writes (every flush
+                       interval, 5 minutes by default) is read as it comes,
+                       also with --host; not from a bundle
 
 Environment variables:
   CLIFR_SINCE, CLIFR_UNTIL, CLIFR_TZ, CLIFR_DATA_DIR, CLIFR_STYLE,

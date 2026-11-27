@@ -459,7 +459,11 @@ func openDB(g *globals) (*store.DB, error) { return openWindow(g, duck.Window{})
 
 // openWindow opens the recording with the TCP tables limited to w (the zero
 // Window: everything).
-func openWindow(g *globals, w duck.Window) (*store.DB, error) {
+func openWindow(g *globals, w duck.Window) (*store.DB, error) { return openWindowOpt(g, w, false) }
+
+// openWindowOpt is openWindow; quiet: without the remote header line (clifr
+// tui's reads in the background, where nothing may print).
+func openWindowOpt(g *globals, w duck.Window, quiet bool) (*store.DB, error) {
 	if os.Getenv("CLIFR_FULL_LOAD") != "" { // check: the window must not change any answer
 		w = duck.Window{}
 	}
@@ -467,7 +471,14 @@ func openWindow(g *globals, w duck.Window) (*store.DB, error) {
 	if g.host != "" {
 		// The files the window needs, from the remote host (cached); the
 		// zero window: the whole recording.
-		d, err := fetchWindow(g, w.From, w.To)
+		fetch := fetchWindow
+		if quiet {
+			fetch = func(g *globals, from, to int64) (string, error) {
+				d, _, err := fetchWindowQuiet(g, from, to)
+				return d, err
+			}
+		}
+		d, err := fetch(g, w.From, w.To)
 		if err != nil {
 			return nil, err
 		}

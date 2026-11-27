@@ -40,10 +40,16 @@ import (
 // defaultServePort is clifrd --serve's port in the docs' examples.
 const defaultServePort = "8443"
 
-// remoteDirs are the query directories made in this run (removed at exit).
-var remoteDirs []string
+// remoteDirs are the query directories made in this run (removed at exit);
+// clifr tui fetches in the background, so under remoteMu.
+var (
+	remoteMu   sync.Mutex
+	remoteDirs []string
+)
 
 func cleanupRemote() {
+	remoteMu.Lock()
+	defer remoteMu.Unlock()
 	for _, d := range remoteDirs {
 		os.RemoveAll(d)
 	}
@@ -299,14 +305,25 @@ var errGone = errors.New("gone")
 // fetchWindow fetches what [from, to] needs (both 0: the whole recording)
 // and returns a directory with exactly those files.
 func fetchWindow(g *globals, from, to int64) (string, error) {
-	h, err := connect(g)
+	dir, note, err := fetchWindowQuiet(g, from, to)
 	if err != nil {
 		return "", err
+	}
+	query.Header("%s", note)
+	return dir, nil
+}
+
+// fetchWindowQuiet is fetchWindow without its header line (returned):
+// clifr tui fetches in the background, where nothing may print.
+func fetchWindowQuiet(g *globals, from, to int64) (dir, note string, err error) {
+	h, err := connect(g)
+	if err != nil {
+		return "", "", err
 	}
 	ctx := context.Background()
 	var in remote.Info
 	if err := h.getJSON(ctx, remote.PathInfo, &in); err != nil {
-		return "", err
+		return "", "", err
 	}
 	id := in.MachineID
 	if !hexRe.MatchString(id) {
@@ -315,11 +332,11 @@ func fetchWindow(g *globals, from, to int64) (string, error) {
 	}
 	base, err := os.UserCacheDir()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	cache := filepath.Join(base, "clifr", id)
 	if err := os.MkdirAll(filepath.Join(cache, "objects"), 0o700); err != nil {
-		return "", err
+		return "", "", err
 	}
 	q := remote.PathFiles
 	if from != 0 || to != 0 {
@@ -330,26 +347,37 @@ func fetchWindow(g *globals, from, to int64) (string, error) {
 	var bytes int64
 	for attempt := 0; ; attempt++ {
 		if err := h.getJSON(ctx, q, &list); err != nil {
-			return "", err
+			return "", "", err
 		}
 		fetched, cached, bytes, err = h.fetchFiles(ctx, cache, list.Files)
 		if errors.Is(err, errGone) && attempt == 0 {
 			continue // compacted meanwhile: list again
 		}
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		break
 	}
-	dir, err := linkSet(cache, list.Files)
-	if err != nil {
-		return "", err
+	if dir, err = linkSet(cache, list.Files); err != nil {
+		return "", "", err
 	}
+	remoteMu.Lock()
 	remoteDirs = append(remoteDirs, dir)
-	query.Header("remote: %s (%s, machine-id %.8s): %d files, %d fetched (%s), %d from the cache", h.hostport, in.Hostname,
+	remoteMu.Unlock()
+	note = fmt.Sprintf("remote: %s (%s, machine-id %.8s): %d files, %d fetched (%s), %d from the cache", h.hostport, in.Hostname,
 		in.MachineID, len(list.Files), fetched, humanBytes(bytes), cached)
 	pruneCache(cache)
-	return dir, nil
+	return dir, note, nil
+}
+
+// remoteEnd is the end of the remote recording (/v1/info's to_ms): clifr
+// tui polls it to see whether clifrd wrote more.
+func (h *remoteHost) remoteEnd() (int64, error) {
+	var in remote.Info
+	if err := h.getJSON(context.Background(), remote.PathInfo, &in); err != nil {
+		return 0, err
+	}
+	return in.ToMS, nil
 }
 
 func objectPath(cache, sum string) string { return filepath.Join(cache, "objects", sum[:2], sum) }

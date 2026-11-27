@@ -608,3 +608,81 @@ func TestTUIGoTo(t *testing.T) {
 		t.Error("Esc does not close g's prompt")
 	}
 }
+
+// TestTUIFollow: while the window reaches now, a tick moves its end with
+// the clock and starts a fetch when one is due; the fetch's result, applied
+// at a later tick, adds samples: a cursor on the last sample rides to the
+// new last one, marks and a comparison keep their samples. Zoomed into the
+// past, nothing is fetched.
+func TestTUIShortDur(t *testing.T) {
+	for ms, want := range map[int64]string{300_000: "5m", 30_000: "30s", 90_000: "1m30s", 3_600_000: "1h", 5_400_000: "1h30m"} {
+		if got := tuiShortDur(ms); got != want {
+			t.Errorf("%d ms: %q, want %q", ms, got, want)
+		}
+	}
+}
+
+func TestTUIFollow(t *testing.T) {
+	u := testTUI() // 02:40:00 to 02:50:00, a sample every 10 s
+	clock := u.to
+	u.now = func() int64 { return clock }
+	u.follow, u.pollMS, u.fetched, u.flushMS = true, 10_000, make(chan func(), 1), 300_000
+	fetches := 0
+	u.fetch = func(from, to int64, force bool) {
+		fetches++
+		u.fetching = true
+		u.fetched <- func() {
+			u.fetching = false
+			u.applyFetched(func() error {
+				for ts := u.points[len(u.points)-1].ts + 10_000; ts <= to; ts += 10_000 {
+					u.points = append(u.points, tuiPoint{ts: ts})
+				}
+				u.to = max(u.to, to)
+				u.gen++
+				return nil
+			})
+		}
+	}
+	u.cur = len(u.points) - 1
+	u.markA, u.markB, u.compare = 6, 12, true
+	u.diff = func(pane int, a, b int64, width int) ([]string, []string) { return []string{"diff"}, nil }
+	if u.tick() != time.Second || !strings.Contains(u.screen(), "live · 5m") {
+		t.Fatalf("following: tick %v, header %q", u.tick(), strings.SplitN(u.screen(), "\r\n", 2)[0])
+	}
+	u.key("Tick") // a fetch up to now: nothing new
+	clock += 60_000
+	u.key("Tick") // applies it, moves the end, fetches again (due: 60 s later)
+	u.key("Tick")
+	if fetches != 2 || u.to != clock {
+		t.Fatalf("fetches %d, end %s", fetches, query.FormatMS(u.to))
+	}
+	if last := u.points[len(u.points)-1].ts; last != clock || u.cur != len(u.points)-1 {
+		t.Errorf("last sample %s, cursor %d of %d", query.FormatMS(last), u.cur, len(u.points))
+	}
+	if u.markA != 6 || u.markB != 12 || !u.compare {
+		t.Errorf("marks %d %d, compare %v", u.markA, u.markB, u.compare)
+	}
+	// A cursor not on the last sample keeps its time.
+	u.cur = 30
+	clock += 60_000
+	u.key("Tick")
+	u.key("Tick")
+	if u.points[u.cur].ts != u.from+300_000 {
+		t.Errorf("cursor moved to %s", query.FormatMS(u.points[u.cur].ts))
+	}
+	if want := " new data up to " + query.FormatMS(clock) + " (End: go there)"; u.msg != want || !strings.Contains(u.screen(), "new data up to") {
+		t.Errorf("message %q, want %q", u.msg, want)
+	}
+	u.key("End")
+	if u.msg != "" || u.cur != len(u.points)-1 {
+		t.Errorf("End: message %q, cursor %d of %d", u.msg, u.cur, len(u.points))
+	}
+	// Zoomed into the past: no longer following.
+	u.to = u.from + 300_000
+	n := fetches
+	clock += 60_000
+	u.key("Tick")
+	if u.following() || fetches != n || u.tick() != 0 || strings.Contains(strings.SplitN(u.screen(), "\r\n", 2)[0], "live") {
+		t.Errorf("zoomed into the past: following %v, fetches %d", u.following(), fetches-n)
+	}
+}
