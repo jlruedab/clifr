@@ -177,7 +177,7 @@ clifr --since yesterday --until today tui                  # all of yesterday
 clifr --since -72h tui                                     # everything kept (the default retention)
 ```
 
-A long window puts more time in each column (a day on 100 columns: about 15 minutes a column); `z` zooms in around the cursor and `Z` back out, so you can open a day, find the spike and zoom to it.
+A long window puts more time in each column (a day on 100 columns: about 15 minutes a column); `⇧←` `⇧→` move the cursor a column, `g` goes to a time you type, `z` zooms in around the cursor and `Z` back out, so you can open a day, find the spike and zoom to it.
 
 Here marks A and B are ten minutes apart and the `free` pane compares them (a screen from 24 November, the host renamed):
 
@@ -196,7 +196,7 @@ Here marks A and B are ten minutes apart and the `free` pane compares them (a sc
 Mem:           62464        7043        9359     │ Mem:           62464       12278        4011
 Swap:           8191           5        8186     │ Swap:           8191           5        8186
 …
- ←→ sample  ⇧←→ minute  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll
+ ←→ sample  ⇧←→ column  g go to  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll
 ```
 
 **The timeline.** Each column is a stretch of the window and shows its mean: CPU busy, memory used without the page cache, the 1-minute load (scaled to the window's highest) and the share of time some task waited for I/O (PSI). CPU, MEM and PSI are green, yellow from half, red from three quarters; LOAD is one color, as it is relative. The `▼` above the graphs is the cursor, its values at the right. The *events* row marks, in this order of precedence when several fall in one column:
@@ -223,7 +223,8 @@ A balloon is easy to miss otherwise: `free` and `vmstat` show the memory it hold
 | Key | What it does |
 |---|---|
 | `←` `→` (`h` `l`) | one sample back, forward |
-| `⇧←` `⇧→` (`H` `L`) | one minute |
+| `⇧←` `⇧→` (`H` `L`) | the next column of the timeline, at least a minute: each press moves the cursor one column, however long the window |
+| `g` | go to a time, typed as `--at` takes it (`14:30` is on the cursor's day, `2026-11-26 14:30`, `-2h`, `yesterday`): the sample at or before it (in a gap the line above the keys says so); a time outside the window is refused (`Z` zooms out) |
 | `Home` `End` | the window's first, last sample |
 | `z` `Z` | zoom in to a quarter of the window around the cursor (down to 5 minutes), zoom out to four times it (up to now and the recording's start); the cursor and the marks keep their times |
 | `n` `N` | the next, previous event on the timeline: the sample before it (the state it hit), for a boot the first after |

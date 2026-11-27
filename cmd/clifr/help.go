@@ -115,8 +115,8 @@ Other commands:
                        hour): CPU, memory, load and I/O pressure over time,
                        with OOM kills, boots, logins, failed or restarting
                        units, memory balloon changes and gaps marked; a cursor moved sample by sample
-                       (arrows; shift: a minute; n/N: the next event; space:
-                       play; z/Z: zoom in, out) and a pane with top, ps, ss, lsof, events, oom
+                       (arrows; shift: a timeline column; g: go to a time;
+                       n/N: the next event; space: play; z/Z: zoom in, out) and a pane with top, ps, ss, lsof, events, oom
                        and 11 other commands at the cursor (tab, 1-9 0; /
                        keeps the lines a regular expression matches, any
                        case); m marks A and B, d compares them as clifr diff;

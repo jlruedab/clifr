@@ -544,3 +544,67 @@ func TestTUIZoom(t *testing.T) {
 		t.Errorf("marks out of the window: %d %d %v", u.markA, u.markB, u.compare)
 	}
 }
+
+// TestTUIStepCol: over a day, shift+arrow moves one column of the timeline
+// at each press (not a minute: several presses in one column), both ways.
+func TestTUIStepCol(t *testing.T) {
+	from := time.Date(2026, 11, 23, 0, 0, 0, 0, time.Local).UnixMilli()
+	u := &tui{from: from, to: from + 86_400_000, width: 80, height: 30}
+	for ts := from; ts <= u.to; ts += 10_000 {
+		u.points = append(u.points, tuiPoint{ts: ts})
+	}
+	u.cur = 0
+	for c := 1; c < u.cols(); c++ {
+		u.cur = u.stepCol(1)
+		if got := u.col(u.points[u.cur].ts); got != c {
+			t.Fatalf("right %d: column %d", c, got)
+		}
+		if u.col(u.points[u.cur-1].ts) != c-1 {
+			t.Fatalf("right %d: not the column's first sample", c)
+		}
+	}
+	for c := u.cols() - 2; c >= 0; c-- {
+		u.cur = u.stepCol(-1)
+		if got := u.col(u.points[u.cur].ts); got != c {
+			t.Fatalf("left to %d: column %d", c, got)
+		}
+	}
+}
+
+func TestTUIGoTo(t *testing.T) {
+	u := testTUI() // 02:40:00 to 02:50:00, a sample every 10 s
+	u.cur = 0
+	for _, k := range strings.Split("g 0 2 : 4 5 : 0 5 Enter", " ") {
+		u.key(k)
+	}
+	if u.prompt != nil || u.points[u.cur].ts != u.from+300_000 {
+		t.Errorf("02:45:05: sample at %s, prompt %v %q", query.FormatMS(u.points[u.cur].ts), u.prompt != nil, u.promptErr)
+	}
+	day := time.UnixMilli(u.from).Format("2006-01-02")
+	if i, err := u.goTo(day + " 02:41"); err != nil || i != 6 {
+		t.Errorf("%s 02:41: %d %v", day, i, err)
+	}
+	u.points = append(u.points[:31:31], u.points[50:]...) // 02:45:00, then 02:48:20
+	if i, err := u.goTo("02:47"); err != nil || i != 30 || !strings.Contains(u.msg, "a gap") {
+		t.Errorf("02:47 in a gap: %d %v %q", i, err, u.msg)
+	}
+	if i, err := u.goTo("02:48:30"); err != nil || i != 32 || u.msg != "" {
+		t.Errorf("02:48:30: %d %v %q", i, err, u.msg)
+	}
+	for _, s := range []string{"03:10", "yesterday", "soon", ""} {
+		if _, err := u.goTo(s); err == nil {
+			t.Errorf("%q: no error", s)
+		}
+	}
+	u.key("g")
+	for _, k := range []string{"x", "Enter"} {
+		u.key(k)
+	}
+	if u.prompt == nil || u.promptErr == "" || !strings.Contains(u.screen(), "go to: x") {
+		t.Errorf("a bad time: prompt %v, error %q", u.prompt != nil, u.promptErr)
+	}
+	u.key("Esc")
+	if u.prompt != nil {
+		t.Error("Esc does not close g's prompt")
+	}
+}

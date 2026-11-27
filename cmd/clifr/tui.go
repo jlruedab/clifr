@@ -124,6 +124,7 @@ type tui struct {
 	filterRE  *regexp.Regexp
 	prompt    *string
 	promptErr string
+	promptGo  bool // the prompt is g's time, not a filter
 	// unwritten: the window runs on past the last sample on disk by less
 	// than clifrd's flush interval: shaded as not on disk yet.
 	unwritten bool
@@ -895,7 +896,10 @@ func (u *tui) key(k string) bool {
 		u.speed = max(u.speed-1, 0)
 	case "/":
 		f := u.filter
-		u.prompt = &f
+		u.prompt, u.promptGo = &f, false
+	case "g":
+		t := ""
+		u.prompt, u.promptGo = &t, true
 	case "q", "Q", "Ctrl-C":
 		return true
 	case "?":
@@ -910,9 +914,9 @@ func (u *tui) key(k string) bool {
 	case "Right", "l":
 		u.cur = min(u.cur+1, last)
 	case "S-Left", "H":
-		u.cur = u.at(u.points[u.cur].ts-time.Minute.Milliseconds(), -1)
+		u.cur = u.stepCol(-1)
 	case "S-Right", "L":
-		u.cur = u.at(u.points[u.cur].ts+time.Minute.Milliseconds(), 1)
+		u.cur = u.stepCol(1)
 	case "Home":
 		u.cur = 0
 	case "End":
@@ -988,6 +992,15 @@ func (u *tui) promptKey(k string) bool {
 	case "Ctrl-C":
 		return true
 	case "Enter":
+		if u.promptGo {
+			i, err := u.goTo(*u.prompt)
+			if err != nil {
+				u.promptErr = err.Error()
+				return false
+			}
+			u.cur, u.prompt = i, nil
+			return false
+		}
 		re, err := tuiFilterRE(*u.prompt)
 		if err != nil {
 			u.promptErr = err.Error()
@@ -1088,6 +1101,55 @@ func (u *tui) setMark() {
 		}
 		u.msg = " B set: d compares A and B"
 	}
+}
+
+// stepCol is shift+arrow's sample: the next column of the timeline in
+// direction dir (the first sample in a later column, the last in an earlier
+// one), and at least a minute away, so that each press moves the cursor
+// whatever the window's length.
+func (u *tui) stepCol(dir int) int {
+	n, span := int64(u.cols()), max(u.to-u.from, 1)
+	ts, c := u.points[u.cur].ts, int64(u.col(u.points[u.cur].ts))
+	minute := time.Minute.Milliseconds()
+	if dir > 0 {
+		next := u.from + ((c+1)*span+n-1)/n // the next column's first ms
+		return u.at(max(ts+minute, next), 1)
+	}
+	start := u.from + (c*span+n-1)/n // this column's first ms
+	return u.at(min(ts-minute, start-1), -1)
+}
+
+// goTo is g's sample: the last at or before the time typed, as --at takes
+// it, except that a time of day alone is on the cursor's day.
+func (u *tui) goTo(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, errors.New("type a time: 14:30, 2026-11-26 14:30, -2h")
+	}
+	now := time.Now()
+	if _, err := time.Parse("15:04", s); err == nil {
+		now = time.UnixMilli(u.points[u.cur].ts)
+	} else if _, err := time.Parse("15:04:05", s); err == nil {
+		now = time.UnixMilli(u.points[u.cur].ts)
+	}
+	t, err := query.ParseWhen(s, now)
+	if err != nil {
+		return 0, err
+	}
+	ts := t.UnixMilli()
+	if ts < u.from || ts > u.to {
+		return 0, fmt.Errorf("%s is outside the window (%s .. %s): Z zooms out", query.FormatMS(ts), query.FormatMS(u.from), query.FormatMS(u.to))
+	}
+	u.msg = ""
+	if ts < u.points[0].ts { // before the first sample: the first
+		u.msg = " no samples at " + query.FormatMS(ts) + ": the window's first, " + query.FormatMS(u.points[0].ts)
+		return 0, nil
+	}
+	i := u.at(ts, -1)
+	if d := u.interval() * tuiGapFactor; d > 0 && ts-u.points[i].ts > d {
+		u.msg = " no samples at " + query.FormatMS(ts) + " (a gap): the last before it, " + query.FormatMS(u.points[i].ts)
+	}
+	return i, nil
 }
 
 // at is the sample at ts: the last at or before it (dir < 0) or the first
@@ -1212,11 +1274,15 @@ func (u *tui) screen() string {
 	} else {
 		line("")
 	}
-	keys := " ←→ sample  ⇧←→ minute  z/Z zoom  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
+	keys := " ←→ sample  ⇧←→ column  g go to  z/Z zoom  n/N event  space play  / filter  m mark A/B  d compare  tab pane  ↑↓ scroll  ? help  q quit"
 	if u.prompt != nil {
-		l := fit("/"+termSafe(*u.prompt)+"█   (a regular expression, any case; Enter: filter the pane, empty: no filter; Esc: cancel)", u.width)
+		pre, hint := "/", "(a regular expression, any case; Enter: filter the pane, empty: no filter; Esc: cancel)"
+		if u.promptGo {
+			pre, hint = "go to: ", "(14:30 on the cursor's day, 2026-11-26 14:30, -2h, yesterday; Enter: move the cursor; Esc: cancel)"
+		}
+		l := fit(pre+termSafe(*u.prompt)+"█   "+hint, u.width)
 		if u.promptErr != "" {
-			l = tuiBold + fit("/"+termSafe(*u.prompt)+"█   "+termSafe(u.promptErr), u.width) + tuiReset
+			l = tuiBold + fit(pre+termSafe(*u.prompt)+"█   "+termSafe(u.promptErr), u.width) + tuiReset
 		}
 		b.WriteString(l + tuiEOL)
 		return b.String()
@@ -1323,7 +1389,9 @@ func (u *tui) tuiHelp() []string {
 	l := []string{
 		"Keys",
 		"  ← →  h l       one sample back, forward",
-		"  ⇧← ⇧→  H L     one minute",
+		"  ⇧← ⇧→  H L     the next column of the timeline (at least a minute)",
+		"  g              go to a time: 14:30 (the cursor's day), 2026-11-26 14:30,",
+		"                 -2h, yesterday; the sample at or before it",
 		"  Home End       the window's first, last sample",
 		"  z  Z           zoom in to a quarter of the window around the cursor (down to",
 		"                 5 minutes), zoom out to four times it (up to now and the",
