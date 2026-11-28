@@ -35,6 +35,7 @@ type Server struct {
 	Logf    func(format string, args ...any)
 
 	sem      chan struct{} // concurrent listings and transfers
+	slowed   chan struct{} // rejected requests being held back
 	sums     sync.Map      // path -> sumEntry
 	badAuth  atomic.Int64
 	initOnce sync.Once
@@ -50,9 +51,21 @@ type sumEntry struct {
 // recorder comes first.
 const maxParallel = 4
 
+// maxConns bounds the connections open at once, authenticated or not
+// (webconfig.LimitListener); maxSlowed the rejected requests held back at
+// once (each holds its connection for badAuthDelay): beyond it a bad token
+// is answered at once, so clients without a token cannot fill every
+// connection with waiting ones. A 256-bit token cannot be guessed anyway.
+const (
+	maxConns     = 64
+	maxSlowed    = 8
+	badAuthDelay = 500 * time.Millisecond
+)
+
 func (s *Server) init() {
 	s.initOnce.Do(func() {
 		s.sem = make(chan struct{}, maxParallel)
+		s.slowed = make(chan struct{}, maxSlowed)
 		if s.Logf == nil {
 			s.Logf = func(string, ...any) {}
 		}
@@ -94,6 +107,7 @@ func Listen(addr string, cert tls.Certificate, web *webconfig.Web) (net.Listener
 	if err != nil {
 		return nil, false, err
 	}
+	ln = webconfig.LimitListener(ln, maxConns)
 	if web != nil {
 		return tls.NewListener(ln, &tls.Config{GetConfigForClient: func(h *tls.ClientHelloInfo) (*tls.Config, error) {
 			return ServeTLS(web, h)
@@ -138,7 +152,8 @@ func (s *Server) HTTPServer() *http.Server {
 }
 
 // Handler routes the API. Every request needs a valid token; a failed one
-// is answered after a delay (guessing is slow) and logged.
+// is answered after a delay (guessing is slow; up to maxSlowed at once) and
+// logged.
 func (s *Server) Handler() http.Handler {
 	s.init()
 	mux := http.NewServeMux()
@@ -156,7 +171,12 @@ func (s *Server) Handler() http.Handler {
 			if n := s.badAuth.Add(1); n <= 10 || n%100 == 0 {
 				s.Logf("serve: rejected a request from %s without a valid token (%d so far)", r.RemoteAddr, n)
 			}
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case s.slowed <- struct{}{}:
+				time.Sleep(badAuthDelay)
+				<-s.slowed
+			default:
+			}
 			w.Header().Set("WWW-Authenticate", `Bearer realm="clifrd"`)
 			http.Error(w, "a valid token is needed (clifr --token, or CLIFR_TOKEN)", http.StatusUnauthorized)
 			return

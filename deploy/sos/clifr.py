@@ -27,7 +27,7 @@ class Clifr(Plugin, IndependentPlugin):
     This plugin adds a bundle of that recording to the report, so the
     state of the system can be examined at the time of a problem rather
     than at the time the report was taken. It also collects clifrd's
-    configuration (/etc/clifr) and the output of 'clifrd doctor'.
+    configuration (/etc/clifr/clifrd.yml) and the output of 'clifrd doctor'.
 
     The bundle is sos_commands/clifr/clifr-bundle.tar. Read it with
     clifr --data-dir clifr-bundle.tar --at TIME "ps aux". It holds every
@@ -72,13 +72,15 @@ class Clifr(Plugin, IndependentPlugin):
     ]
 
     def setup(self):
-        # The access tokens of clifrd --serve (only their hashes, but they
-        # decide who reads every process's command line): never collected.
+        # Only clifrd's settings. /etc/clifr also holds secrets: the access
+        # tokens of clifrd --serve (their hashes, which decide who reads
+        # every process's command line), and often the web configuration of
+        # --metrics/--serve (bcrypt hashes) with its TLS key beside it.
         self.add_forbidden_path([
             '/etc/clifr/serve-tokens',
             '/etc/clifr/serve-tokens.tmp',
         ])
-        self.add_copy_spec('/etc/clifr')
+        self.add_copy_spec('/etc/clifr/clifrd.yml')
         clifrd = shlex.quote(self.get_option('clifrd'))
         self.add_cmd_output([f'{clifrd} --version', f'{clifrd} doctor'])
 

@@ -3,6 +3,7 @@ package recorder
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // mask replaces what a redaction pattern matched.
@@ -26,8 +27,23 @@ func NewRedactor(patterns []string) (Redactor, error) {
 	return r, nil
 }
 
-// Text masks every match in s.
+// builtinSecrets are clifr's own secrets, masked whatever the configured
+// patterns (none by default): a sealing verification key (clifr verify
+// --seal-key cs1-...) recorded on the host it protects would let root forge
+// every seal, and a --serve token (clifr --token clifr_...) would give the
+// recording to whoever reads it.
+var builtinSecrets = regexp.MustCompile(`\bcs1-[0-9a-fA-F]{64}|\bclifr_[A-Za-z0-9_-]{43}`)
+
+func maskBuiltin(s string) string {
+	if !strings.Contains(s, "cs1-") && !strings.Contains(s, "clifr_") {
+		return s
+	}
+	return builtinSecrets.ReplaceAllString(s, mask)
+}
+
+// Text masks clifr's own secrets and every match of the patterns in s.
 func (r Redactor) Text(s string) string {
+	s = maskBuiltin(s)
 	for _, re := range r {
 		if re.NumSubexp() == 0 {
 			s = re.ReplaceAllString(s, mask)
@@ -56,9 +72,6 @@ func (r Redactor) Text(s string) string {
 // result. argv[0] and the arguments are masked apart, so the boundary stays
 // where it was.
 func (r Redactor) Cmdline(cmd string, argv0 int) (string, int) {
-	if len(r) == 0 {
-		return cmd, argv0
-	}
 	if argv0 <= 0 || argv0 > len(cmd) {
 		return r.Text(cmd), 0
 	}

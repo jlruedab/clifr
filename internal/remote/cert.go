@@ -96,19 +96,7 @@ func createCert(dir, cp, kp, hostname string) error {
 
 func writeAtomic(path string, b []byte, mode os.FileMode) error {
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(b)
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(tmp)
+	if err := writeNew(tmp, b, mode); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

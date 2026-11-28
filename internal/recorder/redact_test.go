@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,36 @@ func TestRedactor(t *testing.T) {
 	if _, err := NewRedactor([]string{"("}); err == nil {
 		t.Error("bad pattern accepted")
 	}
+}
+
+// clifr's own secrets are masked without any configured pattern.
+func TestRedactBuiltin(t *testing.T) {
+	key := "cs1-" + strings.Repeat("0a", 32)
+	tok := "clifr_" + strings.Repeat("aZ9_-", 8) + "xyz"
+	for _, r := range []Redactor{nil, mustRedactor(t, `hunter2`)} {
+		for in, want := range map[string]string{
+			"clifr verify --integrity --seal-key " + key:         "clifr verify --integrity --seal-key ***",
+			"clifr --seal-key=" + key + " verify":                "clifr --seal-key=*** verify",
+			"clifr --host db1 --token " + tok + " ps":            "clifr --host db1 --token *** ps",
+			"cs1-" + strings.Repeat("0", 63):                     "cs1-" + strings.Repeat("0", 63), // too short
+			"ls clifr_demo.mp4 clifr_" + strings.Repeat("x", 10): "ls clifr_demo.mp4 clifr_" + strings.Repeat("x", 10),
+		} {
+			if got := r.Text(in); got != want {
+				t.Errorf("%q: %q, want %q", in, got, want)
+			}
+		}
+		if cmd, n := r.Cmdline("clifr --token "+tok, len("clifr")); cmd != "clifr --token ***" || n != len("clifr") {
+			t.Errorf("Cmdline: %q %d", cmd, n)
+		}
+	}
+}
+
+func mustRedactor(t *testing.T, p ...string) Redactor {
+	r, err := NewRedactor(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }
 
 // A secret in a command line never reaches the database.

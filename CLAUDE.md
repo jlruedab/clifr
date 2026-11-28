@@ -113,7 +113,9 @@ wait for the user's go-ahead.
 - `internal/remote/` — `clifrd --serve` (pure Go): tokens stored hashed (`clifrd token`), the
   self-signed certificate (fingerprint = SHA-256 of the public key, OpenSSH style), `/v1/info`,
   `/v1/files` (bundle.Select's set), `/v1/file` (only `TABLEDIR/DAY|open/NAME.parquet`,
-  `ValidPath`); `cmd/clifr/remote.go` is `clifr --host` (a CA-verified certificate for the host
+  `ValidPath`; at most `maxConns` 64 connections (`webconfig.LimitListener`, shared with --metrics: 32) and
+  `maxSlowed` 8 bad-token requests delayed at once, 2026-11-28); `cmd/clifr/remote.go` is `clifr --host`
+  (`http://` only to loopback) (a CA-verified certificate for the host
   name is accepted, `--tls-ca` = only that CA; otherwise pinning in known_hosts, cache by
   SHA-256, a query directory of exactly the listed files). `deploy/clifrd-serve.conf` is the
   opt-in unit drop-in.
@@ -122,12 +124,13 @@ wait for the user's go-ahead.
   loopback addresses only without TLS; `--metrics-tls-config` (`internal/webconfig`, shared with
   `--serve-tls-config`, 2026-11-08):
   Node Exporter's web configuration file (TLS, client certificates, bcrypt basic auth via
-  golang.org/x/crypto, unknown keys refused, reloaded when its files change) allows any address
+  golang.org/x/crypto (at most 2 checks at once, `bcryptSlots`; else 503), unknown keys refused, reloaded when its files change) allows any address
   with TLS; `deploy/clifrd-metrics.conf` is the opt-in unit drop-in (TCP, loopback-only IP
   unless its `IPAddressAllow=` line is uncommented). A failed listen is logged and clifrd
   records without metrics; an invalid web config at start stops it.
 - `internal/bundle/` — `clifrd bundle` (pure Go): a window's data files as one tar with
-  `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin.
+  `bundle.json`; `Extract` for `clifr --data-dir FILE.tar`. `deploy/sos/clifr.py` — sos plugin (copies only
+  /etc/clifr/clifrd.yml: the directory may hold tokens, web configs, TLS keys).
 - `packaging/vm.sh` — KVM test VMs (Rocky 8, Alma 9, Ubuntu 22.04 cloud images in
   /var/lib/libvirt/images; `up`, `bins`, `test`, `down`); `vm-test.sh` runs inside: service,
   `--test-ebpf` x3, e2e and truth from prebuilt test binaries (`CLIFR_TEST_BIN`), sos.
@@ -598,6 +601,8 @@ wait for the user's go-ahead.
 - Redaction (`--redact`, clifrd.yml `redact`): `recorder.Redactor` masks command lines before
   they are stored; every /proc read goes through `r.readCmdline`, exec events through
   `r.redact.Cmdline`; argv[0] and the arguments are masked apart (argv0_len stays right).
+  `builtinSecrets` (2026-11-28) masks clifr's own secrets whatever the patterns: a seal
+  verification key `cs1-` + 64 hex digits, a token `clifr_` + 43 base64url characters.
   meta `redact_patterns` = their number (not the patterns).
 - Times are Unix milliseconds (INTEGER). CLI times are local time `YYYY-MM-DD HH:MM:SS`.
 

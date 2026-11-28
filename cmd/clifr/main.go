@@ -43,6 +43,7 @@ type globals struct {
 	version, help, verbose    bool
 	salvage                   bool        // --salvage: read a damaged bundle without its bad files
 	integrity                 bool        // verify --integrity: check the data files, not the tools
+	csvRaw                    bool        // export --csv-raw: text cells as recorded
 	sealKeys, sealAnchors     atList      // verify --integrity --seal-key / --seal-anchor (repeatable)
 	bundle                    *bundleInfo // --data-dir named a bundle checked with --integrity
 	fromBundle                bool        // --data-dir named a bundle (unpacked)
@@ -108,6 +109,7 @@ func newFlags(g *globals, out io.Writer) *flag.FlagSet {
 	fs.BoolVar(&g.verbose, "verbose", false, "") // verify: examples for every checkpoint
 	fs.BoolVar(&g.salvage, "salvage", false, "")
 	fs.BoolVar(&g.integrity, "integrity", false, "")
+	fs.BoolVar(&g.csvRaw, "csv-raw", false, "") // export: text cells as recorded (no ' before = + - @)
 	fs.Var(&g.sealKeys, "seal-key", "")
 	fs.Var(&g.sealAnchors, "seal-anchor", "")
 	return fs
@@ -652,6 +654,9 @@ func runSub(g *globals, sub string, args []string) error {
 		}
 		return runToolAt(g, words, append([]string(nil), g.ats...))
 	}
+	if g.csvRaw && sub != "export" {
+		return usageError{errors.New("--csv-raw is for clifr export")}
+	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
 	}
@@ -684,7 +689,7 @@ func runSub(g *globals, sub string, args []string) error {
 		if len(args) != 1 {
 			return usageError{errors.New("usage: clifr export TABLE")}
 		}
-		return cmdExport(db, args[0])
+		return cmdExport(db, args[0], g.csvRaw)
 	}
 	return nil
 }

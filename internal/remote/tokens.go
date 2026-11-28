@@ -190,6 +190,13 @@ func RevokeToken(path, prefix string) (int, error) {
 	if len(prefix) < 8 {
 		return 0, errors.New("give at least 8 hex digits of the hash (clifrd token list)")
 	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	if err := checkPerm(path, fi); err != nil {
+		return 0, err
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
@@ -214,8 +221,32 @@ func RevokeToken(path, prefix string) (int, error) {
 	if len(keep) > 0 {
 		data += "\n"
 	}
-	if err := os.WriteFile(tmp, []byte(data), 0o600); err != nil {
+	if err := writeNew(tmp, []byte(data), 0o600); err != nil {
 		return 0, err
 	}
 	return n, os.Rename(tmp, path)
+}
+
+// writeNew writes b to a new file tmp with mode: a stale tmp left by an
+// earlier run is removed first, never reused (its mode would carry over:
+// a 0644 one made the token file, or the TLS key, readable by all).
+func writeNew(tmp string, b []byte, mode os.FileMode) error {
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }

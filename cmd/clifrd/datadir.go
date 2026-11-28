@@ -20,6 +20,11 @@ import (
 // may be writable by group or others, except a sticky directory above the
 // data directory (/tmp: others cannot rename or replace what they do not
 // own). Not run as root, clifrd can only touch its own user's files: no check.
+//
+// A directory that does not exist yet is created first and then checked: a
+// check of a missing path, with the directory made later (MkdirAll accepts
+// one that exists), let another user who saw the command line in ps create
+// it in between (/tmp/d) and own what root then wrote and deleted there.
 func checkDataDir(dir string) error {
 	if os.Geteuid() != 0 {
 		return nil
@@ -27,6 +32,9 @@ func checkDataDir(dir string) error {
 	allowed := map[uint32]bool{0: true}
 	if u, err := strconv.ParseUint(os.Getenv("SUDO_UID"), 10, 32); err == nil {
 		allowed[uint32(u)] = true
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("--data-dir %s: %w", dir, err)
 	}
 	return checkDataDirOwners(dir, allowed)
 }

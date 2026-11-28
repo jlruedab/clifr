@@ -103,14 +103,17 @@ Other commands:
                        (checksums, structure); lists damaged files, exit 1.
                        With -D FILE.tar: a bundle's summary (window, samples,
                        gaps, crashes) and every file against bundle.json
-  clifr verify --integrity --seal-key KEY [--seal-anchor ANCHOR]
+  clifr verify --integrity --seal-key @FILE [--seal-anchor ANCHOR]
                        also check the seals (clifrd seal-setup): every seal
-                       with the verification key (KEY or @FILE; repeat for
+                       with the verification key (@FILE, or the key itself,
+                       which every user sees in ps meanwhile; repeat for
                        older chains), every data file against its sealed line,
                        every removal; an ANCHOR (KEYID/EPOCH:TAG, clifrd's
                        hourly "seal anchor" log line kept elsewhere) must still
                        be reached. Exit 1 when anything was altered
-  clifr export TABLE   one recorded table as CSV
+  clifr export TABLE   one recorded table as CSV; a text cell starting with
+                       = + - @ gets a ' (a spreadsheet would run it as a
+                       formula); --csv-raw writes the cells as recorded
   clifr tui            browse a window in the terminal (default: the last
                        hour): CPU, memory, load and I/O pressure over time,
                        with OOM kills, boots, logins, failed or restarting

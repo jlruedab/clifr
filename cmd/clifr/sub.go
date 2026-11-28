@@ -56,8 +56,12 @@ func cmdVerify(g *globals, db *store.DB) error {
 
 var tableRe = regexp.MustCompile(`^[a-z_]+$`)
 
-// cmdExport writes one table as CSV (NULL as an empty field).
-func cmdExport(db *store.DB, table string) error {
+// cmdExport writes one table as CSV (NULL as an empty field). A text cell
+// that a spreadsheet would take for a formula (= + - @, tab, CR first) gets
+// a leading ' unless raw (--csv-raw): command lines, file names and labels
+// are any user's to choose, and "=HYPERLINK(...)" or "=cmd|..." would run
+// in the analyst's spreadsheet. Numbers are never changed (-1 stays -1).
+func cmdExport(db *store.DB, table string, raw bool) error {
 	if !tableRe.MatchString(table) {
 		return errors.New("export: bad table name")
 	}
@@ -69,6 +73,14 @@ func cmdExport(db *store.DB, table string) error {
 	cols, err := rows.Columns()
 	if err != nil {
 		return err
+	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return err
+	}
+	text := make([]bool, len(cols))
+	for i, ct := range types {
+		text[i] = !raw && ct.DatabaseTypeName() == "VARCHAR"
 	}
 	out, done := dataOut()
 	defer done()
@@ -86,6 +98,9 @@ func cmdExport(db *store.DB, table string) error {
 		}
 		for i, v := range vals {
 			rec[i] = v.String
+			if text[i] {
+				rec[i] = csvSafe(v.String)
+			}
 		}
 		w.Write(rec)
 	}
@@ -94,6 +109,15 @@ func cmdExport(db *store.DB, table string) error {
 		return err
 	}
 	return rows.Err()
+}
+
+// csvSafe defuses a cell a spreadsheet would evaluate (OWASP's CSV
+// injection advice): a leading ' shows it as text.
+func csvSafe(v string) string {
+	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+		return "'" + v
+	}
+	return v
 }
 
 // cmdIntegrity is clifr verify --integrity: every data file checked against
@@ -180,6 +204,9 @@ func cmdIntegrity(g *globals) error {
 }
 
 // sealKeys reads --seal-key values: a key, or @FILE holding one.
+// literalKeyWarned: the warning about a key given on the command line is said once.
+var literalKeyWarned bool
+
 func sealKeys(vals []string) ([][]byte, error) {
 	var keys [][]byte
 	for _, v := range vals {
@@ -189,6 +216,10 @@ func sealKeys(vals []string) ([][]byte, error) {
 				return nil, fmt.Errorf("--seal-key: %w", err)
 			}
 			v = string(b)
+		} else if !literalKeyWarned {
+			literalKeyWarned = true
+			fmt.Fprintln(stderr, "clifr: warning: a verification key on the command line is seen by every user (ps) while clifr runs, "+
+				"and stays in the shell's history; give it as --seal-key @FILE (or @/dev/stdin), and keep it off the recorded host")
 		}
 		k, err := pqstore.ParseVerifyKey(v)
 		if err != nil {

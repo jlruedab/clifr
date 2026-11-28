@@ -102,7 +102,10 @@ func (l *Listener) Close() error {
 // events (none on timeout).
 func (l *Listener) Read(buf []byte) ([]Event, error) {
 	for {
-		n, _, err := unix.Recvfrom(l.fd, buf, 0)
+		n, from, err := unix.Recvfrom(l.fd, buf, 0)
+		if err == nil && !fromKernel(from) {
+			continue // the socket's port id is clifrd's PID: anyone may know it
+		}
 		if err != nil {
 			if errors.Is(err, unix.EINTR) {
 				continue
@@ -176,4 +179,12 @@ func (e Event) ExitStatus() (code, signal int) {
 		return 0, sig
 	}
 	return int(e.ExitCode>>8) & 0xff, 0
+}
+
+// fromKernel: a datagram the kernel sent (netlink port id 0). Only the
+// kernel's are proc events; another process with CAP_NET_ADMIN could send
+// datagrams to the socket's port id.
+func fromKernel(sa unix.Sockaddr) bool {
+	nl, ok := sa.(*unix.SockaddrNetlink)
+	return ok && nl.Pid == 0
 }

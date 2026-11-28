@@ -127,6 +127,42 @@ func recording(t *testing.T) string {
 	return dir
 }
 
+// Rejected requests: at most maxSlowed are held back at once, the others
+// are answered at once (they would otherwise hold every connection).
+func TestBadTokenFlood(t *testing.T) {
+	tokPath := filepath.Join(t.TempDir(), "serve-tokens")
+	AddToken(tokPath, "test")
+	tokens, err := LoadTokens(tokPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer((&Server{DataDir: t.TempDir(), Tokens: tokens}).Handler())
+	defer srv.Close()
+	const n = 3 * maxSlowed
+	fast := make(chan bool, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			req, _ := http.NewRequest("GET", srv.URL+PathInfo, nil)
+			req.Header.Set("Authorization", "Bearer clifr_wrong")
+			t0 := time.Now()
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				resp.Body.Close()
+			}
+			fast <- err == nil && resp.StatusCode == http.StatusUnauthorized && time.Since(t0) < badAuthDelay/2
+		}()
+	}
+	quick := 0
+	for i := 0; i < n; i++ {
+		if <-fast {
+			quick++
+		}
+	}
+	if quick < n-maxSlowed {
+		t.Errorf("%d of %d rejected requests answered at once, want at least %d", quick, n, n-maxSlowed)
+	}
+}
+
 func TestServer(t *testing.T) {
 	dir := recording(t)
 	tokPath := filepath.Join(t.TempDir(), "serve-tokens")
@@ -241,5 +277,26 @@ func TestListenTLS(t *testing.T) {
 	st := conn.ConnectionState()
 	if st.Version != tls.VersionTLS13 || Fingerprint(st.PeerCertificates[0]) != fp {
 		t.Errorf("TLS %x, fingerprint %s want %s", st.Version, Fingerprint(st.PeerCertificates[0]), fp)
+	}
+}
+
+// A stale token.tmp with a loose mode is not reused: the token file stays 0600.
+func TestRevokeStaleTmp(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "serve-tokens")
+	tok1, _ := AddToken(p, "one")
+	AddToken(p, "two")
+	if err := os.WriteFile(p+".tmp", []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(p+".tmp", 0o644)
+	if n, err := RevokeToken(p, Hash(tok1)[:12]); err != nil || n != 1 {
+		t.Fatalf("revoke: %d %v", n, err)
+	}
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+		t.Errorf("token file mode %v after revoke, want 0600", fi.Mode().Perm())
+	}
+	os.Chmod(p, 0o644)
+	if _, err := RevokeToken(p, "00000000"); err == nil || !strings.Contains(err.Error(), "chmod 600") {
+		t.Errorf("revoke on a readable token file: %v", err)
 	}
 }

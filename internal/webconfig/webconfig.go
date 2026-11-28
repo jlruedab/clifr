@@ -305,19 +305,36 @@ func (w *Web) Wrap(h http.Handler) http.Handler {
 		for k, v := range c.HTTP.Headers {
 			rw.Header().Set(k, v)
 		}
-		if len(c.Users) > 0 && !w.authorized(c, r) {
-			rw.Header().Set("WWW-Authenticate", `Basic realm="clifrd `+w.name+`", charset="UTF-8"`)
-			http.Error(rw, "unauthorized", http.StatusUnauthorized)
-			return
+		if len(c.Users) > 0 {
+			ok, busy := w.authorized(c, r)
+			if busy {
+				rw.Header().Set("Retry-After", "1")
+				http.Error(rw, "busy checking passwords: try again", http.StatusServiceUnavailable)
+				return
+			}
+			if !ok {
+				rw.Header().Set("WWW-Authenticate", `Basic realm="clifrd `+w.name+`", charset="UTF-8"`)
+				http.Error(rw, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		h.ServeHTTP(rw, r)
 	})
 }
 
-func (w *Web) authorized(c *Config, r *http.Request) bool {
+// bcryptSlots bounds the bcrypt checks running at once. Each takes tens of
+// milliseconds of CPU (cost 10), and anyone who reaches the port can ask for
+// one with a wrong password: unbounded, a flood of them would take the
+// recorder's CPU (its quota is shared). A password already checked does not
+// need a slot (authOK); while all are taken, others are answered busy (503).
+var bcryptSlots = make(chan struct{}, 2)
+
+// authorized checks r's basic authentication; busy: not checked, every
+// bcrypt slot was taken.
+func (w *Web) authorized(c *Config, r *http.Request) (ok, busy bool) {
 	user, pass, ok := r.BasicAuth()
 	if !ok {
-		return false
+		return false, false
 	}
 	hash, known := c.Users[user]
 	key := sha256.Sum256([]byte(user + "\x00" + pass + "\x00" + hash))
@@ -325,7 +342,13 @@ func (w *Web) authorized(c *Config, r *http.Request) bool {
 	cached := w.authOK[key]
 	w.mu.Unlock()
 	if cached && known {
-		return true
+		return true, false
+	}
+	select {
+	case bcryptSlots <- struct{}{}:
+		defer func() { <-bcryptSlots }()
+	default:
+		return false, true
 	}
 	h := []byte(hash)
 	if !known {
@@ -336,9 +359,9 @@ func (w *Web) authorized(c *Config, r *http.Request) bool {
 		w.mu.Lock()
 		w.authOK[key] = true
 		w.mu.Unlock()
-		return true
+		return true, false
 	}
-	return false
+	return false, false
 }
 
 // HasTLS reports whether the settings serve TLS.

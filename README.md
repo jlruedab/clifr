@@ -127,7 +127,7 @@ clifr can rebuild **51 commands**: 45 are the usual Linux tools and 6 are clifr'
 - `clifr diff --at A --at B "COMMAND"`: what changed between two moments (`ps`, `ss`, `netstat`, `lsof`, `df`, `mount` and `findmnt`);
 - `clifr verify`: compares the reconstruction with real tool output saved during recording
   (reconstructed in the recorded host's time zone, as the tools printed, wherever clifr runs);
-- `clifr export TABLE`: the raw data as CSV;
+- `clifr export TABLE`: the raw data as CSV (text cells a spreadsheet would run as a formula get a leading `'`; `--csv-raw` keeps them as recorded);
 - `clifr help`: the general help, or one command's with `clifr help COMMAND`.
 
 Every command works at a moment or over a period:
@@ -437,7 +437,9 @@ Entities are stored as time ranges (first seen, last seen), not snapshots.
 `/proc/*/environ` is never read. Nothing is sent over the network. Command
 lines are masked with the `redact` patterns before they are stored (from
 /proc, exec events and inherited ones alike; also the real tools' output
-saved for `verify`); mount options and file names are not.
+saved for `verify`); mount options and file names are not. clifr's own
+secrets are masked whatever the patterns: a sealing verification key
+(`cs1-...`) and a `--serve` token (`clifr_...`) given on a command line.
 
 Guard rails: a sample that overruns the interval makes the next one skip
 (recorded); a process vanishing mid-read is handled; SIGINT/SIGTERM close
@@ -1177,7 +1179,7 @@ tar file to read on another machine; `clifr --data-dir FILE.tar` reads it
 - Sealing (`clifrd seal-setup`, off by default): after every flush clifrd seals the
   integrity log with an HMAC-SHA256 key that it then replaces by a one-way
   successor, so root gained later cannot alter, remove or reorder what was
-  sealed before without `clifr verify --integrity --seal-key KEY` reporting
+  sealed before without `clifr verify --integrity --seal-key @KEYFILE` reporting
   it. The verification key is printed once and never stored on the host.
   Every file the store removes is logged and sealed too (compaction,
   retention with its period, size cap), a crash's unsealed lines are sealed
@@ -1632,10 +1634,24 @@ continuous eBPF tracer, not a metrics exporter.
   directory holds command lines and connection endpoints in plain Parquet
   files, readable by root and the `clifr` group (`/var/lib/clifr` is
   root:clifr 0750). Add only trusted administrators to the group, and use
-  `--redact` for secrets in command lines. The network features are off
-  by default: `--serve` needs a token for every request, `--metrics`
-  listens only on loopback unless given TLS (basic auth optional), and
-  both use TLS off loopback.
+  `--redact` for secrets in command lines. A member sees more than an
+  ordinary user can: every user's open files, working directories and
+  sockets (normally their owner's and root's), the kernel log even with
+  `kernel.dmesg_restrict=1`, and processes that `/proc`'s `hidepid` hides.
+  The network features are off by default: `--serve` needs a token for
+  every request, `--metrics` listens only on loopback unless given TLS
+  (basic auth optional), both use TLS off loopback, and both bound their
+  connections (64 and 32) and the work done for clients that fail to
+  authenticate, so they cannot take the recorder's memory or CPU.
+- **`clifr --host` and pinning**: clifrd's self-signed certificate is pinned
+  on first use, but a certificate that a system CA (or `--tls-ca`) issued
+  for the host's name is accepted in its place, as a browser would accept
+  it; with `--tls-ca` only that CA is trusted.
+- **Recordings from other machines are input**: `clifr` reads a bundle or a
+  `--host` recording with DuckDB, locked to reading that directory (no
+  extensions, no other files, no network), but its Parquet reader is C++.
+  Read recordings you do not trust as an ordinary user, not with sudo:
+  reading them needs no privilege.
 
 ## License
 

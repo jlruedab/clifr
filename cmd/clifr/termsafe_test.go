@@ -61,3 +61,14 @@ func TestOutputFilteredInPipes(t *testing.T) {
 		t.Errorf("stdout+data %q, stderr %q", b, e.String())
 	}
 }
+
+func TestCSVSafe(t *testing.T) {
+	for in, want := range map[string]string{
+		"=HYPERLINK(\"x\")": "'=HYPERLINK(\"x\")", "+1": "'+1", "-bash": "'-bash", "@SUM(A1)": "'@SUM(A1)",
+		"\tx": "'\tx", "\rx": "'\rx", "/bin/sh -c x": "/bin/sh -c x", "": "", "a=b": "a=b",
+	} {
+		if got := csvSafe(in); got != want {
+			t.Errorf("csvSafe(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

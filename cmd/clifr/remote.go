@@ -74,6 +74,11 @@ func hostURL(h string) (base, hostport string, err error) {
 		if u.Port() == "" {
 			hostport = net.JoinHostPort(u.Hostname(), defaultServePort)
 		}
+		if u.Scheme == "http" && !isLoopback(u.Hostname()) {
+			// The token would cross the network in clear, to a server
+			// nobody authenticated (clifrd serves plain HTTP on loopback only).
+			return "", "", fmt.Errorf("--host %q: plain HTTP only to a loopback address (the token would cross the network in clear); use https://", h)
+		}
 		return u.Scheme + "://" + hostport, hostport, nil
 	}
 	hostport = h
@@ -82,10 +87,17 @@ func hostURL(h string) (base, hostport string, err error) {
 	}
 	host, _, _ := net.SplitHostPort(hostport)
 	scheme := "https"
-	if ip := net.ParseIP(host); host == "localhost" || ip != nil && ip.IsLoopback() {
+	if isLoopback(host) {
 		scheme = "http"
 	}
 	return scheme + "://" + hostport, hostport, nil
+}
+
+// isLoopback: localhost or a loopback IP address (what clifrd serves
+// without TLS).
+func isLoopback(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 func connect(g *globals) (*remoteHost, error) {

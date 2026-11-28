@@ -49,11 +49,20 @@ func Listen(addr string, web *webconfig.Web) (net.Listener, error) {
 	if errors.Is(err, syscall.EAFNOSUPPORT) {
 		return nil, fmt.Errorf("--metrics %s: %w (the systemd unit allows no TCP sockets: install its metrics drop-in)", addr, err)
 	}
-	if err != nil || !withTLS {
-		return ln, err
+	if err != nil {
+		return nil, err
+	}
+	ln = webconfig.LimitListener(ln, maxConns)
+	if !withTLS {
+		return ln, nil
 	}
 	return tls.NewListener(ln, &tls.Config{GetConfigForClient: web.TLSForClient}), nil
 }
+
+// maxConns bounds the connections open at once (webconfig.LimitListener):
+// a scraper or two need a few; unbounded, clients that only connect could
+// take the recorder's memory.
+const maxConns = 32
 
 // Handler serves /metrics from get's newest Snapshot.
 func Handler(get func() *Snapshot) http.Handler {

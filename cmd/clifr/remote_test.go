@@ -23,12 +23,13 @@ func TestHostURL(t *testing.T) {
 		{"web01", "https://web01:8443"}, {"web01:9000", "https://web01:9000"}, {"192.0.2.7", "https://192.0.2.7:8443"},
 		{"127.0.0.1:8443", "http://127.0.0.1:8443"}, {"localhost", "http://localhost:8443"}, {"[::1]:8443", "http://[::1]:8443"},
 		{"https://127.0.0.1:9443", "https://127.0.0.1:9443"}, {"https://web01", "https://web01:8443"},
+		{"http://127.0.0.1:9000", "http://127.0.0.1:9000"}, {"http://localhost", "http://localhost:8443"},
 	} {
 		if base, _, err := hostURL(c.in); err != nil || base != c.base {
 			t.Errorf("%s: %s %v, want %s", c.in, base, err, c.base)
 		}
 	}
-	for _, bad := range []string{"ftp://web01", "https://web01/x", "https://"} {
+	for _, bad := range []string{"ftp://web01", "https://web01/x", "https://", "http://web01", "http://192.0.2.7:8443"} {
 		if _, _, err := hostURL(bad); err == nil {
 			t.Errorf("%s accepted", bad)
 		}

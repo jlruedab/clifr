@@ -76,10 +76,12 @@ func dumpRaw(typ uint16, family int) ([]Message, error) {
 // ReadMessages returns the notifications waiting, without blocking: the
 // addresses parsed, routes and rules raw.
 func (m *Monitor) ReadMessages(buf []byte) (addrs []Addr, routing []Message, err error) {
-	n, _, err := unix.Recvfrom(m.fd, buf, unix.MSG_DONTWAIT)
+	n, from, err := unix.Recvfrom(m.fd, buf, unix.MSG_DONTWAIT)
 	switch {
 	case errors.Is(err, unix.EAGAIN):
 		return nil, nil, nil
+	case err == nil && !fromKernel(from):
+		return nil, nil, nil // not a notification: another process's datagram
 	case errors.Is(err, unix.ENOBUFS):
 		return nil, nil, ErrOverflow
 	case err != nil:
@@ -176,3 +178,9 @@ func RouteKey(body []byte) string {
 
 // RuleKey identifies a rule: all of it (a change is a new rule).
 func RuleKey(body []byte) string { return fmt.Sprintf("%x", body) }
+
+// fromKernel: a datagram the kernel sent (netlink port id 0).
+func fromKernel(sa unix.Sockaddr) bool {
+	nl, ok := sa.(*unix.SockaddrNetlink)
+	return ok && nl.Pid == 0
+}
