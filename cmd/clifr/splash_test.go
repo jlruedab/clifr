@@ -24,11 +24,17 @@ func TestSplash(t *testing.T) {
 		}
 	}
 	if os.Getenv("SPLASH_SHOW") != "" {
-		os.Stdout.WriteString(splashScreen(150, 40, true, true, "loading") + "\n")
-		os.Stdout.WriteString(splashScreen(80, 24, true, false, "loading") + "\n")
+		os.Stdout.WriteString(splashScreen(150, 40, true, true, "0.2.0", "loading") + "\n")
+		os.Stdout.WriteString(splashScreen(80, 24, true, false, "0.2.0", "loading") + "\n")
 	}
-	s := splashScreen(40, 8, true, false, "loading x")
-	if !strings.Contains(s, "COMMAND LINE FLIGHT RECORDER") || !strings.Contains(s, "loading x") {
-		t.Errorf("40x8: %q", s)
+	for _, wh := range [][2]int{{40, 8}, {80, 24}, {150, 40}} {
+		s := splashScreen(wh[0], wh[1], true, false, "0.2.0", "loading x")
+		flat := strings.ReplaceAll(s, " ", "") // a wide terminal spaces the tagline's letters
+		if !strings.Contains(flat, "COMMANDLINEFLIGHTRECORDER") || !strings.Contains(s, "clifr 0.2.0") || !strings.Contains(s, "loading x") {
+			t.Errorf("%dx%d: %q", wh[0], wh[1], s)
+		}
+		if n := strings.Count(s, "\r\n") + 1; n > wh[1] {
+			t.Errorf("%dx%d: %d lines, higher than the terminal", wh[0], wh[1], n)
+		}
 	}
 }

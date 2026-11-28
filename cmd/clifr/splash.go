@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -131,16 +132,20 @@ func splashSGR(r, g, b float64, truecolor bool) string {
 	return fmt.Sprintf("\x1b[38;5;%dm", 16+36*q(r)+6*q(g)+q(b))
 }
 
-// splashScreen is the whole screen: the logo, the tagline and the status
-// line, centred in w x h.
-func splashScreen(w, h int, color, truecolor bool, status string) string {
+// splashText is the number of lines below the logo: a blank line, the
+// tagline, the rule, the version, a blank line and the status.
+const splashText = 6
+
+// splashScreen is the whole screen: the logo, the tagline, clifr's version
+// (ver) and the status line, centred in w x h.
+func splashScreen(w, h int, color, truecolor bool, ver, status string) string {
 	cols := min(w-4, 140)
 	art := splashArt(cols, color, truecolor)
-	for len(art) > max(1, h-6) && cols > 20 { // a low terminal: a smaller logo
+	for len(art) > max(1, h-splashText-1) && cols > 20 { // a low terminal: a smaller logo
 		cols -= 4
 		art = splashArt(cols, color, truecolor)
 	}
-	if len(art)+6 > h {
+	if len(art)+splashText+1 > h {
 		art = nil
 	}
 	tag := "COMMAND LINE FLIGHT RECORDER"
@@ -165,7 +170,7 @@ func splashScreen(w, h int, color, truecolor bool, status string) string {
 		}
 		return strings.Repeat(" ", (w-n)/2) + sgr + s + reset
 	}
-	lines = append(lines, "", centre(tag, grey), centre(rule, orange), "", centre(status, ""))
+	lines = append(lines, "", centre(tag, grey), centre(rule, orange), centre("clifr "+ver, grey), "", centre(status, ""))
 	var sb strings.Builder
 	sb.WriteString("\x1b[H")
 	sb.WriteString(strings.Repeat("\r\n", max(0, (h-len(lines))/2)))
@@ -173,29 +178,40 @@ func splashScreen(w, h int, color, truecolor bool, status string) string {
 	return sb.String()
 }
 
+// splashMin is how long the splash stays at least when the window loads
+// faster: long enough to be seen, the version read.
+const splashMin = 3 * time.Second
+
 // showSplash puts the splash on the alternate screen while clifr tui loads
 // [from, to]; the status line counts the seconds. The returned function
-// stops it: ok keeps the alternate screen (blank) for the tui, otherwise
-// the normal screen comes back (an error is printed there).
+// stops it: ok keeps the alternate screen (blank) for the tui, once the
+// splash has been up for splashMin; otherwise the normal screen comes back
+// at once (an error is printed there).
 func showSplash(color bool, from, to int64) func(ok bool) {
 	truecolor := strings.Contains(os.Getenv("COLORTERM"), "truecolor") || strings.Contains(os.Getenv("COLORTERM"), "24bit")
 	leave := func() { os.Stdout.WriteString("\x1b[0m\x1b[?25h\x1b[?1049l") }
 	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l")
 	setRestoreTerm(leave) // ^C while loading
 	start := time.Now()
+	ver := termSafe(version())
+	var loaded atomic.Bool
 	spin := `|/-\`
-	lw, lh := 0, 0
+	lw, lh, wasDone := 0, 0, false
 	draw := func(i int) {
 		w, h := 80, 24
 		if cw, ch, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
 			w, h = cw, ch
 		}
-		if w != lw || h != lh { // the first draw or a resize: from a blank screen
+		done := loaded.Load()
+		if w != lw || h != lh || done != wasDone { // the first draw, a resize, a shorter status: from a blank screen
 			os.Stdout.WriteString("\x1b[2J")
-			lw, lh = w, h
+			lw, lh, wasDone = w, h, done
 		}
 		status := fmt.Sprintf("%c loading %s .. %s  %ds", spin[i%len(spin)], query.FormatMS(from), query.FormatMS(to), int(time.Since(start).Seconds()))
-		os.Stdout.WriteString(splashScreen(w, h, color, truecolor, status))
+		if done {
+			status = "loaded " + query.FormatMS(from) + " .. " + query.FormatMS(to)
+		}
+		os.Stdout.WriteString(splashScreen(w, h, color, truecolor, ver, status))
 	}
 	draw(0)
 	stop, stopped := make(chan struct{}), make(chan struct{})
@@ -213,6 +229,10 @@ func showSplash(color bool, from, to int64) func(ok bool) {
 		}
 	}()
 	return func(ok bool) {
+		if ok {
+			loaded.Store(true)
+			time.Sleep(time.Until(start.Add(splashMin)))
+		}
 		close(stop)
 		<-stopped
 		setRestoreTerm(nil)
