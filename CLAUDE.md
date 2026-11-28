@@ -22,7 +22,7 @@ The product plan (phases 1–7) is in `docs/clifr-plan.md`, a local file kept ou
 (`.gitignore`): a fresh clone does not have it.
 
 **Current state:** v2 (event-based recorder, Parquet, DuckDB CLI): milestones
-1–9 done. v1 (snapshot-based, SQLite) is tagged `v1-snapshot`; its benchmark
+1–9 done. v1 (snapshot-based, SQLite) ended at commit `73682f2` (2026-10-09; its tag `v1-snapshot` was deleted 2026-11-28); its benchmark
 configuration and the SQLite backend were removed on 2026-10-21 (the user). `HANDOFF.md` (local, not in git) has the current results, the open
 items and the history. Do one step at a time, run it, report results, and
 wait for the user's go-ahead.
@@ -636,7 +636,7 @@ wait for the user's go-ahead.
   clang-18, llvm-18 and libbpf-dev, installed on the current machine since M6).
 
 ## Milestone status
-v1 (tag `v1-snapshot`): milestones 1–9 done; its report generator and
+v1 (up to `73682f2`): milestones 1–9 done; its report generator and
 benchmark were finished as v2 milestone 1 (results: busy 20261008-0721 batch).
 
 v2:
