@@ -101,6 +101,13 @@ func TestRunErrors(t *testing.T) {
 		{[]string{"diff", "--at", "11:00", "--at", "10:00", "ps -e"}, "must be after"},
 		{[]string{"diff", "--at", "10:00", "ps -e"}, "usage: clifr diff"},
 		{[]string{"--at", "10:00", "--at", "11:00", "ps -e"}, "more than once"},
+		// One subcommand's options with a tool command or another subcommand: refused, not ignored.
+		{[]string{"--csv-raw", "--at", "now", "ps -e"}, "--csv-raw is for clifr export"},
+		{[]string{"--csv-raw", "info"}, "--csv-raw is for clifr export"},
+		{[]string{"--integrity", "--at", "now", "ps -e"}, "--integrity is for clifr verify"},
+		{[]string{"--integrity", "export", "samples"}, "--integrity is for clifr verify"},
+		{[]string{"--seal-key", "@/nonexistent", "--at", "now", "ps -e"}, "are for clifr verify --integrity"},
+		{[]string{"--seal-anchor", "x/1:00", "--integrity", "verify"}, "needs --seal-key"},
 	} {
 		err := run(c.args)
 		if err == nil || !strings.Contains(err.Error(), c.want) {

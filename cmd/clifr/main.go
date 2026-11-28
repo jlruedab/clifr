@@ -184,6 +184,9 @@ func run(args []string) error {
 		fmt.Fprint(stderr, mainHelp)
 		return usageError{errors.New("no command given")}
 	}
+	if err := checkSubOnly(&g, sub); err != nil {
+		return err
+	}
 	if err := checkLater(&g); err != nil {
 		return err
 	}
@@ -623,6 +626,22 @@ func misplaced(a string) bool {
 // later names the commands of the spec that are not built yet.
 var later = map[string]string{}
 
+// checkSubOnly refuses the options of one subcommand given with another, or
+// with a tool command ("" sub), where they would be ignored.
+func checkSubOnly(g *globals, sub string) error {
+	switch {
+	case g.csvRaw && sub != "export":
+		return usageError{errors.New("--csv-raw is for clifr export")}
+	case (len(g.sealKeys) > 0 || len(g.sealAnchors) > 0) && (!g.integrity || sub != "verify"):
+		return usageError{errors.New("--seal-key and --seal-anchor are for clifr verify --integrity")}
+	case len(g.sealAnchors) > 0 && len(g.sealKeys) == 0:
+		return usageError{errors.New("--seal-anchor needs --seal-key (the anchor names a verified seal)")}
+	case g.integrity && sub != "verify":
+		return usageError{errors.New("--integrity is for clifr verify")}
+	}
+	return nil
+}
+
 func runSub(g *globals, sub string, args []string) error {
 	switch sub {
 	case "help":
@@ -654,22 +673,10 @@ func runSub(g *globals, sub string, args []string) error {
 		}
 		return runToolAt(g, words, append([]string(nil), g.ats...))
 	}
-	if g.csvRaw && sub != "export" {
-		return usageError{errors.New("--csv-raw is for clifr export")}
-	}
 	if len(args) > 0 && sub != "export" {
 		return usageError{fmt.Errorf("%s: unexpected argument %q", sub, args[0])}
 	}
-	if (len(g.sealKeys) > 0 || len(g.sealAnchors) > 0) && (!g.integrity || sub != "verify") {
-		return usageError{errors.New("--seal-key and --seal-anchor are for clifr verify --integrity")}
-	}
-	if len(g.sealAnchors) > 0 && len(g.sealKeys) == 0 {
-		return usageError{errors.New("--seal-anchor needs --seal-key (the anchor names a verified seal)")}
-	}
 	if g.integrity {
-		if sub != "verify" {
-			return usageError{errors.New("--integrity is for clifr verify")}
-		}
 		if g.host != "" {
 			return usageError{errors.New("--integrity checks a local recording or bundle: run it on the host itself (clifr verify --integrity)")}
 		}
